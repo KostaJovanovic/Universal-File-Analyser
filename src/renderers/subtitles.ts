@@ -6,7 +6,7 @@
 
 import { el, row, rowHelp, h3help, errorCard, fmtBytes } from '../core/util.js';
 
-function fmtTime(sec) {
+function fmtTime(sec: number|null) {
   if (sec == null || !isFinite(sec)) return '-';
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
@@ -16,7 +16,7 @@ function fmtTime(sec) {
 }
 
 // Parse "HH:MM:SS,mmm" / "HH:MM:SS.mmm" / "MM:SS.mmm" / "H:MM:SS.cc" -> seconds.
-function parseTime(t) {
+function parseTime(t: string) {
   t = t.trim().replace(',', '.');
   const parts = t.split(':');
   if (!parts.length) return null;
@@ -25,21 +25,21 @@ function parseTime(t) {
   return isFinite(s) ? s : null;
 }
 
-function parseSrtVtt(text, isVtt) {
+function parseSrtVtt(text: string, isVtt: boolean) {
   const cues = [];
   // Split on blank lines into blocks.
   const blocks = text.replace(/\r/g, '').split(/\n{2,}/);
   const TIME = /(\d{1,2}:\d{2}:\d{2}[.,]\d{1,3}|\d{1,2}:\d{2}[.,]\d{1,3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}[.,]\d{1,3}|\d{1,2}:\d{2}[.,]\d{1,3})/;
   for (let block of blocks) {
-    const lines = block.split('\n').filter((l) => l.length);
+    const lines = block.split('\n').filter((l: string|any[]) => l.length);
     if (!lines.length) continue;
     if (isVtt && /^WEBVTT/.test(lines[0])) continue;
     if (/^(NOTE|STYLE|REGION)\b/.test(lines[0])) continue;   // VTT metadata blocks
     // Find the timing line (may be preceded by an index / cue id line).
-    let ti = lines.findIndex((l) => TIME.test(l));
+    let ti = lines.findIndex((l: string) => TIME.test(l));
     if (ti < 0) continue;
     const m = lines[ti].match(TIME);
-    const start = parseTime(m[1]), end = parseTime(m[2]);
+    const start = parseTime(m![1]), end = parseTime(m![2]);
     const txt = lines.slice(ti + 1).join('\n')
       .replace(/<[^>]+>/g, '')      // strip VTT/HTML tags
       .trim();
@@ -48,7 +48,7 @@ function parseSrtVtt(text, isVtt) {
   return cues;
 }
 
-function parseAss(text) {
+function parseAss(text: string) {
   const cues = [];
   const styleDefs = [];   // each [V4(+) Styles] "Style:" line, as a field object
   const info: any = {};        // [Script Info] keys (PlayResX/Y, ScriptType, ...)
@@ -63,7 +63,7 @@ function parseAss(text) {
       info[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim();
     }
     if (/^Format:/i.test(line)) {
-      const cols = line.replace(/^Format:\s*/i, '').split(',').map((s) => s.trim().toLowerCase());
+      const cols = line.replace(/^Format:\s*/i, '').split(',').map((s: string) => s.trim().toLowerCase());
       if (section.includes('style')) styleFmt = cols;
       else if (section.includes('event') || (/start/i.test(line) && /text/i.test(line))) dlgFmt = cols;
       continue;
@@ -72,7 +72,7 @@ function parseAss(text) {
       const cols = styleFmt || DEFAULT_STYLE_COLS;
       const vals = line.replace(/^Style:\s*/i, '').split(',');
       const o: any = {};
-      cols.forEach((c, i) => { o[c] = vals[i] != null ? vals[i].trim() : ''; });
+      cols.forEach((c: string, i: number) => { o[c] = vals[i] != null ? vals[i].trim() : ''; });
       styleDefs.push(o);
     }
     if (/^Dialogue:/i.test(line)) {
@@ -84,7 +84,7 @@ function parseAss(text) {
       const head = parts.slice(0, n - 1);
       const txt = parts.slice(n - 1).join(',');
       const obj: any = {};
-      cols.forEach((c, i) => { obj[c] = i < n - 1 ? head[i] : txt; });
+      cols.forEach((c: string|number, i: number) => { obj[c] = i < n - 1 ? head[i] : txt; });
       const start = parseTime(obj.start || ''), end = parseTime(obj.end || '');
       const clean = (obj.text || '').replace(/\{[^}]*\}/g, '').replace(/\\N/gi, '\n').trim();
       if (start != null) cues.push({ start, end, text: clean, raw: obj.text || '', style: (obj.style || '').trim() });
@@ -97,7 +97,7 @@ function parseAss(text) {
 
 // An ASS colour is &H[AA]BBGGRR (or a raw decimal). Returns a CSS rgba() string,
 // honouring the alpha (00 = opaque, FF = transparent in ASS) - or null.
-function assColor(v) {
+function assColor(v: string) {
   if (!v) return null;
   const m = /&H([0-9A-Fa-f]{1,8})/.exec(String(v)) || /^\s*(\d+)\s*$/.exec(String(v));
   if (!m) return null;
@@ -110,7 +110,7 @@ function assColor(v) {
 }
 
 // Reduce a parsed Style row to the visual basics we render.
-function assBaseStyle(s) {
+function assBaseStyle(s: any) {
   return {
     color: (s && assColor(s.primarycolour)) || '#ffffff',
     bold: !!s && /-?1/.test(String(s.bold || '').trim()),
@@ -120,7 +120,7 @@ function assBaseStyle(s) {
 }
 
 // Apply a run of override tags (the contents of a {...} block) to the live state.
-function applyAssTags(tags, state, base) {
+function applyAssTags(tags: string, state: any, base: any) {
   const re = /\\([a-z0-9]+)(&H[0-9A-Fa-f]+&?|\([^)]*\)|-?\d+)?/gi;
   let m;
   while ((m = re.exec(tags))) {
@@ -135,7 +135,7 @@ function applyAssTags(tags, state, base) {
 // Render one Dialogue line (with its {\..} overrides and \N breaks) to a styled
 // DOM fragment, starting from its style's base look. Unknown tags (\k, \pos, \fad,
 // drawing) are ignored, text preserved - so it's a faithful look, not a full layout.
-function renderAssCue(raw, base) {
+function renderAssCue(raw: string, base: any) {
   const line = el('span', { class: 'anr-ass-line' });
   const state = { color: base.color, bold: base.bold, italic: base.italic };
   for (const p of raw.split(/(\{[^}]*\}|\\N|\\n)/i)) {
@@ -156,7 +156,7 @@ function renderAssCue(raw, base) {
 // numbers, so a frame rate is needed - it may be declared as the "text" of the
 // very first {1}{1} (or {0}{0}) line, otherwise we assume 23.976. Text uses |
 // for line breaks and {...} for inline style codes.
-function parseMicroDvd(text) {
+function parseMicroDvd(text: string) {
   const RE = /^\{(\d+)\}\{(\d+)\}(.*)$/;
   const raw = [];
   for (const line of text.replace(/\r/g, '').split('\n')) {
@@ -180,15 +180,15 @@ function parseMicroDvd(text) {
 // SubViewer (1.0/2.0): a "hh:mm:ss.cc,hh:mm:ss.cc" time-pair line followed by
 // the cue text ([br] line breaks), blocks separated by blank lines. An
 // [INFORMATION]/[SUBTITLE] header may precede the cues.
-function parseSubViewer(text) {
+function parseSubViewer(text: string) {
   const cues = [];
   const TIME = /^(\d{1,2}:\d{2}:\d{2}[.,]\d{1,3}),\s*(\d{1,2}:\d{2}:\d{2}[.,]\d{1,3})/;
   for (const block of text.replace(/\r/g, '').split(/\n{2,}/)) {
     const lines = block.split('\n');
-    const ti = lines.findIndex((l) => TIME.test(l));
+    const ti = lines.findIndex((l: string) => TIME.test(l));
     if (ti < 0) continue;
     const m = lines[ti].match(TIME);
-    const start = parseTime(m[1]), end = parseTime(m[2]);
+    const start = parseTime(m![1]), end = parseTime(m![2]);
     const txt = lines.slice(ti + 1).join('\n')
       .replace(/\[br\]/gi, '\n').replace(/<[^>]+>/g, '').trim();
     if (start != null) cues.push({ start, end, text: txt });
@@ -205,7 +205,7 @@ export async function renderSubtitles(file: File, resultsEl: HTMLElement) {
   catch (e) { resultsEl.appendChild(errorCard('Could not read this subtitle file.')); return; }
 
   const ext = (file.name.split('.').pop() || '').toLowerCase();
-  let format, cues = [], styles = 0, fps = null, styleDefs = null;
+  let format: string|undefined, cues: any[] = [], styles = 0, fps: number|null = null, styleDefs: any[]|null = null;
   if (ext === 'sub') {
     // .sub is overloaded: text (MicroDVD frame-based / SubViewer time-based) or
     // the binary VobSub bitmap format. Sniff the text shapes; if neither matches
@@ -302,7 +302,7 @@ export async function renderSubtitles(file: File, resultsEl: HTMLElement) {
       const timeEl = el('span', { class: 'anr-lrc-time' }, fmtTime(c.start));
       let textEl;
       if (styled) {
-        const base = assBaseStyle(styleMap[c.style] || styleDefs[0]);
+        const base = assBaseStyle(styleMap[c.style] || styleDefs![0]);
         textEl = el('span', { class: 'anr-lrc-text' }, [renderAssCue(c.raw || c.text || '', base)]);
       } else {
         textEl = el('span', { class: 'anr-lrc-text' }, c.text || ' ');

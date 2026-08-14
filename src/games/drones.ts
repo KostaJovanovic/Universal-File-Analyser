@@ -26,7 +26,7 @@ export function makeDrone(forcedWeapon: string|undefined): Drone {
 // Add a wingman with a specific weapon (sandbox), mirroring a pickup: tops up the squad
 // timer and adds one if there's room.
 export function addDrone(weapon?: string|undefined) {
-  g.drones.forEach((d) => { d.timer = POWERUP_DEF.drone.dur!; });
+  g.drones.forEach((d: Drone) => { d.timer = POWERUP_DEF.drone.dur!; });
   if (g.drones.length < DRONE_MAX) g.drones.push(makeDrone(weapon));
 }
 
@@ -46,7 +46,7 @@ export function droneFire(d: Drone, ang: number) {
   spawnBulletAt(d.x, d.y, ang, 540 * S, 0.9); return 0.22;   // normal
 }
 
-export function droneHurt(d) {
+export function droneHurt(d: Drone) {
   if (immortal()) return;   // sandbox invuln shields the drones along with the player
   d.hp--;
   burst(d.x, d.y, POWERUP_DEF.drone.color, { count: 5, speed: 90, life: 0.3 });

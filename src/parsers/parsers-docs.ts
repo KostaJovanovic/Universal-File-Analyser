@@ -28,10 +28,10 @@ async function fileText(file: File, cap = 4 * 1024 * 1024) {
 }
 
 // Pull the first capture group of a regex from text, trimmed, or null.
-function pick(text, re) { const m = text.match(re); return m ? m[1].trim() : null; }
+function pick(text: string, re: RegExp) { const m = text.match(re); return m ? m[1].trim() : null; }
 
 // Strip a tiny bit of XML: collapse entities we care about and trim.
-function xmlText(s) {
+function xmlText(s: string | null | undefined) {
   return (s || '')
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
@@ -40,19 +40,19 @@ function xmlText(s) {
 }
 
 // First tag content match (namespace-agnostic): <ns:tag ...>VALUE</ns:tag>.
-function tag(text, name) {
+function tag(text: string | null | undefined, name: string) {
   const re = new RegExp('<(?:[\\w.-]+:)?' + name + '(?:\\s[^>]*)?>([\\s\\S]*?)</(?:[\\w.-]+:)?' + name + '>', 'i');
-  const m = text.match(re);
+  const m = (text || '').match(re);
   return m ? xmlText(m[1].replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim() : null;
 }
 
 // Count non-overlapping matches of a global regex.
-function countRe(text, re) { const m = text.match(re); return m ? m.length : 0; }
+function countRe(text: string, re: RegExp) { const m = text.match(re); return m ? m.length : 0; }
 
 // ---------- image-header dimension probes (browser-native formats) ----------
 
 // Returns {w, h, fmt} from the first bytes of a raster image, or null.
-function imageDims(b) {
+function imageDims(b: Uint8Array | null | undefined) {
   if (!b || b.length < 12) return null;
   // PNG
   if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
@@ -112,7 +112,7 @@ function imageDims(b) {
 }
 
 const NATIVE_IMG = /\.(jpe?g|png|gif|webp)$/i;
-function imgMime(name) {
+function imgMime(name: string) {
   if (/\.png$/i.test(name)) return 'image/png';
   if (/\.gif$/i.test(name)) return 'image/gif';
   if (/\.webp$/i.test(name)) return 'image/webp';
@@ -120,9 +120,9 @@ function imgMime(name) {
 }
 
 // Build an <img> preview node from raw bytes (object URL, revoked on load).
-function imgPreview(bytes, mime) {
+function imgPreview(bytes: Uint8Array, mime: string) {
   try {
-    const blob = new Blob([bytes], { type: mime });
+    const blob = new Blob([bytes as BlobPart], { type: mime });
     const url = URL.createObjectURL(blob);
     const img = el('img', {
       src: url, alt: 'first page',
@@ -134,7 +134,7 @@ function imgPreview(bytes, mime) {
 }
 
 // ---------- ComicInfo.xml ----------
-function parseComicInfo(xml) {
+function parseComicInfo(xml: string | null) {
   if (!xml) return null;
   const out: any = {};
   for (const [t, label] of [
@@ -200,12 +200,12 @@ async function parseCbz(file: File) {
 }
 
 // ---------- TAR walk (for CBT) ----------
-function tarStr(b, off, len) {
+function tarStr(b: Uint8Array, off: number, len: number) {
   let end = off;
   while (end < off + len && b[end] !== 0) end++;
   return ascii(b, off, end - off).trim();
 }
-function tarOctal(b, off, len) {
+function tarOctal(b: Uint8Array, off: number, len: number) {
   let s = '';
   for (let i = off; i < off + len; i++) {
     const c = b[i];
@@ -216,7 +216,7 @@ function tarOctal(b, off, len) {
   return s ? parseInt(s, 8) : 0;
 }
 // Returns [{name, size, dataStart}] from a tar buffer.
-function tarMembers(b) {
+function tarMembers(b: Uint8Array) {
   const items = [];
   let pos = 0, longName = null;
   while (pos + 512 <= b.length) {
@@ -343,7 +343,7 @@ async function parseCbt(file: File) {
 // ---------- OPC / ZIP-doc shared bits ----------
 
 // Read OOXML / OPC core.xml-style Dublin-Core metadata into out.
-function opcCore(out, coreXml) {
+function opcCore(out: Row, coreXml: string | null) {
   if (!coreXml) return;
   for (const [t, label] of [
     ['title', 'Title'], ['subject', 'Subject'], ['creator', 'Author'],
@@ -409,7 +409,7 @@ async function parseFb3(file: File) {
   const descName = zip.names().find((n) => /description\.xml$/i.test(n)) ||
                    zip.names().find((n) => /core\.xml$/i.test(n));
   if (descName) {
-    const xml = await zip.text(descName);
+    const xml = (await zip.text(descName))!;
     const t = tag(xml, 'title') || tag(xml, 'main');
     if (t) out['Title'] = t;
     const authors = Array.from(xml.matchAll(/<author>([\s\S]*?)<\/author>/gi))
@@ -425,7 +425,7 @@ async function parseFb3(file: File) {
   out['Cover / images'] = zip.entries.filter((e) => /\.(png|jpe?g|gif)$/i.test(e.name)).length;
   // Chapter count: count <section> in body parts (first body only, to bound work).
   if (bodies.length) {
-    try { const bxml = await zip.text(bodies[0].name); const ch = countRe(bxml, /<section\b/gi); if (ch) out['Sections (body 1)'] = ch; } catch (_) {}
+    try { const bxml = (await zip.text(bodies[0].name))!; const ch = countRe(bxml, /<section\b/gi); if (ch) out['Sections (body 1)'] = ch; } catch (_) {}
   }
   return out;
 }
@@ -436,7 +436,7 @@ async function parseIbooks(file: File) {
   const out: Row = { 'Format': 'Apple iBooks Author book (.ibooks)' };
   const opfName = zip.names().find((n) => /\.opf$/i.test(n));
   if (opfName) {
-    const opf = await zip.text(opfName);
+    const opf = (await zip.text(opfName))!;
     const t = tag(opf, 'title'); if (t) out['Title'] = t;
     const creators = Array.from(opf.matchAll(/<dc:creator[^>]*>([^<]+)<\/dc:creator>/gi)).map((m) => xmlText(m[1]));
     if (creators.length) out['Author'] = creators.join('; ');
@@ -489,7 +489,7 @@ async function parseAbw(file: File, ext: string) {
   const ver = pick(text, /<abiword[^>]*\bfileformat="([^"]+)"/i) || pick(text, /<abiword[^>]*\bversion="([^"]+)"/i);
   if (ver) out['File format'] = ver;
   // Dublin-core metadata lives in <m key="dc.title">value</m>.
-  const meta = (k) => pick(text, new RegExp('<m\\s+key="' + k + '"\\s*>([^<]*)</m>', 'i'));
+  const meta = (k: string) => pick(text, new RegExp('<m\\s+key="' + k + '"\\s*>([^<]*)</m>', 'i'));
   const title = meta('dc.title'); if (title) out['Title'] = title;
   const creator = meta('dc.creator'); if (creator) out['Author'] = creator;
   const desc = meta('dc.description'); if (desc) out['Description'] = desc;
@@ -523,7 +523,7 @@ async function parseOtt(file: File, ext: string) {
 }
 
 // Shared ODF meta.xml reader (office:meta dc + meta:document-statistic).
-function odfMeta(out, meta) {
+function odfMeta(out: Row, meta: string | null) {
   const t = tag(meta, 'title'); if (t) out['Title'] = t;
   const creator = tag(meta, 'creator') || tag(meta, 'initial-creator'); if (creator) out['Author'] = creator;
   const gen = tag(meta, 'generator'); if (gen) out['Generator'] = gen;
@@ -531,7 +531,7 @@ function odfMeta(out, meta) {
   const kw = tag(meta, 'keyword'); if (kw) out['Keywords'] = kw;
   const date = tag(meta, 'date') || tag(meta, 'creation-date'); if (date) out['Modified'] = date;
   // document-statistic carries attributes (page/word/char counts).
-  const stat = meta.match(/<meta:document-statistic([^>]*)\/?>/i);
+  const stat = (meta || '').match(/<meta:document-statistic([^>]*)\/?>/i);
   if (stat) {
     for (const [a, label] of [
       ['page-count', 'Pages'], ['paragraph-count', 'Paragraphs'], ['word-count', 'Words'],
@@ -701,7 +701,7 @@ async function parseOrg(file: File) {
   // Outline preview.
   const outline = headings.slice(0, 200).map((h) => {
     const m = h.match(/^(\*+)\s+(.*)$/);
-    return '  '.repeat(m[1].length - 1) + '• ' + m[2];
+    return '  '.repeat(m![1].length - 1) + '• ' + m![2];
   });
   if (outline.length) out._sections = [{ title: 'Outline (' + headings.length + ')', node: preBlock(outline.join('\n')) }];
   return out;
@@ -833,7 +833,7 @@ async function parseMaff(file: File) {
   const out: Row = { 'Format': 'Mozilla Archive Format (.maff)' };
   const rdfName = zip.names().find((n) => /index\.rdf$/i.test(n));
   if (rdfName) {
-    const rdf = await zip.text(rdfName);
+    const rdf = (await zip.text(rdfName))!;
     const url = pick(rdf, /<MAF:originalurl[^>]*\bRDF:resource="([^"]+)"/i) || pick(rdf, /originalurl[^>]*>([^<]+)</i);
     if (url) out['Original URL'] = url;
     const title = pick(rdf, /<MAF:title[^>]*\bRDF:resource="([^"]+)"/i) || pick(rdf, /title[^>]*>([^<]+)</i);
@@ -963,7 +963,7 @@ async function parseScribus(file: File, ext: string) {
 // ---------- OLE / CFBF documents (.wps .wpt .wri .dot .sdw .sdc .sdd) ----------
 // Decode the SummaryInformation property set (FMTID is implicit; we scan the
 // stream for the VT_LPSTR Title/Author/Subject values via the property table).
-function oleSummary(out, bytes) {
+function oleSummary(out: Row, bytes: Uint8Array | null | undefined) {
   if (!bytes || bytes.length < 48) return;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   try {
@@ -1023,7 +1023,7 @@ async function parseOleDoc(file: File, ext: string) {
   out['Container'] = 'OLE2 / CFBF v' + cf.version;
   const names = cf.names();
   // Identify the embedded application from characteristic stream names.
-  const has = (re) => names.some((n) => re.test(n));
+  const has = (re: RegExp) => names.some((n: string) => re.test(n));
   if (has(/^WksSSWorkBook$/i)) out['Works module'] = 'Spreadsheet';
   else if (has(/^CONTENTS$/i) && ext.startsWith('wp')) out['Works module'] = 'Word processor';
   if (has(/^StarWriterDocument$|StarWriter/i)) out['StarOffice module'] = 'Writer';
@@ -1123,7 +1123,7 @@ async function parseFrame(file: File, ext: string) {
 }
 
 // ---------- identification-only (rare AND hard) ----------
-function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
+function ident(name: string, note: string) { return () => ({ 'Format': name, 'Note': note }); }
 
 // ---------- dispatch ----------
 export const PARSERS: Record<string, ParseFn> = {

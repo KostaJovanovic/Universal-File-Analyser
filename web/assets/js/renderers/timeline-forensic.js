@@ -195,7 +195,7 @@ export async function forensicTimelineCard(file) {
     head.appendChild(infoBtn);
     card.appendChild(head);
     card.appendChild(help);
-    const sorted = [...stamps].sort((a, b) => a.date - b.date);
+    const sorted = [...stamps].sort((a, b) => +a.date - +b.date);
     const tbl = el('table', { class: 'anr-readout' });
     for (const s of sorted)
         tbl.appendChild(row(s.label, fmtDate(s.date)));

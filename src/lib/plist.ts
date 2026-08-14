@@ -16,7 +16,7 @@ function parseXmlPlist(text: string) {
   if (doc.querySelector('parsererror')) return null;
   const root = doc.querySelector('plist > *') || doc.querySelector('plist');
   if (!root) return null;
-  const node = (el: Element) => {
+  const node = (el: Element): any => {
     switch (el.tagName) {
       case 'dict': {
         const o: any = {};
@@ -41,7 +41,7 @@ function parseXmlPlist(text: string) {
 }
 
 // ---------- binary plist (bplist00) ----------
-function parseBinaryPlist(bytes: Uint8Array|null) {
+function parseBinaryPlist(bytes: Uint8Array) {
   if (bytes.length < 40) return null;
   const r = new Reader(bytes);          // big-endian
   // trailer: last 32 bytes
@@ -62,7 +62,7 @@ function parseBinaryPlist(bytes: Uint8Array|null) {
   // re-expansion, and track in-progress indices to break true reference cycles.
   const memo = new Map();
   const inProgress = new Set();
-  function obj(index: unknown) {
+  function obj(index: number): any {
     if (index >= offsets.length || inProgress.has(index)) return null;
     if (memo.has(index)) return memo.get(index);
     inProgress.add(index);
@@ -71,7 +71,7 @@ function parseBinaryPlist(bytes: Uint8Array|null) {
     memo.set(index, result);
     return result;
   }
-  function build(index: string|number) {
+  function build(index: number): any {
     let p = offsets[index];
     const marker = bytes[p++];
     const type = marker >> 4, info = marker & 0x0f;

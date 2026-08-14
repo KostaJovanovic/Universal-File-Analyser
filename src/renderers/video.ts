@@ -5,7 +5,7 @@
 
 import { makePlayer, renderAudio } from './audio.js';
 import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob, inlineLoader, yieldToMain, setPlayerFill } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob, inlineLoader, yieldToMain, setPlayerFill, type ElChild, type Drawable} from '../core/util.js';
 import { HASH_FILE_MAX } from '../core/limits.js';
 import { parseAviHeader, extractAviData, encodeWav } from './video-avi.js';
 import { appendSonyGyroCard } from './sony-rtmd.js';
@@ -35,9 +35,9 @@ function isIOS() {
 interface VideoCtx {
   inline: boolean;
   compare: boolean;
-  photoTarget: () => HTMLElement;
-  audioTarget: () => HTMLElement;
-  previewTarget: () => HTMLElement;
+  photoTarget: () => HTMLElement|null;
+  audioTarget: () => HTMLElement|null;
+  previewTarget: () => HTMLElement|null;
   afterPhoto: () => void;
   photoOpts: (base: any) => any;
   sync: (playerEl?: any) => unknown;
@@ -70,7 +70,7 @@ const curVctx = () => videoCtx;
 
 // Apply the right playback affordance to a visible <video>: native controls on
 // iOS, click-to-toggle play/pause elsewhere (the makePlayer scrubber does the rest).
-function applyVideoControls(playerEl, opts: any = {}) {
+function applyVideoControls(playerEl: HTMLVideoElement, opts: any = {}) {
   if (isIOS()) {
     playerEl.setAttribute('controls', '');
   } else {
@@ -89,7 +89,7 @@ function applyVideoControls(playerEl, opts: any = {}) {
 
 // A generated contact-sheet image. Click opens it full-size in the shared
 // lightbox (no photo tools - it's a thumbnail grid, not a single photo).
-function sheetImg(dataUrl) {
+function sheetImg(dataUrl: string) {
   return el('img', {
     src: dataUrl,
     alt: 'Contact sheet',
@@ -103,7 +103,7 @@ function sheetImg(dataUrl) {
 // that scrub the player (contact sheet, scene detection) - both walk a fixed
 // number of seeks, and both are slow enough on a big file that an unlabelled
 // wait reads as a hang. Returns { node, set(frac, text) }.
-function stepLoader(text) {
+function stepLoader(text: string) {
   // Fixed 20 characters, exactly like inlineLoader's bar. NOT fit:true - that
   // re-measures on every set(), and scene detection calls set() hundreds of
   // times, so any drift in the character-width estimate would compound.
@@ -113,7 +113,7 @@ function stepLoader(text) {
   bar.set(0);
   return {
     node,
-    set(frac, t) { if (t) label.textContent = t; bar.set(frac); },
+    set(frac: number, t: string|null) { if (t) label.textContent = t; bar.set(frac); },
   };
 }
 
@@ -126,11 +126,11 @@ function stepLoader(text) {
 // downloads it as a PNG. `getFps` returns the current detected frame rate (it may
 // update asynchronously). Returns { wrap, refresh }; call refresh() when fps
 // becomes known so the frame field of the timecode is accurate.
-function buildFrameControls(playerEl, getFps, file: File) {
+function buildFrameControls(playerEl: Drawable, getFps: () => number|null|undefined, file: File) {
   const ctx = curVctx();   // capture at build time for the deferred Analyse-frame handler
   const fps = () => { const f = getFps(); return (f && isFinite(f) && f > 0) ? f : 30; };
-  const pad = (n) => String(n).padStart(2, '0');
-  function parts(t) {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  function parts(t: number) {
     const rf = Math.round(fps());
     const ts = Math.floor(t);
     let f = Math.floor((t - ts) * fps() + 1e-6);
@@ -160,7 +160,7 @@ function buildFrameControls(playerEl, getFps, file: File) {
   function commit() {
     if (!editing) return;
     const rf = Math.round(fps());
-    const clamp = (v, max?) => { v = parseInt(v, 10) || 0; return Math.max(0, max != null ? Math.min(v, max) : v); };
+    const clamp = (v: string, max?: number|null|undefined) => { const n = parseInt(v, 10) || 0; return Math.max(0, max != null ? Math.min(n, max) : n); };
     const h = clamp(sH.value), m = clamp(sM.value, 59), s = clamp(sS.value, 59), f = clamp(sF.value, Math.max(0, rf - 1));
     let t = h * 3600 + m * 60 + s + f / fps();
     if (isFinite(playerEl.duration)) t = Math.min(t, playerEl.duration);
@@ -194,7 +194,7 @@ function buildFrameControls(playerEl, getFps, file: File) {
     const vw = playerEl.videoWidth, vh = playerEl.videoHeight;
     if (!vw || !vh) return null;
     const cv = document.createElement('canvas'); cv.width = vw; cv.height = vh;
-    cv.getContext('2d').drawImage(playerEl, 0, 0, vw, vh);
+    cv.getContext('2d')!.drawImage(playerEl, 0, 0, vw, vh);
     return cv;
   }
   // Step exactly one frame in either direction. Both buttons share this so they
@@ -203,7 +203,7 @@ function buildFrameControls(playerEl, getFps, file: File) {
   // spill the seek into a neighbouring frame or land on a boundary and drift.
   // (The old "Next" played the video and paused on the next painted frame, which
   // advanced by a non-deterministic number of frames in real wall-clock time.)
-  function stepFrame(delta) {
+  function stepFrame(delta: number) {
     playerEl.pause();
     const f = fps();
     const idx = Math.floor(playerEl.currentTime * f + 1e-6);
@@ -219,7 +219,7 @@ function buildFrameControls(playerEl, getFps, file: File) {
     analyseBtn.disabled = true; analyseBtn.textContent = 'Capturing…';
     try {
       const blob = await new Promise<Blob | null>((r) => cv.toBlob(r, 'image/png'));
-      const frameFile = new File([blob], `frame_${playerEl.currentTime.toFixed(3)}s.png`, { type: 'image/png' });
+      const frameFile = new File([blob!], `frame_${playerEl.currentTime.toFixed(3)}s.png`, { type: 'image/png' });
       const pr = ctx.photoTarget();
       if (pr) { renderPhoto(frameFile, pr, ctx.photoOpts(undefined)); ctx.afterPhoto(); }
     } catch (_) {}
@@ -233,7 +233,7 @@ function buildFrameControls(playerEl, getFps, file: File) {
       // Name the grab after the timecode (HH-MM-SS-FF; ':' is illegal in filenames).
       const p = parts(playerEl.currentTime);
       const tc = `${pad(p.h)}-${pad(p.m)}-${pad(p.s)}-${pad(p.f)}`;
-      downloadBlob((file.name || 'video').replace(/\.[^.]+$/, '') + `_${tc}.png`, blob);
+      downloadBlob((file.name || 'video').replace(/\.[^.]+$/, '') + `_${tc}.png`, blob!);
     } catch (_) {}
     grabBtn.disabled = false;
   } }, 'Frame grab');
@@ -252,7 +252,7 @@ function buildFrameControls(playerEl, getFps, file: File) {
 // spectrogram) is heavy, so it no longer runs automatically. Instead this drops
 // an "Analyse audio" prompt card into the Sound section; the supplied routine
 // only fires when the user clicks it. Returns nothing - purely a UI mount.
-function mountAudioAnalyseButton(audioResultsEl, run) {
+function mountAudioAnalyseButton(audioResultsEl: HTMLElement, run: () => void) {
   const ctx = curVctx();
   audioResultsEl.hidden = false;
   const card = el('div', { class: 'anr-card' });
@@ -283,7 +283,7 @@ function mountAudioAnalyseButton(audioResultsEl, run) {
 // Photo counterpart of mountAudioAnalyseButton: a video frame is no longer pushed
 // into the Photo section automatically. This drops an "Analyse photo" prompt card
 // there; the current frame is only analysed when the user clicks.
-function mountPhotoAnalyseButton(photoResultsEl, run) {
+function mountPhotoAnalyseButton(photoResultsEl: HTMLElement, run: () => void) {
   const ctx = curVctx();
   photoResultsEl.hidden = false;
   const card = el('div', { class: 'anr-card' });
@@ -301,7 +301,7 @@ function mountPhotoAnalyseButton(photoResultsEl, run) {
 }
 
 // ---------- progress-tracked fetch ----------
-async function fetchWithProgress(url, onProgress) {
+async function fetchWithProgress(url: RequestInfo|URL, onProgress: (p: number) => void) {
   const resp = await fetch(url);
   const total = parseInt(resp.headers.get('content-length') || '0', 10);
   if (!total || !resp.body) return new Uint8Array(await resp.arrayBuffer());
@@ -321,7 +321,7 @@ async function fetchWithProgress(url, onProgress) {
   return out;
 }
 
-function makeBlobURL(data, type) {
+function makeBlobURL(data: BlobPart, type: string) {
   return URL.createObjectURL(new Blob([data], { type }));
 }
 
@@ -336,8 +336,8 @@ function makeBlobURL(data, type) {
 // assigns module.exports/AMD), so a module worker gets `undefined` and throws
 // "failed to import ffmpeg-core.js". The ESM build has `export default`, so it works.
 const FFMPEG_CORE_BASE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
-let ffmpegInstance = null;
-let _ffLoaderEl = null;
+let ffmpegInstance: any = null;
+let _ffLoaderEl: HTMLDivElement|null = null;
 
 // There is ONE shared ffmpeg.wasm instance, so two heavy jobs can't run at once -
 // on the compare page a user can hit "Convert to H.264" on both videos. Serialise
@@ -346,7 +346,7 @@ let _ffLoaderEl = null;
 // caller can show a "waiting…" state instead of a stalled progress bar.
 let _ffmpegBusy = false;
 let _ffmpegChain = Promise.resolve();
-function queueFFmpeg(job, onWait) {
+function queueFFmpeg(job: () => any, onWait?: (() => void)|null) {
   if (_ffmpegBusy && typeof onWait === 'function') { try { onWait(); } catch (_) {} }
   const run = _ffmpegChain.then(() => { _ffmpegBusy = true; return job(); });
   _ffmpegChain = run.then(() => { _ffmpegBusy = false; }, () => { _ffmpegBusy = false; });
@@ -356,7 +356,7 @@ function queueFFmpeg(job, onWait) {
 // The bottom-of-window loader. Default label/determinate bar for the FFmpeg core
 // download; pass a custom label + indeterminate:true to reuse it for any other
 // FFmpeg-backed wait (e.g. preparing a segment of a large raw stream).
-function showFfmpegLoader(label?, indeterminate?) {
+function showFfmpegLoader(label?: string|undefined, indeterminate?: boolean|undefined) {
   if (!_ffLoaderEl || !_ffLoaderEl.isConnected) {
     const bar = asciiBar({ fit: true });
     const labelEl = el('div', { class: 'anr-drop-loader-label' }, '');
@@ -365,12 +365,12 @@ function showFfmpegLoader(label?, indeterminate?) {
     _ffLoaderEl._label = labelEl;
     document.body.appendChild(_ffLoaderEl);
   }
-  _ffLoaderEl._label.textContent = label || 'Loading FFmpeg…';
-  if (indeterminate) _ffLoaderEl._bar.indeterminate();
-  else _ffLoaderEl._bar.set(0);
-  requestAnimationFrame(() => _ffLoaderEl.classList.add('is-open'));
+  _ffLoaderEl!._label.textContent = label || 'Loading FFmpeg…';
+  if (indeterminate) _ffLoaderEl!._bar.indeterminate();
+  else _ffLoaderEl!._bar.set(0);
+  requestAnimationFrame(() => _ffLoaderEl!.classList.add('is-open'));
 }
-function setFfmpegLoaderProgress(frac) {
+function setFfmpegLoaderProgress(frac: number) {
   if (_ffLoaderEl && _ffLoaderEl._bar) _ffLoaderEl._bar.set(frac);
 }
 function hideFfmpegLoader() {
@@ -398,7 +398,7 @@ export function killFFmpeg() {
 // Used to decide whether a raw HEVC stream can be stream-copied into MP4 (fast,
 // lossless) or must be re-encoded to H.264 so it will actually play rather than
 // producing a valid-but-black player. Cached; probes a throwaway <video>.
-let _hevcPlayable = null;
+let _hevcPlayable: boolean|null = null;
 function canPlayHevc() {
   if (_hevcPlayable !== null) return _hevcPlayable;
   let ok = false;
@@ -410,15 +410,15 @@ function canPlayHevc() {
   return ok;
 }
 
-export async function loadFFmpeg(onProgress?) {
+export async function loadFFmpeg(onProgress?: ((p: number) => void)|null) {
   if (ffmpegInstance && ffmpegInstance.loaded) return ffmpegInstance;
   if (ffmpegInstance) killFFmpeg();   // half-loaded / terminated leftover
   showFfmpegLoader();
   try {
     const { FFmpeg } = await import(new URL('../../vendor/ffmpeg/ffmpeg.js', import.meta.url).href);
-    const report = (p) => { setFfmpegLoaderProgress(p); if (onProgress) onProgress(p); };
-    const coreJS = makeBlobURL(await fetchWithProgress(FFMPEG_CORE_BASE + '/ffmpeg-core.js', (p) => report(p * 0.3)), 'text/javascript');
-    const wasmData = await fetchWithProgress(FFMPEG_CORE_BASE + '/ffmpeg-core.wasm', (p) => report(0.3 + p * 0.7));
+    const report = (p: number) => { setFfmpegLoaderProgress(p); if (onProgress) onProgress(p); };
+    const coreJS = makeBlobURL(await fetchWithProgress(FFMPEG_CORE_BASE + '/ffmpeg-core.js', (p: number) => report(p * 0.3)), 'text/javascript');
+    const wasmData = await fetchWithProgress(FFMPEG_CORE_BASE + '/ffmpeg-core.wasm', (p: number) => report(0.3 + p * 0.7));
     const wasmURL = makeBlobURL(wasmData, 'application/wasm');
     const ff = new FFmpeg();
     await ff.load({ coreURL: coreJS, wasmURL });
@@ -429,20 +429,20 @@ export async function loadFFmpeg(onProgress?) {
   }
 }
 
-async function ffmpegExtractAudio(file: File, container) {
+async function ffmpegExtractAudio(file: File, container: HTMLDivElement) {
   const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const labelEl = el('div', { class: 'anr-progress-label' }, 'loading ffmpeg');
   const wrap = el('div', { class: 'anr-progress' }, [barEl, labelEl]);
   container.appendChild(wrap);
 
-  function setBar(frac) {
+  function setBar(frac: number) {
     const ch = parseFloat(getComputedStyle(barEl).fontSize) * 0.6 || 8;
-    const total = Math.max(10, Math.floor((barEl.parentElement.clientWidth - ch * 2) / ch));
+    const total = Math.max(10, Math.floor((barEl.parentElement!.clientWidth - ch * 2) / ch));
     const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
     barEl.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' + ' '.repeat(total - filled) + ']';
   }
 
-  const ff = await loadFFmpeg((p) => { setBar(p); });
+  const ff = await loadFFmpeg((p: number) => { setBar(p); });
   labelEl.textContent = 'extracting audio';
   setBar(1);
   const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
@@ -476,23 +476,23 @@ async function ffmpegExtractAudio(file: File, container) {
 // under the heap. Output is H.264 + AAC MP4 (yuv420p) so it plays anywhere.
 // `onLoad` reports 0..1 core-download progress; `onEnc` reports 0..1 progress.
 // Returns a video/mp4 Blob, or null if nothing could be produced.
-async function ffmpegReverseVideo(file: File, onLoad, onEnc, signal) {
+async function ffmpegReverseVideo(file: File, onLoad: ((p: number) => void)|null, onEnc: ((p: number) => void)|null, signal: AbortSignal) {
   const ff = await loadFFmpeg(onLoad);
   if (signal && signal.aborted) return null;
   const aborted = () => signal && signal.aborted;
   const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
 
   let log = '';
-  const onLog = ({ message }) => { log += message + '\n'; };
+  const onLog = ({ message }: { message: string }) => { log += message + '\n'; };
   // Smooth, monotonic progress. The job runs ~N+2 ffmpeg commands and each emits
   // its OWN 0..1 - wiring that straight to the bar made it sweep 0..1 a dozen times
   // ("all over the place"). Instead map each command's progress into the slice of
   // the whole job it represents (set via phase()), and never let the bar go
   // backwards: normalise 0-30%, the per-segment reverses 30-92%, concat 92-100%.
   let pBase = 0, pSpan = 0.3, lastP = 0;
-  const report = (frac) => { const v = Math.max(lastP, Math.max(0, Math.min(1, frac))); lastP = v; if (onEnc) onEnc(v); };
-  const phase = (base, span) => { pBase = base; pSpan = span; };
-  const onProg = ({ progress }) => { if (isFinite(progress)) report(pBase + Math.max(0, Math.min(1, progress)) * pSpan); };
+  const report = (frac: number) => { const v = Math.max(lastP, Math.max(0, Math.min(1, frac))); lastP = v; if (onEnc) onEnc(v); };
+  const phase = (base: number, span: number) => { pBase = base; pSpan = span; };
+  const onProg = ({ progress }: { progress: number }) => { if (isFinite(progress)) report(pBase + Math.max(0, Math.min(1, progress)) * pSpan); };
   ff.on('log', onLog);
   ff.on('progress', onProg);
   const detachAll = () => { try { ff.off('log', onLog); } catch (_) {} try { ff.off('progress', onProg); } catch (_) {} };
@@ -500,9 +500,9 @@ async function ffmpegReverseVideo(file: File, onLoad, onEnc, signal) {
   // dead) from a clean non-zero exit (ff.exec resolves, output just isn't there).
   // On a crash we tear the instance down so the next attempt reloads fresh.
   let crashed = false;
-  const exec = async (args) => { log = ''; try { await ff.exec(args); return true; } catch (_) { crashed = true; return false; } };
-  const read = async (name) => { try { const d = await ff.readFile(name); return d && d.length ? d : null; } catch (_) { return null; } };
-  const rm = async (name) => { try { await ff.deleteFile(name); } catch (_) {} };
+  const exec = async (args: any[]) => { log = ''; try { await ff.exec(args); return true; } catch (_) { crashed = true; return false; } };
+  const read = async (name: string) => { try { const d = await ff.readFile(name); return d && d.length ? d : null; } catch (_) { return null; } };
+  const rm = async (name: string) => { try { await ff.deleteFile(name); } catch (_) {} };
 
   const src = 'rev_src';
   try { await ff.writeFile(src, await fetchFile(file)); }
@@ -510,7 +510,7 @@ async function ffmpegReverseVideo(file: File, onLoad, onEnc, signal) {
 
   // Reverse one elementary clip whole (video + audio, retry video-only). Used per
   // segment and as the single-segment fast path.
-  const reverseWhole = async (inName, outName, audio) => {
+  const reverseWhole = async (inName: string, outName: string, audio: boolean) => {
     const a = audio ? ['-af', 'areverse', '-c:a', 'aac'] : ['-an'];
     await exec(['-i', inName, '-vf', 'reverse', ...a,
       '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-y', outName]);
@@ -562,8 +562,8 @@ async function ffmpegReverseVideo(file: File, onLoad, onEnc, signal) {
     phase(0.30, 0);
     await exec(['-i', norm, '-c', 'copy', '-map', '0', '-f', 'segment',
       '-segment_time', String(SEG), '-reset_timestamps', '1', 'rev_seg_%03d.mp4']);
-    let segs = [];
-    try { segs = (await ff.listDir('/')).map((n) => n.name).filter((n) => /^rev_seg_\d+\.mp4$/.test(n)).sort(); }
+    let segs: string[] = [];
+    try { segs = (await ff.listDir('/')).map((n: { name: string }) => n.name).filter((n: string) => /^rev_seg_\d+\.mp4$/.test(n)).sort(); }
     catch (_) {}
 
     // Short clip (one chunk, or the splitter produced nothing) - reverse it whole.
@@ -624,7 +624,7 @@ async function ffmpegReverseVideo(file: File, onLoad, onEnc, signal) {
 // 4:2:2, ...) so they can be played and fully analysed. Plain streaming transcode
 // (no whole-video buffering), so memory stays flat regardless of length. Returns a
 // video/mp4 Blob, or null. `onLoad`/`onEnc` report 0..1 progress.
-async function ffmpegTranscodeToH264(file: File, onLoad, onEnc, signal, opts: any = {}) {
+async function ffmpegTranscodeToH264(file: File, onLoad: ((p: number) => void)|null, onEnc: ((p: number) => void)|null, signal: AbortSignal, opts: any = {}) {
   // Fast viewing/analysis proxy by default: downscale to a 720p box, ultrafast
   // preset, cap 30 fps - encode time scales with pixels x frames, so this is
   // typically several times faster than a full-resolution re-encode. The Advanced
@@ -637,7 +637,7 @@ async function ffmpegTranscodeToH264(file: File, onLoad, onEnc, signal, opts: an
   const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
   const inName = 'conv_in', outName = 'conv_out.mp4';
   try { await ff.writeFile(inName, await fetchFile(file)); } catch (_) { return null; }
-  const onProg = ({ progress }) => { if (onEnc && isFinite(progress)) onEnc(Math.max(0, Math.min(1, progress))); };
+  const onProg = ({ progress }: { progress: number }) => { if (onEnc && isFinite(progress)) onEnc(Math.max(0, Math.min(1, progress))); };
   ff.on('progress', onProg);
   // "turbo" is faster than libx264's own fastest preset (ultrafast is already the
   // floor). The extra speed comes from the DECODE side, which for HEVC is a big
@@ -656,7 +656,7 @@ async function ffmpegTranscodeToH264(file: File, onLoad, onEnc, signal, opts: an
   if (tune) vopts.push('-tune', tune);
   if (maxHeight > 0) vopts.push('-vf', 'scale=-2:2*trunc(min(' + maxHeight + '\\,ih)/2)');
   if (maxFps > 0) vopts.push('-r', String(maxFps));
-  const run = async (args) => {
+  const run = async (args: any[]) => {
     try { await ff.exec(args); } catch (_) {}
     try { return await ff.readFile(outName); } catch (_) { return null; }
   };
@@ -675,7 +675,7 @@ async function ffmpegTranscodeToH264(file: File, onLoad, onEnc, signal, opts: an
 // Card with a button that reverses the playable video on demand, then shows a
 // reversed player + MP4 download. `file` is the browser-playable file (original or
 // the remuxed MP4). `signal` revokes the result URL on teardown.
-function buildReverseVideoCard(file: File, signal) {
+function buildReverseVideoCard(file: File, signal: AbortSignal) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Reverse'));
   card.appendChild(el('p', { class: 'anr-hint' },
@@ -685,9 +685,9 @@ function buildReverseVideoCard(file: File, signal) {
   const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const labelEl = el('div', { class: 'anr-progress-label' }, 'loading ffmpeg');
   const wrap = el('div', { class: 'anr-progress', style: 'display:none;' }, [barEl, labelEl]);
-  const setBar = (frac) => {
+  const setBar = (frac: number) => {
     const ch = parseFloat(getComputedStyle(barEl).fontSize) * 0.6 || 8;
-    const total = Math.max(10, Math.floor((barEl.parentElement.clientWidth - ch * 2) / ch));
+    const total = Math.max(10, Math.floor((barEl.parentElement!.clientWidth - ch * 2) / ch));
     const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
     barEl.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' + ' '.repeat(total - filled) + ']';
   };
@@ -697,8 +697,8 @@ function buildReverseVideoCard(file: File, signal) {
     let blob = null;
     try {
       blob = await ffmpegReverseVideo(file,
-        (p) => { labelEl.textContent = 'loading ffmpeg'; setBar(p); },
-        (p) => { labelEl.textContent = 'reversing'; setBar(p); },
+        (p: number) => { labelEl.textContent = 'loading ffmpeg'; setBar(p); },
+        (p: number) => { labelEl.textContent = 'reversing'; setBar(p); },
         signal);
     } catch (_) { blob = null; }
     wrap.style.display = 'none';
@@ -763,20 +763,20 @@ function buildReverseVideoCard(file: File, signal) {
 // the captured FFmpeg output so the caller can show WHY a remux didn't produce a
 // file instead of silently dropping to the unplayable card. Large inputs are
 // mounted via WORKERFS (read by seeking) rather than copied whole into WASM heap.
-async function ffmpegRemuxToMp4(file: File, signal, rawKind, fps) {
+async function ffmpegRemuxToMp4(file: File, signal: AbortSignal, rawKind: string, fps: number|null|undefined) {
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return { blob: null, log: '' };
   const demuxer = rawKind === 'h265' ? 'hevc' : 'h264';
   const outName = 'out.mp4';
   // -r before -i sets the INPUT frame rate the raw demuxer assumes.
-  const rate = (fps > 0 && fps < 1000) ? ['-r', String(Number(fps.toFixed(6)))] : [];
+  const rate = (fps! > 0 && fps! < 1000) ? ['-r', String(Number(fps!.toFixed(6)))] : [];
 
   let log = '';
-  const onLog = ({ message }) => { log += message + '\n'; };
+  const onLog = ({ message }: { message: string }) => { log += message + '\n'; };
   ff.on('log', onLog);
 
   const MOUNT = '/anrrx';
-  let inName = null;
+  let inName: string|null = null;
   let cleanup = async () => {};
   try {
     // Prefer a WORKERFS mount so a multi-GB stream is read by seeking, not copied
@@ -839,17 +839,17 @@ async function ffmpegRemuxToMp4(file: File, signal, rawKind, fps) {
 // AC-3 or LPCM, which an MP4 can't carry for in-browser playback. +genpts repairs
 // the timestamps some camcorder TS files omit; faststart moves the moov atom to
 // the front. Returns { blob, log } like ffmpegRemuxToMp4 (blob null on failure).
-async function ffmpegRemuxTsToMp4(file: File, signal) {
+async function ffmpegRemuxTsToMp4(file: File, signal: AbortSignal) {
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return { blob: null, log: '' };
   const outName = 'out.mp4';
 
   let log = '';
-  const onLog = ({ message }) => { log += message + '\n'; };
+  const onLog = ({ message }: { message: string }) => { log += message + '\n'; };
   ff.on('log', onLog);
 
   const MOUNT = '/anrts';
-  let inName = null;
+  let inName: string|null = null;
   let cleanup = async () => {};
   try {
     // WORKERFS mount where available so a big camcorder file is read by seeking
@@ -903,18 +903,18 @@ async function ffmpegRemuxTsToMp4(file: File, signal) {
 // head and only cut at IDR start codes.
 
 // NAL type for a header byte. H.264 = low 5 bits; H.265 = bits 1..6.
-function nalTypeOf(headerByte, h265) {
+function nalTypeOf(headerByte: number, h265: boolean) {
   return h265 ? ((headerByte >> 1) & 0x3f) : (headerByte & 0x1f);
 }
 // IDR / random-access NAL: H.264 type 5; HEVC IDR_W_RADL 19, IDR_N_LP 20, CRA 21.
-function isIdrNal(t, h265) { return h265 ? (t === 19 || t === 20 || t === 21) : (t === 5); }
+function isIdrNal(t: number, h265: boolean) { return h265 ? (t === 19 || t === 20 || t === 21) : (t === 5); }
 // Parameter-set NAL: H.264 SPS 7 / PPS 8; HEVC VPS 32 / SPS 33 / PPS 34.
-function isParamNal(t, h265) { return h265 ? (t === 32 || t === 33 || t === 34) : (t === 7 || t === 8); }
+function isParamNal(t: number, h265: boolean) { return h265 ? (t === 32 || t === 33 || t === 34) : (t === 7 || t === 8); }
 
 // Pull the parameter sets (SPS/PPS, plus HEVC VPS) out of the stream head and
 // return them as one Annex B blob with 4-byte start codes, ready to prepend to a
 // chunk. Returns null if the essential sets aren't found.
-async function extractRawParamSets(file: File, h265, signal) {
+async function extractRawParamSets(file: File, h265: boolean, signal: AbortSignal) {
   const HEAD = Math.min(file.size, 1024 * 1024);
   const buf = new Uint8Array(await file.slice(0, HEAD).arrayBuffer());
   if (signal && signal.aborted) return null;
@@ -949,7 +949,7 @@ async function extractRawParamSets(file: File, h265, signal) {
 // Reshape a parsed SPS into the same video-track object the container walks
 // produce, so a raw elementary stream reads out through appendTrackRows() exactly
 // like an MP4 or Matroska file instead of having its own second set of rows.
-function videoTrackFromStream(info) {
+function videoTrackFromStream(info: StreamInfo|null) {
   if (!info) return null;
   const hevc = info.codec === 'hevc';
   const v: StreamInfo = {
@@ -962,7 +962,7 @@ function videoTrackFromStream(info) {
   if (info.chroma) v.chroma = info.chroma;
   if (info.bitDepthLuma) v.bitDepth = Math.max(info.bitDepthLuma, info.bitDepthChroma || 0);
   if (info.fps) { v.fps = info.fps; v.fpsSource = info.fpsSource; }
-  if (info.temporalLayers > 1) v.temporalLayers = info.temporalLayers;
+  if (info.temporalLayers! > 1) v.temporalLayers = info.temporalLayers;
   if (info.sarWidth && info.sarHeight && info.sarWidth !== info.sarHeight) v.pixelAspect = info.sarWidth + ':' + info.sarHeight;
   if (isSpecifiedColourCode(info.primaries)) v.primaries = COLOUR_PRIMARIES[info.primaries] || ('code ' + info.primaries);
   if (isSpecifiedColourCode(info.transfer)) v.transfer = TRANSFER_CHARS[info.transfer] || ('code ' + info.transfer);
@@ -980,7 +980,7 @@ function videoTrackFromStream(info) {
 // windows (so a multi-GB file is read by seeking, never copied whole). Windows
 // overlap by 4 bytes so a start code straddling a boundary isn't missed. Returns
 // null if none within maxSpan.
-async function findNextIdrOffset(file: File, from, h265, signal, maxSpan = 128 * 1024 * 1024) {
+async function findNextIdrOffset(file: File, from: number, h265: boolean, signal: AbortSignal, maxSpan = 128 * 1024 * 1024) {
   const WIN = 8 * 1024 * 1024;
   const limit = Math.min(file.size, from + maxSpan);
   let pos = Math.max(0, from);
@@ -1002,7 +1002,7 @@ async function findNextIdrOffset(file: File, from, h265, signal, maxSpan = 128 *
 // Work out where to cut a large stream: parameter sets + a list of byte
 // boundaries, each on an IDR, sized ~TARGET so every produced MP4 fits in memory.
 // Returns null if the stream can't be split (no param sets, or no keyframes found).
-async function planRawSegments(file: File, h265, signal) {
+async function planRawSegments(file: File, h265: boolean, signal: AbortSignal) {
   const paramSets = await extractRawParamSets(file, h265, signal);
   if (!paramSets) return null;
   const TARGET = 256 * 1024 * 1024;
@@ -1028,12 +1028,12 @@ async function planRawSegments(file: File, h265, signal) {
 // prepended (so the chunk decodes even though it starts mid-file), stream-copied.
 // loaderLabel (optional): when set, the bottom loader bar shows that text while
 // this part is being read + remuxed (foreground parts only - not prefetches).
-async function remuxRawSegment(file: File, start, end, paramSets, h265, signal, loaderLabel, fps) {
+async function remuxRawSegment(file: File, start: number|undefined, end: number|undefined, paramSets: Uint8Array, h265: boolean, signal: AbortSignal, loaderLabel: string|undefined, fps: number|null) {
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return null;
   if (loaderLabel) showFfmpegLoader(loaderLabel, true);
   const demuxer = h265 ? 'hevc' : 'h264';
-  const rate = (fps > 0 && fps < 1000) ? ['-r', String(Number(fps.toFixed(6)))] : [];
+  const rate = (fps! > 0 && fps! < 1000) ? ['-r', String(Number(fps!.toFixed(6)))] : [];
   const inName = 'seg.' + (h265 ? 'h265' : 'h264'), outName = 'seg.mp4';
   let blob = null;
   try {
@@ -1065,7 +1065,7 @@ async function remuxRawSegment(file: File, start, end, paramSets, h265, signal, 
 // Opt-in scene-change detection scoped to the part currently loaded in the player
 // (it scrubs the <video>, so it can only see the segment that's loaded). Mirrors
 // the main player's scene card. Rebuildable so it can be run on each part.
-function buildRawSceneCard(playerEl, signal) {
+function buildRawSceneCard(playerEl: HTMLVideoElement, signal: AbortSignal) {
   const card = el('div', { class: 'anr-card' });
   const [scH, scHelp] = h3help('Scene changes',
     'Scans only the part currently loaded in the player. It scrubs through the video, so it can see just the segment that is loaded.');
@@ -1082,14 +1082,14 @@ function buildRawSceneCard(playerEl, signal) {
     const prog = stepLoader('Scanning for scene changes…');
     out.innerHTML = '';
     out.appendChild(prog.node);
-    let changes = [];
+    let changes: string|any[] = [];
     // Collect the per-sample colour/luma series too. This scan is the only pass
     // over the loaded part, so not collecting meant the segmented player - the one
     // path used for the very largest files - never got a Content timeline at all.
-    const contentSamples = [];
+    const contentSamples: any[] = [];
     try {
       changes = await detectSceneChanges(playerEl, 55, signal, contentSamples,
-        (f) => prog.set(f, 'Scanning for scene changes… ' + Math.round(f * 100) + '%'));
+        (f: number) => prog.set(f, 'Scanning for scene changes… ' + Math.round(f * 100) + '%'));
     } catch (_) {}
     try { playerEl.currentTime = 0; playerEl.pause(); } catch (_) {}
     if (signal && signal.aborted) return;
@@ -1142,7 +1142,7 @@ function buildRawSceneCard(playerEl, signal) {
 // Player for an over-size raw stream: scan -> split at keyframes -> lazily remux
 // each part and play them back-to-back. Throws if FFmpeg/scan fails so the caller
 // can fall back to the "open in VLC" note.
-async function renderSegmentedRawVideo(file: File, header, resultsEl: HTMLElement, kind, signal) {
+async function renderSegmentedRawVideo(file: File, header: any, resultsEl: HTMLElement, kind: string, signal: AbortSignal) {
   const h265 = kind === 'H.265';
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' },
@@ -1189,7 +1189,7 @@ async function renderSegmentedRawVideo(file: File, header, resultsEl: HTMLElemen
   playerCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px; gap:8px; flex-wrap:wrap; align-items:center;' }, [prevBtn, nextBtn, status]));
 
   const strip = el('div', { class: 'anr-seg-strip' });
-  const segBtns = [];
+  const segBtns: HTMLButtonElement[] = [];
   for (let i = 0; i < N; i++) {
     const b = el('button', { type: 'button', class: 'anr-seg-btn' }, String(i + 1));
     b.addEventListener('click', () => goTo(i, true));
@@ -1247,7 +1247,7 @@ async function renderSegmentedRawVideo(file: File, header, resultsEl: HTMLElemen
   let gen = 0;
   let measured = false;      // whether a part has yielded a real bitrate yet
 
-  async function ensureSegment(i, loaderLabel?) {
+  async function ensureSegment(i: number, loaderLabel?: string|undefined) {
     if (i < 0 || i >= N) return null;
     if (cache.has(i)) return cache.get(i);
     const blob = await remuxRawSegment(file, boundaries[i], boundaries[i + 1], paramSets, h265, signal, loaderLabel, streamFps);
@@ -1261,7 +1261,7 @@ async function renderSegmentedRawVideo(file: File, header, resultsEl: HTMLElemen
     return entry;
   }
 
-  async function goTo(i, autoplay) {
+  async function goTo(i: number, autoplay: boolean) {
     if (i < 0 || i >= N || signal.aborted) return;
     const myGen = ++gen;
     cur = i;
@@ -1275,8 +1275,8 @@ async function renderSegmentedRawVideo(file: File, header, resultsEl: HTMLElemen
     if (!entry) { status.textContent = 'Part ' + (i + 1) + ' couldn’t be prepared.'; return; }
     playerEl.onloadedmetadata = () => {
       if (playerEl.videoWidth) {
-        resRow.lastChild.textContent = playerEl.videoWidth + ' × ' + playerEl.videoHeight + ' px';
-        arRow.lastChild.textContent = aspectRatio(playerEl.videoWidth, playerEl.videoHeight);
+        resRow.lastChild!.textContent = playerEl.videoWidth + ' × ' + playerEl.videoHeight + ' px';
+        arRow.lastChild!.textContent = aspectRatio(playerEl.videoWidth, playerEl.videoHeight);
       }
       // This part's byte range over its playing time is a real bitrate; scaling it
       // by the file size gives the whole stream's length. Measured once, from the
@@ -1285,8 +1285,8 @@ async function renderSegmentedRawVideo(file: File, header, resultsEl: HTMLElemen
         measured = true;
         const bps = entry.bytes * 8 / playerEl.duration;
         const totalSec = file.size * 8 / bps;
-        durRow.lastChild.textContent = formatDuration(totalSec) + '   (estimated from part ' + (i + 1) + ')';
-        brRow.lastChild.textContent = Math.round(bps / 1000).toLocaleString() + ' kbps  ('
+        durRow.lastChild!.textContent = formatDuration(totalSec) + '   (estimated from part ' + (i + 1) + ')';
+        brRow.lastChild!.textContent = Math.round(bps / 1000).toLocaleString() + ' kbps  ('
           + (bps / 1_000_000).toFixed(2) + ' Mbps)';
       }
       frameTools.refresh();
@@ -1313,7 +1313,7 @@ async function renderSegmentedRawVideo(file: File, header, resultsEl: HTMLElemen
 // decode. Prefers a WORKERFS mount so multi-GB files are read by seeking rather
 // than copied whole into WASM memory; falls back to an in-memory copy for
 // smaller files. Returns null if nothing usable could be extracted. Fully guarded.
-async function ffmpegFirstFrame(file: File, signal) {
+async function ffmpegFirstFrame(file: File, signal: AbortSignal) {
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return null;
 
@@ -1364,31 +1364,31 @@ async function ffmpegFirstFrame(file: File, signal) {
 
 // ---------- helpers ----------
 
-function gcd(a, b) { return b ? gcd(b, a % b) : a; }
+function gcd(a: number, b: number): number { return b ? gcd(b, a % b) : a; }
 
-function aspectRatio(w, h) {
+function aspectRatio(w: number|undefined, h: number|undefined) {
   if (!w || !h) return '-';
-  const d = gcd(w, h);
+  const d = gcd(w!, h!);
   return `${w / d}:${h / d}  (${(w / h).toFixed(4)})`;
 }
 
-function formatDuration(sec) {
-  if (!isFinite(sec)) return '-';
-  if (sec < 60) return sec.toFixed(2) + 's';
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
+function formatDuration(sec: number|undefined) {
+  if (!isFinite(sec!)) return '-';
+  if (sec! < 60) return sec!.toFixed(2) + 's';
+  const h = Math.floor(sec! / 3600);
+  const m = Math.floor((sec! % 3600) / 60);
+  const s = sec! % 60;
   if (h > 0) return h + ':' + String(m).padStart(2, '0') + ':' + s.toFixed(0).padStart(2, '0');
   return m + ':' + s.toFixed(1).padStart(4, '0');
 }
 
-function fmtDate(d) {
+function fmtDate(d: any) {
   if (!d) return '-';
   if (d instanceof Date) return d.toISOString().replace('T', ' ').replace(/\..*$/, '');
   return String(d);
 }
 
-let audioCtx = null;
+let audioCtx: AudioContext|null = null;
 function getAudioCtx() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   return audioCtx;
@@ -1396,7 +1396,7 @@ function getAudioCtx() {
 
 // ---------- MP4 PCM audio extraction ----------
 
-function parseBoxes(view, start, end) {
+function parseBoxes(view: DataView<any>, start: number, end: number) {
   const boxes = [];
   let pos = start;
   while (pos + 8 <= end) {
@@ -1414,12 +1414,12 @@ function parseBoxes(view, start, end) {
   return boxes;
 }
 
-function findAllBoxes(view, start, end, type) {
+function findAllBoxes(view: DataView<any>, start: number, end: number, type: string) {
   const result = [];
   const stack = [{ s: start, e: end }];
   const containers = new Set(['moov','trak','mdia','minf','stbl','udta','edts','dinf','meta','ilst']);
   while (stack.length) {
-    const { s, e } = stack.pop();
+    const { s, e } = stack.pop()!;
     for (const b of parseBoxes(view, s, e)) {
       if (b.type === type) result.push(b);
       if (containers.has(b.type)) stack.push({ s: b.offset + b.headerSize, e: b.offset + b.size });
@@ -1438,7 +1438,7 @@ function findAllBoxes(view, start, end, type) {
 // Returns the child boxes of ONE sample entry. `entryStart` is the sample entry's
 // own box offset; the fixed record is 78 bytes for video and 28 (+16 / +36 for
 // the QuickTime v1 / v2 layouts) for audio.
-function sampleEntryChildren(view, entryStart, entryEnd, isAudio) {
+function sampleEntryChildren(view: DataView<ArrayBuffer>, entryStart: number, entryEnd: number, isAudio: boolean) {
   let dataStart = entryStart + 8 + 78;
   if (isAudio) {
     let extra = 0;
@@ -1455,7 +1455,7 @@ function sampleEntryChildren(view, entryStart, entryEnd, isAudio) {
 // First child box of `type` within a sample entry. Falls back to a bounded scan
 // for the FourCC when the fixed-record walk comes up empty, so an unusual or
 // vendor-padded sample entry still yields its codec config rather than nothing.
-function findSampleEntryBox(view, entryStart, entryEnd, type, isAudio) {
+function findSampleEntryBox(view: DataView<ArrayBuffer>, entryStart: number, entryEnd: number, type: string, isAudio: boolean) {
   for (const b of sampleEntryChildren(view, entryStart, entryEnd, isAudio)) {
     if (b.type === type) return b;
   }
@@ -1471,7 +1471,7 @@ function findSampleEntryBox(view, entryStart, entryEnd, type, isAudio) {
 
 // Copy a box's payload out of the moov DataView as a Uint8Array, for the parsers
 // in video-bitstream.js (which work on bytes, not boxes).
-function boxPayload(view, box, limit?) {
+function boxPayload(view: DataView<ArrayBuffer>, box: any, limit?: number) {
   if (!box) return null;
   const start = box.offset + box.headerSize;
   const end = Math.min(box.offset + box.size, view.byteLength, start + (limit || box.size));
@@ -1479,7 +1479,7 @@ function boxPayload(view, box, limit?) {
   return new Uint8Array(view.buffer, view.byteOffset + start, end - start);
 }
 
-function extractPcmFromMp4(arrayBuffer) {
+function extractPcmFromMp4(arrayBuffer: ArrayBuffer) {
   const view = new DataView(arrayBuffer);
   const fileEnd = arrayBuffer.byteLength;
 
@@ -1607,7 +1607,7 @@ function extractPcmFromMp4(arrayBuffer) {
 }
 
 // Encode a decoded AudioBuffer to a 16-bit PCM WAV blob URL for <audio> playback.
-function audioBufferToWavUrl(audioBuf) {
+function audioBufferToWavUrl(audioBuf: AudioBuffer) {
   const channels = audioBuf.numberOfChannels;
   const sr = audioBuf.sampleRate;
   const samples = audioBuf.length;
@@ -1616,7 +1616,7 @@ function audioBufferToWavUrl(audioBuf) {
   const buf = new ArrayBuffer(44 + dataSize);
   const view = new DataView(buf);
   let o = 0;
-  const ws = (s) => { for (let i = 0; i < s.length; i++) view.setUint8(o++, s.charCodeAt(i)); };
+  const ws = (s: string) => { for (let i = 0; i < s.length; i++) view.setUint8(o++, s.charCodeAt(i)); };
   ws('RIFF'); view.setUint32(o, 36 + dataSize, true); o += 4; ws('WAVEfmt ');
   view.setUint32(o, 16, true); o += 4;
   view.setUint16(o, 1, true); o += 2;
@@ -1647,8 +1647,8 @@ const BROWSER_UNPLAYABLE_AUDIO = new Set(['twos','sowt','lpcm','in16','in24','in
 // File (seeking past mdat by size, never reading its bytes), so it's fast even on a
 // multi-GB clip whose moov sits at the tail. Returns the lowercase-ish fourCC or ''.
 async function sniffMp4AudioCodec(file: File) {
-  const u32 = (b, p) => (b[p] << 24 | b[p+1] << 16 | b[p+2] << 8 | b[p+3]) >>> 0;
-  const fourcc = (b, p) => String.fromCharCode(b[p], b[p+1], b[p+2], b[p+3]);
+  const u32 = (b: Uint8Array, p: number) => (b[p] << 24 | b[p+1] << 16 | b[p+2] << 8 | b[p+3]) >>> 0;
+  const fourcc = (b: Uint8Array, p: number) => String.fromCharCode(b[p], b[p+1], b[p+2], b[p+3]);
   // Locate the top-level moov box by reading 8-16 byte headers and jumping.
   async function findMoov() {
     let off = 0;
@@ -1693,7 +1693,7 @@ async function sniffMp4AudioCodec(file: File) {
 // register it as the synced audio companion so the muted <video> still has sound.
 // Best-effort and fully in the background: silent on any failure. Skipped above a
 // size cap (the whole file must be read into memory to extract PCM).
-async function attachPcmAudioCompanion(file: File, playerCard, signal) {
+async function attachPcmAudioCompanion(file: File, playerCard: HTMLDivElement, signal: AbortSignal) {
   const ctx = curVctx();   // capture now: this runs fire-and-forget, resolving after renderVideo returns
   const COMPANION_MAX_BYTES = 2 * 1024 * 1024 * 1024;   // 2 GB: cap the in-memory decode
   try {
@@ -1719,11 +1719,11 @@ async function attachPcmAudioCompanion(file: File, playerCard, signal) {
 
 async function peekVideoContainer(file: File) {
   const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
-  const ascii = (s, l) => String.fromCharCode(...head.slice(s, s + l));
+  const ascii = (s: number, l: number) => String.fromCharCode(...head.slice(s, s + l));
 
   if (ascii(4, 4) === 'ftyp') {
     const brand = ascii(8, 4).trim();
-    const names = {
+    const names: Record<string, string> = {
       'isom': 'MP4', 'iso2': 'MP4', 'mp41': 'MP4', 'mp42': 'MP4',
       'M4V': 'M4V', 'qt': 'QuickTime MOV',
       'avc1': 'MP4 (H.264)', 'hvc1': 'MP4 (H.265)',
@@ -1790,7 +1790,7 @@ async function readMatroskaApps(file: File) {
 // AVI stores the authoring software as an ISFT entry inside a LIST INFO chunk -
 // usually in the header LIST near the start, occasionally in a trailing INFO list.
 async function readAviSoftware(file: File) {
-  const scan = (b) => {
+  const scan = (b: Uint8Array) => {
     for (let i = 0; i + 8 < b.length; i++) {
       if (b[i] === 0x49 && b[i + 1] === 0x53 && b[i + 2] === 0x46 && b[i + 3] === 0x54) { // 'ISFT'
         const len = b[i + 4] | (b[i + 5] << 8) | (b[i + 6] << 16) | (b[i + 7] << 24);
@@ -1815,7 +1815,7 @@ async function readAviSoftware(file: File) {
 // moov/udta/meta/ilst. moov can sit at the head or the tail, so scan both. The
 // atom is "©too" then a "data" child: [size][data][flags][reserved][UTF-8 value].
 async function readMp4Encoder(file: File) {
-  const find = (b) => {
+  const find = (b: Uint8Array) => {
     for (let i = 0; i + 24 < b.length; i++) {
       if (b[i] !== 0xA9 || b[i + 1] !== 0x74 || b[i + 2] !== 0x6F || b[i + 3] !== 0x6F) continue; // '©too'
       if (!(b[i + 8] === 0x64 && b[i + 9] === 0x61 && b[i + 10] === 0x74 && b[i + 11] === 0x61)) continue; // 'data'
@@ -1834,7 +1834,7 @@ async function readMp4Encoder(file: File) {
   return s ? { software: s } : {};
 }
 
-async function readContainerSoftware(file: File, container) {
+async function readContainerSoftware(file: File, container: string) {
   try {
     if (/Matroska|WebM/i.test(container || '')) return await readMatroskaApps(file);
     if (container === 'AVI') return await readAviSoftware(file);
@@ -1844,7 +1844,7 @@ async function readContainerSoftware(file: File, container) {
 }
 
 // Append the "Created with" / "Muxer" rows from whatever the container recorded.
-function appendCreatorRows(tbl, header) {
+function appendCreatorRows(tbl: HTMLTableElement, header: any) {
   if (!header) return;
   const created = header.writingApp || header.software;
   if (created) tbl.appendChild(rowHelp('Created with', created,
@@ -1939,7 +1939,7 @@ async function detectFpsFromContainer(file: File) {
 // any failure is swallowed so the existing fps/preview/frame-stepping path is
 // never affected.
 
-const VIDEO_CODEC_NAMES = {
+const VIDEO_CODEC_NAMES: Record<string, string> = {
   avc1: 'H.264 / AVC', avc3: 'H.264 / AVC',
   hvc1: 'H.265 / HEVC', hev1: 'H.265 / HEVC',
   av01: 'AV1', vp09: 'VP9', vp08: 'VP8',
@@ -1964,7 +1964,7 @@ const PRO_VIDEO_CODECS = new Set([
   'cfhd', 'CFHD', 'dvc', 'dvcp', 'dvpp', 'dv5p', 'dvh5', 'icod',
   'rle ', 'v210', '2vuy'
 ]);
-const AUDIO_CODEC_NAMES = {
+const AUDIO_CODEC_NAMES: Record<string, string> = {
   mp4a: 'AAC', alac: 'Apple Lossless (ALAC)', 'ac-3': 'Dolby Digital (AC-3)',
   'ec-3': 'Dolby Digital Plus (E-AC-3)', 'Opus': 'Opus', sowt: 'PCM', twos: 'PCM',
   lpcm: 'PCM', 'in24': 'PCM (24-bit)', 'in32': 'PCM (32-bit)', samr: 'AMR'
@@ -1972,15 +1972,15 @@ const AUDIO_CODEC_NAMES = {
 // Profile / chroma / colour code-point tables live in video-bitstream.js, which
 // also owns the avcC / hvcC / SPS parsing they describe - see the imports above.
 
-function fcc(view, p) {
+function fcc(view: DataView<ArrayBuffer>, p: number) {
   return String.fromCharCode(view.getUint8(p), view.getUint8(p + 1), view.getUint8(p + 2), view.getUint8(p + 3));
 }
 
 // Derive a 0/90/180/270 display rotation from the tkhd 3x3 transform matrix.
 // The matrix stores a,b,c,d as 16.16 fixed-point; rotation maps to the sign/
 // magnitude pattern of (a,b,c,d). Returns 0 for identity / unknown.
-function rotationFromMatrix(a, b, c, d) {
-  const r = (x) => Math.round(x);
+function rotationFromMatrix(a: number, b: number, c: number, d: number) {
+  const r = (x: number) => Math.round(x);
   a = r(a); b = r(b); c = r(c); d = r(d);
   if (a === 1 && b === 0 && c === 0 && d === 1) return 0;
   if (a === 0 && b === 1 && c === -1 && d === 0) return 90;
@@ -2059,7 +2059,7 @@ async function detectIsobmffTracks(file: File) {
           // + reserved(8) + layer(2)+altGroup(2)+volume(2)+reserved(2)
           const matrixOff = d + (ver === 1 ? 4 + 8 + 8 + 4 + 4 + 8 : 4 + 4 + 4 + 4 + 4 + 8) + 8;
           if (matrixOff + 36 <= moovSize) {
-            const fx = (o) => view.getInt32(matrixOff + o) / 65536; // 16.16 fixed
+            const fx = (o: number) => view.getInt32(matrixOff + o) / 65536; // 16.16 fixed
             const a = fx(0), b = fx(4), c = fx(12), dd = fx(16);
             const rot = rotationFromMatrix(a, b, c, dd);
             if (rot) v.rotation = rot;
@@ -2088,7 +2088,7 @@ async function detectIsobmffTracks(file: File) {
         if (cfg.chroma) v.chroma = cfg.chroma;
         if (cfg.bitDepthLuma) v.bitDepth = Math.max(cfg.bitDepthLuma, cfg.bitDepthChroma || 0);
         if (cfg.fps) { v.fps = cfg.fps; v.fpsSource = cfg.fpsSource; }
-        if (cfg.temporalLayers > 1) v.temporalLayers = cfg.temporalLayers;
+        if (cfg.temporalLayers! > 1) v.temporalLayers = cfg.temporalLayers;
         // hev1 keeps its parameter sets in the stream, hvc1 only in the sample
         // entry - which decides whether a carved segment can decode standalone.
         if (codecFcc === 'hev1' || codecFcc === 'hvc1') v.paramSets = codecFcc === 'hvc1' ? 'out-of-band (hvc1)' : 'in-band (hev1)';
@@ -2263,7 +2263,7 @@ async function detectVideoTracks(file: File) {
 }
 
 // A "12.5 Mbps" / "640 kbps" label for a bits-per-second figure.
-function fmtBitrate(bps) {
+function fmtBitrate(bps: number) {
   if (!(bps > 0)) return '-';
   return bps >= 1_000_000 ? (bps / 1_000_000).toFixed(2) + ' Mbps' : Math.round(bps / 1000) + ' kbps';
 }
@@ -2271,7 +2271,7 @@ function fmtBitrate(bps) {
 // Append codec/rotation/HDR/audio-codec rows to an existing readout <table>,
 // next to the resolution/fps rows. Only adds rows that were actually found.
 // Wrapped by the caller in try/catch; itself defends against partial data.
-function appendTrackRows(tbl, tracks) {
+function appendTrackRows(tbl: HTMLTableElement, tracks: any) {
   if (!tracks) return;
   const v = tracks.video, a = tracks.audio;
   if (v) {
@@ -2356,7 +2356,7 @@ function appendTrackRows(tbl, tracks) {
   // does. Only list them when there is more than the one video + one audio pair
   // already described above.
   if (Array.isArray(tracks.tracks) && tracks.tracks.length > 2) {
-    const lines = tracks.tracks.map((t) => {
+    const lines = tracks.tracks.map((t: any) => {
       const bits = [t.kindName, t.codecLabel];
       if (t.width && t.height) bits.push(t.width + '×' + t.height);
       if (t.channels) bits.push(t.channels + 'ch');
@@ -2368,7 +2368,7 @@ function appendTrackRows(tbl, tracks) {
     });
     const trackRow = rowHelp('Tracks (' + tracks.tracks.length + ')', '-',
       'Every stream packaged inside this file. Matroska files often hold more than one soundtrack (different languages or mixes) and several subtitle tracks alongside the picture.');
-    const cell = trackRow.lastChild;
+    const cell = trackRow.lastChild!;
     cell.textContent = '';
     for (const line of lines) cell.appendChild(el('div', {}, line));
     tbl.appendChild(trackRow);
@@ -2380,7 +2380,7 @@ function appendTrackRows(tbl, tracks) {
 // A byte-range reader over a File for the recovery helpers (which are source-
 // agnostic: the same code runs over Node fs in tests).
 function fileRangeReader(file: File) {
-  return async (start, end) => new Uint8Array(await file.slice(start, end).arrayBuffer());
+  return async (start: number|undefined, end: number|undefined) => new Uint8Array(await file.slice(start, end).arrayBuffer());
 }
 
 // Recover playable video from a moov-less (truncated / unfinalised) MP4-MOV. The
@@ -2402,7 +2402,7 @@ function clearVideoPreviewBoot() {
   if (pv && pv.querySelector('.anr-inline-loader')) pv.innerHTML = '';
 }
 
-async function renderMoovlessRecovery(file: File, header, det, resultsEl: HTMLElement, signal) {
+async function renderMoovlessRecovery(file: File, header: any, det: any, resultsEl: HTMLElement, signal: AbortSignal) {
   const mctx = curVctx();   // preserve inline/compare when re-rendering the carved stream
   clearVideoPreviewBoot();
   resultsEl.innerHTML = '';
@@ -2438,7 +2438,7 @@ async function renderMoovlessRecovery(file: File, header, det, resultsEl: HTMLEl
 
   // Carve the whole mdat, prepend the parameter sets, wrap as a raw .h264/.h265
   // File and hand it to the normal raw-stream path (segmented player for big files).
-  async function startSalvage(paramSets, refInfo) {
+  async function startSalvage(paramSets: BlobPart, refInfo: any) {
     action.innerHTML = '';
     const useCodec = (refInfo && refInfo.codec) || codec;
     const lenSize = (refInfo && refInfo.lenSize) || 4;
@@ -2449,8 +2449,8 @@ async function renderMoovlessRecovery(file: File, header, det, resultsEl: HTMLEl
     try {
       await carveAvccToAnnexB(reader, det.mdatStart, det.mdatEnd, {
         codec: useCodec, lenSize, signal,
-        onChunk: (u8) => { blobs.push(new Blob([u8])); },
-        onProgress: (f, info) => {
+        onChunk: (u8: BlobPart) => { blobs.push(new Blob([u8])); },
+        onProgress: (f: number, info: any) => {
           const p = Math.floor(f * 100);
           if (p !== lastPct) {
             lastPct = p;
@@ -2510,7 +2510,7 @@ async function renderMoovlessRecovery(file: File, header, det, resultsEl: HTMLEl
     if (!ref) return;
     pick.textContent = ref.name;
     note.textContent = 'Reading codec setup from “' + ref.name + '”…';
-    let rp = null;
+    let rp: any = null;
     try { rp = await extractMp4ParamSets(fileRangeReader(ref), ref.size); } catch (_) {}
     if (!rp || !rp.paramSets) {
       note.textContent = 'Couldn’t read codec setup from that file. Pick a healthy, complete MP4/MOV from the same camera.';
@@ -2534,7 +2534,7 @@ async function renderMoovlessRecovery(file: File, header, det, resultsEl: HTMLEl
 // metadata read straight from the file, with a plain explanation of why it won't
 // play and how to make it playable. Degrades gracefully for non-ISOBMFF files
 // (shows name / size / container only).
-async function renderUnplayableVideoInfo(file: File, header, resultsEl: HTMLElement, signal, rawInfo?) {
+async function renderUnplayableVideoInfo(file: File, header: any, resultsEl: HTMLElement, signal: AbortSignal, rawInfo?: StreamInfo|null|undefined) {
   clearVideoPreviewBoot();
   const ctx = curVctx();
   let tracks = null;
@@ -2627,14 +2627,14 @@ async function renderUnplayableVideoInfo(file: File, header, resultsEl: HTMLElem
   // Advanced settings: resolution / frame rate / encode speed. Lower values are
   // dramatically faster (encode cost scales with pixels x frames). Hidden until
   // the Advanced button is pressed; defaults make the fast proxy.
-  const mkSel = (options, def) => {
+  const mkSel = (options: [string, string][], def: string) => {
     const s = el('select', { class: 'anr-select' }, options.map(([label, value]) => el('option', { value }, label)));
     s.value = def; return s;
   };
   const resSel = mkSel([['Full', '0'], ['2160p (4K)', '2160'], ['1440p', '1440'], ['1080p', '1080'], ['720p', '720'], ['480p', '480']], '720');
   const fpsSel = mkSel([['Original', '0'], ['60 fps', '60'], ['30 fps', '30'], ['24 fps', '24'], ['15 fps', '15']], '30');
   const spdSel = mkSel([['Turbo', 'turbo'], ['Fastest', 'ultrafast'], ['Fast', 'veryfast'], ['Balanced', 'faster'], ['Better quality', 'medium']], 'ultrafast');
-  const settingCol = (label, sel) => el('label', { class: 'anr-conv-setting' }, [el('span', {}, label), sel]);
+  const settingCol = (label: ElChild | ElChild[], sel: ElChild) => el('label', { class: 'anr-conv-setting' }, [el('span', {}, label), sel]);
   const convSettings = el('div', { class: 'anr-conv-settings', hidden: '' }, [
     settingCol('Resolution', resSel), settingCol('Frame rate', fpsSel), settingCol('Speed', spdSel),
     el('p', { class: 'anr-hint', style: 'margin:8px 0 0; flex-basis:100%;' },
@@ -2650,9 +2650,9 @@ async function renderUnplayableVideoInfo(file: File, header, resultsEl: HTMLElem
   const convBar = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const convLabel = el('div', { class: 'anr-progress-label' }, 'loading ffmpeg');
   const convWrap = el('div', { class: 'anr-progress', style: 'display:none;' }, [convBar, convLabel]);
-  const convSetBar = (frac) => {
+  const convSetBar = (frac: number) => {
     const ch = parseFloat(getComputedStyle(convBar).fontSize) * 0.6 || 8;
-    const total = Math.max(10, Math.floor((convBar.parentElement.clientWidth - ch * 2) / ch));
+    const total = Math.max(10, Math.floor((convBar.parentElement!.clientWidth - ch * 2) / ch));
     const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
     convBar.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' + ' '.repeat(total - filled) + ']';
   };
@@ -2673,8 +2673,8 @@ async function renderUnplayableVideoInfo(file: File, header, resultsEl: HTMLElem
       // this job actually starts, so it never claims to be converting while it waits.
       blob = await queueFFmpeg(
         () => { convBtn.textContent = 'Converting…'; return ffmpegTranscodeToH264(file,
-          (p) => { convLabel.textContent = 'loading ffmpeg'; convSetBar(p); },
-          (p) => { convLabel.textContent = 'converting'; convSetBar(p); },
+          (p: number) => { convLabel.textContent = 'loading ffmpeg'; convSetBar(p); },
+          (p: number) => { convLabel.textContent = 'converting'; convSetBar(p); },
           signal, convOpts); },
         () => { convBtn.textContent = 'Queued…'; convLabel.textContent = 'waiting for the other conversion to finish…'; });
     } catch (_) { blob = null; }
@@ -2743,7 +2743,7 @@ async function renderUnplayableVideoInfo(file: File, header, resultsEl: HTMLElem
       const frameFile = new File([frame.blob], basename + '_frame.jpg', { type: 'image/jpeg' });
       const analyseBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
         const pr = ctx.inline ? ctx.photoTarget() : revealPhotoSection();
-        renderPhoto(frameFile, pr, ctx.photoOpts({ sourceNote: 'First frame extracted from ' + file.name + ' (the video itself can’t be decoded in the browser).' }));
+        renderPhoto(frameFile, pr!, ctx.photoOpts({ sourceNote: 'First frame extracted from ' + file.name + ' (the video itself can’t be decoded in the browser).' }));
         ctx.afterPhoto();
       } }, 'Analyse in Photo section');
       prevCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [analyseBtn]));
@@ -2772,12 +2772,12 @@ async function renderUnplayableVideoInfo(file: File, header, resultsEl: HTMLElem
   if (unplayableAdvCard && !(signal && signal.aborted)) resultsEl.appendChild(unplayableAdvCard);
 }
 
-async function detectFpsWithFfmpeg(file: File, onProgress) {
+async function detectFpsWithFfmpeg(file: File, onProgress?: ((p: number) => void)|null) {
   const ff = await loadFFmpeg(onProgress);
   const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
   await ff.writeFile('probe', await fetchFile(file));
   let log = '';
-  ff.on('log', ({ message }) => { log += message + '\n'; });
+  ff.on('log', ({ message }: { message: string }) => { log += message + '\n'; });
   await ff.exec(['-i', 'probe', '-f', 'null', '-t', '2', '-']);
   await ff.deleteFile('probe');
   const m = log.match(/(\d+(?:\.\d+)?) fps/);
@@ -2787,13 +2787,13 @@ async function detectFpsWithFfmpeg(file: File, onProgress) {
   return null;
 }
 
-async function detectFps(file: File, fpsCell?) {
+async function detectFps(file: File, fpsCell?: HTMLTableCellElement|null|undefined) {
   const containerFps = await detectFpsFromContainer(file);
   if (containerFps) return containerFps;
   if (fpsCell) fpsCell.textContent = 'loading ffmpeg…';
   try {
     const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 30000));
-    const detect = detectFpsWithFfmpeg(file, (p) => {
+    const detect = detectFpsWithFfmpeg(file, (p: number) => {
       const pct = Math.round(p * 100);
       if (fpsCell) fpsCell.textContent = pct >= 100 ? 'initialising ffmpeg…' : 'loading ffmpeg… ' + pct + '%';
     });
@@ -2817,7 +2817,7 @@ async function detectFps(file: File, fpsCell?) {
 // `onProgress`, if given, is called with a 0..1 fraction before each sample.
 // Scrubbing a long or large clip takes a while, so every caller feeds it a
 // progress bar rather than leaving a bare "Detecting…" line on screen.
-async function detectSceneChanges(video, threshold, signal, collect, onProgress) {
+async function detectSceneChanges(video: HTMLVideoElement, threshold: number, signal: AbortSignal, collect: any[], onProgress?: ((p: number) => void)|null) {
   if (!isFinite(video.duration) || video.duration <= 0) return [];
 
   const dur = video.duration;
@@ -2832,12 +2832,12 @@ async function detectSceneChanges(video, threshold, signal, collect, onProgress)
   const cmpCanvas = document.createElement('canvas');
   cmpCanvas.width = tw;
   cmpCanvas.height = th;
-  const cmpCtx = cmpCanvas.getContext('2d', { willReadFrequently: true });
+  const cmpCtx = cmpCanvas.getContext('2d', { willReadFrequently: true })!;
 
   const thumbCanvas = document.createElement('canvas');
   thumbCanvas.width = tw;
   thumbCanvas.height = th;
-  const thumbCtx = thumbCanvas.getContext('2d');
+  const thumbCtx = thumbCanvas.getContext('2d')!;
 
   let prevData = null;
   const changes = [];
@@ -2902,7 +2902,7 @@ async function detectSceneChanges(video, threshold, signal, collect, onProgress)
 // Turn the per-sample colour/luma series into a content-timeline card: a movie
 // barcode (each sample -> one colour column), a brightness curve, and black-frame
 // / freeze-segment flags. Returns null when there's nothing worth showing.
-function buildContentTimelineCard(samples, dur, playerEl) {
+function buildContentTimelineCard(samples: string|any[], dur: number, playerEl: HTMLVideoElement) {
   if (!samples || samples.length < 2 || !isFinite(dur) || dur <= 0) return null;
 
   const n = samples.length;
@@ -2919,9 +2919,9 @@ function buildContentTimelineCard(samples, dur, playerEl) {
   const meanL = sumL / n;
 
   // Group consecutive flagged samples into [startTime, endTime] segments.
-  const groupRuns = (test) => {
-    const segs = [];
-    let run = null;
+  const groupRuns = (test: (i: number) => boolean) => {
+    const segs: { from: number; to: number; count: number }[] = [];
+    let run: { from: number; to: number; count: number }|null = null;
     for (let i = 0; i < n; i++) {
       if (test(i)) {
         if (!run) run = { from: samples[i].time, to: samples[i].time, count: 0 };
@@ -2931,11 +2931,11 @@ function buildContentTimelineCard(samples, dur, playerEl) {
     if (run) segs.push(run);
     return segs;
   };
-  const blackSegs = groupRuns((i) => samples[i].luma < BLACK_LUMA);
+  const blackSegs = groupRuns((i: number) => samples[i].luma < BLACK_LUMA);
   // Freeze needs at least a couple of near-identical consecutive frames (i>0 so a
   // diff exists); a lone still sample isn't a freeze.
-  const freezeSegsRaw = groupRuns((i) => i > 0 && samples[i].diff < FREEZE_DIFF);
-  const freezeSegs = freezeSegsRaw.filter((s) => s.count >= 2);
+  const freezeSegsRaw = groupRuns((i: number) => i > 0 && samples[i].diff < FREEZE_DIFF);
+  const freezeSegs = freezeSegsRaw.filter((s: { count: number }) => s.count >= 2);
 
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Content timeline',
@@ -2950,7 +2950,7 @@ function buildContentTimelineCard(samples, dur, playerEl) {
   // -- Movie barcode: N colour columns drawn 1px tall, stretched by CSS. --
   const bar = el('canvas', { width: String(n), height: '1',
     style: 'width:100%; height:56px; display:block; border:var(--bd-hairline); image-rendering:auto; cursor:pointer;' });
-  const bctx = bar.getContext('2d');
+  const bctx = bar.getContext('2d')!;
   if (bctx) {
     const img = bctx.createImageData(n, 1);
     for (let i = 0; i < n; i++) {
@@ -2972,7 +2972,7 @@ function buildContentTimelineCard(samples, dur, playerEl) {
   const GW = 640, GH = 90, pad = 4;
   const g = el('canvas', { width: String(GW), height: String(GH),
     style: 'width:100%; height:auto; display:block; border:var(--bd-hairline); border-top:0; background:var(--bg);' });
-  const gctx = g.getContext('2d');
+  const gctx = g.getContext('2d')!;
   if (gctx) {
     // Shade black-frame stretches first, behind the curve.
     gctx.fillStyle = 'rgba(220,60,60,0.18)';
@@ -2995,7 +2995,7 @@ function buildContentTimelineCard(samples, dur, playerEl) {
 
   // -- Readout. --
   const tbl = el('table', { class: 'anr-readout', style: 'margin-top:10px;' });
-  const pct = (l) => Math.round((l / 255) * 100);
+  const pct = (l: number) => Math.round((l / 255) * 100);
   tbl.appendChild(rowHelp('Brightness (mean)', pct(meanL) + '%  (luma ' + meanL.toFixed(0) + '/255)',
     'The average brightness of the sampled frames (measured as luma, the Rec. 709 standard). A very low value suggests the video is dark or underexposed overall.'));
   tbl.appendChild(row('Brightness range', pct(minL) + '% - ' + pct(maxL) + '%'));
@@ -3016,7 +3016,7 @@ function buildContentTimelineCard(samples, dur, playerEl) {
 }
 
 // Compact "0:03 - 0:07 (n)" list of timeline segments, joined for a readout cell.
-function segList(segs, dur) {
+function segList(segs: any[], dur: number) {
   return segs.map((s) => {
     const a = formatDuration(s.from), b = formatDuration(s.to);
     return (a === b ? a : a + ' - ' + b);
@@ -3028,7 +3028,7 @@ function segList(segs, dur) {
 // composited, so drawImage() returns a black canvas. requestVideoFrameCallback
 // fires only on a real painted frame; we gate every capture on it (with a
 // rAF + timeout fallback for browsers/situations where it's unavailable).
-function whenFramePainted(video) {
+function whenFramePainted(video: HTMLVideoElement) {
   return new Promise<void>((resolve) => {
     let done = false;
     const finish = () => { if (!done) { done = true; resolve(); } };
@@ -3052,10 +3052,10 @@ function whenFramePainted(video) {
 //     routinely needs longer to reach a distant keyframe, so tiles came out as
 //     duplicates of the previous one or as bare background.
 // So: wait for `seeked` first, and only then for a painted frame.
-function seekAndPaint(video, t, timeoutMs = 12000) {
+function seekAndPaint(video: HTMLVideoElement, t: number, timeoutMs = 12000) {
   return new Promise((resolve) => {
     let done = false, timer = 0;
-    const finish = (ok) => {
+    const finish = (ok: boolean) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
@@ -3094,7 +3094,7 @@ function seekAndPaint(video, t, timeoutMs = 12000) {
 // container/resolution/duration read straight off the loaded element, an
 // on-demand frame grab into the photo section, and a SHA-256. Returns true if
 // the player loaded (so the caller skips the error), false otherwise.
-async function renderVisibleVideoFallback(file: File, url, header, resultsEl: HTMLElement, signal) {
+async function renderVisibleVideoFallback(file: File, url: string, header: any, resultsEl: HTMLElement, signal: AbortSignal) {
   const ctx = curVctx();
   const playerCard = el('div', { class: 'anr-card', style: 'position:relative;' });
   playerCard.appendChild(el('h3', {}, 'Player'));
@@ -3115,7 +3115,7 @@ async function renderVisibleVideoFallback(file: File, url, header, resultsEl: HT
 
   const loaded = await new Promise((resolve) => {
     let done = false;
-    const finish = (ok) => { if (!done) { done = true; resolve(ok); } };
+    const finish = (ok: boolean) => { if (!done) { done = true; resolve(ok); } };
     playerEl.onloadedmetadata = () => finish(true);
     playerEl.onerror = () => finish(false);
     if (signal) signal.addEventListener('abort', () => finish(false));
@@ -3159,8 +3159,8 @@ async function renderVisibleVideoFallback(file: File, url, header, resultsEl: HT
 
   // Detect FPS
   let detectedFps = 30;
-  const fpsCell = fpsRow.querySelector('td');
-  let frameControls = null;
+  const fpsCell = fpsRow.querySelector('td')!;
+  let frameControls: any = null;
   detectFps(file, fpsCell).then((fps) => {
     fpsCell.textContent = fps != null ? fps + ' fps' : 'N/A';
     if (fps != null) { detectedFps = fps; if (frameControls) frameControls.refresh(); }
@@ -3210,7 +3210,7 @@ async function renderVisibleVideoFallback(file: File, url, header, resultsEl: HT
       const gc = document.createElement('canvas');
       gc.width = cols * tw + (cols + 1) * pad;
       gc.height = rows * th + (rows + 1) * pad;
-      const ctx = gc.getContext('2d');
+      const ctx = gc.getContext('2d')!;
       ctx.fillStyle = '#111'; ctx.fillRect(0, 0, gc.width, gc.height);
       const safeDur = Math.max(0, dur - 0.1);
       const prog = stepLoader('Capturing frame 1 of ' + total + '…');
@@ -3252,11 +3252,11 @@ async function renderVisibleVideoFallback(file: File, url, header, resultsEl: HT
         await new Promise(r => { playerEl.addEventListener('loadedmetadata', r, { once: true }); setTimeout(r, 6000); });
       }
       if (signal && signal.aborted) return;
-      let changes = [];
-      const contentSamples = [];
+      let changes: string|any[] = [];
+      const contentSamples: any[] = [];
       try {
         changes = await detectSceneChanges(playerEl, 55, signal, contentSamples,
-          (f) => prog.set(f, 'Scanning for scene changes… ' + Math.round(f * 100) + '%'));
+          (f: number) => prog.set(f, 'Scanning for scene changes… ' + Math.round(f * 100) + '%'));
       } catch (_) {}
       try { playerEl.currentTime = 0; playerEl.pause(); } catch (_) {}
       sceneBadge.remove();
@@ -3378,7 +3378,7 @@ async function renderVisibleVideoFallback(file: File, url, header, resultsEl: HT
 // One part of the Advanced card - a flat labelled block, not a disclosure of its
 // own (the card is the single dropdown). The legacy `open` argument is accepted and
 // ignored: with no per-part folding there is no headline part to pre-open.
-function vAdvPanel(title, helpHtml, _open?) {
+function vAdvPanel(title: string, helpHtml: string, _open?: boolean|undefined) {
   const det = el('div', { class: 'anr-adv-part' });
   const head = el('div', { class: 'anr-adv-parthead' }, title + (helpHtml ? ' ' : ''));
   const body = el('div');
@@ -3396,7 +3396,7 @@ function vAdvPanel(title, helpHtml, _open?) {
 
 // Render the atom tree. Container nodes become nested <details> (the top level
 // open by default); leaves are single indented rows. Monospace, hairline-indented.
-function renderBoxTree(nodes, container, depth) {
+function renderBoxTree(nodes: any[], container: HTMLDivElement, depth: number) {
   for (const n of nodes) {
     const gloss = BOX_GLOSS[n.type] || '';
     const metaText = (gloss ? gloss + '  ·  ' : '') + fmtBytes(n.size) + '  ·  @' + n.offset.toLocaleString();
@@ -3418,11 +3418,11 @@ function renderBoxTree(nodes, container, depth) {
 
 // A per-second bitrate bar chart on a themed canvas (peak-per-bucket when there
 // are more seconds than pixels). Static like the photo ELA canvases.
-function renderBitrateGraph(perSecKbps) {
+function renderBitrateGraph(perSecKbps: string|any[]) {
   const W = 640, H = 130, pad = 5;
   const cv = el('canvas', { width: String(W), height: String(H),
     style: 'width:100%; height:auto; display:block; border:var(--bd-hairline); background:var(--bg);' });
-  const ctx = cv.getContext('2d');
+  const ctx = cv.getContext('2d')!;
   if (!ctx) return cv;
   const cs = getComputedStyle(document.body);
   const accent = (cs.getPropertyValue('--accent') || '').trim() || (cs.getPropertyValue('--fg') || '').trim() || '#3a7';
@@ -3463,12 +3463,12 @@ async function buildVideoAdvancedCard(file: File) {
         'Faststart puts the file’s index (the moov) before the video data so playback can start before the whole file has downloaded. Editors and upload tools add it; most cameras write the index last, so an original camera file often will not have it.'));
     }
     if (s.ftyp && s.ftyp.majorBrand) {
-      const brands = (s.ftyp.brands || []).filter((b) => b && b !== s.ftyp.majorBrand);
+      const brands = (s.ftyp.brands || []).filter((b: string) => b && b !== s.ftyp.majorBrand);
       rows.push(rowHelp('Brand', s.ftyp.majorBrand + (brands.length ? '  (' + brands.join(', ') + ')' : ''),
         'Codes near the start of the file (the ftyp brands) that say which format standard it follows, such as mp42, isom, qt or M4V. They hint at which tool wrote the file and which device it was meant for.'));
     }
-    if (isFinite(s.movieDurationSec) && s.movieDurationSec > 0)
-      rows.push(row('Movie duration', formatDuration(s.movieDurationSec)));
+    if (isFinite(s.movieDurationSec!) && s.movieDurationSec! > 0)
+      rows.push(row('Movie duration', formatDuration(s.movieDurationSec!)));
     const edited = s.tracks.filter((t) => t.editList && t.editList.entries > 1).map((t) => 'Track ' + t.index);
     if (edited.length)
       rows.push(rowHelp('Edit lists', edited.join(', ') + '  (multi-segment)',
@@ -3571,7 +3571,7 @@ async function buildVideoAdvancedCard(file: File) {
 }
 
 // The Advanced > "Bitstream & authenticity" panel, built from analyzeBitstream().
-function appendBitstreamPanel(card, bs) {
+function appendBitstreamPanel(card: HTMLDivElement, bs: any) {
   const { det, body } = vAdvPanel('Bitstream & authenticity',
     'Read from the actual H.264/H.265 stream, not just the container: the codec’s own SPS, an encoder fingerprint, HDR mastering values and any Content Credentials.');
 
@@ -3597,7 +3597,7 @@ function appendBitstreamPanel(card, bs) {
 
   // Consistency verdict
   if (bs.consistency && bs.consistency.length) {
-    const mism = bs.consistency.filter((c) => !c.match);
+    const mism = bs.consistency.filter((c: string) => !c.match);
     body.appendChild(el('div', { class: 'anr-readout-section' }, 'Stream vs container'));
     body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
       mism.length
@@ -3652,7 +3652,7 @@ function appendBitstreamPanel(card, bs) {
 
 // Tears down the previous video's persistent listeners/observers when a new
 // file is analysed.
-let videoRenderAbort = null;
+let videoRenderAbort: AbortController|null = null;
 
 export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any = {}) {
   // Inline mode (compare view's side-by-side panels): isolate the abort controller
@@ -3665,7 +3665,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
   // slots, isolated abort controller, no autoscroll/player-sync). Video inline mode
   // is only ever the compare view, so a panel is always the compare (full) case.
   const full = !inline || !!opts.compare;
-  let renderSignal;
+  let renderSignal: AbortSignal;
   if (inline) {
     renderSignal = new AbortController().signal;
   } else {
@@ -3677,7 +3677,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
   // Tag each sub-slot with its kind so the compare view can file the extracted
   // audio under the Sound section and the grabbed frame under the Photo section,
   // matching the normal single-file layout.
-  const localSlot = (key) => localSlots[key] || (localSlots[key] = resultsEl.appendChild(el('div', { class: 'anr-results anr-cmp-subslot anr-cmp-sub-' + key })));
+  const localSlot = (key: string) => localSlots[key] || (localSlots[key] = resultsEl.appendChild(el('div', { class: 'anr-results anr-cmp-subslot anr-cmp-sub-' + key })));
   const vctx: VideoCtx = inline ? {
     inline: true,
     compare: !!opts.compare,
@@ -3984,7 +3984,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
         new Uint8Array(aviData.videoFrames[0].slice(0, 2))[0] === 0xFF &&
         new Uint8Array(aviData.videoFrames[0].slice(0, 2))[1] === 0xD8;
       if (framesAreJpeg) {
-        const frames = aviData.videoFrames;
+        const frames = aviData!.videoFrames;
         const frameCard = el('div', { class: 'anr-card' });
         frameCard.appendChild(el('h3', {}, 'Frames'));
         frameCard.appendChild(el('p', { class: 'anr-hint' },
@@ -3998,9 +3998,9 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
         frameCard.appendChild(frameImg);
 
         let currentFrame = 0;
-        let onFrameShown = null;   // set by the playback controls to sync the scrubber
+        let onFrameShown: ((idx: number) => void)|null = null;   // set by the playback controls to sync the scrubber
         const frameLabel = el('span', { class: 'anr-hint' }, `Frame 1 / ${frames.length}`);
-        function showFrame(idx) {
+        function showFrame(idx: number) {
           currentFrame = idx;
           URL.revokeObjectURL(frameImg.src);
           frameImg.src = URL.createObjectURL(new Blob([frames[idx]], { type: 'image/jpeg' }));
@@ -4012,37 +4012,37 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
         const lastIdx = frames.length - 1;
         const fps = (avi.fps && avi.fps > 0 && avi.fps <= 120) ? avi.fps : 15;
         const frameMs = 1000 / fps;
-        const fmtTc = (sec) => formatDuration(sec);
+        const fmtTc = (sec: number) => formatDuration(sec);
 
         // The AVI's own PCM audio (when present) plays in sync with the frames -
         // it becomes the master clock and the frames follow it. Same decoded PCM
         // the Sound section offers; encoded to a WAV the <audio> element can play.
         const hasAudio = !!(aviData && aviData.audioBuffer);
-        let frameAudioEl = null, audioDur = 0;
+        let frameAudioEl: HTMLAudioElement|null = null, audioDur = 0;
         if (hasAudio) {
-          const wavUrl = URL.createObjectURL(encodeWav(aviData.audioBuffer));
+          const wavUrl = URL.createObjectURL(encodeWav(aviData!.audioBuffer));
           frameAudioEl = el('audio', { src: wavUrl });
           frameAudioEl.style.display = 'none';
           frameAudioEl.loop = true;
-          audioDur = aviData.audioBuffer.duration;
+          audioDur = aviData!.audioBuffer.duration;
           frameCard.appendChild(frameAudioEl);
-          renderSignal.addEventListener('abort', () => { try { frameAudioEl.pause(); } catch (_) {} URL.revokeObjectURL(wavUrl); });
+          renderSignal.addEventListener('abort', () => { try { frameAudioEl!.pause(); } catch (_) {} URL.revokeObjectURL(wavUrl); });
         }
         const totalTime = hasAudio ? audioDur : frames.length / fps;
         // Timestamp of a frame. With sound we spread the frames evenly across the
         // audio's real duration (so they stay synced even if the header frame rate
         // is missing or wrong); silent clips use the nominal fps.
-        const frameTimeOf = (idx) => hasAudio
+        const frameTimeOf = (idx: number) => hasAudio
           ? (lastIdx > 0 ? (idx / lastIdx) * audioDur : 0)
           : idx / fps;
-        const frameAtTime = (t) => hasAudio
+        const frameAtTime = (t: number) => hasAudio
           ? Math.round((audioDur > 0 ? t / audioDur : 0) * lastIdx)
           : Math.round(t * fps);
 
         // Seek to a frame, keeping the audio clock aligned to it.
-        const seekToFrame = (idx) => {
+        const seekToFrame = (idx: number) => {
           idx = Math.max(0, Math.min(lastIdx, idx));
-          if (hasAudio) { try { frameAudioEl.currentTime = Math.min(audioDur, frameTimeOf(idx)); } catch (_) {} }
+          if (hasAudio) { try { frameAudioEl!.currentTime = Math.min(audioDur, frameTimeOf(idx)); } catch (_) {} }
           showFrame(idx);
         };
 
@@ -4064,21 +4064,21 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
         }}, 'Frame grab');
 
         // Contact sheet (>= 8 frames) - built here so it shares the action row.
-        let sheetBtn = null;
+        let sheetBtn: HTMLButtonElement|null = null;
         const sheetOut = el('div');
         if (frames.length >= 8) {
           sheetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Generate contact sheet');
           sheetBtn.addEventListener('click', async () => {
-            sheetBtn.disabled = true;
-            sheetBtn.textContent = 'Generating…';
+            sheetBtn!.disabled = true;
+            sheetBtn!.textContent = 'Generating…';
             const cols = 4, rows = 2, total = cols * rows;
-            const tw = Math.round(avi.width * (320 / Math.max(avi.width, avi.height)));
-            const th = Math.round(avi.height * (320 / Math.max(avi.width, avi.height)));
+            const tw = Math.round(avi.width! * (320 / Math.max(avi.width!, avi.height!)));
+            const th = Math.round(avi.height! * (320 / Math.max(avi.width!, avi.height!)));
             const pad = 4;
             const gridCanvas = document.createElement('canvas');
             gridCanvas.width = cols * tw + (cols + 1) * pad;
             gridCanvas.height = rows * th + (rows + 1) * pad;
-            const ctx = gridCanvas.getContext('2d');
+            const ctx = gridCanvas.getContext('2d')!;
             ctx.fillStyle = '#111';
             ctx.fillRect(0, 0, gridCanvas.width, gridCanvas.height);
             for (let i = 0; i < total; i++) {
@@ -4092,8 +4092,8 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
             }
             sheetOut.innerHTML = '';
             sheetOut.appendChild(sheetImg(gridCanvas.toDataURL('image/png')));
-            sheetBtn.disabled = false;
-            sheetBtn.textContent = 'Generate contact sheet';
+            sheetBtn!.disabled = false;
+            sheetBtn!.textContent = 'Generate contact sheet';
           });
         }
 
@@ -4113,7 +4113,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
           // master clock and the frames follow it; silent clips step on an fps
           // timer and loop. Either way every tick decodes a full JPEG, so a big,
           // fast, long clip can hit the CPU hard; warn when that's likely.
-          const mpPerSec = ((avi.width * avi.height) / 1_000_000) * fps;
+          const mpPerSec = ((avi.width! * avi.height!) / 1_000_000) * fps;
           const heavy = mpPerSec > 120 || frames.length > 600;
 
           // Reuse the site's stylised transport (.anr-player) - the same play
@@ -4133,14 +4133,14 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
           // skipped frames and surface them on the counter line (hidden at zero).
           let droppedFrames = 0;
           const dropOut = el('span', { class: 'anr-frame-drops', hidden: 'hidden' }, '');
-          const bumpDrops = (n) => {
+          const bumpDrops = (n: number) => {
             if (!playing || n <= 0) return;
             if (n > fps * 2) return;   // a multi-second leap is a tab-switch/seek, not a decode hiccup
             droppedFrames += n;
             dropOut.hidden = false;
             dropOut.textContent = ` · ${droppedFrames} dropped`;
           };
-          const setFrameFromTime = (t) => {
+          const setFrameFromTime = (t: number) => {
             const idx = Math.max(0, Math.min(lastIdx, frameAtTime(t)));
             if (idx !== currentFrame) {
               bumpDrops(idx - currentFrame - 1);   // a forward jump past +1 means frames were skipped
@@ -4151,14 +4151,14 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
             playing = false;
             if (rafId) cancelAnimationFrame(rafId);
             rafId = 0;
-            if (hasAudio) { try { frameAudioEl.pause(); } catch (_) {} }
+            if (hasAudio) { try { frameAudioEl!.pause(); } catch (_) {} }
             playBtn.textContent = '▶';
             playBtn.setAttribute('aria-label', 'Play');
           };
-          const loop = (ts) => {
+          const loop = (ts: number) => {
             if (!playing) return;
             if (hasAudio) {
-              setFrameFromTime(frameAudioEl.currentTime);   // audio drives the frame
+              setFrameFromTime(frameAudioEl!.currentTime);   // audio drives the frame
             } else if (ts - lastTs >= frameMs) {
               // Catch up to wall-clock: advance as many frames as actually elapsed
               // (carrying the sub-frame remainder) so a slow tick skips ahead and
@@ -4179,8 +4179,8 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
             playBtn.textContent = '❚❚';
             playBtn.setAttribute('aria-label', 'Pause');
             if (hasAudio) {
-              if (frameAudioEl.currentTime >= audioDur - 0.05) { try { frameAudioEl.currentTime = 0; } catch (_) {} }
-              frameAudioEl.play().catch(() => {});
+              if (frameAudioEl!.currentTime >= audioDur - 0.05) { try { frameAudioEl!.currentTime = 0; } catch (_) {} }
+              frameAudioEl!.play().catch(() => {});
             }
             rafId = requestAnimationFrame((ts) => { lastTs = ts; loop(ts); });
           });
@@ -4188,19 +4188,19 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
           // Click or drag the track to seek frames (and audio) together - the same
           // gesture as the audio/video scrubber (makePlayer). Window listeners live
           // only during a drag so they don't pile up across files.
-          const seekFromX = (clientX) => {
+          const seekFromX = (clientX: number) => {
             const rect = trackEl.getBoundingClientRect();
             const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
             seekToFrame(Math.round(frac * lastIdx));
           };
           let dragging = false;
-          const onMove = (e) => { if (dragging) seekFromX(e.clientX); };
+          const onMove = (e: MouseEvent) => { if (dragging) seekFromX(e.clientX); };
           const onUp = () => { dragging = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
           trackEl.addEventListener('mousedown', (e) => {
             dragging = true; stop(); seekFromX(e.clientX); e.preventDefault();
             window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
           });
-          const onTMove = (e) => { if (dragging && e.touches[0]) { e.preventDefault(); seekFromX(e.touches[0].clientX); } };
+          const onTMove = (e: TouchEvent) => { if (dragging && e.touches[0]) { e.preventDefault(); seekFromX(e.touches[0].clientX); } };
           const onTEnd = () => { dragging = false; window.removeEventListener('touchmove', onTMove); window.removeEventListener('touchend', onTEnd); };
           trackEl.addEventListener('touchstart', (e) => {
             dragging = true; stop(); seekFromX(e.touches[0].clientX); e.preventDefault();
@@ -4209,7 +4209,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
 
           // Keep the fill, counter and timecode in step with every frame change
           // (play, Prev/Next, or a direct seek). Time is the frame's own timestamp.
-          onFrameShown = (idx) => {
+          onFrameShown = (idx: number) => {
             const t = frameTimeOf(idx);
             setPlayerFill(fillEl, totalTime > 0 ? t / totalTime : 0);
             timeEl.textContent = `${fmtTc(t)} / ${fmtTc(totalTime)}`;
@@ -4227,8 +4227,8 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
             const soundOnBtn = el('button', { type: 'button', class: 'is-active' }, 'SOUND');
             const soundOffBtn = el('button', { type: 'button' }, 'MUTED');
             soundToggle.appendChild(soundOnBtn); soundToggle.appendChild(soundOffBtn);
-            const setSound = (on) => {
-              frameAudioEl.muted = !on;
+            const setSound = (on: boolean) => {
+              frameAudioEl!.muted = !on;
               soundOnBtn.classList.toggle('is-active', on);
               soundOffBtn.classList.toggle('is-active', !on);
             };
@@ -4329,7 +4329,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
     const pscale = Math.min(1, 1280 / Math.max(vw, vh));
     pcv.width = Math.round(vw * pscale);
     pcv.height = Math.round(vh * pscale);
-    pcv.getContext('2d').drawImage(probe, 0, 0, pcv.width, pcv.height);
+    pcv.getContext('2d')!.drawImage(probe, 0, 0, pcv.width, pcv.height);
     posterUrl = pcv.toDataURL('image/jpeg', 0.85);
   }
 
@@ -4362,11 +4362,11 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
   // start with no decoded frame to grab. The button itself is mounted after the
   // player is built (below), and prefers the player's CURRENT frame at click time.
   const photoResultsEl = vctx.photoTarget();
-  let firstFrameFile = null;
+  let firstFrameFile: File|null = null;
   if (photoResultsEl && vw && vh) {
     const fcv = document.createElement('canvas');
     fcv.width = vw; fcv.height = vh;
-    fcv.getContext('2d').drawImage(probe, 0, 0, vw, vh);
+    fcv.getContext('2d')!.drawImage(probe, 0, 0, vw, vh);
     fcv.toBlob(blob => { if (blob) firstFrameFile = new File([blob], 'frame_0.000s.png', { type: 'image/png' }); }, 'image/png');
   }
 
@@ -4424,7 +4424,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
         const cv = document.createElement('canvas');
         cv.width = playerEl.videoWidth; cv.height = playerEl.videoHeight;
         try {
-          cv.getContext('2d').drawImage(playerEl, 0, 0, cv.width, cv.height);
+          cv.getContext('2d')!.drawImage(playerEl, 0, 0, cv.width, cv.height);
           cv.toBlob(blob => {
             const f = blob ? new File([blob], `frame_${t.toFixed(3)}s.png`, { type: 'image/png' }) : firstFrameFile;
             if (f) renderPhoto(f, photoResultsEl, vctx.photoOpts({ sourceNote: 'Frame captured at ' + t.toFixed(3) + 's from ' + (file.name || 'the video') + '.' }));
@@ -4503,7 +4503,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
 
-  const fpsCell = fpsRow.querySelector('td');
+  const fpsCell = fpsRow.querySelector('td')!;
   // Show the ORIGINAL file's frame rate in File info (the proxy may be fps-capped).
   detectFps(analysisFile, fpsCell).then((fps) => {
     fpsCell.textContent = fps != null ? fps + ' fps' : 'N/A';
@@ -4613,7 +4613,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
       const gridCanvas = document.createElement('canvas');
       gridCanvas.width = gridW;
       gridCanvas.height = gridH;
-      const ctx = gridCanvas.getContext('2d');
+      const ctx = gridCanvas.getContext('2d')!;
       ctx.fillStyle = '#111';
       ctx.fillRect(0, 0, gridW, gridH);
 
@@ -4662,7 +4662,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
 
     // Generate at most once; reuse the in-flight or finished promise. The button
     // and the data export both go through this.
-    let sheetDone = false, sheetPromise = null;
+    let sheetDone = false, sheetPromise: Promise<void>|null = null;
     function ensureSheet() {
       if (sheetDone) return Promise.resolve();
       if (sheetPromise) return sheetPromise;
@@ -4701,7 +4701,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
     // Detection seeks a video element around, so it runs on an off-screen element
     // (never the visible player - the user can scrub/play while it runs). Large
     // videos can be slow to walk, so they don't auto-run: a button triggers them.
-    function renderSceneResults(changes) {
+    function renderSceneResults(changes: string|any[]) {
       sceneOut.innerHTML = '';
       sceneOut.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:10px;' },
         changes.length
@@ -4737,15 +4737,15 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
       }
     }
 
-    async function detectAndRender(videoEl, removeAfter) {
+    async function detectAndRender(videoEl: HTMLVideoElement, removeAfter: boolean) {
       const prog = stepLoader('Scanning for scene changes…');
       sceneOut.innerHTML = '';
       sceneOut.appendChild(prog.node);
-      let changes = [];
-      const contentSamples = [];
+      let changes: string|any[] = [];
+      const contentSamples: any[] = [];
       try {
         changes = await detectSceneChanges(videoEl, 55, renderSignal, contentSamples,
-          (f) => prog.set(f, 'Scanning for scene changes… ' + Math.round(f * 100) + '%'));
+          (f: number) => prog.set(f, 'Scanning for scene changes… ' + Math.round(f * 100) + '%'));
       } catch (_) {}
       if (removeAfter) { try { videoEl.removeAttribute('src'); videoEl.load(); } catch (_) {} videoEl.remove(); }
       sceneBadge.remove();
@@ -4941,10 +4941,11 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
 }
 
 // ---------- setup ----------
-export function initVideo({ dropEl, inputEl, resultsEl, onFile }) {
+export function initVideo({ dropEl, inputEl, resultsEl, onFile }: { dropEl: HTMLElement; inputEl: HTMLInputElement; resultsEl: HTMLElement; onFile?: (f: File) => void }) {
   const handle = onFile || ((file: File) => renderVideo(file, resultsEl));
   inputEl.addEventListener('change', (e) => {
-    const file = e.target.files && e.target.files[0];
+    const t = e.target as HTMLInputElement;
+    const file = t.files && t.files[0];
     if (file) handle(file);
     inputEl.value = '';
   });

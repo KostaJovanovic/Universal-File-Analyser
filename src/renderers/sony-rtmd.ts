@@ -30,11 +30,11 @@ const ACCEL_LSB_PER_G = 8192;       // Sony accelerometer scale (z ~ 1 g at rest
 const MAX_FRAMES = 600;             // cap rtmd samples read for the trace (decimated when exceeded)
 const MAX_MOOV = 32 * 1024 * 1024;  // sanity cap on the moov we'll buffer
 
-const fcc = (dv, p) => String.fromCharCode(dv.getUint8(p), dv.getUint8(p + 1), dv.getUint8(p + 2), dv.getUint8(p + 3));
+const fcc = (dv: DataView<ArrayBuffer>, p: number) => String.fromCharCode(dv.getUint8(p), dv.getUint8(p + 1), dv.getUint8(p + 2), dv.getUint8(p + 3));
 
 // Parse the immediate child boxes in [start,end) of a DataView. Handles 64-bit
 // extended sizes and size==0 (runs to end).
-function parseBoxes(dv, start, end) {
+function parseBoxes(dv: DataView<ArrayBuffer>, start: number, end: number) {
   const out = [];
   let p = start;
   while (p + 8 <= end) {
@@ -51,11 +51,11 @@ function parseBoxes(dv, start, end) {
 }
 
 // Recursive box search (same container set the video renderer uses).
-function findAllBoxes(dv, start, end, type) {
+function findAllBoxes(dv: DataView<ArrayBuffer>, start: number, end: number, type: string) {
   const result = [], stack = [{ s: start, e: end }];
   const containers = new Set(['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'meta']);
   while (stack.length) {
-    const { s, e } = stack.pop();
+    const { s, e } = stack.pop()!;
     for (const b of parseBoxes(dv, s, e)) {
       if (b.type === type) result.push(b);
       if (containers.has(b.type)) stack.push({ s: b.offset + b.headerSize, e: b.offset + b.size });
@@ -84,11 +84,11 @@ async function findMoov(file: File) {
 }
 
 // Read the sample table for a track (stbl) into absolute file offsets + sizes.
-function sampleTable(dv, trakStart, trakEnd) {
-  const box = (t) => findAllBoxes(dv, trakStart, trakEnd, t)[0];
+function sampleTable(dv: DataView<ArrayBuffer>, trakStart: number, trakEnd: number) {
+  const box = (t: string) => findAllBoxes(dv, trakStart, trakEnd, t)[0];
   const stsz = box('stsz'), stsc = box('stsc'), stco = box('stco'), co64 = box('co64'), stts = box('stts');
   if (!stsz || !stsc || !(stco || co64)) return null;
-  const p = (b) => b.offset + b.headerSize;
+  const p = (b: any) => b.offset + b.headerSize;
   // stsz: ver/flags(4) sample_size(4) count(4) [sizes]
   let o = p(stsz) + 4;
   const uniform = dv.getUint32(o); const count = dv.getUint32(o + 4); o += 8;
@@ -122,7 +122,7 @@ function sampleTable(dv, trakStart, trakEnd) {
 }
 
 // Pull the 0x... TLV map out of one rtmd sample (Sony Process_rtmd walk).
-function rtmdTags(buf) {
+function rtmdTags(buf: Uint8Array) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const end = buf.length;
   const tags: any = {};
@@ -141,7 +141,7 @@ function rtmdTags(buf) {
 }
 
 // Read an IMU tag's int16 triples (skips the 8-byte [count][stride] header).
-function imuTriples(dv, span) {
+function imuTriples(dv: DataView<any>, span: any) {
   if (!span) return null;
   const [start, len] = span;
   const out = [];
@@ -151,17 +151,17 @@ function imuTriples(dv, span) {
   return out.length ? out : null;
 }
 
-const WB = { 1: 'Incandescent', 2: 'Fluorescent', 4: 'Daylight', 5: 'Cloudy', 6: 'Custom / Shade', 255: 'Preset' };
+const WB: Record<number, string> = { 1: 'Incandescent', 2: 'Fluorescent', 4: 'Daylight', 5: 'Cloudy', 6: 'Custom / Shade', 255: 'Preset' };
 
 // Decode a small set of friendly scalar fields from the first sample.
-function scalarFields(dv, tags) {
+function scalarFields(dv: DataView<any>, tags: any) {
   const f: any = {};
-  const u32 = (t) => tags[t] && dv.getUint32(tags[t][0]);
-  const u8 = (t) => tags[t] && dv.getUint8(tags[t][0]);
+  const u32 = (t: number) => tags[t] && dv.getUint32(tags[t][0]);
+  const u8 = (t: number) => tags[t] && dv.getUint8(tags[t][0]);
   const iso = u32(0xe301); if (iso) f.ISO = iso;
   const wb = u8(0xe303); if (wb != null && WB[wb]) f['White balance'] = WB[wb];
   if (tags[0xe304]) {                 // DateTime: skip 1, BCD yyyy mm dd hh mm ss
-    const d = tags[0xe304][0], hx = (o, n) => { let s = ''; for (let i = 0; i < n; i++) s += dv.getUint8(o + i).toString(16).padStart(2, '0'); return s; };
+    const d = tags[0xe304][0], hx = (o: number, n: number) => { let s = ''; for (let i = 0; i < n; i++) s += dv.getUint8(o + i).toString(16).padStart(2, '0'); return s; };
     const yr = hx(d + 1, 2), mo = hx(d + 3, 1), da = hx(d + 4, 1), hh = hx(d + 5, 1), mm = hx(d + 6, 1), ss = hx(d + 7, 1);
     if (/^\d{4}$/.test(yr)) f['Recorded'] = `${yr}-${mo}-${da} ${hh}:${mm}:${ss}`;
   }
@@ -187,7 +187,7 @@ async function openRtmd(file: File) {
 }
 
 // Read + decode one rtmd sample into gyro / accel int16 triples + scalar fields.
-async function readImuSample(file: File, off, len) {
+async function readImuSample(file: File, off: number, len: number) {
   let buf;
   try { buf = new Uint8Array(await file.slice(off, off + len).arrayBuffer()); } catch (_) { return null; }
   const { dv, tags } = rtmdTags(buf);
@@ -204,7 +204,7 @@ export async function extractSonyGyro(file: File) {
   const stride = Math.max(1, Math.ceil(total / MAX_FRAMES));
   const fps = table.fps || 30;
 
-  const gyro = { x: [], y: [], z: [] }, accel = { x: [], y: [], z: [] }, t = [];
+  const gyro: { x: number[]; y: number[]; z: number[] } = { x: [], y: [], z: [] }, accel: { x: number[]; y: number[]; z: number[] } = { x: [], y: [], z: [] }, t: number[] = [];
   let perFrame = 0, hasGyro = false, hasAccel = false, scalars = null;
 
   for (let fi = 0; fi < total; fi += stride) {
@@ -240,7 +240,7 @@ export async function extractSonyGyro(file: File) {
 // int16, with the original time stamp. Used by the CSV / Gyroflow exporters.
 const MAX_EXPORT_FRAMES = 36000;   // ~20 min at 30 fps - guards memory on huge clips
 
-export async function collectSonyImu(file: File, onProgress) {
+export async function collectSonyImu(file: File, onProgress: (done: number, total: number) => void) {
   const table = await openRtmd(file);
   if (!table) return null;
   const fps = table.fps || 30;
@@ -276,7 +276,7 @@ const GYRO_DPS_PER_LSB = 2000 / 32768;                 // assumed ±2000 deg/s f
 const GYRO_RAD_PER_LSB = GYRO_DPS_PER_LSB * Math.PI / 180;
 
 // Plain CSV: time + raw gyro + accelerometer in g. Universally readable.
-function toCSV(full) {
+function toCSV(full: any) {
   const out = [
     '# Sony rtmd IMU export - Analyser',
     '# gyro_* = raw sensor counts; accel_*_g = g (raw / ' + ACCEL_LSB_PER_G + ')',
@@ -292,7 +292,7 @@ function toCSV(full) {
 
 // Gyroflow .gcsv: raw integer samples with scale factors in the header. Loads
 // straight into Gyroflow and other gcsv-aware stabilisers.
-function toGCSV(full, name) {
+function toGCSV(full: any, name: string) {
   const out = [
     'GYROFLOW IMU LOG',
     'version,1.3',
@@ -309,22 +309,22 @@ function toGCSV(full, name) {
   return out.join('\n');
 }
 
-function downloadText(filename, text) {
+function downloadText(filename: string, text: BlobPart) {
   downloadBlob(filename, new Blob([text], { type: 'text/plain' }));
 }
 
 // ---------------------------------------------------------------------------
 // Visualisation: a card with stats + line traces for gyro and accelerometer.
-const range = (arrs) => { let lo = Infinity, hi = -Infinity; for (const a of arrs) for (const v of a) { if (v < lo) lo = v; if (v > hi) hi = v; } return [lo, hi]; };
+const range = (arrs: any[]) => { let lo = Infinity, hi = -Infinity; for (const a of arrs) for (const v of a) { if (v < lo) lo = v; if (v > hi) hi = v; } return [lo, hi]; };
 
 const TRACE_COLORS = ['#e0533a', '#3ba776', '#3b82c4'];   // x/pitch, y/roll, z/yaw
 const MAX_CANVAS_W = 30000;                               // browser canvas width ceiling
 
-const fmtSec = (s) => (s >= 60 ? Math.floor(s / 60) + ':' + String(Math.round(s % 60)).padStart(2, '0')
+const fmtSec = (s: number) => (s >= 60 ? Math.floor(s / 60) + ':' + String(Math.round(s % 60)).padStart(2, '0')
   : (Number.isInteger(s) ? s + 's' : s.toFixed(s < 1 ? 2 : 1) + 's'));
 
 // Nice time-grid tick positions (seconds) so labels stay ~60 px apart at this zoom.
-function timeGrid(duration, trackW) {
+function timeGrid(duration: number, trackW: number) {
   const pps = trackW / (duration || 1);
   const STEPS = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 20, 30, 60, 120, 300, 600];
   const step = STEPS.find((s) => s * pps >= 60) || STEPS[STEPS.length - 1];
@@ -336,11 +336,11 @@ function timeGrid(duration, trackW) {
 // Paint gyro (top) + accel (bottom) line plots onto a dark canvas across the
 // full (possibly zoomed) track width. Time maps left->right; one white playhead
 // (a sibling element) overlays both. Mirrors the spectrogram's wide-canvas model.
-function drawGyroCanvas(canvas, d, trackW, H, duration) {
+function drawGyroCanvas(canvas: HTMLCanvasElement, d: any, trackW: number, H: number, duration: number) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   canvas.width = Math.max(1, Math.round(trackW * dpr));
   canvas.height = Math.round(H * dpr);
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d')!;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = '#0b0d10'; ctx.fillRect(0, 0, trackW, H);
 
@@ -348,7 +348,7 @@ function drawGyroCanvas(canvas, d, trackW, H, duration) {
   const regions = [];
   if (d.hasGyro) regions.push({ top: 0, h: both ? H / 2 : H, series: [d.gyro.x, d.gyro.y, d.gyro.z], name: d.gyroName || 'Gyroscope (raw counts)' });
   if (d.hasAccel) regions.push({ top: both ? H / 2 : 0, h: both ? H / 2 : H, series: [d.accel.x, d.accel.y, d.accel.z], name: d.accelName || 'Accelerometer (g)' });
-  const x = (t) => (duration > 0 ? t / duration : 0) * trackW;
+  const x = (t: number) => (duration > 0 ? t / duration : 0) * trackW;
   const ticks = timeGrid(duration, trackW);
 
   for (const r of regions) {
@@ -356,7 +356,7 @@ function drawGyroCanvas(canvas, d, trackW, H, duration) {
     const [lo, hi] = range(r.series);
     const pad = (hi - lo) * 0.08 || 1;
     const ylo = lo - pad, yhi = hi + pad, span = (yhi - ylo) || 1;
-    const y = (v) => padT + (1 - (v - ylo) / span) * (padB - padT);
+    const y = (v: number) => padT + (1 - (v - ylo) / span) * (padB - padT);
 
     if (r.top > 0) { ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, r.top + 0.5); ctx.lineTo(trackW, r.top + 0.5); ctx.stroke(); }
     // time gridlines + labels
@@ -388,15 +388,15 @@ function drawGyroCanvas(canvas, d, trackW, H, duration) {
 // it mounts a small synced video player above the graph and the playhead tracks
 // (and scrubs) playback; without one it's a standalone viewer whose playhead
 // follows the pointer on hover. Styling lives in analyser.css (.anr-imu-*).
-export function buildImuTimeline(d, file: File) {
+export function buildImuTimeline(d: any, file: File|null) {
   const wrap = el('div', { class: 'anr-imu' });
   const duration = d.durationSec || (d.t.length ? d.t[d.t.length - 1] : 1);
 
   // --- optional synced mini player ---
-  let video = null;
+  let video: HTMLMediaElement|null = null;
   // The transport's own fill bar, so an IMU-line drag can glide it directly instead
   // of waiting on the video's (coalesced) seeked events, which step during a scrub.
-  let transportFill = null;
+  let transportFill: HTMLElement|null = null;
   if (file) {
     const url = URL.createObjectURL(file);
     // Revoke when the analysis is torn down (next drop / SPA navigation both run
@@ -411,14 +411,14 @@ export function buildImuTimeline(d, file: File) {
     video.setAttribute('webkit-playsinline', '');
     video.muted = true;
     video.style.cursor = 'pointer';
-    video.addEventListener('click', () => { if (video.paused) video.play(); else video.pause(); });
+    video.addEventListener('click', () => { if (video!.paused) video!.play(); else video!.pause(); });
     registerSyncedVideo(video);          // sync with the main Player and any other players
     wrap.appendChild(video);
     // Same transport as the main Player (play / seek / time / volume). It starts
     // muted; pressing play on it makes it the audio owner (exclusive audio) so you
     // hear exactly the clip whose motion the white line is tracking.
     const transport = makePlayer(video, undefined, {});
-    transportFill = transport.querySelector('.anr-player-fill');
+    transportFill = transport.querySelector<HTMLElement>('.anr-player-fill');
     wrap.appendChild(transport);
   }
 
@@ -469,7 +469,7 @@ export function buildImuTimeline(d, file: File) {
   const curDur = () => { const c = clock(); return (c && isFinite(c.duration) && c.duration > 0) ? c.duration : duration; };
   const curTime = () => { const c = clock(); return c ? c.currentTime : hoverTime; };
 
-  function place(follow) {
+  function place(follow: boolean) {
     const x = (curDur() > 0 ? curTime() / curDur() : 0) * trackW;
     const vw = scroller.clientWidth;
     // Auto-scroll the same way the spectrogram does (see scrollToLine in audio.js):
@@ -510,7 +510,7 @@ export function buildImuTimeline(d, file: File) {
   }
 
   // Zoom anchored on the pointer (or viewport centre), keeping that time fixed.
-  function setZoom(z, anchorClientX?) {
+  function setZoom(z: number, anchorClientX?: number|null|undefined) {
     const rect = scroller.getBoundingClientRect();
     const off = anchorClientX != null ? anchorClientX - rect.left : scroller.clientWidth / 2;
     const anchorFrac = (scroller.scrollLeft + off) / Math.max(1, trackW);
@@ -523,14 +523,14 @@ export function buildImuTimeline(d, file: File) {
   scroller.addEventListener('wheel', (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.2 : 1 / 1.2), e.clientX); } }, { passive: false });
 
   // With a video: drag/click the graph to scrub. Without: hover moves the playhead.
-  const fracAt = (clientX) => Math.max(0, Math.min(1, (clientX - scroller.getBoundingClientRect().left + scroller.scrollLeft) / Math.max(1, trackW)));
+  const fracAt = (clientX: number) => Math.max(0, Math.min(1, (clientX - scroller.getBoundingClientRect().left + scroller.scrollLeft) / Math.max(1, trackW)));
   if (video) {
     let scrubbing = false, lastT = 0;
     // While dragging, prefer fastSeek(): it jumps to the nearest keyframe quickly
     // instead of decoding the exact frame on every pointer move, so the picture
     // keeps up with the cursor (Safari/Firefox). Chrome lacks fastSeek, so it falls
     // back to currentTime there. On release we always settle on the exact frame.
-    const seekVideo = (t, precise) => {
+    const seekVideo = (t: number, precise: boolean) => {
       lastT = t;
       if (!precise && typeof video.fastSeek === 'function') { try { video.fastSeek(t); return; } catch (_) {} }
       video.currentTime = t;
@@ -539,7 +539,7 @@ export function buildImuTimeline(d, file: File) {
     // through place()/clock() here would read the audio companion, whose currentTime
     // only re-syncs past a 0.15s deadband, so the line would jump in coarse steps -
     // positioning it directly from the pointer keeps the scrub smooth.
-    const seekAt = (clientX, precise) => {
+    const seekAt = (clientX: number, precise: boolean) => {
       const frac = fracAt(clientX);
       seekVideo(frac * curDur(), precise);
       playhead.style.left = (frac * trackW) + 'px';
@@ -549,7 +549,7 @@ export function buildImuTimeline(d, file: File) {
     };
     scroller.addEventListener('pointerdown', (e) => { scrubbing = true; try { scroller.setPointerCapture(e.pointerId); } catch (_) {} seekAt(e.clientX, false); });
     scroller.addEventListener('pointermove', (e) => { if (scrubbing) seekAt(e.clientX, false); });
-    const endScrub = (e) => {
+    const endScrub = (e: PointerEvent) => {
       if (scrubbing && typeof video.fastSeek === 'function') { try { video.currentTime = lastT; } catch (_) {} }  // land on the exact frame
       scrubbing = false;
       try { scroller.releasePointerCapture(e.pointerId); } catch (_) {}
@@ -572,7 +572,7 @@ export function buildImuTimeline(d, file: File) {
 // re-reads). `playFile` is what the mini synced player mounts - normally the same
 // file, but when the browser can't decode the original codec the caller hands us
 // a playable H.264 proxy so the Motion timeline still plays.
-export function buildGyroCard(d, file: File, playFile = file) {
+export function buildGyroCard(d: any, file: File, playFile: File|null = file) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Gyro & motion metadata',
     'Sony cameras save a small burst of motion-sensor readings for every frame - from a gyroscope (which senses rotation) and an accelerometer (which senses movement and tilt) - inside the MP4 video file’s "rtmd" timed-metadata track (metadata tied to the timeline). '
@@ -607,15 +607,15 @@ export function buildGyroCard(d, file: File, playFile = file) {
 
   // ---- Export ----
   if (file && (d.hasGyro || d.hasAccel)) {
-    let cached = null;                       // collected once, reused by both buttons
+    let cached: any = null;                       // collected once, reused by both buttons
     const baseName = (file.name || 'video').replace(/\.[^.]+$/, '');
     const status = el('span', { class: 'anr-hint', style: 'margin:0' }, '');
-    const run = async (btn, kind) => {
+    const run = async (btn: HTMLButtonElement, kind: string) => {
       const csvBtn = btn; csvBtn.disabled = true; const label = csvBtn.textContent;
       try {
         if (!cached) {
           status.textContent = 'reading full-resolution IMU…';
-          cached = await collectSonyImu(file, (done, total) => { status.textContent = 'reading… ' + Math.round(done / total * 100) + '%'; });
+          cached = await collectSonyImu(file, (done: number, total: number) => { status.textContent = 'reading… ' + Math.round(done / total * 100) + '%'; });
         }
         if (!cached) { status.textContent = 'no IMU data to export'; return; }
         if (kind === 'csv') downloadText(baseName + '-gyro.csv', toCSV(cached));
@@ -643,7 +643,7 @@ export function buildGyroCard(d, file: File, playFile = file) {
 }
 
 // Convenience: extract and append the card if a Sony gyro track is present.
-export async function appendSonyGyroCard(file: File, resultsEl: HTMLElement, playFile?) {
+export async function appendSonyGyroCard(file: File, resultsEl: HTMLElement, playFile?: File|undefined) {
   try {
     const d = await extractSonyGyro(file);
     if (d) resultsEl.appendChild(buildGyroCard(d, file, playFile || file));

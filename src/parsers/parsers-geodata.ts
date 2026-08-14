@@ -22,20 +22,20 @@ async function readText(file: File, max = 1_000_000) {
   return await file.slice(0, Math.min(file.size, max)).text();
 }
 // Read up to `max` bytes of the file as a Uint8Array.
-async function readBytes(file: File, max) {
+async function readBytes(file: File, max?: number) {
   const n = max == null ? file.size : Math.min(file.size, max);
   return new Uint8Array(await file.slice(0, n).arrayBuffer());
 }
 
 // Format a coordinate to a sensible number of decimals.
-const fc = (n) => (typeof n === 'number' && isFinite(n)) ? (+n.toFixed(6)).toString() : '-';
+const fc = (n: number) => (typeof n === 'number' && isFinite(n)) ? (+n.toFixed(6)).toString() : '-';
 // Format a latitude/longitude bounding box.
-function fmtBBox(minX, minY, maxX, maxY) {
+function fmtBBox(minX: number, minY: number, maxX: number, maxY: number) {
   return 'X ' + fc(minX) + ' … ' + fc(maxX) + '  |  Y ' + fc(minY) + ' … ' + fc(maxY);
 }
 
 // Tally occurrences and render the top-N as "key (n)".
-function topCounts(map, n = 12) {
+function topCounts(map: Record<string, number>, n = 12) {
   return Object.entries<number>(map).sort((a, b) => b[1] - a[1]).slice(0, n)
     .map(([k, v]) => k + ' (' + v + ')').join(', ');
 }
@@ -52,7 +52,7 @@ async function parseTopojson(file: File) {
   out['Arcs'] = Array.isArray(j.arcs) ? j.arcs.length.toLocaleString() : 0;
   // Count geometries across all layers.
   let geoms = 0; const byType: any = {};
-  const walk = (g) => {
+  const walk = (g: any) => {
     if (!g) return;
     if (g.type === 'GeometryCollection' && Array.isArray(g.geometries)) { g.geometries.forEach(walk); return; }
     geoms++; if (g.type) byType[g.type] = (byType[g.type] || 0) + 1;
@@ -62,8 +62,8 @@ async function parseTopojson(file: File) {
   if (Object.keys(byType).length) out['Geometry types'] = topCounts(byType);
   if (j.transform) {
     const t = j.transform;
-    if (Array.isArray(t.scale)) out['Transform scale'] = t.scale.map((n) => fc(n)).join(', ');
-    if (Array.isArray(t.translate)) out['Transform translate'] = t.translate.map((n) => fc(n)).join(', ');
+    if (Array.isArray(t.scale)) out['Transform scale'] = t.scale.map((n: number) => fc(n)).join(', ');
+    if (Array.isArray(t.translate)) out['Transform translate'] = t.translate.map((n: number) => fc(n)).join(', ');
     out['Quantised'] = 'yes (delta-encoded arcs)';
   }
   if (Array.isArray(j.bbox) && j.bbox.length === 4) out['Bounding box'] = fmtBBox(j.bbox[0], j.bbox[1], j.bbox[2], j.bbox[3]);
@@ -81,7 +81,7 @@ async function parseOsm(file: File) {
   const ver = (text.match(/<osm\b[^>]*\bversion\s*=\s*"([^"]*)"/) || [])[1];
   if (ver) out['API version'] = ver;
   if (gen) out['Generator'] = gen;
-  const count = (re) => (text.match(re) || []).length;
+  const count = (re: RegExp) => (text.match(re) || []).length;
   const nodes = count(/<node\b/g);
   const ways = count(/<way\b/g);
   const rels = count(/<relation\b/g);
@@ -109,7 +109,7 @@ const SHP_TYPES: Record<number, string> = {
 };
 
 // Parse the shared 100-byte .shp / .shx header (big-endian code + LE body).
-function shpHeader(head) {
+function shpHeader(head: Uint8Array) {
   if (head.length < 100) return null;
   const r = new Reader(head); // big-endian
   const code = r.u32();
@@ -221,7 +221,7 @@ async function parsePrj(file: File) {
   const text = (await readText(file, 64_000)).trim();
   if (!/^(GEOGCS|PROJCS|GEOGCRS|PROJCRS|BOUNDCRS|COMPD_CS|LOCAL_CS|VERTCS|ENGCRS)/i.test(text)) return null;
   const out: Row = { 'Format': 'Projection / WKT CRS (.prj)' };
-  const grab = (kw) => { const m = text.match(new RegExp(kw + '\\s*\\[\\s*"([^"]+)"', 'i')); return m ? m[1] : null; };
+  const grab = (kw: string) => { const m = text.match(new RegExp(kw + '\\s*\\[\\s*"([^"]+)"', 'i')); return m ? m[1] : null; };
   const projcs = grab('PROJCS') || grab('PROJCRS');
   const geogcs = grab('GEOGCS') || grab('GEOGCRS');
   out['CRS name'] = projcs || geogcs || '(unnamed)';
@@ -310,7 +310,7 @@ async function parseGml(file: File) {
 // =====================================================================
 //  NMEA 0183
 // =====================================================================
-function nmeaChecksumOk(line) {
+function nmeaChecksumOk(line: string) {
   const star = line.lastIndexOf('*');
   if (star < 0 || star + 3 > line.length) return null;
   let cs = 0;
@@ -319,7 +319,7 @@ function nmeaChecksumOk(line) {
   return cs === want;
 }
 // NMEA ddmm.mmmm -> decimal degrees.
-function nmeaCoord(val, hemi) {
+function nmeaCoord(val: string, hemi: string) {
   if (!val) return null;
   const f = parseFloat(val); if (!isFinite(f)) return null;
   const deg = Math.floor(f / 100);
@@ -361,7 +361,7 @@ async function parseNmea(file: File) {
     }
   }
   if (!looksNmea) return null;
-  const fmtTime = (t) => t && t.length >= 6 ? t.slice(0, 2) + ':' + t.slice(2, 4) + ':' + t.slice(4, 6) + ' UTC' : (t || '-');
+  const fmtTime = (t: string | null | undefined) => t && t.length >= 6 ? t.slice(0, 2) + ':' + t.slice(2, 4) + ':' + t.slice(4, 6) + ' UTC' : (t || '-');
   const out: Row = {
     'Format': 'NMEA 0183 GPS log',
     'Sentences': sentences.toLocaleString(),
@@ -381,7 +381,7 @@ async function parseNmea(file: File) {
 // =====================================================================
 //  IGC flight log
 // =====================================================================
-function igcCoord(d) {
+function igcCoord(d: string) {
   // B-record lat: DDMMmmm N, lon: DDDMMmmm E
   const m = d.match(/^(\d{2})(\d{2})(\d{3})([NS])(\d{3})(\d{2})(\d{3})([EW])/);
   if (!m) return null;
@@ -424,7 +424,7 @@ async function parseIgc(file: File) {
   if (headers.DTE) out['Date (DDMMYY)'] = headers.DTE.replace(/[^\d]/g, '').slice(0, 6) || headers.DTE;
   if (headers.CID) out['Competition ID'] = headers.CID;
   out['Fix records (B)'] = bcount.toLocaleString();
-  const fmtTime = (t) => t && t.length >= 6 ? t.slice(0, 2) + ':' + t.slice(2, 4) + ':' + t.slice(4, 6) + ' UTC' : '-';
+  const fmtTime = (t: string | null | undefined) => t && t.length >= 6 ? t.slice(0, 2) + ':' + t.slice(2, 4) + ':' + t.slice(4, 6) + ' UTC' : '-';
   if (firstT) out['Time span'] = fmtTime(firstT) + ' → ' + fmtTime(lastT);
   if (isFinite(minAlt)) out['Altitude min/max'] = minAlt + ' / ' + maxAlt + ' m';
   if (isFinite(minLat)) out['Bounds (lon/lat)'] = fmtBBox(minLon, minLat, maxLon, maxLat);
@@ -558,7 +558,7 @@ async function parsePmtiles(file: File) {
 //  DTED
 // =====================================================================
 // DTED packs lat/lon as DDDMMSSH (degrees minutes seconds hemisphere).
-function dtedAngle(s) {
+function dtedAngle(s: string) {
   // e.g. "0340000W" or "00340000W"
   const m = s.match(/^0*(\d{1,3})(\d{2})(\d{2})([NSEW])/);
   if (!m) return null;
@@ -598,9 +598,9 @@ async function parseEsriAscii(file: File) {
   const head = await readText(file, 65_536);
   if (!/^\s*ncols\b/i.test(head)) return null;
   const out: Row = { 'Format': 'Esri ASCII grid' };
-  const grab = (kw) => { const m = head.match(new RegExp('^\\s*' + kw + '\\s+(\\S+)', 'im')); return m ? m[1] : null; };
-  const ncols = +grab('ncols'), nrows = +grab('nrows');
-  const cellsize = parseFloat(grab('cellsize'));
+  const grab = (kw: string) => { const m = head.match(new RegExp('^\\s*' + kw + '\\s+(\\S+)', 'im')); return m ? m[1] : null; };
+  const ncols = +grab('ncols')!, nrows = +grab('nrows')!;
+  const cellsize = parseFloat(grab('cellsize')!);
   let xll = grab('xllcorner') || grab('xllcenter');
   let yll = grab('yllcorner') || grab('yllcenter');
   const nodata = grab('NODATA_value') || grab('nodata_value');
@@ -644,7 +644,7 @@ async function parseEsriAscii(file: File) {
 // =====================================================================
 //  SRTM .hgt
 // =====================================================================
-async function parseHgt(file: File, fileObj) {
+async function parseHgt(file: File, fileObj: File | null) {
   const name = (fileObj && fileObj.name) || '';
   const out: Row = { 'Format': 'SRTM height tile (.hgt)' };
   // Tile origin from filename: e.g. N37W122.hgt -> SW corner of 1°×1° tile.
@@ -683,7 +683,7 @@ async function parseHgt(file: File, fileObj) {
 // =====================================================================
 
 // Run a query and return its first result set's {columns, values} or null.
-function q(db, sql) {
+function q(db: any, sql: string) {
   try {
     const res = db.exec(sql);
     if (res && res[0]) return res[0];
@@ -692,7 +692,7 @@ function q(db, sql) {
 }
 
 async function parseGpkg(file: File, ext: string) {
-  let summary = null;
+  let summary: any = null;
   try {
     summary = await sqliteSummary(file);
     if (!summary || !summary.db) return idOnly(file, ext);
@@ -756,7 +756,7 @@ async function parseGpkg(file: File, ext: string) {
       const sections = [];
       if (layers.length) sections.push({ title: 'Layers (' + layers.length + ')', node: preBlock(layers.join('\n')), open: true });
       if (srsLines.length) sections.push({ title: 'Spatial reference systems (' + srsLines.length + ')', node: preBlock(srsLines.join('\n')) });
-      if (summary.tables.length) sections.push({ title: 'All tables (' + summary.tables.length + ')', node: preBlock(summary.tables.map((t) => t + (summary.rowCounts[t] != null ? '  (' + summary.rowCounts[t].toLocaleString() + ')' : '')).join('\n')) });
+      if (summary.tables.length) sections.push({ title: 'All tables (' + summary.tables.length + ')', node: preBlock(summary.tables.map((t: string) => t + (summary.rowCounts[t] != null ? '  (' + summary.rowCounts[t].toLocaleString() + ')' : '')).join('\n')) });
       if (sections.length) out._sections = sections;
       return out;
     } finally {
@@ -769,7 +769,7 @@ async function parseGpkg(file: File, ext: string) {
 }
 
 async function parseMbtiles(file: File, ext: string) {
-  let summary = null;
+  let summary: any = null;
   try {
     summary = await sqliteSummary(file);
     if (!summary || !summary.db) return idOnly(file, ext);
@@ -780,7 +780,7 @@ async function parseMbtiles(file: File, ext: string) {
       const meta: any = {};
       const md = q(db, 'SELECT name, value FROM metadata');
       if (md && md.values) for (const rowv of md.values) meta[String(rowv[0])] = rowv[1];
-      const pick = (k, label) => { if (meta[k] != null && meta[k] !== '') out[label] = String(meta[k]); };
+      const pick = (k: string, label: string) => { if (meta[k] != null && meta[k] !== '') out[label] = String(meta[k]); };
       pick('name', 'Name');
       pick('format', 'Tile format');
       pick('minzoom', 'Min zoom');
@@ -801,7 +801,7 @@ async function parseMbtiles(file: File, ext: string) {
       const sections = [];
       const metaLines = Object.entries(meta).map(([k, v]) => k + ': ' + (v == null ? '' : String(v)));
       if (metaLines.length) sections.push({ title: 'metadata (' + metaLines.length + ')', node: preBlock(metaLines.join('\n')), open: true });
-      if (summary.tables.length) sections.push({ title: 'All tables (' + summary.tables.length + ')', node: preBlock(summary.tables.map((t) => t + (summary.rowCounts[t] != null ? '  (' + summary.rowCounts[t].toLocaleString() + ')' : '')).join('\n')) });
+      if (summary.tables.length) sections.push({ title: 'All tables (' + summary.tables.length + ')', node: preBlock(summary.tables.map((t: string) => t + (summary.rowCounts[t] != null ? '  (' + summary.rowCounts[t].toLocaleString() + ')' : '')).join('\n')) });
       if (sections.length) out._sections = sections;
       return out;
     } finally {

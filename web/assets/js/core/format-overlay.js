@@ -95,7 +95,7 @@ export function setupFormatOverlay() {
             fmtEmpty = el('p', { class: 'fmt-empty', id: 'fmtEmpty', hidden: 'hidden' });
             fmtBody.appendChild(fmtEmpty);
         }
-        const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+        const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
         // Wrap every case-insensitive occurrence of `q` in <mark>; restore the plain
         // text when `q` is empty. The original text is cached on the element so the
         // highlight is non-destructive and idempotent across keystrokes.

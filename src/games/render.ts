@@ -11,6 +11,8 @@ import {
 import { g, ultrasoundRadius, laserWidth } from './state.js';
 import { withWrap, hardEdges, rayToRim } from './geometry.js';
 import { drawBoss, drawBossBar, drawMegaMessage, BOSS_NAMES } from './boss.js';
+import type { Asteroid, Powerup, Flyer } from './world.js';
+import type { Ufo } from './ufos.js';
 
 // Fixed HUD font strings, built once. Setting ctx.font from these avoids the per-frame
 // string concatenation (and its garbage) that the HUD/leaderboard otherwise do ~15x a
@@ -51,7 +53,7 @@ function scopeFrameLayer() {
 }
 
 // A background flyer: the same hull as the player, dimmed and slightly smaller.
-function drawFlyer(f) {
+function drawFlyer(f: Flyer) {
   const ctx = g.ctx, S = g.S;
   ctx.save();
   ctx.globalAlpha = f.alpha;
@@ -70,7 +72,7 @@ function drawFlyer(f) {
 }
 
 // A roaming UFO: a vector saucer in its kind's colour. No rotation - it stays level.
-function drawUfo(u) {
+function drawUfo(u: Ufo) {
   const ctx = g.ctx, S = g.S, clock = g.clock;
   const r = 16;   // base half-width; scaled by S below
   ctx.save();
@@ -108,7 +110,7 @@ function drawUfo(u) {
   ctx.restore();
 }
 
-function drawShipAt(x, y) {
+function drawShipAt(x: number, y: number) {
   const ctx = g.ctx, { S, ship, input, ACCENT } = g, clock = g.clock;
   // Fade the ship in over the first 0.6s after a (re)spawn.
   const fade = Math.min(1, (SPAWN_INVULN - ship.invuln) / 0.6);
@@ -186,7 +188,7 @@ function drawShip() {
   withWrap(g.ship.x, g.ship.y, 21 * g.S, drawShipAt);
 }
 
-function drawAsteroidAt(a, x, y) {
+function drawAsteroidAt(a: Asteroid, x: number, y: number) {
   const ctx = g.ctx, ACCENT = g.ACCENT, clock = g.clock;
   ctx.save();
   ctx.translate(x, y);
@@ -213,7 +215,7 @@ function drawAsteroidAt(a, x, y) {
   }
   ctx.restore();
 }
-function drawAsteroid(a) {
+function drawAsteroid(a: Asteroid) {
   withWrap(a.x, a.y, a.radius, (x, y) => drawAsteroidAt(a, x, y));
 }
 
@@ -255,7 +257,7 @@ function drawSingularityIcon(s: number) {
   ctx.beginPath(); ctx.arc(0, 0, s * 0.17, 0, TAU); ctx.fill();
 }
 
-function drawPowerupAt(p, x, y) {
+function drawPowerupAt(p: Powerup, x: number, y: number) {
   if (p.life < 3 && (Math.floor(p.life * 8) & 1)) return;   // blink as it nears expiry
   const ctx = g.ctx, clock = g.clock;
   ctx.save();
@@ -280,7 +282,7 @@ function drawPowerupAt(p, x, y) {
   }
   ctx.restore();
 }
-function drawPowerup(p) { withWrap(p.x, p.y, p.radius, (x, y) => drawPowerupAt(p, x, y)); }
+function drawPowerup(p: Powerup) { withWrap(p.x, p.y, p.radius, (x, y) => drawPowerupAt(p, x, y)); }
 
 // Append a jagged electric polyline from (ax,ay) to (bx,by) to `out` as flat x,y pairs,
 // re-jittered each frame. Building points (rather than path ops) lets the same bolt be
@@ -341,7 +343,7 @@ function drawLightning() {
 function drawUltrasound() {
   if (g.weapon !== 'ultrasound' || g.ship.dead || g.gameOver || g.nuke > 0) return;
   const ctx = g.ctx, ship = g.ship, S = g.S, R = ultrasoundRadius();
-  const paint = (x, y) => {
+  const paint = (x: number, y: number) => {
     for (const rp of g.ripples) {
       ctx.globalAlpha = (1 - rp.p) * 0.6;
       ctx.strokeStyle = POWERUP_DEF.ultrasound.color; ctx.lineWidth = 2;
@@ -700,7 +702,7 @@ export function render() {
   ctx.drawImage(cv, cx - HW - g._scopePad, cy - HH - g._scopePad, g._scopeW, g._scopeH);
 
   if (!g.gameOver && !g.splash) {
-    let graceLeft = g.asteroids.reduce((m: number, a) => (a.solo ? m : Math.max(m, a.grace)), 0);   // solo asteroids don't flash the wave number
+    let graceLeft = g.asteroids.reduce((m: number, a: Asteroid) => (a.solo ? m : Math.max(m, a.grace)), 0);   // solo asteroids don't flash the wave number
     if (boss && boss.grace > 0) graceLeft = Math.max(graceLeft, boss.grace);   // boss waves get the banner too
     if (graceLeft > 0) waveBanner(graceLeft);
   }

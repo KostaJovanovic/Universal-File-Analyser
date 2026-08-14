@@ -21,17 +21,17 @@
 
 const PNG_SIG = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
-function eq(bytes, off, sig) {
+function eq(bytes: ArrayLike<number>, off: number, sig: ArrayLike<number>) {
   for (let i = 0; i < sig.length; i++) if (bytes[off + i] !== sig[i]) return false;
   return true;
 }
-function u16be(b, p) { return (b[p] << 8) | b[p + 1]; }
-function u32be(b, p) { return ((b[p] << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]) >>> 0; }
-function u32le(b, p) { return (b[p] | (b[p + 1] << 8) | (b[p + 2] << 16) | (b[p + 3] << 24)) >>> 0; }
-function ascii(b, p, n) { let s = ''; for (let i = 0; i < n; i++) s += String.fromCharCode(b[p + i]); return s; }
+function u16be(b: Uint8Array, p: number) { return (b[p] << 8) | b[p + 1]; }
+function u32be(b: Uint8Array, p: number) { return ((b[p] << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]) >>> 0; }
+function u32le(b: Uint8Array, p: number) { return (b[p] | (b[p + 1] << 8) | (b[p + 2] << 16) | (b[p + 3] << 24)) >>> 0; }
+function ascii(b: Uint8Array, p: number, n: number) { let s = ''; for (let i = 0; i < n; i++) s += String.fromCharCode(b[p + i]); return s; }
 
 // Identify the image format from a header sample. Returns a short tag or null.
-export function sniffImageFormat(bytes) {
+export function sniffImageFormat(bytes: Uint8Array|null) {
   if (!bytes || bytes.length < 12) return null;
   if (bytes[0] === 0xFF && bytes[1] === 0xD8) return 'jpeg';
   if (eq(bytes, 0, PNG_SIG)) return 'png';
@@ -53,17 +53,17 @@ export function sniffImageFormat(bytes) {
 // ---------------------------------------------------------------- JPEG
 
 // JPEG markers without a length payload (standalone).
-function jpegMarkerHasNoLength(m) {
+function jpegMarkerHasNoLength(m: number) {
   return m === 0xD8 || m === 0xD9 || m === 0x01 || (m >= 0xD0 && m <= 0xD7);
 }
 // SOF (start of frame) markers carry the image geometry; all of C0..CF except
 // DHT(C4), JPG(C8) and DAC(CC).
-function isSofMarker(m) { return m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC; }
+function isSofMarker(m: number) { return m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC; }
 
 // Walk a JPEG's marker structure starting at `start` (the SOI). Returns the
 // segments found, the SOF geometry, where the entropy-coded scan begins/ends, and
 // whether a terminating EOI is present. Tolerant: stops cleanly at truncation.
-export function scanJpeg(bytes, start = 0) {
+export function scanJpeg(bytes: Uint8Array, start = 0) {
   const n = bytes.length;
   if (start + 2 > n || bytes[start] !== 0xFF || bytes[start + 1] !== 0xD8) return null;
   // eoiAt is only set once the end-of-image marker is actually found.
@@ -122,8 +122,8 @@ export function scanJpeg(bytes, start = 0) {
 // mis-typed file), and append the EOI a truncated file lacks. Returns the repaired
 // bytes, the actions taken, and flags describing what's still wrong (a damaged
 // header that needs a reference photo's tables). Does not re-encode pixels.
-export function repairJpeg(bytes, opts: any = {}) {
-  const actions = [];
+export function repairJpeg(bytes: Uint8Array, opts: any = {}) {
+  const actions: string[] = [];
   let soi = (bytes[0] === 0xFF && bytes[1] === 0xD8) ? 0 : -1;
   if (soi < 0) { soi = findBytesIn(bytes, [0xFF, 0xD8, 0xFF], 0); if (soi >= 0) actions.push('Dropped ' + soi + ' junk byte(s) before the JPEG start'); }
   if (soi < 0) return { data: null, actions, ok: false, reason: 'no JPEG start marker (FFD8) found' };
@@ -162,7 +162,7 @@ export function repairJpeg(bytes, opts: any = {}) {
 // thumbnail, timestamp, GPS and camera metadata) and COM, so borrowing a header
 // for recovery never grafts a foreign thumbnail or misleading metadata onto the
 // rebuilt picture.
-function isEssentialHeaderMarker(m) {
+function isEssentialHeaderMarker(m: number) {
   return m === 0xDB || m === 0xC4 || m === 0xDD || isSofMarker(m);
 }
 
@@ -170,7 +170,7 @@ function isEssentialHeaderMarker(m) {
 // a healthy reference JPEG so a damaged file's missing/garbled header can be
 // rebuilt. Returns the raw segment bytes (with their FFxx markers) in canonical
 // order, or null.
-export function extractJpegTables(bytes) {
+export function extractJpegTables(bytes: Uint8Array) {
   const scan = scanJpeg(bytes, bytes[0] === 0xFF ? 0 : Math.max(0, findBytesIn(bytes, [0xFF, 0xD8, 0xFF], 0)));
   if (!scan || !scan.sof) return null;
   const wanted = [];
@@ -185,11 +185,11 @@ export function extractJpegTables(bytes) {
 // Rebuild a damaged JPEG from a reference's header tables + the broken file's own
 // scan data. Used when the header is corrupt but the entropy-coded scan survives.
 // Produces SOI + reference header segments + broken SOS-onward (+ EOI).
-export function spliceJpegHeader(brokenBytes, refTables) {
+export function spliceJpegHeader(brokenBytes: Uint8Array, refTables: { segments: Uint8Array[] }) {
   const scan = scanJpeg(brokenBytes, brokenBytes[0] === 0xFF ? 0 : Math.max(0, findBytesIn(brokenBytes, [0xFF, 0xD8], 0)));
   if (!scan || scan.sosAt < 0) return null;     // need a locatable scan
   const sosOnward = brokenBytes.subarray(scan.sosAt, scan.hasEOI && scan.eoiAt != null ? scan.eoiAt + 2 : brokenBytes.length);
-  const parts = [new Uint8Array([0xFF, 0xD8])];
+  const parts: Uint8Array[] = [new Uint8Array([0xFF, 0xD8])];
   for (const seg of refTables.segments) parts.push(seg);
   parts.push(sosOnward);
   if (!(scan.hasEOI)) parts.push(new Uint8Array([0xFF, 0xD9]));
@@ -206,7 +206,7 @@ export function spliceJpegHeader(brokenBytes, refTables) {
 // which is overwhelmingly unlikely in non-JPEG data (where 0xFF is followed by an
 // arbitrary byte). No SOI is present, so scanJpeg/repairJpeg can't touch it; it
 // only becomes decodable once a matching header is prepended (rebuildHeaderlessJpeg).
-export function looksLikeHeaderlessJpegScan(bytes) {
+export function looksLikeHeaderlessJpegScan(bytes: Uint8Array) {
   const n = bytes.length;
   if (n < 4096) return false;
   if (bytes[0] === 0xFF && bytes[1] === 0xD8) return false;   // has an SOI - normal repair path
@@ -229,7 +229,7 @@ export function looksLikeHeaderlessJpegScan(bytes) {
 // the reference's SOS is taken too. The result decodes when the reference matches
 // the lost header's DQT/DHT/SOF/SOS (same camera, resolution and mode); how much
 // of the picture is intact depends on how much scan data was lost with the header.
-export function rebuildHeaderlessJpeg(scanBytes, refBytes) {
+export function rebuildHeaderlessJpeg(scanBytes: Uint8Array, refBytes: Uint8Array) {
   const soi = (refBytes[0] === 0xFF && refBytes[1] === 0xD8) ? 0 : findBytesIn(refBytes, [0xFF, 0xD8, 0xFF], 0);
   if (soi < 0) return null;
   const rs = scanJpeg(refBytes, soi);
@@ -239,7 +239,7 @@ export function rebuildHeaderlessJpeg(scanBytes, refBytes) {
   // has lost its own metadata; grafting the reference's thumbnail, timestamp, GPS
   // and camera settings on would misrepresent the recovered picture, so we leave it
   // metadata-free. Then the surviving scan data (+ EOI).
-  const parts = [new Uint8Array([0xFF, 0xD8])];
+  const parts: Uint8Array[] = [new Uint8Array([0xFF, 0xD8])];
   for (const s of rs.segments) {
     if (s.marker === 0xDA) break;                        // stop at SOS
     if (isEssentialHeaderMarker(s.marker)) parts.push(refBytes.subarray(s.off, s.off + s.len));
@@ -262,7 +262,7 @@ export function rebuildHeaderlessJpeg(scanBytes, refBytes) {
 // no browser can decode it and it renders blank. Re-inserting these fixed tables
 // makes such a frame decode again. Built once, as four DHT segments.
 const STD_HUFFMAN_TABLES = (() => {
-  const seg = (tcth, counts, values) => {
+  const seg = (tcth: number, counts: number[], values: number[]) => {
     const len = 3 + counts.length + values.length;          // Tc/Th + 16 counts + values
     return [0xFF, 0xC4, (len >> 8) & 0xFF, len & 0xFF, tcth, ...counts, ...values];
   };
@@ -284,7 +284,7 @@ const STD_HUFFMAN_TABLES = (() => {
 // would need different ones, and genuine progressive JPEGs always carry theirs, so
 // those are left alone. This is deterministic and lossless - it grafts on the fixed
 // tables the format specifies, inventing nothing.
-export function ensureJpegHuffman(bytes) {
+export function ensureJpegHuffman(bytes: Uint8Array|null) {
   if (!bytes || bytes.length < 4 || bytes[0] !== 0xFF || bytes[1] !== 0xD8) return bytes;
   const scan = scanJpeg(bytes, 0);
   if (!scan || scan.sosAt < 0 || scan.dht > 0 || scan.progressive) return bytes;
@@ -295,15 +295,27 @@ export function ensureJpegHuffman(bytes) {
   return out;
 }
 
+/** What scanPng() reports about a PNG's chunk stream. */
+interface PngScan {
+  ihdr: { width: number; height: number; bitDepth: number; colorType: number; interlace: number } | null;
+  idat: Uint8Array[];
+  idatBytes: number;
+  hasIEND: boolean;
+  plte: Uint8Array | null;
+  trns: Uint8Array | null;
+  crcErrors: number;
+  truncated: boolean;
+}
+
 // ---------------------------------------------------------------- PNG
 
-const PNG_BPP = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };   // channels by colour type (at 8-bit)
+const PNG_BPP: Record<number, number> = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };   // channels by colour type (at 8-bit)
 
 // Walk a PNG's chunks. Returns IHDR geometry, the concatenated IDAT payload, the
 // palette/transparency for indexed images, IEND presence, and any CRC mismatches.
-export function scanPng(bytes) {
+export function scanPng(bytes: Uint8Array) {
   if (!eq(bytes, 0, PNG_SIG)) return null;
-  const out = { ihdr: null, idat: [], idatBytes: 0, hasIEND: false, plte: null, trns: null, crcErrors: 0, truncated: false };
+  const out: PngScan = { ihdr: null, idat: [], idatBytes: 0, hasIEND: false, plte: null, trns: null, crcErrors: 0, truncated: false };
   let p = 8;
   const n = bytes.length;
   while (p + 8 <= n) {
@@ -329,15 +341,15 @@ export function scanPng(bytes) {
 // Inflate (zlib) bytes, returning whatever decompressed before any error - so a
 // truncated IDAT stream still yields its leading scanlines. Uses the platform
 // DecompressionStream (browser + Node 18+).
-async function inflatePartial(chunks) {
+async function inflatePartial(chunks: Uint8Array[]) {
   let blobBytes = 0; for (const c of chunks) blobBytes += c.length;
   const input = new Uint8Array(blobBytes); let o = 0;
   for (const c of chunks) { input.set(c, o); o += c.length; }
-  const tryFormat = async (fmt) => {
+  const tryFormat = async (fmt: CompressionFormat) => {
     const ds = new DecompressionStream(fmt);
     const writer = ds.writable.getWriter();
     const reader = ds.readable.getReader();
-    const got = [];
+    const got: Uint8Array[] = [];
     const pump = (async () => { try { for (;;) { const { done, value } = await reader.read(); if (done) break; if (value) got.push(value); } } catch (_) { /* keep what we got */ } })();
     try { await writer.write(input); await writer.close(); } catch (_) { /* truncated tail */ }
     try { await pump; } catch (_) {}
@@ -354,7 +366,7 @@ async function inflatePartial(chunks) {
 // Decode as many scanlines of a (possibly truncated) PNG as survive, into RGBA.
 // Handles 8-bit greyscale / RGB / RGBA / palette, non-interlaced - the overwhelming
 // common case. Returns { width, height, rgba, rowsRecovered } or null.
-export async function decodePngPartial(bytes) {
+export async function decodePngPartial(bytes: Uint8Array) {
   const scan = scanPng(bytes);
   if (!scan || !scan.ihdr || !scan.idat.length) return null;
   const { width, height, bitDepth, colorType, interlace } = scan.ihdr;
@@ -369,7 +381,7 @@ export async function decodePngPartial(bytes) {
   const rgba = new Uint8Array(width * height * 4);     // unrecovered rows stay transparent
   const cur = new Uint8Array(stride);
   const prev = new Uint8Array(stride);
-  const paeth = (a, b, c) => { const pp = a + b - c, pa = Math.abs(pp - a), pb = Math.abs(pp - b), pc = Math.abs(pp - c); return (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c); };
+  const paeth = (a: number, b: number, c: number) => { const pp = a + b - c, pa = Math.abs(pp - a), pb = Math.abs(pp - b), pc = Math.abs(pp - c); return (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c); };
   prev.fill(0);
   for (let y = 0; y < rows; y++) {
     const base = y * (stride + 1);
@@ -406,8 +418,8 @@ export async function decodePngPartial(bytes) {
 // Repair a PNG container: keep the chunks up to corruption, ensure an IEND. When
 // the IDAT stream is intact this lets the browser decode it; when truncated, pair
 // with decodePngPartial. Returns repaired bytes + actions.
-export function repairPng(bytes) {
-  const actions = [];
+export function repairPng(bytes: Uint8Array) {
+  const actions: string[] = [];
   if (!eq(bytes, 0, PNG_SIG)) {
     const at = findBytesIn(bytes, PNG_SIG, 0);
     if (at < 0) return { data: null, actions, ok: false, reason: 'no PNG signature found' };
@@ -426,7 +438,7 @@ export function repairPng(bytes) {
 
 // ---------------------------------------------------------------- carving
 
-function findBytesIn(hay, needle, from) {
+function findBytesIn(hay: ArrayLike<number>, needle: ArrayLike<number>, from: number) {
   const n0 = needle[0], L = needle.length, end = hay.length - L;
   for (let i = from; i <= end; i++) {
     if (hay[i] !== n0) continue;
@@ -441,7 +453,7 @@ function findBytesIn(hay, needle, from) {
 // for format signatures and measuring each image's real extent (JPEG via the marker
 // walk so an embedded EXIF thumbnail isn't mistaken for the end; PNG via its chunk
 // walk; GIF/WebP/BMP via their declared sizes). Returns [{format, start, end}].
-export function carveImages(bytes, opts: any = {}) {
+export function carveImages(bytes: Uint8Array, opts: any = {}) {
   const found = [];
   const max = opts.max || 64;
   const n = bytes.length;
@@ -468,7 +480,7 @@ export function carveImages(bytes, opts: any = {}) {
           if (type === 'IEND') { end = p + 8 + len + 4; break; }
           p = p + 8 + len + 4;
         }
-        found.push({ format: 'png', start: i, end, complete: scan.hasIEND, width: scan.ihdr.width, height: scan.ihdr.height });
+        found.push({ format: 'png', start: i, end, complete: scan.hasIEND, width: scan.ihdr!.width, height: scan.ihdr!.height });
         i = Math.max(i + 8, end); continue;
       }
     }
@@ -499,7 +511,7 @@ export function carveImages(bytes, opts: any = {}) {
 // Detect a truncated HEIF/HEIC/AVIF: an ftyp + a meta/mdat whose iloc points past
 // EOF, or an mdat that overruns the file. Geometry/decoding reuse the existing HEIF
 // path; this just flags damage and the recoverable byte range.
-export function diagnoseHeif(bytes) {
+export function diagnoseHeif(bytes: Uint8Array) {
   if (ascii(bytes, 4, 4) !== 'ftyp') return null;
   const n = bytes.length;
   let p = 0, mdat = null, hasMeta = false;
@@ -522,8 +534,8 @@ export function diagnoseHeif(bytes) {
 // image - but the mdat box header still declares its full original length, which
 // overruns EOF and makes stricter decoders reject the whole file. Clamping that
 // length to the bytes actually present fixes it. Returns repaired bytes + actions.
-export function repairHeifContainer(bytes) {
-  const actions = [];
+export function repairHeifContainer(bytes: Uint8Array) {
+  const actions: string[] = [];
   const n = bytes.length;
   let p = 0, mdatAt = -1, hs = 8, declaredEnd = 0;
   for (let g = 0; g < 256 && p + 8 <= n; g++) {
@@ -552,9 +564,9 @@ export function repairHeifContainer(bytes) {
 
 // Top-level health check. Returns the format and a list of concrete problems, used
 // to decide whether to offer salvage and what to tell the user.
-export function diagnoseImage(bytes) {
+export function diagnoseImage(bytes: Uint8Array) {
   const format = sniffImageFormat(bytes);
-  const issues = [];
+  const issues: { code: string; msg: string }[] = [];
   if (!format) {
     // A JPEG whose header is gone entirely, leaving only entropy-coded scan data:
     // not carveable (no signature to carve) but rebuildable from a reference header.

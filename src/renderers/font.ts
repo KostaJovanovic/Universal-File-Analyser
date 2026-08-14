@@ -54,22 +54,22 @@ const SCRIPT_SAMPLES = [
 // Which scripts can this font display? Returns the matching SCRIPT_SAMPLES in
 // priority order (Latin first when present, so it keeps the classic ramp). Han is
 // dropped when kana/Hangul are present - the Japanese/Korean sample covers it.
-function detectSamples(font) {
+function detectSamples(font: any) {
   if (!font || typeof font.charToGlyphIndex !== 'function') return [SCRIPT_SAMPLES[0]];
-  const has = (probe) => { for (const ch of probe) { let i = 0; try { i = font.charToGlyphIndex(ch); } catch (_) { i = 0; } if (!i) return false; } return true; };
+  const has = (probe: string) => { for (const ch of probe) { let i = 0; try { i = font.charToGlyphIndex(ch); } catch (_) { i = 0; } if (!i) return false; } return true; };
   const flags: any = {};
   for (const s of SCRIPT_SAMPLES) flags[s.key] = has(s.probe);
   const out = SCRIPT_SAMPLES.filter((s) => flags[s.key] && !(s.key === 'han' && (flags.japanese || flags.korean)));
   return out.length ? out : [SCRIPT_SAMPLES[0]];
 }
 
-function fontName(font, key) {
+function fontName(font: any, key: string) {
   const v = font && font.names && font.names[key];
   if (!v) return '';
   return v.en || Object.values(v)[0] || '';
 }
 
-function specimenCard(family, axes, font) {
+function specimenCard(family: string, axes: any[], font: any) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Specimen'));
 
@@ -120,7 +120,7 @@ function specimenCard(family, axes, font) {
     // the phase matching the current value (acos gives the rising branch, so it
     // heads towards max first - or, if already at max, eases back down). The
     // resulting per-axis offset also de-syncs axes that start at different values.
-    const startAxis = (a, now) => {
+    const startAxis = (a: any, now: number) => {
       const span = a.max - a.min;
       const k = span ? (parseFloat(a.input.value) - a.min) / span : 0;
       const phase0 = Math.acos(1 - 2 * Math.min(1, Math.max(0, k)));   // [0, π]
@@ -128,7 +128,7 @@ function specimenCard(family, axes, font) {
       playing.add(a);
     };
 
-    const frame = (now) => {
+    const frame = (now: number) => {
       rafId = 0;
       if (!axisBox.isConnected) { playing.clear(); return; }   // detached - stop for good
       for (const a of playing) {
@@ -142,7 +142,7 @@ function specimenCard(family, axes, font) {
       if (playing.size) rafId = requestAnimationFrame(frame);
     };
     const kick = () => { if (!rafId && playing.size) rafId = requestAnimationFrame(frame); };
-    const toggle = (a) => { if (playing.has(a)) playing.delete(a); else startAxis(a, performance.now()); syncButtons(); kick(); };
+    const toggle = (a: any) => { if (playing.has(a)) playing.delete(a); else startAxis(a, performance.now()); syncButtons(); kick(); };
 
     playAllBtn.addEventListener('click', () => {
       if (playing.size === axes.length) { playing.clear(); }
@@ -182,7 +182,7 @@ function specimenCard(family, axes, font) {
   // first script it does cover (so a Japanese-only font ramps in Japanese).
   const scripts = detectSamples(font);
   const primary = scripts[0];
-  const dirOf = (s) => (s.rtl ? 'direction:rtl;' : '');
+  const dirOf = (s: any) => (s.rtl ? 'direction:rtl;' : '');
   for (const size of SPECIMEN_SIZES) {
     const txt = primary.key === 'latin' && size < 32 ? primary.text + '  0123456789' : primary.text;
     lines.appendChild(el('div', { class: 'anr-font-line', style: `font-family:"${family}"; font-size:${size}px;${dirOf(primary)}` }, txt));
@@ -210,7 +210,7 @@ function specimenCard(family, axes, font) {
   return card;
 }
 
-function glyphGridCard(font) {
+function glyphGridCard(font: any) {
   const total = font.glyphs && font.glyphs.length ? font.glyphs.length : 0;
   if (!total) return null;
   const card = el('div', { class: 'anr-card' });
@@ -241,9 +241,9 @@ function glyphGridCard(font) {
 }
 
 // Variable axes (from an opentype font's fvar table).
-function axesOf(font) {
+function axesOf(font: any) {
   if (!(font && font.tables && font.tables.fvar && Array.isArray(font.tables.fvar.axes))) return [];
-  return font.tables.fvar.axes.map((a) => ({
+  return font.tables.fvar.axes.map((a: any) => ({
     tag: a.tag, min: a.minValue, def: a.defaultValue, max: a.maxValue,
     name: (a.name && (a.name.en || Object.values(a.name)[0])) || a.tag,
   }));
@@ -255,17 +255,17 @@ function axesOf(font) {
 // pooled in the file. opentype.js and FontFace both expect a SINGLE font, so we
 // rebuild each member into a standalone sfnt: copy its table directory and the
 // tables it points at into a fresh, self-contained buffer.
-function extractSfnt(buf, offset) {
+function extractSfnt(buf: ArrayBuffer, offset: number) {
   try {
     const dv = new DataView(buf);
     const numTables = dv.getUint16(offset + 4);
     if (!numTables || numTables > 400) return null;
-    const recs = [];
+    const recs: { tag: number; checksum: number; off: number; len: number; newOff: number }[] = [];
     for (let i = 0; i < numTables; i++) {
       const r = offset + 12 + i * 16;
-      recs.push({ tag: dv.getUint32(r), checksum: dv.getUint32(r + 4), off: dv.getUint32(r + 8), len: dv.getUint32(r + 12) });
+      recs.push({ tag: dv.getUint32(r), checksum: dv.getUint32(r + 4), off: dv.getUint32(r + 8), len: dv.getUint32(r + 12) } as any);
     }
-    const align = (n) => (n + 3) & ~3;
+    const align = (n: number) => (n + 3) & ~3;
     let p = 12 + numTables * 16;
     for (const r of recs) { r.newOff = p; p = align(p + r.len); }
     const out = new Uint8Array(p), odv = new DataView(out.buffer), src = new Uint8Array(buf);
@@ -283,7 +283,7 @@ function extractSfnt(buf, offset) {
     return out;
   } catch (_) { return null; }
 }
-function extractCollection(buf) {
+function extractCollection(buf: ArrayBuffer) {
   try {
     const dv = new DataView(buf);
     if (dv.getUint32(0) !== 0x74746366) return null;   // 'ttcf'
@@ -296,7 +296,7 @@ function extractCollection(buf) {
 }
 
 // Per-font metadata table (the naming/version/glyph rows for one font).
-function fontMetaCard(font, axes) {
+function fontMetaCard(font: any, axes: any[]) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Font', 'Reads the font’s name, its embedded details and the letter shapes inside; the live sample above is this font actually drawing text.');
   card.appendChild(h); card.appendChild(help);
@@ -332,7 +332,7 @@ export async function renderFont(file: File, resultsEl: HTMLElement) {
 
   // A collection? Split it into standalone member fonts; otherwise one entry.
   const members = extractCollection(buf);
-  const entries = [];
+  const entries: any[] = [];
   if (members) {
     members.forEach((bytes, i) => {
       let f = null; if (ot) { try { f = ot.parse(bytes.buffer.slice(0)); } catch (_) { f = null; } }
@@ -356,7 +356,7 @@ export async function renderFont(file: File, resultsEl: HTMLElement) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, isColl ? 'Font collection' : 'Font file'));
   const tbl = el('table', { class: 'anr-readout' });
-  const FLAVOUR = { ttf: 'TrueType (TTF)', otf: 'OpenType (OTF)', woff: 'Web font (WOFF)', woff2: 'Web font (WOFF2)', ttc: 'TrueType collection (TTC)', otc: 'OpenType collection (OTC)' };
+  const FLAVOUR: Record<string, string> = { ttf: 'TrueType (TTF)', otf: 'OpenType (OTF)', woff: 'Web font (WOFF)', woff2: 'Web font (WOFF2)', ttc: 'TrueType collection (TTC)', otc: 'OpenType collection (OTC)' };
   let fmtLabel = FLAVOUR[ext] || (entries[0].font && entries[0].font.outlinesFormat === 'cff' ? 'OpenType (CFF)' : 'Font');
   if (isColl) fmtLabel += ' - ' + entries.length + (entries.length === 1 ? ' font' : ' fonts');
   tbl.appendChild(rowHelp('Format', fmtLabel, isColl ? 'A font collection (TTC/OTC) holds several related fonts in a single file, sharing letter shapes to save space. Each one is unpacked and previewed separately below.' : 'The font’s file format.'));

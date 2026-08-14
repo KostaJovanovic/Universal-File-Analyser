@@ -14,18 +14,18 @@
    as bipolar bars, the HSL colour mixer, the crop rectangle. A sidecar we can't
    read as XMP is handed back to the generic identifier so it is never worse off. */
 
-import { el, rowHelp, h3help, fmtBytes, integrityCard, errorCard, buildReadout } from '../core/util.js';
+import { el, rowHelp, h3help, fmtBytes, integrityCard, errorCard, buildReadout, type ElChild } from '../core/util.js';
 
 // ---- small value helpers -----------------------------------------------------
-const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : null; };
+const num = (v: string) => { const n = parseFloat(v); return isFinite(n) ? n : null; };
 // Reduce an XMP rational ("56/10", "500/1") to a plain number where it is one.
-function rational(v) {
+function rational(v: string|null) {
   if (v == null) return null;
   const m = String(v).match(/^(-?\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/);
   if (m) { const d = parseFloat(m[2]); return d ? parseFloat(m[1]) / d : null; }
   return num(v);
 }
-const signed = (n, dp = 0) => (n > 0 ? '+' : '') + n.toFixed(dp).replace(/\.0+$/, '');
+const signed = (n: number, dp = 0) => (n > 0 ? '+' : '') + n.toFixed(dp).replace(/\.0+$/, '');
 
 // ---- parse the packet --------------------------------------------------------
 // Flatten every namespaced property - both the attribute form Lightroom uses
@@ -33,15 +33,15 @@ const signed = (n, dp = 0) => (n > 0 ? '+' : '') + n.toFixed(dp).replace(/\.0+$/
 // maps keyed by a lowercased "prefix:local": scalars in V, rdf:Seq/Bag/Alt
 // lists in L. darktable's history (li with attributes, no text) is pulled out
 // separately since its edits are an opaque module stack, not scalar properties.
-function parseXmp(doc) {
+function parseXmp(doc: Document) {
   const V = new Map(), L = new Map(), ns = new Set();
-  const put = (prefix, local, val) => {
+  const put = (prefix: string, local: string, val: string|null) => {
     if (val == null) return;
     const key = (prefix + ':' + local).toLowerCase();
     const s = String(val).trim();
     if (s && !V.has(key)) V.set(key, s);
   };
-  const childByLocal = (node, name) => [...node.children].find((c) => c.localName === name);
+  const childByLocal = (node: Element, name: string) => [...node.children].find((c) => c.localName === name);
 
   const descs = [...doc.getElementsByTagName('*')].filter((e) => e.localName === 'Description' && e.prefix === 'rdf');
   for (const d of descs) {
@@ -72,7 +72,7 @@ function parseXmp(doc) {
 // carrying darktable:operation / darktable:enabled attributes); list the modules
 // so the readout says what was touched, the way the .look viewer lists a grade
 // stack it can name but not re-bake.
-function darktableHistory(doc) {
+function darktableHistory(doc: Document) {
   const out = [];
   for (const e of doc.getElementsByTagName('*')) {
     if (e.localName !== 'li' || e.prefix !== 'rdf') continue;
@@ -90,29 +90,29 @@ function darktableHistory(doc) {
 // crs tone curves are an rdf:Seq of "x, y" control points, 0..255 each. We plot
 // them exactly like the LUT viewer's neutral tone-response curve: a framed
 // square, a dashed identity diagonal, and one line per channel.
-function parsePoints(list) {
+function parsePoints(list: string[]|undefined) {
   if (!list) return null;
-  const pts = list.map((s) => s.split(',').map((n) => parseFloat(n.trim()))).filter((p) => p.length >= 2 && isFinite(p[0]) && isFinite(p[1]));
-  pts.sort((a, b) => a[0] - b[0]);
+  const pts: number[][] = list.map((s: string) => s.split(',').map((n: string) => parseFloat(n.trim()))).filter((p: number[]) => p.length >= 2 && isFinite(p[0]) && isFinite(p[1]));
+  pts.sort((a: number[], b: number[]) => a[0] - b[0]);
   return pts.length >= 2 ? pts : null;
 }
-const isIdentityCurve = (pts) => pts.length === 2 && pts[0][0] === 0 && pts[0][1] === 0 && pts[1][0] === 255 && pts[1][1] === 255;
+const isIdentityCurve = (pts: number[][]) => pts.length === 2 && pts[0][0] === 0 && pts[0][1] === 0 && pts[1][0] === 255 && pts[1][1] === 255;
 
-function toneCurveSvg(curves, W, H) {
+function toneCurveSvg(curves: { pts: number[][]; color: string }[], W: number, H: number) {
   const pad = 6, w = W - pad - 6, h = H - pad - 6, x0 = pad, y0 = pad;
-  const X = (t) => x0 + (t / 255) * w, Y = (v) => y0 + (1 - v / 255) * h;
+  const X = (t: number) => x0 + (t / 255) * w, Y = (v: number) => y0 + (1 - v / 255) * h;
   let g = `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="rgba(128,128,128,.05)" stroke="currentColor" stroke-opacity=".15"/>`;
   for (let q = 1; q < 4; q++) { const gx = X(q / 4 * 255), gy = Y(q / 4 * 255); g += `<line x1="${gx}" y1="${y0}" x2="${gx}" y2="${y0 + h}" stroke="currentColor" stroke-opacity=".07"/><line x1="${x0}" y1="${gy}" x2="${x0 + w}" y2="${gy}" stroke="currentColor" stroke-opacity=".07"/>`; }
   g += `<line x1="${X(0)}" y1="${Y(0)}" x2="${X(255)}" y2="${Y(255)}" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="3 3"/>`;
   for (const c of curves) {
-    const path = c.pts.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1)).join(' ');
+    const path = c.pts.map((p: number[], i: number) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1)).join(' ');
     g += `<path d="${path}" fill="none" stroke="${c.color}" stroke-width="1.8" stroke-linejoin="round"/>`;
   }
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="display:block">${g}</svg>`;
 }
 
 // ---- a bipolar / unipolar develop slider, drawn as a bar ---------------------
-function sliderRow(grid, label, value, min, max, fmt) {
+function sliderRow(grid: HTMLDivElement, label: string, value: string, min: number, max: number, fmt?: ((n: number) => string)|null) {
   const n = num(value);
   if (n == null) return false;
   const span = max - min;
@@ -134,7 +134,7 @@ const HUES = [
   ['Red', '#d64545'], ['Orange', '#d98a3d'], ['Yellow', '#c7c23a'], ['Green', '#4fae5a'],
   ['Aqua', '#3bb3ad'], ['Blue', '#3d6fd9'], ['Purple', '#8a5cd9'], ['Magenta', '#d24d9e'],
 ];
-function miniBar(n) {
+function miniBar(n: number) {
   const frac = Math.max(0, Math.min(1, (n + 100) / 200)), zero = 0.5;
   const from = n >= 0 ? zero : frac, to = n >= 0 ? frac : zero;
   return el('div', { class: 'anr-xmp-bar anr-xmp-bar--mini', title: signed(n) }, [
@@ -156,7 +156,7 @@ export async function renderXmp(file: File, resultsEl: HTMLElement) {
 
   // Parse the RDF/XML. Anything that isn't a readable XMP packet is handed back
   // to the generic identifier (which still reads a basic field list + hex).
-  let doc = null;
+  let doc: Document|null = null;
   try { doc = new DOMParser().parseFromString(text, 'application/xml'); } catch (_) { doc = null; }
   const ok = doc && !doc.getElementsByTagName('parsererror').length && /<(?:x:xmpmeta|rdf:RDF)/i.test(text);
   if (!ok) {
@@ -165,10 +165,10 @@ export async function renderXmp(file: File, resultsEl: HTMLElement) {
     return renderProprietary(file, resultsEl, 'xmp');
   }
 
-  const { V, L, ns } = parseXmp(doc);
-  const get = (k) => V.get(k.toLowerCase());
-  const getList = (k) => L.get(k.toLowerCase());
-  const getAny = (k) => get(k) ?? (getList(k) ? getList(k).join(', ') : undefined);
+  const { V, L, ns } = parseXmp(doc!);
+  const get = (k: string) => V.get(k.toLowerCase());
+  const getList = (k: string) => L.get(k.toLowerCase());
+  const getAny = (k: string) => get(k) ?? (getList(k) ? getList(k).join(', ') : undefined);
   const isDarktable = ns.has('darktable');
   const hasCrs = [...V.keys()].some((k) => k.startsWith('crs:')) || ns.has('crs');
 
@@ -225,15 +225,15 @@ export async function renderXmp(file: File, resultsEl: HTMLElement) {
   // ---- Basic develop panel (the sliders), drawn as bars ----
   // Modern (process 2012+) sliders first; fall back to the legacy names so an
   // older sidecar still charts something sensible.
-  const BASIC_2012 = [
-    ['Exposure', 'Exposure2012', -5, 5, (n) => signed(n, 2) + ' EV'],
+  const BASIC_2012: [string, string, number, number, ((n: number) => string)?][] = [
+    ['Exposure', 'Exposure2012', -5, 5, (n: number) => signed(n, 2) + ' EV'],
     ['Contrast', 'Contrast2012', -100, 100], ['Highlights', 'Highlights2012', -100, 100],
     ['Shadows', 'Shadows2012', -100, 100], ['Whites', 'Whites2012', -100, 100], ['Blacks', 'Blacks2012', -100, 100],
     ['Texture', 'Texture', -100, 100], ['Clarity', 'Clarity2012', -100, 100], ['Dehaze', 'Dehaze', -100, 100],
     ['Vibrance', 'Vibrance', -100, 100], ['Saturation', 'Saturation', -100, 100],
   ];
-  const BASIC_LEGACY = [
-    ['Exposure', 'Exposure', -4, 4, (n) => signed(n, 2) + ' EV'],
+  const BASIC_LEGACY: [string, string, number, number, ((n: number) => string)?][] = [
+    ['Exposure', 'Exposure', -4, 4, (n: number) => signed(n, 2) + ' EV'],
     ['Brightness', 'Brightness', -150, 150], ['Contrast', 'Contrast', -50, 100],
     ['Recovery', 'Recovery', 0, 100], ['Fill light', 'FillLight', 0, 100], ['Blacks', 'Blacks', 0, 100],
     ['Clarity', 'Clarity', -100, 100], ['Vibrance', 'Vibrance', -100, 100], ['Saturation', 'Saturation', -100, 100],
@@ -253,8 +253,8 @@ export async function renderXmp(file: File, resultsEl: HTMLElement) {
     dvCard.appendChild(h); dvCard.appendChild(help);
     if (temp || tint) {
       dvCard.appendChild(buildReadout([
-        temp && rowHelp('Temperature', temp + (num(temp) > 100 ? ' K' : ''), 'The colour temperature the raw is developed at. Lower is cooler (bluer), higher is warmer (more amber).'),
-        tint && rowHelp('Tint', (num(tint) != null ? signed(num(tint)) : tint), 'The green-magenta balance. Negative leans green, positive leans magenta.'),
+        temp && rowHelp('Temperature', temp + (num(temp)! > 100 ? ' K' : ''), 'The colour temperature the raw is developed at. Lower is cooler (bluer), higher is warmer (more amber).'),
+        tint && rowHelp('Tint', (num(tint) != null ? signed(num(tint)!) : tint), 'The green-magenta balance. Negative leans green, positive leans magenta.'),
       ].filter(Boolean)));
     }
     dvCard.appendChild(basicGrid);
@@ -266,7 +266,7 @@ export async function renderXmp(file: File, resultsEl: HTMLElement) {
     ['crs:ToneCurvePV2012', 'currentColor'], ['crs:ToneCurvePV2012Red', '#e0524d'],
     ['crs:ToneCurvePV2012Green', '#3ba776'], ['crs:ToneCurvePV2012Blue', '#3b82c4'],
   ];
-  let curves = curveDefs.map(([k, color]) => ({ pts: parsePoints(getList(k)), color })).filter((c) => c.pts);
+  let curves = curveDefs.map(([k, color]) => ({ pts: parsePoints(getList(k)), color })).filter((c) => c.pts) as { pts: number[][]; color: string }[];
   if (!curves.length) { const legacy = parsePoints(getList('crs:ToneCurve')); if (legacy) curves = [{ pts: legacy, color: 'currentColor' }]; }
   // Only worth drawing if at least one channel actually bends the line.
   if (curves.some((c) => !isIdentityCurve(c.pts))) {
@@ -280,7 +280,7 @@ export async function renderXmp(file: File, resultsEl: HTMLElement) {
   }
 
   // ---- HSL colour mixer ----
-  const hslRows = [];
+  const hslRows: [string, string, number, number, number][] = [];
   for (const [name, swatch] of HUES) {
     const hh = num(get('crs:HueAdjustment' + name)), ss = num(get('crs:SaturationAdjustment' + name)), ll = num(get('crs:LuminanceAdjustment' + name));
     if (!hh && !ss && !ll) continue;
@@ -305,7 +305,7 @@ export async function renderXmp(file: File, resultsEl: HTMLElement) {
   // ---- Detail / optics ----
   const detailRows = [
     get('crs:Sharpness') != null && rowHelp('Sharpening', get('crs:Sharpness'), 'The sharpening amount applied on develop (0 to 150).'),
-    get('crs:LuminanceSmoothing') != null && num(get('crs:LuminanceSmoothing')) > 0 && rowHelp('Luminance noise reduction', get('crs:LuminanceSmoothing'), 'How strongly grain-like luminance noise is smoothed away (0 to 100).'),
+    get('crs:LuminanceSmoothing') != null && num(get('crs:LuminanceSmoothing'))! > 0 && rowHelp('Luminance noise reduction', get('crs:LuminanceSmoothing'), 'How strongly grain-like luminance noise is smoothed away (0 to 100).'),
     get('crs:ColorNoiseReduction') != null && rowHelp('Colour noise reduction', get('crs:ColorNoiseReduction'), 'How strongly blotchy colour noise is removed (0 to 100).'),
     get('crs:LensProfileEnable') != null && rowHelp('Lens corrections', get('crs:LensProfileEnable') === '1' ? 'on' + (get('crs:LensProfileName') ? ' - ' + get('crs:LensProfileName') : '') : 'off', 'Whether the built-in lens profile (distortion and vignette correction for this specific lens) is switched on.'),
     (get('crs:AutoLateralCA') === '1') && ['Chromatic aberration', 'auto-removed'],
@@ -339,7 +339,7 @@ export async function renderXmp(file: File, resultsEl: HTMLElement) {
 
   // ---- darktable module stack ----
   if (isDarktable) {
-    const hist = darktableHistory(doc);
+    const hist = darktableHistory(doc!);
     const active = hist.filter((m) => m.enabled);
     const dtCard = el('div', { class: 'anr-card' });
     const [h, help] = h3help('darktable modules',
@@ -371,7 +371,7 @@ export async function renderXmp(file: File, resultsEl: HTMLElement) {
     if (catRows.length) kwCard.appendChild(buildReadout(catRows));
     if (kw && kw.length) {
       kwCard.appendChild(el('p', { class: 'anr-readout-section' }, 'Keywords'));
-      kwCard.appendChild(el('div', { class: 'anr-xmp-kws' }, kw.map((k) => el('span', { class: 'anr-xmp-kw' }, k))));
+      kwCard.appendChild(el('div', { class: 'anr-xmp-kws' }, kw.map((k: ElChild | ElChild[]) => el('span', { class: 'anr-xmp-kw' }, k))));
     }
     resultsEl.appendChild(kwCard);
   }

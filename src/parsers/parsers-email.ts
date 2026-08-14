@@ -19,6 +19,16 @@ import { parsePlist } from '../lib/plist.js';
 import { openCfbf } from '../lib/cfbf.js';
 import { openZip } from '../renderers/zip.js';
 import type { Row, ParseFn } from '../core/types.js';
+import type { CfbfEntry } from '../lib/cfbf.js';
+
+/** One unfolded iCalendar/vCard content line: NAME[;PARAM=x]:VALUE. */
+interface IcalLine { name: string; params: Record<string, any>; value: string; }
+/** The VEVENT / VTODO fields parseIcs surfaces for the first few components. */
+interface IcalEvent {
+  type: string; attendees: number;
+  summary?: string; dtstart?: string; dtend?: string;
+  location?: string; organizer?: string; rrule?: string;
+}
 
 // ---------- shared helpers ----------
 
@@ -34,18 +44,18 @@ async function readText(file: File, max = SAMPLE) {
 }
 
 // Split a raw email/message blob into [rawHeaders, body] on the first blank line.
-function splitHeaderBody(raw) {
+function splitHeaderBody(raw: string) {
   const m = raw.match(/\r?\n\r?\n/);
   if (!m) return [raw, ''];
-  return [raw.slice(0, m.index), raw.slice(m.index + m[0].length)];
+  return [raw.slice(0, m.index), raw.slice(m.index! + m[0].length)];
 }
 
 // Unfold RFC 822 / RFC 5322 header continuation lines (a following line that
 // begins with whitespace is a continuation of the previous header) and return an
 // ordered list of { name, value } plus a case-insensitive lookup map.
-function parseHeaders(rawHeaders) {
+function parseHeaders(rawHeaders: string) {
   const lines = rawHeaders.split(/\r?\n/);
-  const out = [];
+  const out: { name: string; value: string }[] = [];
   for (const line of lines) {
     if (!line) continue;
     if (/^[ \t]/.test(line) && out.length) {
@@ -68,11 +78,11 @@ function parseHeaders(rawHeaders) {
 // Decode RFC 2047 encoded-words ("=?utf-8?B?...?=") in a header value so
 // subjects/names with non-ASCII show readable. Best-effort; leaves text as-is on
 // failure.
-function decodeRfc2047(s) {
+function decodeRfc2047(s: string | null | undefined) {
   if (!s || s.indexOf('=?') < 0) return s || '';
-  return s.replace(/=\?([^?]+)\?([bBqQ])\?([^?]*)\?=/g, (full, charset, enc, data) => {
+  return s.replace(/=\?([^?]+)\?([bBqQ])\?([^?]*)\?=/g, (full: string, charset: string, enc: string, data: string) => {
     try {
-      let bytes;
+      let bytes: Uint8Array;
       if (enc.toLowerCase() === 'b') {
         const bin = atob(data.replace(/\s+/g, ''));
         bytes = new Uint8Array(bin.length);
@@ -94,7 +104,7 @@ function decodeRfc2047(s) {
 }
 
 // Parse a Content-Type value -> { type, params{} }.
-function parseContentType(v) {
+function parseContentType(v: string | null | undefined) {
   if (!v) return { type: '', params: {} };
   const parts = v.split(';');
   const type = (parts.shift() || '').trim().toLowerCase();
@@ -109,17 +119,17 @@ function parseContentType(v) {
 }
 
 // Decode a quoted-printable body to text (used for body previews).
-function decodeQuotedPrintable(s) {
-  return s.replace(/=\r?\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+function decodeQuotedPrintable(s: string) {
+  return s.replace(/=\r?\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, (_: string, h: string) => String.fromCharCode(parseInt(h, 16)));
 }
 
 // ---------- eml / MIME ----------
 
 // Core MIME analysis shared by .eml and .emlx. `raw` is the decoded message text.
-function analyseMime(raw) {
+function analyseMime(raw: string) {
   const [rawHeaders, body] = splitHeaderBody(raw);
   const { map } = parseHeaders(rawHeaders);
-  const get = (k) => decodeRfc2047(map[k] || '');
+  const get = (k: string) => decodeRfc2047(map[k] || '');
 
   const out: any = {};
   const subj = get('subject');
@@ -315,9 +325,9 @@ async function parseMbox(file: File) {
 
 // Unfold RFC 5545 folded lines: a line beginning with space/tab continues the
 // previous one. Returns an array of logical lines.
-function unfoldIcal(text) {
+function unfoldIcal(text: string) {
   const phys = text.split(/\r?\n/);
-  const out = [];
+  const out: string[] = [];
   for (const line of phys) {
     if (/^[ \t]/.test(line) && out.length) out[out.length - 1] += line.slice(1);
     else out.push(line);
@@ -326,13 +336,13 @@ function unfoldIcal(text) {
 }
 
 // Split a content line "NAME;PARAM=x:value" -> { name, params, value }.
-function icalLine(line) {
+function icalLine(line: string): IcalLine | null {
   const ci = line.indexOf(':');
   if (ci < 0) return null;
   const head = line.slice(0, ci);
   const value = line.slice(ci + 1);
   const segs = head.split(';');
-  const name = segs.shift().toUpperCase();
+  const name = segs.shift()!.toUpperCase();
   const params: any = {};
   for (const s of segs) { const i = s.indexOf('='); if (i > 0) params[s.slice(0, i).toUpperCase()] = s.slice(i + 1); }
   return { name, params, value };
@@ -343,13 +353,13 @@ async function parseIcs(file: File) {
   if (!text || !/BEGIN:VCALENDAR/i.test(text)) {
     if (!/BEGIN:V/i.test(text || '')) return null;
   }
-  const lines = unfoldIcal(text).map(icalLine).filter(Boolean);
+  const lines = unfoldIcal(text).map(icalLine).filter(Boolean) as IcalLine[];
   const out: Row = { 'Format': 'iCalendar' };
 
   let prodid = '', version = '', method = '';
   const counts: Record<string, number> = { VEVENT: 0, VTODO: 0, VJOURNAL: 0, VALARM: 0, VFREEBUSY: 0, VTIMEZONE: 0 };
-  const events = [];
-  let cur = null, curType = null;
+  const events: IcalEvent[] = [];
+  let cur: IcalEvent | null = null, curType: string | null = null;
 
   for (const l of lines) {
     if (l.name === 'PRODID') prodid = l.value;
@@ -407,9 +417,10 @@ async function parseIcs(file: File) {
 async function parseVcs(file: File) {
   const text = await readText(file);
   if (!text || !/BEGIN:VCALENDAR/i.test(text)) return null;
-  const lines = unfoldIcal(text).map(icalLine).filter(Boolean);
+  const lines = unfoldIcal(text).map(icalLine).filter(Boolean) as IcalLine[];
   const out: Row = { 'Format': 'vCalendar 1.0 (legacy)', 'Legacy': 'yes (superseded by iCalendar/.ics)' };
-  let version = '', events = 0, cur = null;
+  let version = '', events = 0;
+  let cur: { summary?: string; dtstart?: string; dtend?: string; location?: string } | null = null;
   for (const l of lines) {
     if (l.name === 'VERSION' && !version) version = l.value;
     else if (l.name === 'BEGIN' && l.value.toUpperCase() === 'VEVENT') { events++; if (!cur) cur = {}; }
@@ -438,8 +449,8 @@ async function parseVcf(file: File) {
   const lines = unfoldIcal(text);
 
   // Split into cards.
-  const cards = [];
-  let cur = null;
+  const cards: string[][] = [];
+  let cur: string[] | null = null;
   for (const raw of lines) {
     if (/^BEGIN:VCARD/i.test(raw)) { cur = []; continue; }
     if (/^END:VCARD/i.test(raw)) { if (cur) cards.push(cur); cur = null; continue; }
@@ -450,12 +461,12 @@ async function parseVcf(file: File) {
   const out: Row = { 'Format': 'vCard', 'Cards': cards.length };
 
   // Detail the first few cards.
-  let photoDataUrl = null;
-  const detail = [];
+  let photoDataUrl: string | null = null;
+  const detail: string[] = [];
   cards.slice(0, 5).forEach((card, idx) => {
-    const props = card.map(icalLine).filter(Boolean);
-    const get = (n) => { const p = props.find((x) => x.name === n); return p ? p.value : ''; };
-    const all = (n) => props.filter((x) => x.name === n);
+    const props = card.map(icalLine).filter(Boolean) as IcalLine[];
+    const get = (n: string) => { const p = props.find((x) => x.name === n); return p ? p.value : ''; };
+    const all = (n: string) => props.filter((x) => x.name === n);
     const fn = get('FN') || get('N').split(';').filter(Boolean).reverse().join(' ');
     const bits = [(idx + 1) + '. ' + (fn || '(no name)')];
     const ver = get('VERSION'); if (ver && idx === 0) out['vCard version'] = ver;
@@ -509,8 +520,8 @@ async function parseLdif(file: File) {
   }
   let entries = 0, changes = 0;
   const objectClasses: Record<string, number> = {};
-  const sample = [];
-  let curDn = null, curCn = null, curMail = null;
+  const sample: string[] = [];
+  let curDn: string | null = null, curCn: string | null = null, curMail: string | null = null;
   const flush = () => {
     if (curDn != null) {
       entries++;
@@ -557,13 +568,13 @@ async function parseContact(file: File) {
   // The Windows Contact schema is namespaced (c:); querySelector ignores prefixes
   // by local name in most engines, so match on localName via getElementsByTagName-ish
   // traversal.
-  const textOf = (localName) => {
+  const textOf = (localName: string) => {
     const els = doc.getElementsByTagName('*');
     for (const e of els) if (e.localName === localName && e.textContent.trim()) return e.textContent.trim();
     return '';
   };
-  const allText = (localName) => {
-    const res = [];
+  const allText = (localName: string) => {
+    const res: string[] = [];
     const els = doc.getElementsByTagName('*');
     for (const e of els) if (e.localName === localName && e.textContent.trim()) res.push(e.textContent.trim());
     return res;
@@ -597,7 +608,7 @@ async function parseContact(file: File) {
 // sub-CFBF-storage carrying its own __substg streams (e.g. the long filename).
 
 // Decode a property stream's bytes per its 001F/001E type suffix.
-function decodeMapiString(bytes, type) {
+function decodeMapiString(bytes: Uint8Array | null, type: string) {
   if (!bytes || !bytes.length) return '';
   try {
     if (type === '001f' || type === '101f') return utf16(bytes, true).replace(/\0+$/, '');
@@ -609,15 +620,15 @@ function decodeMapiString(bytes, type) {
 
 // Find a MAPI property string by PROPID (4 hex chars), trying Unicode then ASCII,
 // scanning the directory entries of a given CFBF (or a name-prefix subset).
-function getMapiProp(cfbf, propid, entryFilter?) {
+function getMapiProp(cfbf: any, propid: string, entryFilter?: (e: CfbfEntry) => boolean) {
   const want = ('__substg1.0_' + propid).toLowerCase();
   for (const type of ['001f', '001e']) {
     const target = want + type;
-    const e = cfbf.rawEntries.find((x) =>
+    const e = cfbf.rawEntries.find((x: any) =>
       x.type === 2 && x.name && x.name.toLowerCase() === target &&
       (!entryFilter || entryFilter(x)));
     if (e) {
-      const bytes = cfbf.readStream((c) => c.path === e.path) || cfbf.readStream(e.name);
+      const bytes = cfbf.readStream((c: CfbfEntry) => c.path === e.path) || cfbf.readStream(e.name);
       const s = decodeMapiString(bytes, type);
       if (s) return s;
     }
@@ -626,11 +637,11 @@ function getMapiProp(cfbf, propid, entryFilter?) {
 }
 
 // FILETIME property (0040) -> Date. Stored as 8 bytes (lo dword, hi dword) LE.
-function getMapiTime(cfbf, propid) {
+function getMapiTime(cfbf: any, propid: string) {
   const target = ('__substg1.0_' + propid + '0040').toLowerCase();
-  const e = cfbf.rawEntries.find((x) => x.type === 2 && x.name && x.name.toLowerCase() === target);
+  const e = cfbf.rawEntries.find((x: any) => x.type === 2 && x.name && x.name.toLowerCase() === target);
   if (!e) return null;
-  const bytes = cfbf.readStream((c) => c.path === e.path) || cfbf.readStream(e.name);
+  const bytes = cfbf.readStream((c: CfbfEntry) => c.path === e.path) || cfbf.readStream(e.name);
   if (!bytes || bytes.length < 8) return null;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   return filetimeToDate(dv.getUint32(0, true), dv.getUint32(4, true));
@@ -664,7 +675,7 @@ async function parseMsg(file: File) {
   const attachNames = [];
   for (const st of attachStorages) {
     const prefix = (st.path || st.name) + '/';
-    const childFilter = (x) => x.path && x.path.startsWith(prefix);
+    const childFilter = (x: CfbfEntry) => !!x.path && x.path.startsWith(prefix);
     const fname =
       getMapiProp(cfbf, '3707', childFilter) ||   // attach long filename
       getMapiProp(cfbf, '3704', childFilter) ||   // attach filename (short)
@@ -822,14 +833,14 @@ async function parseP7(file: File, ext: string) {
 // ASCII with a dict of hex-keyed atoms and rows. A full Mork parser is large; we
 // decode the atom dictionary and surface cached human strings (subjects, senders,
 // names, emails) plus table/row counts - enough for a useful readout.
-function parseMork(text) {
+function parseMork(text: string) {
   // Atom dictionaries: <(KEY=VALUE)(KEY=VALUE)...> ; values may contain $XX hex
   // escapes and \) escapes. Collect KEY -> decoded VALUE.
   const atoms: Record<string, string> = {};
-  const unescape = (v) => v
+  const unescape = (v: string) => v
     .replace(/\\\r?\n/g, '')                                   // line continuation
     .replace(/\\([)\\$])/g, '$1')                              // escaped metachars
-    .replace(/\$([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+    .replace(/\$([0-9A-Fa-f]{2})/g, (_: string, h: string) => String.fromCharCode(parseInt(h, 16)));
   const dictRe = /\(([0-9A-Fa-f]+)\s*[=^]\s*([^)]*)\)/g;
   let m;
   while ((m = dictRe.exec(text)) !== null) {
@@ -964,18 +975,18 @@ async function parseOft(file: File) {
 }
 
 // ---------- vMessage (.vmg) / vNote (.vnt) - vObject text ----------
-function parseVobjectText(text) {
+function parseVobjectText(text: string): IcalLine[] {
   // Shared light parser for BEGIN:VMSG / BEGIN:VNOTE blocks (vObject / vMessage
   // 1.0). Properties are NAME[;PARAM]:VALUE; bodies may be quoted-printable.
   const lines = unfoldIcal(text);
-  const props = [];
+  const props: IcalLine[] = [];
   for (const raw of lines) {
     const ci = raw.indexOf(':');
     if (ci < 0) continue;
     const head = raw.slice(0, ci);
     const value = raw.slice(ci + 1);
     const segs = head.split(';');
-    const name = segs.shift().toUpperCase();
+    const name = segs.shift()!.toUpperCase();
     const params: any = {};
     for (const s of segs) { const i = s.indexOf('='); if (i > 0) params[s.slice(0, i).toUpperCase()] = s.slice(i + 1); else params[s.toUpperCase()] = true; }
     props.push({ name, params, value });
@@ -983,7 +994,7 @@ function parseVobjectText(text) {
   return props;
 }
 
-function maybeQp(value, params) {
+function maybeQp(value: string, params: Record<string, any>) {
   if (params && (params['ENCODING'] === 'QUOTED-PRINTABLE' || params['QUOTED-PRINTABLE'])) {
     try { return decodeQuotedPrintable(value); } catch (_) { return value; }
   }
@@ -994,7 +1005,7 @@ async function parseVmg(file: File) {
   const text = await readText(file, 1024 * 1024);
   if (!text || !/BEGIN:VMSG/i.test(text)) return null;
   const props = parseVobjectText(text);
-  const get = (n) => { const p = props.find((x) => x.name === n); return p ? maybeQp(p.value, p.params) : ''; };
+  const get = (n: string) => { const p = props.find((x) => x.name === n); return p ? maybeQp(p.value, p.params) : ''; };
 
   const blocks = (text.match(/BEGIN:VMSG/gi) || []).length;
   const out: Row = { 'Format': 'vMessage SMS backup (.vmg)', 'Application': 'Nokia / Sony Ericsson / Siemens phones' };
@@ -1025,7 +1036,7 @@ async function parseVnt(file: File) {
   const text = await readText(file, 1024 * 1024);
   if (!text || !/BEGIN:VNOTE/i.test(text)) return null;
   const props = parseVobjectText(text);
-  const get = (n) => { const p = props.find((x) => x.name === n); return p ? maybeQp(p.value, p.params) : ''; };
+  const get = (n: string) => { const p = props.find((x) => x.name === n); return p ? maybeQp(p.value, p.params) : ''; };
 
   const out: Row = { 'Format': 'vNote (.vnt)', 'Application': 'Nokia / Sony / Samsung phones' };
   const body = get('BODY');
@@ -1047,7 +1058,7 @@ async function parseXcal(file: File) {
   if (!text || !/<(icalendar|vcalendar)\b/i.test(text)) return null;
   let doc; try { doc = new DOMParser().parseFromString(text, 'application/xml'); } catch (_) { return null; }
   if (!doc || doc.querySelector('parsererror')) return null;
-  const tag = (n) => doc.getElementsByTagName(n).length || [...doc.getElementsByTagName('*')].filter((e) => e.localName === n).length;
+  const tag = (n: string) => doc.getElementsByTagName(n).length || [...doc.getElementsByTagName('*')].filter((e) => e.localName === n).length;
   const out: Row = {
     'Format': 'xCal - iCalendar in XML (RFC 6321)',
     'Events (vevent)': tag('vevent'),
@@ -1069,8 +1080,8 @@ async function parseJcal(file: File) {
   // jCal: ["vcalendar", [props], [components]].
   if (!Array.isArray(data) || data[0] !== 'vcalendar') return null;
   const counts: any = {};
-  const summaries = [];
-  const walk = (comp) => {
+  const summaries: string[] = [];
+  const walk = (comp: any) => {
     if (!Array.isArray(comp)) return;
     const [name, , subs] = comp;
     if (typeof name === 'string') counts[name] = (counts[name] || 0) + 1;
@@ -1098,10 +1109,10 @@ async function parseXcard(file: File) {
   const cards = [...doc.getElementsByTagName('*')].filter((e) => e.localName === 'vcard');
   if (!cards.length) return null;
   const out: Row = { 'Format': 'xCard - vCard in XML (RFC 6351)', 'Cards': cards.length };
-  const detail = [];
+  const detail: string[] = [];
   cards.slice(0, 5).forEach((card, i) => {
-    const localText = (ln) => { const e = [...card.getElementsByTagName('*')].find((x) => x.localName === ln); return e ? e.textContent.trim() : ''; };
-    const allText = (ln) => [...card.getElementsByTagName('*')].filter((x) => x.localName === ln).map((x) => x.textContent.trim()).filter(Boolean);
+    const localText = (ln: string) => { const e = [...card.getElementsByTagName('*')].find((x) => x.localName === ln); return e ? e.textContent!.trim() : ''; };
+    const allText = (ln: string) => [...card.getElementsByTagName('*')].filter((x) => x.localName === ln).map((x) => x.textContent!.trim()).filter(Boolean);
     const fn = localText('fn') || localText('text');
     const bits = [(i + 1) + '. ' + (fn || '(no name)')];
     for (const e of allText('email')) bits.push('   email: ' + e);
@@ -1121,11 +1132,11 @@ async function parseJcard(file: File) {
     : (Array.isArray(data) && data.every((d) => Array.isArray(d) && d[0] === 'vcard')) ? data : null;
   if (!cards || !cards.length) return null;
   const out: Row = { 'Format': 'jCard - vCard in JSON (RFC 7095)', 'Cards': cards.length };
-  const detail = [];
+  const detail: string[] = [];
   cards.slice(0, 5).forEach((card, i) => {
     const props = Array.isArray(card[1]) ? card[1] : [];
-    const get = (n) => { const p = props.find((x) => Array.isArray(x) && x[0] === n); return p ? String(p[3]) : ''; };
-    const all = (n) => props.filter((x) => Array.isArray(x) && x[0] === n).map((x) => String(x[3]));
+    const get = (n: string) => { const p = props.find((x: any) => Array.isArray(x) && x[0] === n); return p ? String(p[3]) : ''; };
+    const all = (n: string) => props.filter((x: any) => Array.isArray(x) && x[0] === n).map((x: any) => String(x[3]));
     const bits = [(i + 1) + '. ' + (get('fn') || '(no name)')];
     for (const e of all('email')) bits.push('   email: ' + e);
     for (const t of all('tel')) bits.push('   tel: ' + t);
@@ -1138,7 +1149,7 @@ async function parseJcard(file: File) {
 // ---------- identification-only (binary container PIM) ----------
 // These need a proprietary DB engine (pst/ost/nsf/edb/dbx) we don't ship.
 // Surface a minimal identification card.
-const IDENT: Record<string, string> = {
+const IDENT: Record<string, Record<string, string>> = {
   pst: { Format: 'Outlook Personal Store (.pst)', Note: 'Proprietary !BDN database; requires a PST engine to read folders/messages.' },
   ost: { Format: 'Outlook Offline Store (.ost)', Note: 'Offline cache of an Exchange/Outlook mailbox; same !BDN format as PST.' },
   nsf: { Format: 'IBM/HCL Notes database (.nsf)', Note: 'Notes Storage Facility; on-disk NSF format needs the Notes engine to read documents.' },

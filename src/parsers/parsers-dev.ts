@@ -13,8 +13,11 @@ import { parsePlist } from '../lib/plist.js';
 import { openZip } from '../renderers/zip.js';
 import type { Row, RowSection, ParseFn } from '../core/types.js';
 
+/** Running totals the protobuf wire-format walk accumulates as it descends. */
+interface PbStats { fields: number; wires: Record<string, number>; }
+
 // ---------- small helpers ----------
-function b64urlToBytes(s) {
+function b64urlToBytes(s: string) {
   s = s.replace(/-/g, '+').replace(/_/g, '/');
   while (s.length % 4) s += '=';
   const bin = atob(s);
@@ -22,11 +25,11 @@ function b64urlToBytes(s) {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
-const b64urlToStr = (s) => new TextDecoder('utf-8').decode(b64urlToBytes(s));
+const b64urlToStr = (s: string) => new TextDecoder('utf-8').decode(b64urlToBytes(s));
 
 // A simple two-column readout table from an array of [label, value] pairs.
 // Unsigned LEB128 from a byte array at cursor {i}.
-function uleb(b, cur) { let r = 0, sh = 0, x; do { x = b[cur.i++]; r += (x & 0x7f) * Math.pow(2, sh); sh += 7; } while (x & 0x80); return r; }
+function uleb(b: Uint8Array, cur: { i: number }) { let r = 0, sh = 0, x; do { x = b[cur.i++]; r += (x & 0x7f) * Math.pow(2, sh); sh += 7; } while (x & 0x80); return r; }
 
 // ---------- JSON Web Token ----------
 async function parseJwt(file: File) {
@@ -78,7 +81,7 @@ async function parseHar(file: File) {
     const code = r.status || 0; status[code] = (status[code] || 0) + 1;
     const ct = ((r.content && r.content.mimeType) || '').split(';')[0]; if (ct) types[ct] = (types[ct] || 0) + 1;
     const hdrs = ((e.request && e.request.headers) || []).concat((r.headers) || []);
-    if (hdrs.some((h) => /^(authorization|cookie|set-cookie)$/i.test(h.name || ''))) secrets++;
+    if (hdrs.some((h: any) => /^(authorization|cookie|set-cookie)$/i.test(h.name || ''))) secrets++;
   }
   out['Total content size'] = fmtBytes(bytes);
   out['Slow requests (>1s)'] = slow;
@@ -187,7 +190,7 @@ async function parseWasm(file: File) {
 
 // ---------- Java .class ----------
 const JDK: Record<number, string> = { 45: '1.1', 46: '1.2', 47: '1.3', 48: '1.4', 49: '5', 50: '6', 51: '7', 52: '8', 53: '9', 54: '10', 55: '11', 56: '12', 57: '13', 58: '14', 59: '15', 60: '16', 61: '17', 62: '18', 63: '19', 64: '20', 65: '21', 66: '22', 67: '23' };
-function parseClass(head) {
+function parseClass(head: Uint8Array) {
   if (!(head[0] === 0xCA && head[1] === 0xFE && head[2] === 0xBA && head[3] === 0xBE)) return null;
   const r = new Reader(head); r.skip(4);
   const minor = r.u16(), major = r.u16();
@@ -232,7 +235,7 @@ async function parseSafetensors(file: File) {
   for (const k of names) {
     const t = meta[k]; if (!t || !t.shape) continue;
     dtypes[t.dtype] = (dtypes[t.dtype] || 0) + 1;
-    params += (t.shape.length ? t.shape.reduce((a, b) => a * b, 1) : 0);
+    params += (t.shape.length ? t.shape.reduce((a: number, b: number) => a * b, 1) : 0);
   }
   const out: Row = {
     'Format': 'Safetensors',
@@ -398,11 +401,11 @@ async function parseTerraform(file: File, ext: string) {
       'State version': j.version,
       'Terraform version': j.terraform_version || '-',
       'Serial': j.serial,
-      'Resources': (j.resources || []).reduce((a, r) => a + (r.instances ? r.instances.length : 1), 0),
+      'Resources': (j.resources || []).reduce((a: number, r: any) => a + (r.instances ? r.instances.length : 1), 0),
       'Lineage': j.lineage || '-',
     };
   }
-  const count = (kw) => (text.match(new RegExp('^\\s*' + kw + '\\s', 'gm')) || []).length;
+  const count = (kw: string) => (text.match(new RegExp('^\\s*' + kw + '\\s', 'gm')) || []).length;
   return {
     'Format': 'Terraform config (HCL)',
     'resource blocks': count('resource'),
@@ -445,7 +448,7 @@ async function parseProto(file: File) {
 // ---------- GraphQL SDL ----------
 async function parseGraphql(file: File) {
   const text = await file.text();
-  const cnt = (kw) => (text.match(new RegExp('^\\s*' + kw + '\\s+\\w+', 'gm')) || []).length;
+  const cnt = (kw: string) => (text.match(new RegExp('^\\s*' + kw + '\\s+\\w+', 'gm')) || []).length;
   return {
     'Format': 'GraphQL schema (SDL)',
     'Types': cnt('type'),
@@ -475,7 +478,7 @@ async function parseSarif(file: File) {
 
 // ---------- Python .pyc ----------
 const PYC_MAGIC: Record<number, string> = { 3394: '3.7', 3413: '3.7', 3420: '3.8', 3425: '3.8', 3430: '3.9', 3439: '3.9', 3450: '3.10', 3495: '3.11', 3531: '3.12', 3571: '3.13' };
-function parsePyc(head) {
+function parsePyc(head: Uint8Array) {
   const r = new Reader(head, true);
   const magic = r.u16();
   if (head[2] !== 0x0d || head[3] !== 0x0a) return null;
@@ -503,7 +506,7 @@ async function parsePlistRows(file: File) {
 }
 
 // ---------- Dependency lockfiles ----------
-async function parseLock(file: File, ext: string, name) {
+async function parseLock(file: File, ext: string, name: string) {
   const LIMIT = 8_000_000;
   const text = await readText(file, LIMIT);
   const truncated = file.size > LIMIT;
@@ -589,7 +592,7 @@ async function parseJsonSuperset(file: File, ext: string) {
 }
 
 // ---------- MessagePack ----------
-function mpTypeName(b) {
+function mpTypeName(b: number) {
   if (b <= 0x7f) return 'positive fixint';
   if (b >= 0xe0) return 'negative fixint';
   if (b >= 0x80 && b <= 0x8f) return 'fixmap';
@@ -664,7 +667,7 @@ async function parseCbor(file: File) {
   const MAJOR = ['unsigned int', 'negative int', 'byte string', 'text string', 'array', 'map', 'tag', 'simple/float'];
   const r = new Reader(b);            // CBOR is big-endian
   const counts: Record<string, number> = {}; const tags: Record<string, number> = {}; let n = 0;
-  function argLen(ai) {
+  function argLen(ai: number) {
     if (ai < 24) return ai;
     if (ai === 24) return r.u8();
     if (ai === 25) return r.u16();
@@ -753,7 +756,7 @@ async function parseBson(file: File) {
 }
 
 // ---------- Protobuf wire-format message (.pb / .desc) ----------
-function pbWalk(b, start, end, depth, lines, stats) {
+function pbWalk(b: Uint8Array, start: number, end: number, depth: number, lines: string[], stats: PbStats) {
   const cur = { i: start };
   const WIRE = ['varint', '64-bit', 'len-delimited', 'start-group', 'end-group', '32-bit'];
   while (cur.i < end && stats.fields < 4000) {
@@ -797,7 +800,7 @@ function pbWalk(b, start, end, depth, lines, stats) {
 async function parsePb(file: File, ext: string) {
   const b = await readSlice(file, 0, 131072);
   if (!b.length) return null;
-  const lines = []; const stats = { fields: 0, wires: {} };
+  const lines: string[] = []; const stats: PbStats = { fields: 0, wires: {} };
   const ok = pbWalk(b, 0, b.length, 0, lines, stats);
   if (!ok || stats.fields === 0) return null;
   const out: Row = {
@@ -916,7 +919,7 @@ async function parseJavaArchive(file: File, ext: string) {
   const manifest = await zip.text('META-INF/MANIFEST.MF');
   const secs = [];
   if (manifest) {
-    const get = (k) => (manifest.match(new RegExp('^' + k + ':\\s*(.+)$', 'mi')) || [])[1];
+    const get = (k: string) => (manifest.match(new RegExp('^' + k + ':\\s*(.+)$', 'mi')) || [])[1];
     const main = get('Main-Class'); if (main) out['Main-Class'] = main.trim();
     const sbc = get('Start-Class'); if (sbc) out['Spring Boot Start-Class'] = sbc.trim();
     const jdk = get('Build-Jdk') || get('Build-Jdk-Spec'); if (jdk) out['Build-Jdk'] = jdk.trim();
@@ -933,7 +936,7 @@ async function parseJavaArchive(file: File, ext: string) {
 // ---------- Text IDL schemas: FlatBuffers / Thrift / Cap'n Proto / HCL ----------
 async function parseFbs(file: File) {
   const text = await file.text();
-  const cnt = (kw) => (text.match(new RegExp('^\\s*' + kw + '\\s+\\w+', 'gm')) || []).length;
+  const cnt = (kw: string) => (text.match(new RegExp('^\\s*' + kw + '\\s+\\w+', 'gm')) || []).length;
   return {
     'Format': 'FlatBuffers schema (.fbs)',
     'Namespace': (text.match(/namespace\s+([\w.]+)/) || [])[1] || '-',
@@ -946,7 +949,7 @@ async function parseFbs(file: File) {
 }
 async function parseThrift(file: File) {
   const text = await file.text();
-  const cnt = (kw) => (text.match(new RegExp('^\\s*' + kw + '\\s+\\w+', 'gm')) || []).length;
+  const cnt = (kw: string) => (text.match(new RegExp('^\\s*' + kw + '\\s+\\w+', 'gm')) || []).length;
   const services = Array.from(text.matchAll(/^\s*service\s+(\w+)/gm)).map((m) => m[1]);
   return {
     'Format': 'Apache Thrift IDL (.thrift)',
@@ -962,7 +965,7 @@ async function parseThrift(file: File) {
 }
 async function parseCapnp(file: File) {
   const text = await file.text();
-  const cnt = (kw) => (text.match(new RegExp('^\\s*' + kw + '\\s+\\w+', 'gm')) || []).length;
+  const cnt = (kw: string) => (text.match(new RegExp('^\\s*' + kw + '\\s+\\w+', 'gm')) || []).length;
   return {
     'Format': "Cap'n Proto schema (.capnp)",
     'File ID': (text.match(/@0x([0-9a-fA-F]+)\s*;/) || [])[1] ? '0x' + (text.match(/@0x([0-9a-fA-F]+)\s*;/) || [])[1] : '-',
@@ -1155,7 +1158,7 @@ async function parsePowerShell(file: File, ext: string) {
 
   // .psd1 manifest well-known keys.
   if (ext === 'psd1') {
-    const key = (k) => (text.match(new RegExp(k + "\\s*=\\s*'([^']+)'", 'i')) || [])[1];
+    const key = (k: string) => (text.match(new RegExp(k + "\\s*=\\s*'([^']+)'", 'i')) || [])[1];
     const mv = key('ModuleVersion'); if (mv) out['Module version'] = mv;
     const au = key('Author'); if (au) out['Author'] = au;
     const rm = key('RootModule') || key('ModuleToProcess'); if (rm) out['Root module'] = rm;
@@ -1308,7 +1311,7 @@ async function parseGitRev(file: File) {
 async function parseIdl(file: File) {
   const text = (await file.text()).slice(0, 2_000_000);
   if (!/\b(interface|coclass|library|dispinterface|import|importlib|module|typedef)\b/.test(text)) return null;
-  const names = (re) => [...text.matchAll(re)].map((m) => m[1]);
+  const names = (re: RegExp) => [...text.matchAll(re)].map((m) => m[1]);
   const interfaces = names(/\b(?:interface|dispinterface)\s+([A-Za-z_]\w*)/g);
   const coclasses = names(/\bcoclass\s+([A-Za-z_]\w*)/g);
   const libs = names(/\blibrary\s+([A-Za-z_]\w*)/g);
@@ -1362,7 +1365,7 @@ async function parseAsp(file: File) {
 async function parsePkgConfig(file: File) {
   const text = (await file.text()).slice(0, 200_000);
   if (!/^\s*(Name|Description|Version|Cflags|Libs)\s*:/mi.test(text)) return null;
-  const field = (k) => { const m = text.match(new RegExp('^\\s*' + k + '\\s*:\\s*(.+)$', 'mi')); return m ? m[1].trim() : null; };
+  const field = (k: string) => { const m = text.match(new RegExp('^\\s*' + k + '\\s*:\\s*(.+)$', 'mi')); return m ? m[1].trim() : null; };
   const vars = [...text.matchAll(/^\s*([A-Za-z_]\w*)\s*=\s*.+$/gm)].map((m) => m[1]);
   const out: Row = { 'Format': 'pkg-config metadata (.pc)' };
   for (const k of ['Name', 'Description', 'Version', 'URL', 'Requires', 'Requires.private', 'Conflicts', 'Libs', 'Libs.private', 'Cflags']) {

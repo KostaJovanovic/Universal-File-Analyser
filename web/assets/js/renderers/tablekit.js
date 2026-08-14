@@ -749,7 +749,7 @@ export function mountTableKit(host, model, opts = {}) {
     updateDateFmtBtn();
     const toolbar = el('div', { class: 'anr-tk-toolbar' }, [searchInput, colsDetails, splitDetails, dateFmtBtn, statusEl]);
     card.appendChild(toolbar);
-    let searchTimer = null;
+    let searchTimer;
     searchInput.addEventListener('input', () => {
         clearTimeout(searchTimer);
         searchTimer = setTimeout(() => { view.globalSearch = searchInput.value; applyView(); }, 200);

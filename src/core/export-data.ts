@@ -19,6 +19,18 @@
 
 import { el, sha256Hex, downloadBlob } from './util.js';
 
+/** One scraped unit of the rendered analysis, in document order. collectBlocks()
+    emits these and all four writers (HTML / PDF / JSON / CSV) switch on `type`,
+    so the union is the contract between the scraper and every export format. */
+type ExportBlock =
+  | { type: 'kv';      heading: string; rows: string[][] }
+  | { type: 'table';   heading: string; rows: string[][] }
+  | { type: 'text';    heading: string; text: string }
+  | { type: 'image';   heading: string; dataUrl: string|null; imgEl: HTMLImageElement|null }
+  | { type: 'gallery'; heading: string; items: { dataUrl: string|null; imgEl: HTMLImageElement|null; label: string }[] };
+/** One titled area of the page (File / Photo / Sound / Video) with its blocks. */
+type ExportSection = { title: string; blocks: ExportBlock[] };
+
 // Per-cell cap for long text payloads (hex dumps, extracted strings, OCR), so a
 // huge <pre> can't bloat the export to tens of MB. Matches the "capped" choice.
 const TEXT_CAP = 5000;
@@ -62,9 +74,9 @@ function capText(text: string|null) {
 // their inner th/td aren't double-counted); other tables, <pre> text and
 // canvas/img visuals are captured too. Everything else is recursed.
 function collectBlocks(root: Element|null, fallbackHeading: string) {
-  const blocks = [];
+  const blocks: ExportBlock[] = [];
   const ctx = { heading: fallbackHeading };
-  const pushImage = (heading: string, dataUrl, imgEl: Element|null) => blocks.push({ type: 'image', heading, dataUrl, imgEl });
+  const pushImage = (heading: string, dataUrl: string|null, imgEl: HTMLImageElement|null) => blocks.push({ type: 'image', heading, dataUrl, imgEl });
 
   function walk(node: Element) {
     for (const child of Array.from(node.children)) {
@@ -74,7 +86,7 @@ function collectBlocks(root: Element|null, fallbackHeading: string) {
       // gallery block - its canvases/imgs become smaller side-by-side figures.
       if (child.classList && child.classList.contains('anr-export-gallery')) {
         const heading = child.getAttribute('data-export-heading') || ctx.heading;
-        const items = [];
+        const items: { dataUrl: string|null; imgEl: HTMLImageElement|null; label: string }[] = [];
         child.querySelectorAll<HTMLCanvasElement | HTMLImageElement>('canvas, img').forEach((node2) => {
           const label = node2.getAttribute('data-export-label') || '';
           if (node2.tagName === 'CANVAS') {
@@ -83,7 +95,7 @@ function collectBlocks(root: Element|null, fallbackHeading: string) {
             try { url = (node2 as HTMLCanvasElement).toDataURL('image/png'); } catch (_) { url = null; }
             if (url) items.push({ dataUrl: url, imgEl: null, label });
           } else if (node2.getClientRects().length) {
-            items.push({ dataUrl: null, imgEl: node2, label });
+            items.push({ dataUrl: null, imgEl: node2 as HTMLImageElement, label });
           }
         });
         if (items.length) blocks.push({ type: 'gallery', heading, items });
@@ -91,7 +103,7 @@ function collectBlocks(root: Element|null, fallbackHeading: string) {
       }
       if (tag === 'TABLE') {
         if (child.matches('.anr-readout')) {
-          const rows = [];
+          const rows: string[][] = [];
           child.querySelectorAll('tr').forEach((tr) => {
             const th = tr.querySelector('th');
             const tds = tr.querySelectorAll('td');
@@ -100,7 +112,7 @@ function collectBlocks(root: Element|null, fallbackHeading: string) {
           });
           if (rows.length) blocks.push({ type: 'kv', heading: ctx.heading, rows });
         } else {
-          const rows = [];
+          const rows: string[][] = [];
           child.querySelectorAll('tr').forEach((tr) => {
             const cells = tr.querySelectorAll('th, td');
             if (cells.length) rows.push(Array.from(cells).map(cellText));
@@ -130,23 +142,23 @@ function collectBlocks(root: Element|null, fallbackHeading: string) {
         continue;
       }
       if (tag === 'IMG') {
-        if (child.getClientRects().length) pushImage(ctx.heading, null, child);
+        if (child.getClientRects().length) pushImage(ctx.heading, null, child as HTMLImageElement);
         continue;
       }
       if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'BUTTON') continue;
       walk(child);
     }
   }
-  walk(root);
+  walk(root!);
   return blocks;
 }
 
 // Gather every visible section into a structured model the writers consume.
 function collectSections() {
-  const out = [];
+  const out: ExportSection[] = [];
   for (const root of exportRoots()) {
     if (!isVisible(root.main)) continue;
-    let blocks: any[] = [];
+    let blocks: ExportBlock[] = [];
     for (const lead of (root.leadExtras || [])) {
       if (isVisible(lead)) blocks = blocks.concat(collectBlocks(lead, root.title));
     }
@@ -175,7 +187,7 @@ async function prepForExport() {
   // 2. Video contact sheet, if the video section is present.
   const vr = document.getElementById('videoResults');
   if (isVisible(vr)) {
-    const sheetCard = vr.querySelector('.anr-contact-sheet-card');
+    const sheetCard = vr!.querySelector('.anr-contact-sheet-card');
     if (sheetCard && typeof sheetCard._anrEnsure === 'function') {
       try { await sheetCard._anrEnsure(); } catch (_) {}
     }
@@ -183,7 +195,7 @@ async function prepForExport() {
 }
 
 // True when a section already carries a real SHA-256 (so we don't compute twice).
-function hasSha(section) {
+function hasSha(section: ExportSection) {
   return section.blocks.some((b) => b.type === 'kv'
     && b.rows.some(([label, value]) => /sha-?256/i.test(label) && /^[0-9a-f]{64}$/i.test(String(value || '').trim())));
 }
@@ -191,7 +203,7 @@ function hasSha(section) {
 // Ensure the video section carries a SHA-256 of the file. The video renderer only
 // shows one for smaller files (and behind an async/button path), so the export
 // computes it from the stored File when it is missing.
-async function augmentVideoSha(sections: any[]) {
+async function augmentVideoSha(sections: ExportSection[]) {
   const file = window._anrLastFile;
   const a = window._anrLastAnalysis;
   if (!file || !a || a.category !== 'video') return;
@@ -227,7 +239,7 @@ async function verificationData() {
   let exportedUtc = '';
   try { exportedUtc = new Date().toISOString(); } catch (_) { exportedUtc = ''; }
   const ver = (typeof document !== 'undefined' && document.getElementById('versionNum')
-    ? (document.getElementById('versionNum').textContent || '').trim() : '');
+    ? (document.getElementById('versionNum')!.textContent || '').trim() : '');
   return {
     name: (a && a.name) || (file && file.name) || 'unknown',
     size: file ? file.size : null,
@@ -240,11 +252,11 @@ async function verificationData() {
 const VERIFY_INSTRUCTIONS = 'To confirm this report describes the original file unchanged, recompute the file\'s SHA-256 and compare it to the value above. macOS / Linux: "shasum -a 256 <file>". Windows: "certutil -hashfile <file> SHA256". A matching hash proves the file has not been altered since this report was generated.';
 
 // ---------- CSV ----------
-function csvField(v) {
+function csvField(v: unknown) {
   return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
 }
 
-function buildCsv(sections: any[]) {
+function buildCsv(sections: ExportSection[]) {
   const lines = [['Section', 'Group', 'Field', 'Value'].map(csvField).join(',')];
   const a = window._anrLastAnalysis;
   if (a && a.name) lines.push(['File', 'Source', 'Name', a.name].map(csvField).join(','));
@@ -275,7 +287,7 @@ function buildCsv(sections: any[]) {
 // ordered list of typed blocks. kv readouts become a `fields` map; other tables
 // keep their `rows`; <pre> payloads become `text` (already capped); visuals are
 // noted by label only (the base64 lives in the Complete HTML export instead).
-async function buildJson(sections: any[]) {
+async function buildJson(sections: ExportSection[]) {
   const a = window._anrLastAnalysis;
   const vd = await verificationData();
   const doc = {
@@ -304,7 +316,7 @@ async function buildJson(sections: any[]) {
           for (const [label, value] of b.rows) {
             // Preserve every row even when two share a label: collapse duplicates
             // into an array rather than silently overwriting.
-            if (label in fields) fields[label] = [].concat(fields[label], value);
+            if (label in fields) fields[label] = ([] as any[]).concat(fields[label], value);
             else fields[label] = value;
           }
           return { heading: b.heading || null, type: 'fields', fields };
@@ -333,13 +345,13 @@ function esc(s: string|null) {
 // Resolve an <img> to a base64 data URI so the report stays self-contained. Most
 // previews are blob:/object URLs (same-origin, fetchable); a fetch failure falls
 // back to repainting the image onto a canvas.
-function imgToDataUrl(img: HTMLImageElement) {
+function imgToDataUrl(img: HTMLImageElement): Promise<string|null> {
   const src = img.currentSrc || img.src || '';
   if (!src) return Promise.resolve(null);
   if (src.startsWith('data:')) return Promise.resolve(src);
-  return fetch(src).then((r) => r.blob()).then((blob) => new Promise((res) => {
+  return fetch(src).then((r) => r.blob()).then((blob) => new Promise<string|null>((res) => {
     const fr = new FileReader();
-    fr.onload = () => res(fr.result);
+    fr.onload = () => res(fr.result as string);
     fr.onerror = () => res(null);
     fr.readAsDataURL(blob);
   })).catch(() => {
@@ -348,7 +360,7 @@ function imgToDataUrl(img: HTMLImageElement) {
       c.width = img.naturalWidth || img.width;
       c.height = img.naturalHeight || img.height;
       if (!c.width || !c.height) return null;
-      c.getContext('2d').drawImage(img, 0, 0);
+      c.getContext('2d')!.drawImage(img, 0, 0);
       return c.toDataURL('image/png');
     } catch (_) { return null; }
   });
@@ -401,7 +413,7 @@ const REPORT_CSS = [
   '@media print{.verify{background:#fff}body{font-size:12px}.wrap{padding:0}}',
 ].join('');
 
-async function buildHtml(sections: any[]) {
+async function buildHtml(sections: ExportSection[]) {
   const a = window._anrLastAnalysis;
   const fileName = (a && a.name) ? a.name : 'this file';
   const parts = [];
@@ -414,7 +426,7 @@ async function buildHtml(sections: any[]) {
     vd.sha256 ? ['SHA-256', '<code>' + esc(vd.sha256) + '</code>'] : ['SHA-256', 'unavailable'],
     ['Exported (UTC)', esc(vd.exportedUtc)],
     ['Analyser version', esc(vd.version)],
-  ].filter(Boolean);
+  ].filter(Boolean) as string[][];
   parts.push('<section class="verify"><h2>Verification</h2><div class="tablewrap"><table>'
     + vrows.map(([l, v]) => '<tr><th>' + esc(l) + '</th><td>' + v + '</td></tr>').join('')
     + '</table></div><p class="verify-note">' + esc(VERIFY_INSTRUCTIONS) + '</p></section>');
@@ -474,7 +486,7 @@ function showChooser() {
   _open = true;
 
   // Filled once preparation + collection finish; the format buttons close over it.
-  let sections: any[] = [];
+  let sections: ExportSection[] = [];
 
   const closeBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, 'Cancel');
   // Holds the "preparing" status, then the format choices.
@@ -500,7 +512,7 @@ function showChooser() {
     setTimeout(() => overlay.remove(), 200);
     document.removeEventListener('keydown', onKey);
   };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey);
@@ -527,7 +539,7 @@ function showChooser() {
     htmlBtn.addEventListener('click', async () => {
       if (htmlBtn._busy) return;
       htmlBtn._busy = true;
-      htmlBtn.querySelector('strong').textContent = 'Building…';
+      htmlBtn.querySelector('strong')!.textContent = 'Building…';
       try {
         const html = await buildHtml(sections);
         downloadBlob(baseName() + '-analysis.html', new Blob([html], { type: 'text/html;charset=utf-8' }));

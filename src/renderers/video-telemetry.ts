@@ -27,11 +27,11 @@ const MAX_CHUNKS = 6000;          // cap chunks read (bounds time/memory on long
 const MAX_IMU_POINTS = 4000;      // decimate IMU to keep the trace light
 const MAX_GPS_POINTS = 3000;
 
-const fcc = (dv, p) => String.fromCharCode(dv.getUint8(p), dv.getUint8(p + 1), dv.getUint8(p + 2), dv.getUint8(p + 3));
+const fcc = (dv: DataView<ArrayBuffer>, p: number) => String.fromCharCode(dv.getUint8(p), dv.getUint8(p + 1), dv.getUint8(p + 2), dv.getUint8(p + 3));
 
 // ---------- box helpers (self-contained, like sony-rtmd.js) ----------
 
-function parseBoxes(dv, start, end) {
+function parseBoxes(dv: DataView<ArrayBuffer>, start: number, end: number) {
   const out = [];
   let p = start;
   while (p + 8 <= end) {
@@ -47,11 +47,11 @@ function parseBoxes(dv, start, end) {
   return out;
 }
 
-function findAllBoxes(dv, start, end, type) {
+function findAllBoxes(dv: DataView<ArrayBuffer>, start: number, end: number, type: string) {
   const result = [], stack = [{ s: start, e: end }];
   const containers = new Set(['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'meta']);
   while (stack.length) {
-    const { s, e } = stack.pop();
+    const { s, e } = stack.pop()!;
     for (const b of parseBoxes(dv, s, e)) {
       if (b.type === type) result.push(b);
       if (containers.has(b.type)) stack.push({ s: b.offset + b.headerSize, e: b.offset + b.size });
@@ -81,11 +81,11 @@ async function findMoov(file: File) {
 // Read a track's samples grouped by chunk, with per-sample decode time (seconds).
 // Reading per chunk (not per sample) keeps the number of file slices small even
 // for high-rate metadata tracks.
-function readTrackChunks(dv, ts, te) {
-  const box = (t) => findAllBoxes(dv, ts, te, t)[0];
+function readTrackChunks(dv: DataView<ArrayBuffer>, ts: number, te: number) {
+  const box = (t: string) => findAllBoxes(dv, ts, te, t)[0];
   const stsz = box('stsz'), stsc = box('stsc'), stco = box('stco'), co64 = box('co64'), stts = box('stts'), mdhd = box('mdhd');
   if (!stsz || !stsc || !(stco || co64)) return null;
-  const P = (b) => b.offset + b.headerSize;
+  const P = (b: { offset: number; headerSize: number }) => b.offset + b.headerSize;
 
   let o = P(stsz) + 4;
   const uniform = dv.getUint32(o), count = dv.getUint32(o + 4); o += 8;
@@ -126,7 +126,7 @@ function readTrackChunks(dv, ts, te) {
 }
 
 // Find the first trak whose stsd sample-entry 4CC matches `codec`.
-function findTrackByCodec(dv, moovSize, codec) {
+function findTrackByCodec(dv: DataView<ArrayBuffer>, moovSize: number, codec: string) {
   for (const trak of findAllBoxes(dv, 8, moovSize, 'trak')) {
     const ts = trak.offset + trak.headerSize, te = Math.min(trak.offset + trak.size, moovSize);
     const stsd = findAllBoxes(dv, ts, te, 'stsd')[0];
@@ -140,7 +140,7 @@ function findTrackByCodec(dv, moovSize, codec) {
 
 // ---------- geo helpers ----------
 
-function haversine(a, b) {                 // [lat,lon] in degrees -> metres
+function haversine(a: any[], b: any[]) {                 // [lat,lon] in degrees -> metres
   const R = 6371000, toR = Math.PI / 180;
   const dLat = (b[0] - a[0]) * toR, dLon = (b[1] - a[1]) * toR;
   const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * toR) * Math.cos(b[0] * toR) * Math.sin(dLon / 2) ** 2;
@@ -148,10 +148,10 @@ function haversine(a, b) {                 // [lat,lon] in degrees -> metres
 }
 
 // Reduce a raw GPS list to <= MAX_GPS_POINTS and compute distance / speed / alt.
-function gpsStats(gps) {
+function gpsStats(gps: any[]) {
   if (!gps.length) return null;
   const stride = Math.max(1, Math.ceil(gps.length / MAX_GPS_POINTS));
-  const pts = stride > 1 ? gps.filter((_, i) => i % stride === 0) : gps;
+  const pts = stride > 1 ? gps.filter((_, i: number) => i % stride === 0) : gps;
   let distance = 0;
   for (let i = 1; i < gps.length; i++) distance += haversine([gps[i - 1].lat, gps[i - 1].lon], [gps[i].lat, gps[i].lon]);
   let maxSpeed = 0, altLo = Infinity, altHi = -Infinity;
@@ -162,10 +162,28 @@ function gpsStats(gps) {
   return { pts, count: gps.length, distance, maxSpeed, altLo, altHi };
 }
 
+/** The GPMF flavour, which also carries the per-stream extras CAMM has no
+ *  equivalent for. */
+type GpmfAcc = TelemetryAcc & Required<Pick<TelemetryAcc, 'streams'|'iso'|'shutter'|'wbal'>>;
+
+/** What a GPMF / CAMM walk accumulates before finishTelemetry() reshapes it. */
+interface TelemetryAcc {
+  gps: { lat: number; lon: number; alt: number; speed: number; t: number }[];
+  accl: { x: number; y: number; z: number; t: number }[];
+  gyro: { x: number; y: number; z: number; t: number }[];
+  temps: number[];
+  fix: number|null;
+  gpsu: string|null;
+  streams?: Set<string>;
+  iso?: number[];
+  shutter?: number[];
+  wbal?: number[];
+}
+
 // ---------- GoPro GPMF ----------
 
-const GPMF_ELEM_SIZE = { b: 1, B: 1, c: 1, s: 2, S: 2, f: 4, l: 4, L: 4, F: 4, d: 8, j: 8, J: 8 };
-function gpmfRead(dv, o, type) {
+const GPMF_ELEM_SIZE: Record<string, number> = { b: 1, B: 1, c: 1, s: 2, S: 2, f: 4, l: 4, L: 4, F: 4, d: 8, j: 8, J: 8 };
+function gpmfRead(dv: DataView<ArrayBuffer>, o: number, type: string) {
   switch (type) {
     case 'b': return dv.getInt8(o);
     case 'B': case 'c': return dv.getUint8(o);
@@ -180,7 +198,7 @@ function gpmfRead(dv, o, type) {
 }
 
 // Decode a leaf KLV value into `repeat` structs, each of valsPerStruct numbers.
-function gpmfValues(dv, dp, type, structSize, repeat) {
+function gpmfValues(dv: DataView<ArrayBuffer>, dp: number, type: string, structSize: number, repeat: number) {
   const es = GPMF_ELEM_SIZE[type] || 1;
   const per = Math.max(1, Math.floor(structSize / es));
   const out = [];
@@ -194,7 +212,7 @@ function gpmfValues(dv, dp, type, structSize, repeat) {
 
 // Walk one GPMF payload, collecting GPS + IMU into `acc`. `scope` carries the
 // current STRM's SCAL divisors. baseT/dur place samples in time.
-function gpmfWalk(dv, start, end, scope, acc, baseT, dur) {
+function gpmfWalk(dv: DataView<ArrayBuffer>, start: number, end: number, scope: any, acc: GpmfAcc, baseT: number, dur: number) {
   let p = start;
   while (p + 8 <= end) {
     const key = fcc(dv, p);
@@ -218,7 +236,7 @@ function gpmfWalk(dv, start, end, scope, acc, baseT, dur) {
       const n = structs.length;
       for (let i = 0; i < n; i++) {
         const s = structs[i];
-        const div = (idx) => (scal.length ? scal[idx % scal.length] : 1) || 1;
+        const div = (idx: number) => (scal.length ? scal[idx % scal.length] : 1) || 1;
         const lat = s[0] / div(0), lon = s[1] / div(1), alt = s[2] / div(2), speed = s[3] / div(3);
         if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180 && !(lat === 0 && lon === 0))
           acc.gps.push({ lat, lon, alt, speed, t: baseT + (n ? i / n : 0) * dur });
@@ -264,7 +282,7 @@ export async function extractGpmf(file: File) {
   const table = readTrackChunks(dv, trk.ts, trk.te);
   if (!table || !table.chunks.length) return null;
 
-  const acc = { gps: [], accl: [], gyro: [], temps: [], fix: null, gpsu: null, streams: new Set(), iso: [], shutter: [], wbal: [] };
+  const acc: GpmfAcc = { gps: [], accl: [], gyro: [], temps: [], fix: null, gpsu: null, streams: new Set(), iso: [], shutter: [], wbal: [] };
   let read = 0;
   for (const chunk of table.chunks) {
     if (read >= MAX_CHUNKS) break;
@@ -295,7 +313,7 @@ export async function extractCamm(file: File) {
   const table = readTrackChunks(dv, trk.ts, trk.te);
   if (!table || !table.chunks.length) return null;
 
-  const acc = { gps: [], accl: [], gyro: [], temps: [], fix: null, gpsu: null };
+  const acc: TelemetryAcc = { gps: [], accl: [], gyro: [], temps: [], fix: null, gpsu: null };
   let read = 0;
   for (const chunk of table.chunks) {
     if (read >= MAX_CHUNKS) break;
@@ -334,7 +352,7 @@ export async function extractCamm(file: File) {
 
 // Turn raw accumulated GPS/IMU into the card-ready shape (decimated motion trace
 // + GPS stats), shared by GPMF and CAMM.
-function finishTelemetry(source, acc, table, file: File, gyroName, accelName) {
+function finishTelemetry(source: string, acc: TelemetryAcc, table: any, file: File, gyroName: string, accelName: string) {
   const durationSec = table.durationSec || (acc.gps.length ? acc.gps[acc.gps.length - 1].t : 0) || 1;
 
   let motion = null;
@@ -346,9 +364,9 @@ function finishTelemetry(source, acc, table, file: File, gyroName, accelName) {
     // both streams monotonic) - indexing by position would time-warp one trace.
     const dur = durationSec || 1;
     const N = Math.max(2, Math.min(MAX_IMU_POINTS, Math.max(acc.gyro.length, acc.accl.length)));
-    const grid = [];
+    const grid: any[] = [];
     for (let k = 0; k < N; k++) grid.push((k / (N - 1)) * dur);
-    const resample = (arr) => {
+    const resample = (arr: string|any[]) => {
       const x = [], y = [], z = [];
       if (!arr.length) { for (let k = 0; k < N; k++) { x.push(0); y.push(0); z.push(0); } return { x, y, z }; }
       let j = 0;
@@ -368,7 +386,7 @@ function finishTelemetry(source, acc, table, file: File, gyroName, accelName) {
   if (acc.fix != null) scalars.fix = acc.fix;
   if (acc.gpsu) scalars.gpsu = acc.gpsu;
 
-  const stat = (arr) => {
+  const stat = (arr: number[]|null|undefined) => {
     if (!arr || !arr.length) return null;
     let mn = Infinity, mx = -Infinity, s = 0, n = 0;
     for (const v of arr) { if (!isFinite(v)) continue; mn = Math.min(mn, v); mx = Math.max(mx, v); s += v; n++; }
@@ -386,7 +404,7 @@ function finishTelemetry(source, acc, table, file: File, gyroName, accelName) {
 // ---------- container single-point location (©xyz / Apple ISO6709) ----------
 
 // Parse an ISO-6709 string like "+40.7480-073.9860+016.000/" -> {lat,lon,alt}.
-function parseISO6709(str) {
+function parseISO6709(str: string) {
   if (!str) return null;
   const m = str.match(/([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)(?:([+-]\d+(?:\.\d+)?))?/);
   if (!m) return null;
@@ -451,15 +469,15 @@ export async function extractContainerLocation(file: File) {
 
 // ---------- cards ----------
 
-const fmtDeg = (v) => v.toFixed(6) + '°';
-const osmLink = (lat, lon) => 'https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lon + '#map=15/' + lat + '/' + lon;
+const fmtDeg = (v: number) => v.toFixed(6) + '°';
+const osmLink = (lat: string, lon: string) => 'https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lon + '#map=15/' + lat + '/' + lon;
 // Exposure time in seconds -> photographic shutter notation.
-const fmtShutter = (sec) => (!sec || sec <= 0) ? '-' : sec >= 1 ? sec.toFixed(1) + ' s' : '1/' + Math.round(1 / sec) + ' s';
+const fmtShutter = (sec: number) => (!sec || sec <= 0) ? '-' : sec >= 1 ? sec.toFixed(1) + ' s' : '1/' + Math.round(1 / sec) + ' s';
 
 // Draw the GPS track on a local canvas (equirectangular, lon scaled by cos(lat)).
 // No map tiles are fetched - the shape of the path, with start (green) and end
 // (red) markers, over the site's surface colour.
-function buildTrackCanvas(pts) {
+function buildTrackCanvas(pts: any[]) {
   const W = 640, H = 360, pad = 24;
   const cv = el('canvas', { width: String(W), height: String(H),
     style: 'width:100%; height:auto; display:block; border:var(--bd-hairline); background:var(--surface);' });
@@ -473,22 +491,22 @@ function buildTrackCanvas(pts) {
   const spanX = (maxX - minX) || 1e-6, spanY = (maxY - minY) || 1e-6;
   const scale = Math.min((W - pad * 2) / spanX, (H - pad * 2) / spanY);
   const ox = (W - spanX * scale) / 2, oy = (H - spanY * scale) / 2;
-  const X = (q) => ox + (q.x - minX) * scale;
-  const Y = (q) => H - (oy + (q.y - minY) * scale);   // flip: north up
+  const X = (q: { x: number; y: number }) => ox + (q.x - minX) * scale;
+  const Y = (q: { x: number; y: number }) => H - (oy + (q.y - minY) * scale);   // flip: north up
 
   const cs = getComputedStyle(document.body);
   const accent = (cs.getPropertyValue('--accent') || '').trim() || '#3a7';
   ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.beginPath();
   for (let i = 0; i < proj.length; i++) { const x = X(proj[i]), y = Y(proj[i]); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
   ctx.stroke();
-  const dot = (q, color) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(X(q), Y(q), 5, 0, Math.PI * 2); ctx.fill(); };
+  const dot = (q: { x: number; y: number }, color: string|CanvasGradient|CanvasPattern) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(X(q), Y(q), 5, 0, Math.PI * 2); ctx.fill(); };
   dot(proj[0], '#2ecc71'); dot(proj[proj.length - 1], '#e74c3c');
   return cv;
 }
 
 // Build a telemetry card for GPMF/CAMM data (source, GPS stats + track map,
 // motion timeline). Feature-level, like the Sony gyro card.
-export function buildTelemetryCard(d) {
+export function buildTelemetryCard(d: any) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Telemetry - ' + d.source,
     'Action cameras and phones can record a hidden data track alongside the video: where you were and how fast you moved (GPS), plus movement sensed by the gyroscope and accelerometer. '
@@ -583,7 +601,7 @@ export function buildTelemetryCard(d) {
   return card;
 }
 
-function buildLocationCard(loc) {
+function buildLocationCard(loc: any) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Location',
     'A single GPS location saved inside the file itself (the QuickTime ©xyz or Apple location field). '

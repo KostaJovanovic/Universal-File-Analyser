@@ -31,14 +31,19 @@ const MINI_CUTOFF = 4096;        // streams smaller than this live in the mini-s
 // Directory entry object types.
 const T_UNKNOWN = 0, T_STORAGE = 1, T_STREAM = 2, T_ROOT = 5;
 
+/** One directory entry as handed to callers (and to a readStream predicate). */
+export interface CfbfEntry { name: string; type: number; size: number; path: string; }
+
 // Coerce the input into a Uint8Array. Accepts a Blob/File, ArrayBuffer or
 // Uint8Array. Returns null if it can't.
-async function toBytes(input: ArrayBuffer|null) {
+async function toBytes(input: ArrayBuffer|Uint8Array|Blob|ArrayBufferView|null) {
   try {
     if (input == null) return null;
     if (input instanceof Uint8Array) return input;
     if (input instanceof ArrayBuffer) return new Uint8Array(input);
-    if (typeof input.arrayBuffer === 'function') return new Uint8Array(await input.arrayBuffer());
+    // Duck-typed on purpose: File, Blob and Response all satisfy it. Narrowing
+    // this to `instanceof Blob` would quietly drop the Response case.
+    if (typeof (input as any).arrayBuffer === 'function') return new Uint8Array(await (input as any).arrayBuffer());
     if (ArrayBuffer.isView(input)) return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
   } catch (_) {}
   return null;
@@ -56,7 +61,7 @@ async function toBytes(input: ArrayBuffer|null) {
    readStream accepts an exact stream name, or a predicate (entry) => boolean for
    matching by path / suffix. It assembles the stream by walking the FAT (or the
    mini-FAT for streams below the 4096-byte cutoff). */
-export async function openCfbf(input: File) {
+export async function openCfbf(input: ArrayBuffer|Uint8Array|Blob|ArrayBufferView|null) {
   try {
     const bytes = await toBytes(input);
     if (!bytes || bytes.length < 512) return null;
@@ -274,7 +279,7 @@ export async function openCfbf(input: File) {
     };
 
     // Read any stream entry's bytes, choosing FAT vs mini-FAT by the cutoff.
-    const readEntry = (e) => {
+    const readEntry = (e: any) => {
       if (!e || e.type !== T_STREAM) return null;
       if (e.size < cutoff) return readMiniStream(e.startSect, e.size);
       return readFatStream(e.startSect, e.size);
@@ -317,7 +322,7 @@ export async function openCfbf(input: File) {
       if (e.path) byPath.set(e.path, e);
     }
 
-    const readStream = (nameOrPredicate) => {
+    const readStream = (nameOrPredicate: string | RegExp | ((e: CfbfEntry) => boolean)) => {
       try {
         if (typeof nameOrPredicate === 'function') {
           for (const e of rawEntries) {

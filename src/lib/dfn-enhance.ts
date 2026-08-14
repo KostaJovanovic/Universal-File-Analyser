@@ -25,6 +25,18 @@
 
 import { DFN, makeDfnStft, makeFeatureState, erbWidths, applyErbGain } from './dfn-dsp.js';
 
+/** One graph pass's outputs. The worker hands back whatever ORT's tensor `.data`
+    is, so this only names the shape the DSP below actually indexes into. */
+export interface DfnModelOutput { erbMask: Float32Array; dfCoefs: ArrayLike<number>; }
+
+/** The injected-model call `enhanceAudio` is driven by. */
+export interface DfnEnhanceInput {
+  channels: Float32Array[];
+  runModel: (featErb: Float32Array, featSpec: Float32Array, nFrames: number)
+    => DfnModelOutput | Promise<DfnModelOutput>;
+  onProgress?: ((frac: number) => void) | null;
+}
+
 export const DFN_SR = DFN.sr;
 
 // Segment sizing. CORE frames are kept; WARMUP frames before each core are
@@ -33,7 +45,7 @@ export const DFN_SR = DFN.sr;
 const SEG_CORE = 2000;
 const WARMUP = 100;
 
-export async function enhanceAudio({ channels, runModel, onProgress }) {
+export async function enhanceAudio({ channels, runModel, onProgress }: DfnEnhanceInput) {
   const { fftSize, hop, nBins, nbErb, nbDf, dfOrder, dfLookahead } = DFN;
   const erb = erbWidths();
   const stft = makeDfnStft(fftSize, hop);
@@ -52,8 +64,8 @@ export async function enhanceAudio({ channels, runModel, onProgress }) {
   const totalSegs = segsPerCh * nCh;
   let doneSegs = 0;
 
-  const cleanChannels = [];
-  const noiseChannels = [];
+  const cleanChannels: Float32Array[] = [];
+  const noiseChannels: Float32Array[] = [];
 
   for (let cc = 0; cc < nCh; cc++) {
     const src = channels[cc];

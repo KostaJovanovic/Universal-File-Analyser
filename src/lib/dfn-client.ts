@@ -25,7 +25,7 @@ function abortError() {
   return new DOMException('denoise aborted', 'AbortError');
 }
 
-function throwIfAborted(signal) {
+function throwIfAborted(signal: AbortSignal|null|undefined) {
   if (signal && signal.aborted) throw abortError();
 }
 
@@ -37,11 +37,11 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 
 // Resample to 48 kHz (stereo, or mono if that's all there is) via an
 // OfflineAudioContext, returning detachable Float32Array channels.
-async function toModelChannels(audioBuffer: AudioBuffer|null, signal) {
+async function toModelChannels(audioBuffer: AudioBuffer, signal: AbortSignal|null|undefined) {
   throwIfAborted(signal);
   const nCh = Math.min(2, audioBuffer.numberOfChannels);
   if (audioBuffer.sampleRate === DFN_SR) {
-    const chs = [];
+    const chs: Float32Array[] = [];
     for (let c = 0; c < nCh; c++) {
       throwIfAborted(signal);
       chs.push(audioBuffer.getChannelData(c).slice());
@@ -57,7 +57,7 @@ async function toModelChannels(audioBuffer: AudioBuffer|null, signal) {
   src.start();
   const rendered = await off.startRendering();
   throwIfAborted(signal);
-  const chs = [];
+  const chs: Float32Array[] = [];
   for (let c = 0; c < rendered.numberOfChannels; c++) {
     throwIfAborted(signal);
     chs.push(rendered.getChannelData(c).slice());
@@ -73,7 +73,13 @@ export interface DenoiseResult {
   sampleRate: number;
 }
 
-function runWorker(channels: any[], sampleRate: number, { onProgress, signal }): Promise<DenoiseResult> {
+/** Caller-supplied progress/abort hooks, shared by runWorker and enhanceAudio. */
+export interface DenoiseOpts {
+  onProgress?: ((phase: string, frac: number) => void) | null;
+  signal?: AbortSignal | null;
+}
+
+function runWorker(channels: Float32Array[], sampleRate: number, { onProgress, signal }: DenoiseOpts): Promise<DenoiseResult> {
   const w = getWorker();
   const jobId = ++jobSeq;
   return new Promise<DenoiseResult>((resolve, reject) => {
@@ -91,7 +97,7 @@ function runWorker(channels: any[], sampleRate: number, { onProgress, signal }):
       w.removeEventListener('messageerror', onMessageError);
       if (signal) signal.removeEventListener('abort', onAbort);
     };
-    const finish = (fn, value: DOMException) => {
+    const finish = (fn: (v?: any) => void, value?: any) => {
       if (settled) return;
       settled = true;
       cleanup();
@@ -107,7 +113,7 @@ function runWorker(channels: any[], sampleRate: number, { onProgress, signal }):
         new Error('Denoise worker stopped responding during model initialisation or processing')
       ), phase === 'runtime' ? RUNTIME_STALL_MS : STALL_MS);
     };
-    const onMessage = (e) => {
+    const onMessage = (e: MessageEvent) => {
       const msg = e.data;
       if (!msg || msg.jobId !== jobId) return;
       armStallTimer(msg.type === 'progress' ? msg.phase : '');
@@ -119,7 +125,7 @@ function runWorker(channels: any[], sampleRate: number, { onProgress, signal }):
         failWorker(new Error(msg.message || 'denoise failed'));
       }
     };
-    const onError = (e) => {
+    const onError = (e: ErrorEvent) => {
       if (e && e.preventDefault) e.preventDefault();
       failWorker(new Error((e && e.message) || 'Denoise worker crashed'));
     };
@@ -150,7 +156,7 @@ function runWorker(channels: any[], sampleRate: number, { onProgress, signal }):
  * @param {{ onProgress?: (phase:'model'|'model-cache'|'cache'|'cache-warning'|'runtime'|'infer', frac:number)=>void, signal?: AbortSignal }} [opts]
  * @returns {Promise<{ clean: Float32Array[], noise: Float32Array[], sampleRate: number }>}
  */
-export function enhanceAudio(audioBuffer: AudioBuffer|null, { onProgress, signal } : any = {}) {
+export function enhanceAudio(audioBuffer: AudioBuffer, { onProgress, signal }: DenoiseOpts = {}) {
   return enqueue(async () => {
     throwIfAborted(signal);
     const { channels, sampleRate } = await toModelChannels(audioBuffer, signal);

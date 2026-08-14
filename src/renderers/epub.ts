@@ -6,12 +6,12 @@ import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/ut
 import { sanitizeDoc } from '../core/sanitize.js';
 import { openZip } from './zip.js';
 
-function parseXml(text) {
-  return new DOMParser().parseFromString(text, 'application/xml');
+function parseXml(text: string|null) {
+  return new DOMParser().parseFromString(text!, 'application/xml');
 }
 
 // Resolve an href relative to the OPF directory.
-function resolvePath(opfPath, href) {
+function resolvePath(opfPath: string|string[], href: string) {
   const dir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
   const combined = (dir + href).split('/');
   const out = [];
@@ -27,7 +27,7 @@ function resolvePath(opfPath, href) {
 // which also means a chapter can no longer pull a remote image (an EPUB's own
 // images are zip-relative, so they never resolved over the network anyway; an
 // absolute http:// one would have been a silent call home).
-function sanitizeBody(doc) {
+function sanitizeBody(doc: Document) {
   return sanitizeDoc(doc, { className: 'anr-epub-content' });
 }
 
@@ -36,7 +36,7 @@ export async function renderEpub(file: File, resultsEl: HTMLElement) {
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading e-book "${file.name}"…`));
 
-  let zip;
+  let zip: any;
   try {
     zip = await openZip(file);
   } catch (e) {
@@ -65,7 +65,7 @@ export async function renderEpub(file: File, resultsEl: HTMLElement) {
   const opf = parseXml(await zip.text(opfPath));
 
   // ---- Metadata ----
-  const metaGet = (tag) => { const e = opf.getElementsByTagName(tag)[0]; return e ? e.textContent : ''; };
+  const metaGet = (tag: string) => { const e = opf.getElementsByTagName(tag)[0]; return e ? e.textContent : ''; };
   const metaCard = el('div', { class: 'anr-card' });
   metaCard.appendChild(el('h3', {}, 'e-book'));
   const metaTbl = el('table', { class: 'anr-readout' });
@@ -134,7 +134,7 @@ export async function renderEpub(file: File, resultsEl: HTMLElement) {
   // ---- Manifest (id -> { href, type, props }) ----
   const manifest: any = {};
   for (const item of opf.getElementsByTagName('item')) {
-    manifest[item.getAttribute('id')] = {
+    manifest[item.getAttribute('id')!] = {
       href: item.getAttribute('href'),
       type: item.getAttribute('media-type'),
       props: item.getAttribute('properties') || ''
@@ -177,10 +177,10 @@ export async function renderEpub(file: File, resultsEl: HTMLElement) {
   }
 
   // ---- Spine (reading order) ----
-  const spine = [];
+  const spine: string[] = [];
   for (const ref of opf.getElementsByTagName('itemref')) {
     const id = ref.getAttribute('idref');
-    if (manifest[id]) spine.push(resolvePath(opfPath, manifest[id].href));
+    if (manifest[id!]) spine.push(resolvePath(opfPath, manifest[id!].href));
   }
 
   // ---- Real table of contents (additive) ----
@@ -313,7 +313,7 @@ export async function renderEpub(file: File, resultsEl: HTMLElement) {
   resultsEl.insertBefore(readerCard, resultsEl.firstChild);
 
   let current = 0;
-  async function showChapter(i) {
+  async function showChapter(i: number) {
     if (i < 0 || i >= spine.length) return;
     current = i;
     chapSel.value = String(i);

@@ -22,7 +22,7 @@ import { SCAN_LARGE, HASH_FILE_MAX } from '../core/limits.js';
 import { openZip } from './zip.js';
 import { paginateText, paginateFlow, pagedPreviewCard, pagedTextCard, pagePreviewSkeleton } from './paged.js';
 
-const LABELS = {
+const LABELS: Record<string, string> = {
   rtf: 'Rich Text Format', abw: 'AbiWord document', fb2: 'FictionBook e-book',
   hwpx: 'Hangul (HWPX) document', mht: 'MHTML web archive', mhtml: 'MHTML web archive',
   dita: 'DITA topic', ditamap: 'DITA map', tei: 'TEI document', jats: 'JATS article',
@@ -34,18 +34,18 @@ const LABELS = {
   rels: 'OPC relationships (XML)', md5: 'MD5 checksum',
 };
 
-function parseXml(text) {
+function parseXml(text: string) {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   return doc.querySelector('parsererror') ? null : doc;
 }
 
 // ---------- RTF ----------
 // Strip RTF control words / ignorable destinations down to readable text.
-function stripRtf(rtf) {
+function stripRtf(rtf: string) {
   let out = '';
   let i = 0;
   const n = rtf.length;
-  const stack = [];
+  const stack: boolean[] = [];
   let ignore = false;
   // Destinations whose contents are not body text.
   const SKIP = new Set(['fonttbl', 'colortbl', 'stylesheet', 'info', 'pict', 'object',
@@ -56,7 +56,7 @@ function stripRtf(rtf) {
   while (i < n && guard++ < 50_000_000) {
     const c = rtf[i];
     if (c === '{') { stack.push(ignore); i++; continue; }
-    if (c === '}') { ignore = stack.length ? stack.pop() : false; i++; continue; }
+    if (c === '}') { ignore = stack.length ? stack.pop()! : false; i++; continue; }
     if (c === '\\') {
       const next = rtf[i + 1];
       if (next === '*') { ignore = true; i += 2; continue; }       // ignorable destination
@@ -91,7 +91,7 @@ function stripRtf(rtf) {
 }
 
 // ---------- AbiWord / HWPX (paragraph text from XML) ----------
-function paragraphsFromXml(doc) {
+function paragraphsFromXml(doc: Document) {
   const paras = [];
   for (const p of doc.getElementsByTagName('*')) {
     if (p.localName === 'p') {
@@ -115,11 +115,11 @@ async function extractHwpx(file: File) {
 }
 
 // ---------- FictionBook (.fb2) ----------
-function renderFb2Content(doc) {
+function renderFb2Content(doc: Document) {
   const container = document.createElement('div');
   const FB = doc.documentElement && doc.documentElement.namespaceURI;
   const bodies = doc.getElementsByTagNameNS(FB || '*', 'body');
-  const emit = (node, depth) => {
+  const emit = (node: Element, depth: number) => {
     for (const c of node.children) {
       const ln = c.localName;
       if (ln === 'title') {
@@ -147,10 +147,10 @@ function renderFb2Content(doc) {
 
 // ---------- MHTML ----------
 // Pull the text/html part out of a MIME multipart archive and decode it.
-function extractMhtmlHtml(text) {
+function extractMhtmlHtml(text: string) {
   const mb = /boundary="?([^"\r\n;]+)"?/i.exec(text);
   let html = null;
-  const decodePart = (raw) => {
+  const decodePart = (raw: string) => {
     const sep = raw.indexOf('\r\n\r\n') >= 0 ? '\r\n\r\n' : '\n\n';
     const split = raw.indexOf(sep);
     if (split < 0) return null;
@@ -158,7 +158,7 @@ function extractMhtmlHtml(text) {
     if (!/content-type:\s*text\/html/.test(headers)) return null;
     let body = raw.slice(split + sep.length);
     if (/content-transfer-encoding:\s*quoted-printable/.test(headers)) {
-      body = body.replace(/=\r?\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+      body = body.replace(/=\r?\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)));
     } else if (/content-transfer-encoding:\s*base64/.test(headers)) {
       try { body = atob(body.replace(/\s+/g, '')); } catch (_) {}
     }
@@ -173,7 +173,7 @@ function extractMhtmlHtml(text) {
 }
 
 // ---------- main ----------
-export async function renderTextDoc(file: File, container, kind, ext: string) {
+export async function renderTextDoc(file: File, container: HTMLElement, kind: string, ext: string) {
   container.hidden = false;
   container.innerHTML = '';
   // Ghost sheets stand in while the file is read, decoded and paginated.
@@ -242,9 +242,9 @@ export async function renderTextDoc(file: File, container, kind, ext: string) {
   }
 }
 
-export const renderRtf = (f, c, ext: string) => renderTextDoc(f, c, 'rtf', ext || 'rtf');
-export const renderAbw = (f, c, ext: string) => renderTextDoc(f, c, 'abw', ext || 'abw');
-export const renderFb2 = (f, c, ext: string) => renderTextDoc(f, c, 'fb2', ext || 'fb2');
-export const renderHwpx = (f, c, ext: string) => renderTextDoc(f, c, 'hwpx', ext || 'hwpx');
-export const renderMhtml = (f, c, ext: string) => renderTextDoc(f, c, 'mhtml', ext || 'mht');
-export const renderMarkup = (f, c, ext: string) => renderTextDoc(f, c, 'markup', ext);
+export const renderRtf = (f: File, c: HTMLElement, ext: string) => renderTextDoc(f, c, 'rtf', ext || 'rtf');
+export const renderAbw = (f: File, c: HTMLElement, ext: string) => renderTextDoc(f, c, 'abw', ext || 'abw');
+export const renderFb2 = (f: File, c: HTMLElement, ext: string) => renderTextDoc(f, c, 'fb2', ext || 'fb2');
+export const renderHwpx = (f: File, c: HTMLElement, ext: string) => renderTextDoc(f, c, 'hwpx', ext || 'hwpx');
+export const renderMhtml = (f: File, c: HTMLElement, ext: string) => renderTextDoc(f, c, 'mhtml', ext || 'mht');
+export const renderMarkup = (f: File, c: HTMLElement, ext: string) => renderTextDoc(f, c, 'markup', ext);

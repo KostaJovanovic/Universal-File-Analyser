@@ -8,18 +8,18 @@ import { el, row, rowHelp, h3help, errorCard, fmtBytes, loadCss, loadScript } fr
 const LEAFLET_CSS = 'assets/vendor/leaflet/leaflet.css';
 const LEAFLET_JS  = 'assets/vendor/leaflet/leaflet.js';
 
-function haversine(a, b) {                 // a,b = [lat, lon]
-  const R = 6371000, toRad = (x) => x * Math.PI / 180;
+function haversine(a: any[], b: any[]) {                 // a,b = [lat, lon]
+  const R = 6371000, toRad = (x: number) => x * Math.PI / 180;
   const dLat = toRad(b[0] - a[0]), dLon = toRad(b[1] - a[1]);
   const la1 = toRad(a[0]), la2 = toRad(b[0]);
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
 }
-function fmtDist(m) {
+function fmtDist(m: number) {
   if (!m) return '-';
   return m >= 1000 ? (m / 1000).toFixed(2) + ' km' : Math.round(m) + ' m';
 }
-function fmtDuration(sec) {
+function fmtDuration(sec: number) {
   if (!isFinite(sec) || sec <= 0) return '-';
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.round(sec % 60);
   return h > 0 ? h + 'h ' + m + 'm' : (m > 0 ? m + 'm ' + s + 's' : s + 's');
@@ -27,7 +27,7 @@ function fmtDuration(sec) {
 
 // Walk all per-point track detail and derive distance-along, elevation profile
 // samples, ascent/descent (noise-thresholded), moving time and sensor stats.
-function trackStats(tracks) {
+function trackStats(tracks: any[]) {
   const ELE_THRESHOLD = 2;   // metres: ignore ele deltas below this (GPS noise)
   const PAUSE_GAP = 60;      // seconds: gaps longer than this are "stopped" time
   let ascent = 0, descent = 0, refEle = null;
@@ -60,23 +60,23 @@ function trackStats(tracks) {
     }
   }
   // reduce, not Math.max(...spread): a long track has too many points to spread as args.
-  const agg = (arr) => arr.length ? { avg: arr.reduce((a, b) => a + b, 0) / arr.length, max: arr.reduce((m, v) => (v > m ? v : m), -Infinity) } : null;
+  const agg = (arr: any[]) => arr.length ? { avg: arr.reduce((a, b) => a + b, 0) / arr.length, max: arr.reduce((m: number, v: number) => (v > m ? v : m), -Infinity) } : null;
   return { ascent, descent, profile, hasTime, movingTime, movingDist, totalDist,
            hr: agg(hr), cad: agg(cad), temp: agg(temp) };
 }
 
 // Plain 2D-canvas line chart of elevation vs distance. No library.
-function elevationProfileCanvas(profile) {
+function elevationProfileCanvas(profile: any[]) {
   const W = 640, H = 180, padL = 44, padR = 12, padT = 12, padB = 24;
   const cv = el('canvas', { class: 'anr-geo-elev', width: String(W), height: String(H) });
   cv.style.width = '100%'; cv.style.height = 'auto'; cv.style.maxWidth = W + 'px';
-  const ctx = cv.getContext('2d');
+  const ctx = cv.getContext('2d')!;
   const eles = profile.map((p) => p.ele);
-  let minE = eles.reduce((m, v) => (v < m ? v : m), Infinity), maxE = eles.reduce((m, v) => (v > m ? v : m), -Infinity);
+  let minE = eles.reduce((m: number, v: number) => (v < m ? v : m), Infinity), maxE = eles.reduce((m: number, v: number) => (v > m ? v : m), -Infinity);
   if (minE === maxE) { minE -= 1; maxE += 1; }
   const maxD = profile[profile.length - 1].dist || 1;
-  const x = (d) => padL + (d / maxD) * (W - padL - padR);
-  const y = (e) => padT + (1 - (e - minE) / (maxE - minE)) * (H - padT - padB);
+  const x = (d: number) => padL + (d / maxD) * (W - padL - padR);
+  const y = (e: number) => padT + (1 - (e - minE) / (maxE - minE)) * (H - padT - padB);
   // axes
   ctx.strokeStyle = '#c9d2da'; ctx.lineWidth = 1; ctx.beginPath();
   ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB); ctx.lineTo(W - padR, H - padB); ctx.stroke();
@@ -100,42 +100,55 @@ function elevationProfileCanvas(profile) {
   return cv;
 }
 
+interface Geo {
+  lines: number[][][];
+  markers: { lat: number; lon: number; name: string }[];
+  pointCount: number;
+  eleMin: number;
+  eleMax: number;
+  timeStart: number|null;
+  timeEnd: number|null;
+  counts: Record<string, number>;
+  tracks: any[][];
+  features: { name: string; props: any }[];
+}
+
 // Accumulates geometry into a common shape used for stats + the map.
 // `tracks` keeps per-point detail (lat/lon/ele/time/hr/cad/temp) for the lines
 // that carry it (GPX track segments / routes), used for the elevation profile,
 // ascent/descent and moving-time stats. `features` holds GeoJSON properties.
-function makeGeo() {
+function makeGeo(): Geo {
   return { lines: [], markers: [], pointCount: 0, eleMin: Infinity, eleMax: -Infinity,
            timeStart: null, timeEnd: null, counts: {}, tracks: [], features: [] };
 }
-function bump(g, type) { g.counts[type] = (g.counts[type] || 0) + 1; }
-function ele(g, v) { if (isFinite(v)) { g.eleMin = Math.min(g.eleMin, v); g.eleMax = Math.max(g.eleMax, v); } }
-function tstamp(g, t) { const ms = Date.parse(t); if (!isNaN(ms)) { g.timeStart = g.timeStart == null ? ms : Math.min(g.timeStart, ms); g.timeEnd = g.timeEnd == null ? ms : Math.max(g.timeEnd, ms); } }
+function bump(g: Geo, type: string) { g.counts[type] = (g.counts[type] || 0) + 1; }
+function ele(g: Geo, v: number) { if (isFinite(v)) { g.eleMin = Math.min(g.eleMin, v); g.eleMax = Math.max(g.eleMax, v); } }
+function tstamp(g: Geo, t: string) { const ms = Date.parse(t); if (!isNaN(ms)) { g.timeStart = g.timeStart == null ? ms : Math.min(g.timeStart, ms); g.timeEnd = g.timeEnd == null ? ms : Math.max(g.timeEnd, ms); } }
 
-function parseGpx(xml) {
+function parseGpx(xml: Document) {
   const g = makeGeo();
-  const num = (n, a) => parseFloat(n.getAttribute(a));
+  const num = (n: Element, a: string) => parseFloat(n.getAttribute(a)!);
   // Garmin TrackPointExtension fields live under <extensions> with namespaced
   // tags like <gpxtpx:hr>; match by local name so we don't depend on the prefix.
-  const extVal = (pt, local) => {
+  const extVal = (pt: Element, local: string) => {
     const ext = pt.querySelector('extensions'); if (!ext) return NaN;
     for (const n of ext.querySelectorAll('*')) {
       const ln = (n.localName || n.tagName || '').toLowerCase();
-      if (ln === local) { const v = parseFloat(n.textContent); if (isFinite(v)) return v; }
+      if (ln === local) { const v = parseFloat(n.textContent!); if (isFinite(v)) return v; }
     }
     return NaN;
   };
-  const segPts = (nodes) => {
-    const line = [];                 // [[lat,lon],...] for the map
-    const detail = [];               // {lat,lon,ele,time,hr,cad,temp} for stats
+  const segPts = (nodes: NodeListOf<Element>) => {
+    const line: number[][] = [];                 // [[lat,lon],...] for the map
+    const detail: any[] = [];               // {lat,lon,ele,time,hr,cad,temp} for stats
     for (const pt of nodes) {
       const lat = num(pt, 'lat'), lon = num(pt, 'lon');
       if (!isFinite(lat) || !isFinite(lon)) continue;
       line.push([lat, lon]); g.pointCount++;
-      const eNode = pt.querySelector('ele'); const eVal = eNode ? parseFloat(eNode.textContent) : NaN;
+      const eNode = pt.querySelector('ele'); const eVal = eNode ? parseFloat(eNode.textContent!) : NaN;
       if (eNode) ele(g, eVal);
-      const tNode = pt.querySelector('time'); const tMs = tNode ? Date.parse(tNode.textContent) : NaN;
-      if (tNode) tstamp(g, tNode.textContent);
+      const tNode = pt.querySelector('time'); const tMs = tNode ? Date.parse(tNode.textContent!) : NaN;
+      if (tNode) tstamp(g, tNode.textContent!);
       detail.push({ lat, lon, ele: eVal, time: isNaN(tMs) ? NaN : tMs,
         hr: extVal(pt, 'hr'), cad: extVal(pt, 'cad'), temp: extVal(pt, 'atemp') });
     }
@@ -147,14 +160,14 @@ function parseGpx(xml) {
   xml.querySelectorAll('wpt').forEach((w) => {
     const lat = num(w, 'lat'), lon = num(w, 'lon');
     if (!isFinite(lat) || !isFinite(lon)) return;
-    const nm = w.querySelector('name'); g.markers.push({ lat, lon, name: nm ? nm.textContent.trim() : '' });
+    const nm = w.querySelector('name'); g.markers.push({ lat, lon, name: nm ? nm.textContent!.trim() : '' });
     g.pointCount++; bump(g, 'waypoints');
   });
   return g;
 }
 
-function parseCoords(text) {        // KML "lon,lat,alt lon,lat,alt" -> [[lat,lon],...]
-  const out = [];
+function parseCoords(text: string) {        // KML "lon,lat,alt lon,lat,alt" -> [[lat,lon],...]
+  const out: number[][] = [];
   for (const tok of text.trim().split(/\s+/)) {
     const c = tok.split(',');
     const lon = parseFloat(c[0]), lat = parseFloat(c[1]);
@@ -163,7 +176,7 @@ function parseCoords(text) {        // KML "lon,lat,alt lon,lat,alt" -> [[lat,lo
   return out;
 }
 // Pull altitude values (3rd coordinate) out of a KML coordinate string, if any.
-function coordAlts(text) {
+function coordAlts(text: string) {
   const out = [];
   for (const tok of text.trim().split(/\s+/)) {
     const c = tok.split(',');
@@ -174,7 +187,7 @@ function coordAlts(text) {
 }
 // KML <ExtendedData> -> { key: value } from either <Data name><value> or
 // <SimpleData name> pairs. Returns null when there's nothing useful.
-function parseExtendedData(pm) {
+function parseExtendedData(pm: Element) {
   const ed = pm.querySelector('ExtendedData'); if (!ed) return null;
   const out: any = {};
   ed.querySelectorAll('Data').forEach((d) => {
@@ -186,58 +199,58 @@ function parseExtendedData(pm) {
   });
   return Object.keys(out).length ? out : null;
 }
-function parseKml(xml) {
+function parseKml(xml: Document) {
   const g = makeGeo();
   xml.querySelectorAll('Placemark').forEach((pm) => {
     const nameEl = pm.querySelector('name');
-    const name = nameEl ? nameEl.textContent.trim() : '';
+    const name = nameEl ? nameEl.textContent!.trim() : '';
     const extended = parseExtendedData(pm);
     if (extended) g.features.push({ name, props: extended });
-    pm.querySelectorAll('coordinates').forEach((c) => coordAlts(c.textContent).forEach((a) => ele(g, a)));
+    pm.querySelectorAll('coordinates').forEach((c) => coordAlts(c.textContent!).forEach((a) => ele(g, a)));
     pm.querySelectorAll('Point coordinates').forEach((c) => {
-      const pts = parseCoords(c.textContent);
+      const pts = parseCoords(c.textContent!);
       if (pts.length) { g.markers.push({ lat: pts[0][0], lon: pts[0][1], name }); g.pointCount++; bump(g, 'points'); }
     });
     pm.querySelectorAll('LineString coordinates').forEach((c) => {
-      const pts = parseCoords(c.textContent);
+      const pts = parseCoords(c.textContent!);
       if (pts.length) { g.lines.push(pts); g.pointCount += pts.length; bump(g, 'lines'); }
     });
     pm.querySelectorAll('Polygon coordinates').forEach((c) => {
-      const pts = parseCoords(c.textContent);
+      const pts = parseCoords(c.textContent!);
       if (pts.length) { g.lines.push(pts); g.pointCount += pts.length; bump(g, 'polygons'); }
     });
   });
   return g;
 }
 
-function parseGeoJson(text) {
+function parseGeoJson(text: string) {
   const g = makeGeo();
   const json = JSON.parse(text);
   const features = json.type === 'FeatureCollection' ? (json.features || [])
     : json.type === 'Feature' ? [json] : json.geometry ? [json] : [{ geometry: json }];
-  const ll = (c) => [c[1], c[0]];        // GeoJSON is [lon, lat]
+  const ll = (c: any[]) => [c[1], c[0]];        // GeoJSON is [lon, lat]
   // Best-effort display name from common property keys.
-  const featName = (props) => {
+  const featName = (props: any) => {
     if (!props) return '';
     for (const k of ['name', 'Name', 'NAME', 'title', 'Title', 'id', 'ID']) {
       if (props[k] != null && props[k] !== '') return String(props[k]);
     }
     return '';
   };
-  const walk = (geom, name) => {
+  const walk = (geom: any, name: string) => {
     if (!geom) return;
     const c = geom.coordinates;
     switch (geom.type) {
       case 'Point': { const p = ll(c); g.markers.push({ lat: p[0], lon: p[1], name }); g.pointCount++; bump(g, 'points'); break; }
-      case 'MultiPoint': c.forEach((p) => { const x = ll(p); g.markers.push({ lat: x[0], lon: x[1], name }); g.pointCount++; }); bump(g, 'points'); break;
+      case 'MultiPoint': c.forEach((p: any[]) => { const x = ll(p); g.markers.push({ lat: x[0], lon: x[1], name }); g.pointCount++; }); bump(g, 'points'); break;
       case 'LineString': { const line = c.map(ll); g.lines.push(line); g.pointCount += line.length; bump(g, 'lines'); break; }
-      case 'MultiLineString': c.forEach((l) => { const line = l.map(ll); g.lines.push(line); g.pointCount += line.length; }); bump(g, 'lines'); break;
-      case 'Polygon': c.forEach((ring) => { const line = ring.map(ll); g.lines.push(line); g.pointCount += line.length; }); bump(g, 'polygons'); break;
-      case 'MultiPolygon': c.forEach((poly) => poly.forEach((ring) => { const line = ring.map(ll); g.lines.push(line); g.pointCount += line.length; })); bump(g, 'polygons'); break;
-      case 'GeometryCollection': (geom.geometries || []).forEach((gg) => walk(gg, name)); break;
+      case 'MultiLineString': c.forEach((l: any[]) => { const line = l.map(ll); g.lines.push(line); g.pointCount += line.length; }); bump(g, 'lines'); break;
+      case 'Polygon': c.forEach((ring: any[]) => { const line = ring.map(ll); g.lines.push(line); g.pointCount += line.length; }); bump(g, 'polygons'); break;
+      case 'MultiPolygon': c.forEach((poly: any[]) => poly.forEach((ring: any[]) => { const line = ring.map(ll); g.lines.push(line); g.pointCount += line.length; })); bump(g, 'polygons'); break;
+      case 'GeometryCollection': (geom.geometries || []).forEach((gg: any) => walk(gg, name)); break;
     }
   };
-  features.forEach((f) => {
+  features.forEach((f: any) => {
     const props = f && f.properties && typeof f.properties === 'object' ? f.properties : null;
     const name = featName(props);
     if (props) g.features.push({ name, props });
@@ -276,8 +289,8 @@ export async function renderGeo(file: File, resultsEl: HTMLElement) {
 
   // Bounds across everything.
   let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
-  const see = (lat, lon) => { minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat); minLon = Math.min(minLon, lon); maxLon = Math.max(maxLon, lon); };
-  g.lines.forEach((l) => l.forEach((p) => see(p[0], p[1])));
+  const see = (lat: number, lon: number) => { minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat); minLon = Math.min(minLon, lon); maxLon = Math.max(maxLon, lon); };
+  g.lines.forEach((l) => l.forEach((p: any[]) => see(p[0], p[1])));
   g.markers.forEach((m) => see(m.lat, m.lon));
   const hasGeo = isFinite(minLat);
 
@@ -295,7 +308,7 @@ export async function renderGeo(file: File, resultsEl: HTMLElement) {
   if (isFinite(g.eleMin)) tbl.appendChild(row('Elevation', Math.round(g.eleMin) + ' – ' + Math.round(g.eleMax) + ' m'));
   if (g.timeStart != null) {
     tbl.appendChild(row('Start time', new Date(g.timeStart).toISOString().replace('T', ' ').slice(0, 19)));
-    const span = (g.timeEnd - g.timeStart) / 1000;
+    const span = (g.timeEnd! - g.timeStart) / 1000;
     if (span > 0) tbl.appendChild(row('Duration', span >= 3600 ? (span / 3600).toFixed(1) + ' h' : Math.round(span / 60) + ' min'));
   }
 

@@ -81,7 +81,9 @@ export function fireLaser() {
 export function findLightningTarget() {
   const { ship, boss } = g;
   let best = null, bestD = Infinity;
-  const consider = (o: { x: number; y: number }) => {
+  // `_bossNode` rides along on the boss-node candidates so the winner can be
+  // traced back to the node it came from; every other caller passes a bare entity.
+  const consider = (o: { x: number; y: number; _bossNode?: any }) => {
     const [dx, dy] = wrapDelta(ship.x, ship.y, o.x, o.y);
     const dist = Math.hypot(dx, dy);
     if (dist > lightningRange() || dist >= bestD) return;
@@ -212,7 +214,7 @@ function retargetMissiles() {
   const { missiles } = g;
   if (!missiles.length) return;
   for (const m of missiles) if (m.target && !targetAlive(m.target)) m.target = null;
-  const free = missiles.filter((m) => !m.target);
+  const free = missiles.filter((m: Missile) => !m.target);
   if (!free.length) return;
   const targets = collectTargets();
   if (!targets.length) return;   // nothing to lock onto - free missiles keep their heading

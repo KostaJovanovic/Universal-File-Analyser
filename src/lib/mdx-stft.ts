@@ -17,6 +17,8 @@
    them for every FFT made Mobile Safari accumulate tens of megabytes of garbage
    per model window before its collector caught up. */
 
+import type { FloatBuf } from '../core/types.js';
+
 // Periodic Hann window (matches torch.hann_window default): w[n]=0.5-0.5cos(2pi n/N).
 export function hann(n: number) {
   const w = new Float64Array(n);
@@ -83,7 +85,7 @@ export function makeFft(N: number) {
     }
   }
   // Outer twiddles TW[k1][n2] = exp(-2pi i n2 k1 / N) (forward sign).
-  const TWR = [], TWI = [];
+  const TWR: Float64Array[] = [], TWI: Float64Array[] = [];
   for (let k1 = 0; k1 < N1; k1++) {
     TWR.push(new Float64Array(N2)); TWI.push(new Float64Array(N2));
     for (let n2 = 0; n2 < N2; n2++) {
@@ -144,7 +146,7 @@ export function makeStftEngine(nFft: number, hop: number) {
   let istftSignal = new Float64Array(0);
   const istftFr = new Float64Array(nFft), istftFi = new Float64Array(nFft);
 
-  function stft(signal: Float32Array) {
+  function stft(signal: FloatBuf) {
     const paddedLen = signal.length + 2 * pad;
     if (padded.length !== paddedLen) padded = new Float64Array(paddedLen);
     else padded.fill(0);
@@ -166,7 +168,7 @@ export function makeStftEngine(nFft: number, hop: number) {
     return { re: stftRe, im: stftIm, frames, bins: nBins };
   }
 
-  function istft(re: Float32Array, im: Float32Array, frames: number, length: number) {
+  function istft(re: FloatBuf, im: FloatBuf, frames: number, length: number) {
     const outLen = length + 2 * pad;
     if (istftOut.length !== outLen) {
       istftOut = new Float64Array(outLen);

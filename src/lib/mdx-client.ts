@@ -24,7 +24,7 @@ function workerError(message: string|undefined, code: string) {
   return err;
 }
 
-function throwIfAborted(signal) {
+function throwIfAborted(signal: AbortSignal|null|undefined) {
   if (signal && signal.aborted) throw abortError();
 }
 
@@ -49,11 +49,11 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
   return queued;
 }
 
-async function toModelChannels(audioBuffer: AudioBuffer|null, signal) {
+async function toModelChannels(audioBuffer: AudioBuffer, signal: AbortSignal|null|undefined) {
   throwIfAborted(signal);
   const nCh = Math.min(2, audioBuffer.numberOfChannels);
   if (audioBuffer.sampleRate === MDX_SR) {
-    const channels = [];
+    const channels: Float32Array[] = [];
     for (let c = 0; c < nCh; c++) {
       throwIfAborted(signal);
       channels.push(audioBuffer.getChannelData(c).slice());
@@ -70,7 +70,7 @@ async function toModelChannels(audioBuffer: AudioBuffer|null, signal) {
   source.start();
   const rendered = await offline.startRendering();
   throwIfAborted(signal);
-  const channels = [];
+  const channels: Float32Array[] = [];
   for (let c = 0; c < rendered.numberOfChannels; c++) {
     throwIfAborted(signal);
     channels.push(rendered.getChannelData(c).slice());
@@ -78,7 +78,7 @@ async function toModelChannels(audioBuffer: AudioBuffer|null, signal) {
   return { channels, sampleRate: MDX_SR };
 }
 
-function workerRequest(payload, transfer: never[], { onProgress, signal, doneType }) {
+function workerRequest(payload: any, transfer: Transferable[], { onProgress, signal, doneType }: { onProgress?: any; signal?: AbortSignal|null; doneType: string }) {
   const w = getWorker();
   const jobId = ++jobSeq;
   return new Promise((resolve, reject) => {
@@ -105,7 +105,7 @@ function workerRequest(payload, transfer: never[], { onProgress, signal, doneTyp
       w.removeEventListener('messageerror', onMessageError);
       if (signal) signal.removeEventListener('abort', onAbort);
     };
-    const finish = (fn, value: DOMException) => {
+    const finish = (fn: (v?: any) => void, value?: any) => {
       if (settled) return;
       settled = true;
       cleanup();
@@ -115,7 +115,7 @@ function workerRequest(payload, transfer: never[], { onProgress, signal, doneTyp
       detachWorker();
       finish(reject, err);
     };
-    const onMessage = (e) => {
+    const onMessage = (e: MessageEvent) => {
       const msg = e.data;
       if (!msg || msg.jobId !== jobId) return;
       armStallTimer(msg.type === 'progress' ? msg.phase : '');
@@ -128,7 +128,7 @@ function workerRequest(payload, transfer: never[], { onProgress, signal, doneTyp
         failWorker(new Error(msg.message || 'separation failed'));
       }
     };
-    const onError = (e) => {
+    const onError = (e: ErrorEvent) => {
       if (e && e.preventDefault) e.preventDefault();
       failWorker(workerError((e && e.message) || 'AI worker crashed', 'AI_WORKER_CRASH'));
     };
@@ -154,7 +154,15 @@ function workerRequest(payload, transfer: never[], { onProgress, signal, doneTyp
   });
 }
 
-function prepareWorker({ onProgress, signal, modelId, forceWasm = false }) {
+/** Caller-supplied progress/abort/model hooks for a separation run. */
+export interface SeparateOpts {
+  onProgress?: ((phase: string, frac: number) => void) | null;
+  signal?: AbortSignal | null;
+  modelId?: string;
+  forceWasm?: boolean;
+}
+
+function prepareWorker({ onProgress, signal, modelId, forceWasm = false }: SeparateOpts) {
   return workerRequest(
     { type: 'prepare', modelId, forceWasm },
     [],
@@ -162,7 +170,7 @@ function prepareWorker({ onProgress, signal, modelId, forceWasm = false }) {
   );
 }
 
-function runWorker(channels: any[], sampleRate: number, { onProgress, signal, modelId, forceWasm = false }) {
+function runWorker(channels: Float32Array[], sampleRate: number, { onProgress, signal, modelId, forceWasm = false }: SeparateOpts) {
   return workerRequest(
     { type: 'separate', channels, sampleRate, modelId, forceWasm },
     channels.map((channel) => channel.buffer),
@@ -175,7 +183,7 @@ function runWorker(channels: any[], sampleRate: number, { onProgress, signal, mo
  * @param {AudioBuffer} audioBuffer
  * @param {{ onProgress?: (phase:'model'|'model-cache'|'cache'|'cache-warning'|'runtime'|'audio'|'fallback'|'infer-start'|'infer', frac:number)=>void, signal?: AbortSignal, modelId?: string }} [opts]
  */
-export function separateStems(audioBuffer: AudioBuffer|null, { onProgress, signal, modelId } : any = {}) {
+export function separateStems(audioBuffer: AudioBuffer, { onProgress, signal, modelId }: SeparateOpts = {}) {
   return enqueue(async () => {
     throwIfAborted(signal);
     // A worker crash on iOS is usually memory pressure. Rebuilding the same ORT

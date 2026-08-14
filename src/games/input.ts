@@ -11,7 +11,7 @@ import { restart } from './world.js';
 import { openPause, closePause, startGame } from './menus.js';
 
 // Konami code entered while playing reveals + activates the sandbox.
-function trackKonami(key) {
+function trackKonami(key: string) {
   const k = (key || '').toLowerCase();
   g.konamiPos = (k === KONAMI[g.konamiPos]) ? g.konamiPos + 1 : (k === KONAMI[0] ? 1 : 0);
   if (g.konamiPos === KONAMI.length) { g.konamiPos = 0; if (g.revealSandbox) g.revealSandbox(); }
@@ -22,7 +22,7 @@ function trackTouchCombo(tok: string) {
   if (g.comboPos === TOUCH_COMBO.length) { g.comboPos = 0; if (g.revealSandbox) g.revealSandbox(); }
 }
 
-function onKeyDown(e) {
+function onKeyDown(e: KeyboardEvent) {
   const k = e.key;
   g.tryFullscreen();
   if (!e.repeat) trackKonami(k);
@@ -51,7 +51,7 @@ function onKeyDown(e) {
   else return;
   e.preventDefault();
 }
-function onKeyUp(e) {
+function onKeyUp(e: KeyboardEvent) {
   const m = KEY[e.key];
   if (m === 'left' || m === 'right' || m === 'up' || m === 'down') g.input[m] = false;
   else if (e.key === ' ') g.input.fire = false;
@@ -104,7 +104,7 @@ function buildControls() {
     const fire = document.createElement('button');
     fire.type = 'button'; fire.className = 'anr-game-btn'; fire.textContent = '●';
     fire.style.cssText = 'position:absolute; bottom:' + ctrlBottom + 'px; right:24px; width:' + SQ + 'px; height:' + SQ + 'px; font-size:21px; z-index:2; touch-action:none;';
-    const setFire = (v: boolean) => (e) => { e.preventDefault(); if (v) trackTouchCombo('fire'); if (g.gameOver && !g.nameEntry && v) { restart(); return; } input.fire = v; };
+    const setFire = (v: boolean) => (e: Event) => { e.preventDefault(); if (v) trackTouchCombo('fire'); if (g.gameOver && !g.nameEntry && v) { restart(); return; } input.fire = v; };
     fire.addEventListener('pointerdown', setFire(true));
     fire.addEventListener('pointerup', setFire(false));
     fire.addEventListener('pointercancel', setFire(false));
@@ -121,7 +121,7 @@ function buildControls() {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'anr-game-btn'; b.textContent = label;
       b.style.cssText = 'width:' + SQ + 'px; height:' + SQ + 'px; font-size:20px; touch-action:none;';
-      const set = (v: boolean) => (e) => { e.preventDefault(); if (v) trackTouchCombo(tok); input[prop] = v; };
+      const set = (v: boolean) => (e: Event) => { e.preventDefault(); if (v) trackTouchCombo(tok); input[prop] = v; };
       b.addEventListener('pointerdown', set(true));
       b.addEventListener('pointerup', set(false));
       b.addEventListener('pointercancel', set(false));

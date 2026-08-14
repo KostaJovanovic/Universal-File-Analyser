@@ -29,7 +29,7 @@ export async function xzDecompress(bytes: Uint8Array) {
 
     // Feed the compressed bytes in as a one-shot ReadableStream; xzwasm pulls
     // from it and emits decompressed chunks through the Streams API.
-    const compressedStream = new Response(input).body;
+    const compressedStream = new Response(input as BlobPart).body;
     if (!compressedStream) return null;
 
     const reader = new XzReadableStream(compressedStream).getReader();

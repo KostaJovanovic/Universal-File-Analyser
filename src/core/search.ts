@@ -19,8 +19,8 @@ type SearchState = typeof initSearch & {
 };
 
     if ((initSearch as SearchState)._resize) { window.removeEventListener('resize', (initSearch as SearchState)._resize); (initSearch as SearchState)._resize = null; }
-    const nav = searchWrap.closest('nav');
-    let debounceTimer: number|null|undefined = null;
+    const nav = searchWrap.closest('nav')!;
+    let debounceTimer: number|undefined;
     let matches: any[] = [];
     let matchIdx = -1;
     const isMobile = () => window.innerWidth <= 700;
@@ -41,7 +41,7 @@ type SearchState = typeof initSearch & {
 
     function sizeSearch() {
       const h = nav.clientHeight + 'px';
-      searchBtn.style.width = h;
+      searchBtn!.style.width = h;
       prevBtn.style.width = h;
       nextBtn.style.width = h;
     }
@@ -59,10 +59,10 @@ type SearchState = typeof initSearch & {
       + '<button type="button" class="search-overlay-close">&times;</button>'
       + '</div>';
     document.body.appendChild(mobileOverlay);
-    const mobileInput = mobileOverlay.querySelector<HTMLInputElement>('.search-overlay-input');
-    const mobilePrev = mobileOverlay.querySelector('.search-overlay-prev');
-    const mobileNext = mobileOverlay.querySelector('.search-overlay-next');
-    const mobileClose = mobileOverlay.querySelector('.search-overlay-close');
+    const mobileInput = mobileOverlay.querySelector<HTMLInputElement>('.search-overlay-input')!;
+    const mobilePrev = mobileOverlay.querySelector('.search-overlay-prev')!;
+    const mobileNext = mobileOverlay.querySelector('.search-overlay-next')!;
+    const mobileClose = mobileOverlay.querySelector('.search-overlay-close')!;
 
     function scrollToMatch(i: number) {
       if (!matches.length) return;
@@ -88,7 +88,7 @@ type SearchState = typeof initSearch & {
       m.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    const SYNONYMS = {
+    const SYNONYMS: Record<string, string[]> = {
       // video
       fps: ['frame rate', 'framerate'],
       framerate: ['frame rate', 'fps'],
@@ -440,7 +440,7 @@ type SearchState = typeof initSearch & {
       if (matches.length) scrollToMatch(0);
     }
 
-    function triggerSearch(input: HTMLInputElement|null) {
+    function triggerSearch(input: HTMLInputElement) {
       searchInput.value = input.value;
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(runSearch, 150);
@@ -452,7 +452,7 @@ type SearchState = typeof initSearch & {
         mobileInput.value = searchInput.value;
         requestAnimationFrame(() => mobileInput.focus());
       } else {
-        searchWrap.classList.add('is-open');
+        searchWrap!.classList.add('is-open');
         searchInput.focus();
       }
     }
@@ -463,8 +463,8 @@ type SearchState = typeof initSearch & {
         searchInput.value = mobileInput.value;
         return;
       }
-      if (!searchWrap.classList.contains('is-open')) return;
-      searchWrap.classList.remove('is-open');
+      if (!searchWrap!.classList.contains('is-open')) return;
+      searchWrap!.classList.remove('is-open');
     }
 
     // Desktop events

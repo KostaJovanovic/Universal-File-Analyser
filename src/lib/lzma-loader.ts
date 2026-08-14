@@ -46,7 +46,7 @@ export async function lzmaDecompress(bytes: Uint8Array) {
     let total = 0;
     const chunks: Uint8Array[] = [];
     const outStream = {
-      writeBytes(buf: string|any[], len: number) {
+      writeBytes(buf: Uint8Array, len: number) {
         if (total + len > MAX_OUTPUT) throw new Error('lzma output too large');
         chunks.push(buf.slice(0, len));
         total += len;

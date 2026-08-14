@@ -21,10 +21,10 @@ import { SCAN_MED } from '../core/limits.js';
 import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 
 const MAX_BYTES = SCAN_MED;
-const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
+const esc = (s: string) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m] as string));
 
 // Split a Unity-YAML text into its object documents.
-function splitDocs(text) {
+function splitDocs(text: string) {
   const re = /^--- !u!(\d+) &(\d+)(?: stripped)?[^\n]*$/gm;
   const heads = [];
   let m;
@@ -40,14 +40,14 @@ function splitDocs(text) {
 }
 
 // First `key: value` in a block (value trimmed, quotes/comments left as-is).
-const field = (body, key) => { const m = body.match(new RegExp('^\\s*' + key + ':\\s*(.*)$', 'm')); return m ? m[1].trim() : ''; };
+const field = (body: string, key: string) => { const m = body.match(new RegExp('^\\s*' + key + ':\\s*(.*)$', 'm')); return m ? m[1].trim() : ''; };
 
-function parseUnity(text, ext: string, name) {
+function parseUnity(text: string, ext: string, name: string) {
   // .meta: a single importer record, not a multi-doc object stream.
   if (ext === 'meta' || (/^fileFormatVersion:/m.test(text) && !/^--- !u!/m.test(text))) {
     const importer = (text.match(/^([A-Za-z]\w*Importer):/m) || [])[1] || (text.match(/^\s{0,2}([A-Za-z]\w+):\s*$/m) || [])[1] || '';
     return {
-      kind: 'meta',
+      kind: 'meta' as const,
       guid: field(text, 'guid'),
       fileFormatVersion: field(text, 'fileFormatVersion'),
       importer,
@@ -83,13 +83,13 @@ function parseUnity(text, ext: string, name) {
   const label = ext === 'unity' ? 'Scene' : ext === 'prefab' ? 'Prefab'
     : primary ? primary.className : 'Unity asset';
 
-  return { kind: 'asset', ext, label, sceneLike, docs, histogram, gameObjects, named, detail, primaryClass: primary && primary.className };
+  return { kind: 'asset' as const, ext, label, sceneLike, docs, histogram, gameObjects, named, detail, primaryClass: primary && primary.className };
 }
 
 // Pull the interesting fields for well-known asset classes.
-function typeDetail(primary, docs) {
-  const b = primary.body, out = [];
-  const add = (k, v) => { if (v !== '' && v != null) out.push([k, v]); };
+function typeDetail(primary: any, docs: any[]) {
+  const b = primary.body, out: [string, string][] = [];
+  const add = (k: string, v: string|null) => { if (v !== '' && v != null) out.push([k, v]); };
   const nm = field(b, 'm_Name').replace(/^['"]|['"]$/g, '');
   if (nm) add('Name', nm);
 
@@ -105,8 +105,8 @@ function typeDetail(primary, docs) {
       const layers = [...b.matchAll(/-\s*serializedVersion:[^\n]*\n\s*m_Name:\s*(.+)/g)].map((m) => m[1].trim());
       add('Layers', layers.length ? layers.join(', ') : field(b, 'm_AnimatorLayers') === '[]' ? '0' : '');
       add('Parameters', /m_AnimatorParameters:\s*\[\]/.test(b) ? '0' : 'present');
-      add('States', String(docs.filter((d) => d.className === 'AnimatorState').length));
-      add('State machines', String(docs.filter((d) => d.className === 'AnimatorStateMachine').length));
+      add('States', String(docs.filter((d: any) => d.className === 'AnimatorState').length));
+      add('State machines', String(docs.filter((d: any) => d.className === 'AnimatorStateMachine').length));
       break;
     }
     case 'PhysicsMaterial2D':
@@ -210,7 +210,7 @@ export async function renderUnity(file: File, resultsEl: HTMLElement) {
     const card = el('div', { class: 'anr-card' });
     card.appendChild(el('h3', {}, (data.primaryClass || 'Asset').replace(/([a-z])([A-Z])/g, '$1 $2')));
     const dt = el('table', { class: 'anr-readout' });
-    const DETAIL_HELP = {
+    const DETAIL_HELP: Record<string, string> = {
       'DSP buffer': 'The size of the audio buffer Unity’s sound engine works in. A larger buffer plays back more steadily but adds a little delay before a sound is heard; a smaller one responds faster but works the device harder.',
       'Virtual voices': 'The most sounds Unity keeps track of at once, including quiet or distant ones it is not actually playing out loud.',
       'Real voices': 'The most sounds Unity plays out loud at the same time. If more than this are triggered, the quietest or least important ones are dropped.',
@@ -266,8 +266,8 @@ export async function renderUnity(file: File, resultsEl: HTMLElement) {
   resultsEl.appendChild(integrityCard(file));
 }
 
-function unityFormatName(ext: string, label) {
-  const map = {
+function unityFormatName(ext: string, label: string) {
+  const map: Record<string, string> = {
     unity: 'Unity scene (.unity)', prefab: 'Unity prefab (.prefab)', asset: 'Unity asset (.asset)',
     controller: 'Unity Animator Controller (.controller)', anim: 'Unity animation clip (.anim)',
     mat: 'Unity material (.mat)', physicsmaterial2d: 'Unity 2D physics material (.physicsMaterial2D)',

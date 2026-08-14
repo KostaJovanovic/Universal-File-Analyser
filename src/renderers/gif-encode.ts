@@ -6,8 +6,11 @@
    (1-bit transparency where the frame has alpha) and a standard GIF-variant LZW
    coder whose output the decoder in gif-frames.js reads back. Pure logic, no DOM. */
 
+/** One entry of a median-cut box: a unique colour plus how often it occurs. */
+interface Bucket { r: number; g: number; b: number; count: number; [ch: string]: number; }
+
 // Pick the channel (0=r,1=g,2=b) with the widest spread in a box of {r,g,b,count}.
-function widestChannel(box) {
+function widestChannel(box: Bucket[]) {
   let rmin = 255, rmax = 0, gmin = 255, gmax = 0, bmin = 255, bmax = 0;
   for (const c of box) {
     if (c.r < rmin) rmin = c.r; if (c.r > rmax) rmax = c.r;
@@ -21,7 +24,7 @@ function widestChannel(box) {
 
 // Median-cut a list of unique colours (with counts) down to `target` buckets,
 // returning their count-weighted average colours as [[r,g,b],...].
-function medianCut(colors, target) {
+function medianCut(colors: Bucket[], target: number) {
   let boxes = [colors];
   while (boxes.length < target) {
     let bi = -1, best = -1;
@@ -47,7 +50,7 @@ function medianCut(colors, target) {
 // Quantise one RGBA frame to palette indices. Pixels with alpha < 128 map to a
 // reserved transparent index. Returns { indices, palette, minCodeSize,
 // transparentIndex } where palette is padded to the 2^minCodeSize colour table.
-function quantizeFrame(data) {
+function quantizeFrame(data: Uint8ClampedArray) {
   const n = data.length / 4;
   const hist = new Map();
   let hasAlpha = false;
@@ -100,7 +103,7 @@ function quantizeFrame(data) {
 // GIF-variant LZW: encode palette indices into packed byte codes. Mirrors the
 // decoder in gif-frames.js (code size grows when the dictionary reaches a power of
 // two; a clear code resets it at 4096). Returns an array of bytes.
-function lzwEncode(indices, minCodeSize) {
+function lzwEncode(indices: Uint8Array, minCodeSize: number) {
   const clearCode = 1 << minCodeSize;
   const eoiCode = clearCode + 1;
   let codeSize = minCodeSize + 1;
@@ -108,7 +111,7 @@ function lzwEncode(indices, minCodeSize) {
   let next = clearCode + 2;
   const out = [];
   let cur = 0, curBits = 0;
-  const emit = (code) => {
+  const emit = (code: number) => {
     cur |= code << curBits;
     curBits += codeSize;
     while (curBits >= 8) { out.push(cur & 0xff); cur >>>= 8; curBits -= 8; }
@@ -139,10 +142,10 @@ function lzwEncode(indices, minCodeSize) {
 // Encode an animated GIF from composited RGBA frames. `frames` is an array of
 // Uint8ClampedArray (width*height*4); `delaysCs` the per-frame delay in
 // centiseconds; `loop` the loop count (0 = infinite). Returns an image/gif Blob.
-export function encodeAnimatedGif(width, height, frames, delaysCs, loop) {
+export function encodeAnimatedGif(width: number, height: number, frames: Uint8ClampedArray[], delaysCs: number[], loop: number) {
   const bytes = [];
-  const u16 = (v) => { bytes.push(v & 0xff, (v >> 8) & 0xff); };
-  const str = (s) => { for (let i = 0; i < s.length; i++) bytes.push(s.charCodeAt(i)); };
+  const u16 = (v: number) => { bytes.push(v & 0xff, (v >> 8) & 0xff); };
+  const str = (s: string) => { for (let i = 0; i < s.length; i++) bytes.push(s.charCodeAt(i)); };
 
   str('GIF89a');
   u16(width); u16(height);

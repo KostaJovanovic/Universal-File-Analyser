@@ -36,7 +36,7 @@ export async function renderDjvu(file: File, resultsEl: HTMLElement) {
     return;
   }
 
-  let doc, count, sizes = null;
+  let doc: any, count!: number, sizes: any = null;
   try {
     const buf = await file.arrayBuffer();
     doc = new DjVu.Document(buf);
@@ -78,7 +78,7 @@ export async function renderDjvu(file: File, resultsEl: HTMLElement) {
   resultsEl.insertBefore(view, resultsEl.firstChild);
 
   let cur = 0, busy = false;
-  async function show(n) {
+  async function show(n: number) {
     if (busy) return;
     n = Math.max(1, Math.min(count, n));
     busy = true;
@@ -88,7 +88,7 @@ export async function renderDjvu(file: File, resultsEl: HTMLElement) {
       const page = await doc.getPage(n);
       const img = page.getImageData();
       canvas.width = img.width; canvas.height = img.height;
-      canvas.getContext('2d').putImageData(img, 0, 0);
+      canvas.getContext('2d')!.putImageData(img, 0, 0);
       cur = n;
       status.textContent = 'Page ' + n + ' of ' + count;
     } catch (e) {

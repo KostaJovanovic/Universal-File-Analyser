@@ -166,9 +166,19 @@ export async function extractAviData(file: File, aviInfo: AviHeaderInfo | null |
   return result;
 }
 
+/** The read surface encodeWav() actually needs. A real AudioBuffer satisfies it,
+    and so does the lightweight view audio.js passes for a separated stem - which
+    avoids copying every channel into a temporary AudioBuffer just to save it. */
+export interface WavSource {
+  numberOfChannels: number;
+  sampleRate: number;
+  length: number;
+  getChannelData(index: number): Float32Array;
+}
+
 // Encode an AudioBuffer as a 16-bit PCM WAV Blob (interleaved), so the extracted
 // AVI audio can be handed to a normal <audio> element.
-export function encodeWav(audioBuf: AudioBuffer) {
+export function encodeWav(audioBuf: WavSource) {
   const ch = audioBuf.numberOfChannels, sr = audioBuf.sampleRate, len = audioBuf.length;
   const block = ch * 2, dataSize = len * block;
   const buf = new ArrayBuffer(44 + dataSize);

@@ -335,6 +335,9 @@ export function parseNrbf(bytes) {
                         total *= l;
                     if (total < 0 || total > MAX_ARRAY)
                         throw new Error('absurd array size');
+                    // bt === 0 is BinaryType.Primitive, and readAdditional() returns the
+                    // primitive type code for exactly that case - the object/class shapes
+                    // only come back for the other binary types.
                     return fillArray(register(id, []), total, () => (bt === 0 ? readPrimitive(ai) : readRecord()));
                 }
                 case REC.MessageEnd: return undefined;

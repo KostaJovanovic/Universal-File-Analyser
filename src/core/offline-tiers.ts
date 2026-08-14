@@ -96,7 +96,7 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
   const TIER_SIZES: any = {};
   TIER_ORDER.forEach((t) => { TIER_SIZES[t] = '~' + TIER_MB[t] + ' MB'; });
 
-  const TIERS = {
+  const TIERS: Record<string, string[]> = {
     essentials: [
       './', './about', './patch', './compare', './manifest.json', './assets/css/analyser.css', './assets/css/fonts.css',
       './assets/js/core/app.js', './assets/js/core/formats.js', './assets/js/core/util.js', './assets/js/core/sanitize.js', './assets/js/core/search.js',
@@ -281,7 +281,7 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
   ];
   const LANG_URLS = LANG_CODES.map(c => 'https://tessdata.projectnaptha.com/4.0.0/' + c + '.traineddata.gz');
   const FEATURE_ORDER = ['languages', 'ai'];
-  const FEATURES = {
+  const FEATURES: Record<string, { label: string; desc: string; mb: number; urls: string[] }> = {
     languages: { label: 'Languages', desc: 'Read text (OCR) in 30+ languages, not just English.', mb: TIER_MB.complete - TIER_MB.everything - MDX_TIER_MB - DFN_MODEL_MB, urls: LANG_URLS },
     // Both on-device audio AI tools ship together: the vocal separator and the
     // denoise model share one ONNX runtime, so the denoise model is a small add
@@ -370,7 +370,7 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
     // Parts are separate spans so the responsive trimming is pure CSS: on mobile
     // the checkmark and the · separator are hidden (a - is shown instead), so the
     // badge reads just "Cached - v2.0". Desktop keeps "✓ Cached · v2.0".
-    const ver = 'v' + analyserVersion(version, RELEASE_COMMITS);
+    const ver = 'v' + analyserVersion(Number(version), RELEASE_COMMITS);
     badge.textContent = '';
     badge.appendChild(el('span', { class: 'offline-cached-check' }, '✓'));
     badge.appendChild(el('span', {}, 'Cached'));
@@ -450,8 +450,8 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
 
     btn.classList.add('is-active');
     btn.classList.remove('is-done', 'is-fading');
-    const bar = btn.querySelector<HTMLElement>('.offline-bar');
-    const sizeEl = btn.querySelector('.offline-size');
+    const bar = btn.querySelector<HTMLElement>('.offline-bar')!;
+    const sizeEl = btn.querySelector<HTMLElement>('.offline-size')!;
     cachedBadge(btn).hidden = true;
     bar.hidden = false;
 
@@ -519,7 +519,7 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
   // Download (or, with force, re-download) a cumulative tier into the offline cache.
   async function downloadTier(btn: HTMLElement, { force = false, auto = false } : any = {}) {
     if (btn.classList.contains('is-active')) return false;
-    const tier = btn.dataset.tier;
+    const tier = btn.dataset.tier!;
     const r = await runCacheLoop(btn, tierUrls(tier), force);
     if (r.aborted) return false;   // Clear storage cancelled us: it resets the UI itself
     r.setBar(1);
@@ -618,7 +618,7 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
     // entirely - display:none has no hitbox on any browser, unlike a transparent
     // fixed box which can keep swallowing taps (seen on Samsung Internet).
     clearTimeout(featPopup._hideT);
-    featPopup._hideT = setTimeout(() => { featPopup.style.display = 'none'; }, 220);
+    featPopup._hideT = setTimeout(() => { featPopup!.style.display = 'none'; }, 220);
   }
   function buildFeaturePopup() {
     if (featPopup) return;
@@ -655,11 +655,11 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
   function openFeaturePopup() {
     buildFeaturePopup();
     refreshFeatureButtons();
-    clearTimeout(featPopup._hideT);
-    featPopup.style.display = '';   // undo the closed display:none before fading in
-    document.removeEventListener('keydown', featPopup._onKey);
-    document.addEventListener('keydown', featPopup._onKey);
-    requestAnimationFrame(() => featPopup.classList.add('is-open'));
+    clearTimeout(featPopup!._hideT);
+    featPopup!.style.display = '';   // undo the closed display:none before fading in
+    document.removeEventListener('keydown', featPopup!._onKey);
+    document.addEventListener('keydown', featPopup!._onKey);
+    requestAnimationFrame(() => featPopup!.classList.add('is-open'));
   }
 
   // The help-panel legend always shows the absolute per-tier totals (it describes the

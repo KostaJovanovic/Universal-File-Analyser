@@ -85,6 +85,11 @@ function decodeDateTime(dv: DataView<ArrayBufferLike>, p: number) {
   return isNaN(d.getTime()) ? ticks.toString() + ' ticks' : d.toISOString();
 }
 
+/** One member of a class layout: its name, BinaryTypeEnum and AdditionalInfo. */
+interface NrbfMember { name: string; bt: number; ai: any; }
+/** A class layout read from a ClassWithMembersAndTypes / SystemClass record. */
+interface NrbfClassMeta { name: string; members: NrbfMember[]; }
+
 export function parseNrbf(bytes: Uint8Array) {
   try {
     const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -98,11 +103,11 @@ export function parseNrbf(bytes: Uint8Array) {
     const objects = new Map();        // objectId -> value (object/array/string)
     const classMeta = new Map();      // objectId -> { name, members:[{name,bt,ai}] }
     const libraries = new Map();      // libraryId -> name
-    const pendingRefs = [];           // {set(val)} closures to resolve after the pass
+    const pendingRefs: { id: number; set: (val: any) => void }[] = [];   // {set(val)} closures to resolve after the pass
     const classNames: any[] = [];
     let count = 0;
 
-    const register = (id: number, val: any[]) => { if (id) { objects.set(id, val); if (++count > MAX_OBJECTS) throw new Error('object graph too large'); } return val; };
+    const register = (id: number, val: any) => { if (id) { objects.set(id, val); if (++count > MAX_OBJECTS) throw new Error('object graph too large'); } return val; };
 
     // Read the AdditionalInfo that follows a member's BinaryTypeEnum.
     function readAdditional(bt: number) {
@@ -149,13 +154,13 @@ export function parseNrbf(bytes: Uint8Array) {
     }
 
     // A member typed as String/Object/Class/array reads a full record here.
-    function readMemberValue(m) {
+    function readMemberValue(m: NrbfMember) {
       if (m.bt === 0) return readPrimitive(m.ai);   // Primitive: inline, no record tag
       return readRecord();                           // everything else is a record (or ref/null)
     }
 
     // Read the member values for a class given its layout, into an object.
-    function readClassValues(meta, id: number) {
+    function readClassValues(meta: NrbfClassMeta, id: number) {
       // Null-prototype accumulator: member names come from the untrusted .NET
       // stream, so a member literally named __proto__ must not be able to change
       // this object's prototype (prototype pollution).
@@ -192,7 +197,7 @@ export function parseNrbf(bytes: Uint8Array) {
 
     // Fill an already-registered array in place (so reference placeholders are
     // patched on the real array, and an array can even reference itself).
-    function fillArray(arr: null[], length: number, readEl) {
+    function fillArray(arr: any[], length: number, readEl: () => any) {
       let i = 0;
       while (i < length) {
         // Object/String arrays may encode runs of nulls compactly.
@@ -276,7 +281,10 @@ export function parseNrbf(bytes: Uint8Array) {
           let total = 1;
           for (const l of lengths) total *= l;
           if (total < 0 || total > MAX_ARRAY) throw new Error('absurd array size');
-          return fillArray(register(id, []), total, () => (bt === 0 ? readPrimitive(ai) : readRecord()));
+          // bt === 0 is BinaryType.Primitive, and readAdditional() returns the
+          // primitive type code for exactly that case - the object/class shapes
+          // only come back for the other binary types.
+          return fillArray(register(id, []), total, () => (bt === 0 ? readPrimitive(ai as number) : readRecord()));
         }
         case REC.MessageEnd: return undefined;
         default: throw new Error('unsupported NRBF record type ' + t);

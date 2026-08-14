@@ -18,18 +18,30 @@
     // The tree compiles CLEAN at this posture - keep it that way, and treat any
     // new error as a real one rather than migration noise.
     //
-    // `strict` stays off because it is really two very different asks. The
-    // cheap half is on below. The expensive half is strictNullChecks +
-    // noImplicitAny, which together report ~5,400 sites: mostly "this DOM query
-    // / parse result might be null", which is true but needs a real guard at
-    // each site, not an annotation. Adding those guards changes runtime
-    // behaviour in a codebase with no tests, so it is its own piece of work -
-    // do it a directory at a time (core -> lib -> parsers -> games ->
-    // renderers), never alongside another change.
-    "strict": false,
-    "noImplicitAny": false,
-    "noImplicitThis": true,
-    "strictBindCallApply": true,
+    // `strict` is ON, including strictNullChecks and noImplicitAny. Getting here
+    // meant clearing ~11,400 sites, and the rule that made it safe in a codebase
+    // with no tests is worth keeping: the emitted JS must not change. Type
+    // syntax erases, so a correct fix is an annotation, an `as` cast, a `!`
+    // assertion or a new interface - not a runtime guard. Verify by diffing
+    // web/assets/js against a build of the previous commit; a clean pass is
+    // byte-identical.
+    //
+    // Two traps that cost real time here, both worth knowing before the next
+    // pass. A type/interface placed BETWEEN a doc comment and the declaration it
+    // documents deletes that comment from the emit, because the comment attaches
+    // to a node that erases - put new types above the comment. And TypeScript's
+    // own inferFromUsage codefix writes plausible-looking junk (`string|any[]`,
+    // `Document` where the value is an `Element`, `Set<unknown>`) that is often
+    // actively wrong; check it against the call sites rather than trusting it.
+    "strict": true,
+
+    // The one member of the `strict` family left off. Nearly every catch in this
+    // codebase is the same shape - `catch (e) { errorCard('...' + (e && e.message)) }`
+    // around a parser that may throw anything - and it is already defensive
+    // about what it got. Turning this on types those ~97 sites as `unknown` and
+    // buys nothing but an `(e as any)` on each. Revisit if a catch ever starts
+    // making real decisions on the thrown value.
+    "useUnknownInCatchVariables": false,
 
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,

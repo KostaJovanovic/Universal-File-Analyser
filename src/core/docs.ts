@@ -41,7 +41,7 @@ import { wireFooterContact } from './popups.js';
         localStorage.setItem('anr-theme', next);
         localStorage.setItem('anr-theme:ts', Date.now().toString());
       } catch (e) { /* private mode / quota */ }
-      btn.textContent = themeLabel();
+      btn!.textContent = themeLabel();
     });
   }
 
@@ -93,7 +93,7 @@ import { wireFooterContact } from './popups.js';
     // '/' focuses the filter (unless already typing in a field)
     document.addEventListener('keydown', function (e) {
       if (e.key === '/' && document.activeElement !== filter &&
-          !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+          !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement!.tagName)) {
         e.preventDefault();
         filter.focus();
       }

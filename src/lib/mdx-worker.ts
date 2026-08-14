@@ -8,10 +8,10 @@
 import { ORT_BASE, ORT_ENTRY, ORT_WASM_ENTRY, MDX_MODELS, MDX_MODEL } from './mdx-model.js';
 import { separateVocals, MDX_SR } from './mdx-separate.js';
 
-let ortMod = null;
-let session = null;
-let loadedModelId = null;
-let loadedProvider = null;
+let ortMod: any = null;
+let session: any = null;
+let loadedModelId: any = null;
+let loadedProvider: any = null;
 
 // All iOS browsers use WebKit. ORT's WebGPU/JSEP path can crash the GPU or tab
 // there, so Apple engines stay on the stable single-threaded WASM backend.
@@ -29,7 +29,7 @@ function isWebKit() {
 // it during activation; this new bucket contains only immutable Standard/Lite URLs.
 const MDX_CACHE = 'analyser-mdx-v2';
 
-async function deleteCachedUrl(url) {
+async function deleteCachedUrl(url: string) {
   try {
     const keys = await caches.keys();
     await Promise.all(keys.map(async (key) => {
@@ -38,7 +38,7 @@ async function deleteCachedUrl(url) {
   } catch (_) {}
 }
 
-async function cachedModel(model) {
+async function cachedModel(model: any) {
   try {
     const cache = await caches.open(MDX_CACHE);
     // Complete may already hold Standard in analyser-offline. Search our own
@@ -56,17 +56,17 @@ async function cachedModel(model) {
   } catch (_) { return null; }
 }
 
-async function storeModel(url, bytes) {
+async function storeModel(url: string, bytes: Uint8Array) {
   try {
     const cache = await caches.open(MDX_CACHE);
-    await cache.put(url, new Response(bytes));
+    await cache.put(url, new Response(bytes as BodyInit));
     return true;
   } catch (_) { return false; }
 }
 
 // Fill one pre-sized buffer directly. The former chunks[] + concat path held two
 // full model copies at 100%, exactly when mobile memory pressure is highest.
-async function fetchWithProgress(url, expectedBytes, onProgress) {
+async function fetchWithProgress(url: string, expectedBytes: number, onProgress?: (frac: number) => void) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error('model download failed (' + resp.status + ')');
   const reportedBytes = Number(resp.headers.get('content-length')) || 0;
@@ -112,7 +112,7 @@ function releaseSession() {
   loadedProvider = null;
 }
 
-async function ensureModel(model, report, forceWasm = false) {
+async function ensureModel(model: any, report?: (phase: string, frac: number) => void, forceWasm = false) {
   if (session && loadedModelId === model.id && (!forceWasm || loadedProvider === 'wasm')) return;
   releaseSession();
 
@@ -121,7 +121,7 @@ async function ensureModel(model, report, forceWasm = false) {
     if (report) report('model-cache', 1);
   } else {
     bytes = await fetchWithProgress(model.url, model.bytes,
-      (frac) => { if (report) report('model', frac); });
+      (frac: number) => { if (report) report('model', frac); });
     if (report) report('cache', 0);
     const stored = await storeModel(model.url, bytes);
     if (report) report(stored ? 'cache' : 'cache-warning', stored ? 1 : 0);
@@ -166,7 +166,7 @@ async function ensureModel(model, report, forceWasm = false) {
   if (report) report('runtime', 1);
 }
 
-async function runModel(input, dims) {
+async function runModel(input: any, dims: any) {
   const tensor = new ortMod.Tensor('float32', input, dims);
   const feeds: any = {};
   feeds[session.inputNames[0]] = tensor;
@@ -177,11 +177,11 @@ async function runModel(input, dims) {
   return out.data;
 }
 
-async function handlePrepare(msg) {
+async function handlePrepare(msg: any) {
   const jobId = msg.jobId;
   try {
-    const model = MDX_MODELS[msg.modelId] || MDX_MODEL;
-    const report = (phase, frac) => {
+    const model = (MDX_MODELS as Record<string, any>)[msg.modelId] || MDX_MODEL;
+    const report = (phase: string, frac: number) => {
       self.postMessage({ type: 'progress', phase, frac, jobId });
     };
     await ensureModel(model, report, !!msg.forceWasm);
@@ -191,11 +191,11 @@ async function handlePrepare(msg) {
   }
 }
 
-async function handleSeparate(msg) {
+async function handleSeparate(msg: any) {
   const jobId = msg.jobId;
   try {
-    const model = MDX_MODELS[msg.modelId] || MDX_MODEL;
-    const report = (phase, frac) => {
+    const model = (MDX_MODELS as Record<string, any>)[msg.modelId] || MDX_MODEL;
+    const report = (phase: string, frac: number) => {
       self.postMessage({ type: 'progress', phase, frac, jobId });
     };
     await ensureModel(model, report, !!msg.forceWasm);
@@ -229,7 +229,12 @@ async function handleSeparate(msg) {
       vocals: result.vocals,
       instrumental: result.instrumental,
       sampleRate: MDX_SR,
-      stem: result.stem,
+      // BUG, deliberately left as-is: separateVocals() returns only
+      // { vocals, instrumental, sampleRate }, so this is always undefined. The
+      // intent was almost certainly `model.stem` ('Vocals'). Nothing in audio.js
+      // reads the field, so it is dead plumbing - fixing it would be a behaviour
+      // change, not a type fix, so it stays out of the strict pass.
+      stem: (result as any).stem,
       // A persistent ORT WASM heap plus four returned song channels can exceed
       // WebKit's tab budget. The client retires this worker after receiving the
       // transferred result; another run creates a clean worker from the cache.

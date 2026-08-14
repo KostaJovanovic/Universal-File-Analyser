@@ -17,9 +17,9 @@ export const MAX_ENTRIES = 100000;
 export const MAX_DEPTH = 64;
 
 // ---------- little-endian readers over the in-memory image ----------
-const u16 = (b, o) => b[o] | (b[o + 1] << 8);
-const u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
-function trimAscii(b, o, n) {
+const u16 = (b: Uint8Array, o: number) => b[o] | (b[o + 1] << 8);
+const u32 = (b: Uint8Array, o: number) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+function trimAscii(b: Uint8Array, o: number, n: number) {
   let s = '';
   for (let i = 0; i < n; i++) { const c = b[o + i]; if (c) s += String.fromCharCode(c); }
   return s.replace(/\s+$/, '');
@@ -29,7 +29,7 @@ function trimAscii(b, o, n) {
 // A FAT boot sector begins with a jump (EB xx 90 or E9 xx xx), a power-of-two
 // bytes-per-sector and a valid sectors-per-cluster. Checked before we trust any
 // BPB field, so a random blob at this offset can't be mis-read as a filesystem.
-export function looksLikeFatBoot(b, o) {
+export function looksLikeFatBoot(b: Uint8Array, o: number) {
   if (o + 512 > b.length) return false;
   if (!(b[o] === 0xEB || b[o] === 0xE9)) return false;
   const bps = u16(b, o + 0x0B);
@@ -45,7 +45,7 @@ export function looksLikeFatBoot(b, o) {
 // fell outside the buffer. That is how the browser can hand this parser only the
 // front of a huge image and find out whether the directory walk actually needed
 // more, instead of reading half a gigabyte up front on the off-chance.
-function nextCluster(img, fatStart, type, cl, st) {
+function nextCluster(img: Uint8Array, fatStart: number, type: string, cl: number, st: any) {
   if (type === 'FAT12') {
     const o = fatStart + Math.floor(cl * 3 / 2);
     if (o + 1 >= img.length) { if (st) st.short = true; return 0x0FFFFFFF; }
@@ -61,7 +61,7 @@ function nextCluster(img, fatStart, type, cl, st) {
   if (o + 3 >= img.length) { if (st) st.short = true; return 0x0FFFFFFF; }
   return (img[o] | (img[o + 1] << 8) | (img[o + 2] << 16) | (img[o + 3] << 24)) & 0x0FFFFFFF;
 }
-function isEoc(type, v) {
+function isEoc(type: string, v: number) {
   if (type === 'FAT12') return v >= 0x0FF8;
   if (type === 'FAT16') return v >= 0xFFF8;
   return v >= 0x0FFFFFF8;
@@ -69,9 +69,9 @@ function isEoc(type, v) {
 
 // Follow a cluster chain into an array of cluster numbers, guarding against the
 // loops and runaway chains a corrupt FAT can produce.
-function chain(img, fatStart, type, first, maxClusters, st?) {
-  const out = [];
-  const seen = new Set();
+function chain(img: Uint8Array, fatStart: number, type: string, first: number, maxClusters: number, st?: any) {
+  const out: number[] = [];
+  const seen = new Set<number>();
   let cl = first;
   while (cl >= 2 && !isEoc(type, cl) && out.length < maxClusters) {
     if (seen.has(cl)) break;                    // loop in the FAT
@@ -85,9 +85,9 @@ function chain(img, fatStart, type, first, maxClusters, st?) {
 }
 
 // Long-filename (VFAT) UCS-2 assembly for one 32-byte LFN slot.
-function lfnPart(b, p) {
+function lfnPart(b: Uint8Array, p: number) {
   let s = '';
-  const grab = (off, count) => {
+  const grab = (off: number, count: number) => {
     for (let i = 0; i < count; i += 2) {
       const c = b[p + off + i] | (b[p + off + i + 1] << 8);
       if (c === 0x0000 || c === 0xFFFF) return false;
@@ -100,7 +100,7 @@ function lfnPart(b, p) {
 }
 
 // Classic 8.3 short name -> "NAME.EXT".
-function shortName(b, p) {
+function shortName(b: Uint8Array, p: number) {
   let n = '';
   for (let i = 0; i < 8; i++) {
     const c = b[p + i];
@@ -113,9 +113,9 @@ function shortName(b, p) {
 }
 
 // Parse one directory's raw bytes into { files, dirs, volumeLabel }.
-function readDir(raw) {
-  const files = [];
-  const dirs = [];
+function readDir(raw: Uint8Array) {
+  const files: any[] = [];
+  const dirs: any[] = [];
   let volumeLabel = '';
   let lfn = '';
   for (let p = 0; p + 32 <= raw.length; p += 32) {
@@ -142,7 +142,7 @@ function readDir(raw) {
 // Parse a FAT volume that begins at byte `partStart`. Returns a descriptor plus a
 // flat entry list ([{ name, size, getBytes }]) ready for renderHandleTree, or null
 // when the boot sector isn't a FAT we can read.
-export function parseFatVolume(img, partStart) {
+export function parseFatVolume(img: Uint8Array, partStart: number) {
   if (!looksLikeFatBoot(img, partStart)) return null;
   const bps = u16(img, partStart + 0x0B);
   const spc = img[partStart + 0x0D];
@@ -163,7 +163,7 @@ export function parseFatVolume(img, partStart) {
   const countOfClusters = Math.max(0, Math.floor(dataSectors / spc));
   const type = isFat32 ? 'FAT32' : (countOfClusters < 4085 ? 'FAT12' : 'FAT16');
   const fatStart = partStart + reserved * bps;
-  const clusterOffset = (cl) => partStart + (firstDataSector + (cl - 2) * spc) * bps;
+  const clusterOffset = (cl: number) => partStart + (firstDataSector + (cl - 2) * spc) * bps;
   const maxClusters = countOfClusters + 2;
 
   // Set true as soon as any read lands past the end of `img`. When the caller
@@ -177,7 +177,7 @@ export function parseFatVolume(img, partStart) {
 
   // Gather a cluster chain's raw bytes (directories are small; a cap keeps a
   // corrupt chain bounded).
-  function clustersToBytes(clusters) {
+  function clustersToBytes(clusters: number[]) {
     const out = new Uint8Array(clusters.length * bytesPerCluster);
     let off = 0;
     for (const cl of clusters) {
@@ -201,12 +201,12 @@ export function parseFatVolume(img, partStart) {
     rootRaw = img.subarray(rootStart, Math.min(rootStart + rootEntries * 32, img.length));
   }
 
-  const entries = [];
+  const entries: any[] = [];
   let fileCount = 0, dirCount = 0, truncated = false;
   const visitedDirs = new Set();
   let volumeLabel = '';
 
-  function walk(raw, path, depth) {
+  function walk(raw: Uint8Array, path: string, depth: number) {
     if (depth > MAX_DEPTH || entries.length >= MAX_ENTRIES) { truncated = truncated || entries.length >= MAX_ENTRIES; return; }
     const { files, dirs, volumeLabel: vl } = readDir(raw);
     if (depth === 0 && vl) volumeLabel = vl;
@@ -261,7 +261,7 @@ export function parseFatVolume(img, partStart) {
 // Read one file's bytes out of `img` using the geometry from parseFatVolume.
 // Split out so the tree can be parsed from a small prefix and the contents read
 // later from the full image, without re-parsing anything.
-export function readFileBytes(img, geom, startCl, size) {
+export function readFileBytes(img: Uint8Array, geom: any, startCl: number, size: number) {
   if (!size || startCl < 2) return new Uint8Array(0);
   const { partStart, bps, spc, firstDataSector, bytesPerCluster, fatStart, type, maxClusters } = geom;
   const need = Math.ceil(size / bytesPerCluster) + 1;
@@ -281,7 +281,7 @@ export function readFileBytes(img, geom, startCl, size) {
 
 // ---------- MBR partition table ----------
 export const FAT_PART_TYPES = new Set([0x01, 0x04, 0x06, 0x0B, 0x0C, 0x0E, 0x14, 0x16, 0x1B, 0x1C, 0x1E]);
-export const PART_TYPE_NAMES = {
+export const PART_TYPE_NAMES: Record<number, string> = {
   0x01: 'FAT12', 0x04: 'FAT16 (<32M)', 0x05: 'Extended', 0x06: 'FAT16', 0x07: 'NTFS / exFAT',
   0x0B: 'FAT32 (CHS)', 0x0C: 'FAT32 (LBA)', 0x0E: 'FAT16 (LBA)', 0x0F: 'Extended (LBA)',
   0x82: 'Linux swap', 0x83: 'Linux', 0xA5: 'FreeBSD', 0xAF: 'HFS / HFS+', 0xEE: 'GPT protective',
@@ -289,7 +289,7 @@ export const PART_TYPE_NAMES = {
 
 // Parse a 4-entry MBR partition table, or null when the 0x55AA signature or the
 // entries don't look like a partition table.
-export function parseMbr(img) {
+export function parseMbr(img: Uint8Array) {
   if (img.length < 512 || img[510] !== 0x55 || img[511] !== 0xAA) return null;
   const parts = [];
   for (let i = 0; i < 4; i++) {
@@ -307,8 +307,8 @@ export function parseMbr(img) {
 
 // Identify a non-FAT filesystem from signature bytes, so an image we can't browse
 // still gets a helpful label rather than a bare "unknown".
-export function otherFsLabel(img, off) {
-  const at = (o, s) => { for (let i = 0; i < s.length; i++) if (img[off + o + i] !== s.charCodeAt(i)) return false; return true; };
+export function otherFsLabel(img: Uint8Array, off: number) {
+  const at = (o: number, s: string) => { for (let i = 0; i < s.length; i++) if (img[off + o + i] !== s.charCodeAt(i)) return false; return true; };
   if (off + 0x8006 <= img.length && at(0x8001, 'CD001')) return 'ISO 9660 (CD/DVD)';
   if (at(0x03, 'NTFS')) return 'NTFS';
   if (at(0x03, 'EXFAT')) return 'exFAT';

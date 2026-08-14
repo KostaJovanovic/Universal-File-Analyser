@@ -7,6 +7,11 @@ import { normalizeFolder, renderBreakdownCards, renderViewToggle } from './folde
 import { ARCHIVE_EXTS, RAW_EXTS, HEIC_EXTS, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS, CSV_EXTS } from '../core/formats.js';
 import { FORMATS } from './proprietary-formats.js';
 
+/** walkTree's result: the entry list plus the two end-of-walk flags it carries
+    on the array itself, so callers can tell a complete walk from a capped or
+    cancelled one without a second return value. */
+type WalkResult = any[] & { truncated?: boolean; cancelled?: boolean };
+
 // Marks a tree leaf (file) so directory objects can never be mistaken for files.
 const LEAF = Symbol('leaf');
 
@@ -19,8 +24,8 @@ const LEAF = Symbol('leaf');
 // mirrors that decision file-by-file without rendering anything.
 const SCAN_TIMEOUT = 45000;
 
-function withTimeout(p, ms) {
-  return new Promise((resolve, reject) => {
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
     let done = false;
     const t = setTimeout(() => { if (!done) { done = true; reject(new Error('timed out')); } }, ms);
     p.then(
@@ -30,7 +35,7 @@ function withTimeout(p, ms) {
   });
 }
 
-async function decodes(blob) {
+async function decodes(blob: Blob) {
   try {
     const bmp = await createImageBitmap(blob);
     if (bmp && bmp.close) bmp.close();
@@ -39,7 +44,7 @@ async function decodes(blob) {
 }
 
 // Index of a 4-char ASCII box type inside a byte buffer (-1 if absent).
-function indexOfTag(buf, tag, end?) {
+function indexOfTag(buf: Uint8Array, tag: string, end?: number) {
   const a = tag.charCodeAt(0), b = tag.charCodeAt(1), c = tag.charCodeAt(2), d = tag.charCodeAt(3);
   const lim = (end == null ? buf.length : end) - 3;
   for (let i = 0; i < lim; i++) {
@@ -62,8 +67,8 @@ function indexOfTag(buf, tag, end?) {
 // front-of-file read would miss it and force the slow decode.
 async function heicDecodableFast(file: File) {
   try {
-    const slice = async (off, len) => new Uint8Array(await file.slice(off, off + len).arrayBuffer());
-    const tagAt = (buf, o) => String.fromCharCode(buf[o], buf[o + 1], buf[o + 2], buf[o + 3]);
+    const slice = async (off: number, len: number) => new Uint8Array(await file.slice(off, off + len).arrayBuffer());
+    const tagAt = (buf: Uint8Array, o: number) => String.fromCharCode(buf[o], buf[o + 1], buf[o + 2], buf[o + 3]);
     const HEIF_BRANDS = new Set(['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'mif1', 'msf1', 'heif', 'hevm', 'hevs']);
     let p = 0, brandOk = false;
     for (let i = 0; i < 64 && p + 8 <= file.size; i++) {
@@ -136,7 +141,7 @@ async function sniffKnown(file: File) {
   try {
     const head = new Uint8Array(await file.slice(0, 128).arrayBuffer());
     if (!head.length) return false;
-    const a = (s, l) => Array.from(head.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
+    const a = (s: number, l: number) => Array.from(head.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
     if (a(0, 4) === '%PDF') return true;                              // PDF
     if (head[0] === 0x50 && head[1] === 0x4B) return true;            // ZIP family (PK)
     // Raise3D ideaMaker / DJI firmware: distinctive signatures shipped under a
@@ -269,7 +274,7 @@ async function looksLikeText(file: File) {
   } catch (_) { return false; }
 }
 
-function renderScanReport(host, total, failures, cancelled, checked) {
+function renderScanReport(host: HTMLDivElement, total: number, failures: any[], cancelled: boolean, checked: number) {
   host.innerHTML = '';
   if (!failures.length) {
     host.appendChild(el('p', { class: 'anr-scan-ok' },
@@ -288,12 +293,12 @@ function renderScanReport(host, total, failures, cancelled, checked) {
   // that never downloaded). Format key = extension, or the lowercased basename
   // for extensionless files (so COPYING / LICENSE / Makefile each count once but
   // duplicate copies across sub-folders collapse to a single path).
-  const formatKey = (path) => {
+  const formatKey = (path: string) => {
     const name = path.split('/').pop() || path;
     const ext = extOf(name);
     return ext ? ext : name.toLowerCase();
   };
-  const samplePaths = [];
+  const samplePaths: any[] = [];
   const seenFmts = new Set();
   for (const f of failures) {
     if (f.cloud) continue;
@@ -328,11 +333,11 @@ function renderScanReport(host, total, failures, cancelled, checked) {
   host.appendChild(list);
 }
 
-function readEntries(reader): Promise<any[]> {
+function readEntries(reader: any): Promise<any[]> {
   return new Promise<any[]>((resolve, reject) => {
-    const all = [];
+    const all: any[] = [];
     (function read() {
-      reader.readEntries(entries => {
+      reader.readEntries((entries: any[]) => {
         if (!entries.length) return resolve(all);
         all.push(...entries);
         read();
@@ -341,7 +346,7 @@ function readEntries(reader): Promise<any[]> {
   });
 }
 
-function entryToFile(entry): Promise<File> {
+function entryToFile(entry: any): Promise<File> {
   return new Promise<File>((resolve, reject) => entry.file(resolve, reject));
 }
 
@@ -356,7 +361,7 @@ const WALK_CONCURRENCY = 32;
 // has no bound at all, and the walk has to finish before anything is shown.
 export const FOLDER_ENTRY_CAP = 100000;
 
-function mapLimited<T>(items, limit, fn: (item: any, index?: number) => Promise<T>): Promise<T[]> {
+function mapLimited<T>(items: string|any[], limit: number, fn: (item: any, index?: number) => Promise<T>): Promise<T[]> {
   // Small bounded-concurrency map: keeps `limit` promises in flight, preserving
   // input order in the result.
   return new Promise<T[]>((resolve) => {
@@ -379,13 +384,13 @@ function mapLimited<T>(items, limit, fn: (item: any, index?: number) => Promise<
 // Breadth-first walk with bounded parallelism. `opts.shouldStop()` is polled
 // between batches so Cancel takes effect during the walk rather than after it,
 // and `opts.onProgress(count)` reports files found so far.
-async function walkTree(roots, opts: any = {}) {
+async function walkTree(roots: any[], opts: any = {}) {
   const shouldStop = opts.shouldStop || (() => false);
   const onProgress = opts.onProgress;
   // The walk result is an array of entries that also carries two end-of-walk
   // flags, so the caller can tell "these are all the files" from "we hit the
   // cap" or "the user cancelled" without a second return value.
-  const out: any[] & { truncated?: boolean; cancelled?: boolean } = [];
+  const out: WalkResult = [];
   let level = roots.map((entry) => ({ entry, path: '' }));
   let truncated = false;
 
@@ -435,7 +440,7 @@ async function walkTree(roots, opts: any = {}) {
   return out;
 }
 
-export async function walkItems(dataTransfer, opts) {
+export async function walkItems(dataTransfer: DataTransfer, opts: any) {
   const items = dataTransfer.items;
   if (!items) return null;
   const entries = [];
@@ -447,12 +452,12 @@ export async function walkItems(dataTransfer, opts) {
   return walkTree(entries, opts || {});
 }
 
-function extOf(name) {
+function extOf(name: string) {
   const m = name.match(/\.([^./]+)$/);
   return m ? m[1].toLowerCase() : '';
 }
 
-export function renderFolder(files, resultsEl: HTMLElement) {
+export function renderFolder(files: WalkResult, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
 
@@ -518,12 +523,12 @@ export function renderFolder(files, resultsEl: HTMLElement) {
     // below the project view.
     const toggle = el('button', { type: 'button', class: 'anr-btn anr-folder-analysis-toggle' }, 'Show folder analysis');
     toggle.addEventListener('click', () => {
-      const reveal = analysisHost.hidden;
-      analysisHost.hidden = !reveal;
+      const reveal = analysisHost!.hidden;
+      analysisHost!.hidden = !reveal;
       toggle.textContent = reveal ? 'Hide folder analysis' : 'Show folder analysis';
     });
     resultsEl.appendChild(toggle);
-    resultsEl.appendChild(analysisHost);
+    resultsEl.appendChild(analysisHost!);
   }
 
   // Openability check: walk every file and flag the ones the app can't open.
@@ -614,12 +619,12 @@ export function renderFolder(files, resultsEl: HTMLElement) {
   }
 
   // Treemap click → normalized item carries .file / .path directly.
-  function onFileClick(item) {
+  function onFileClick(item: any) {
     openFile(item.file || fileByPath[item.path]);
   }
 
   // Tree click → the leaf object carries the File directly (no name matching).
-  function onTreeFileClick(_key, leaf) {
+  function onTreeFileClick(_key: any, leaf: any) {
     if (leaf && leaf.file) openFile(leaf.file);
   }
 
@@ -641,9 +646,9 @@ export function renderFolder(files, resultsEl: HTMLElement) {
 
     pendingCard.remove();
     renderViewToggle(host, items, tree, {
-      isDir: (v) => v !== null && typeof v === 'object' && !v[LEAF],
-      fileSize: (v) => v.size,
-      copyPath: (_key, leaf) => leaf && leaf.path,
+      isDir: (v: any) => v !== null && typeof v === 'object' && !v[LEAF],
+      fileSize: (v: any) => v.size,
+      copyPath: (_key: any, leaf: any) => leaf && leaf.path,
       onFileClick: onTreeFileClick
     }, onFileClick, { treemapFirst: true });
   }));

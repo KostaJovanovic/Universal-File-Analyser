@@ -8,7 +8,7 @@
    Detection is by content (loose objects are extensionless) - see
    sniffGitObject, called from handleFile()'s magic-byte sniff. */
 
-import { el, row, rowHelp, h3help, fmtBytes } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, type ElChild } from '../core/util.js';
 import { hexBytes } from '../core/binutil.js';
 
 const TYPES = new Set(['blob', 'tree', 'commit', 'tag']);
@@ -17,14 +17,14 @@ const TYPES = new Set(['blob', 'tree', 'commit', 'tag']);
 function hasInflate() { return typeof DecompressionStream !== 'undefined'; }
 
 // Inflate a whole zlib blob to bytes.
-async function inflateAll(blob) {
+async function inflateAll(blob: File) {
   const stream = blob.stream().pipeThrough(new DecompressionStream('deflate'));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
 // Inflate at most maxOut decompressed bytes, then stop - so peeking a huge blob's
 // header doesn't decompress the whole thing. A truncated input tail is ignored.
-async function inflatePrefix(blob, maxOut) {
+async function inflatePrefix(blob: Blob, maxOut: number) {
   const reader = blob.stream().pipeThrough(new DecompressionStream('deflate')).getReader();
   const chunks = []; let total = 0;
   try {
@@ -61,14 +61,14 @@ export async function sniffGitObject(file: File) {
   return null;
 }
 
-async function sha1Hex(bytes) {
+async function sha1Hex(bytes: BufferSource) {
   try {
     if (!self.crypto || !crypto.subtle) return null;
     return hexBytes(new Uint8Array(await crypto.subtle.digest('SHA-1', bytes)));
   } catch (_) { return null; }
 }
 
-function card(title, rowEls) {
+function card(title: ElChild | ElChild[], rowEls: HTMLTableRowElement[]) {
   const c = el('div', { class: 'anr-card' });
   c.appendChild(el('h3', {}, title));
   const t = el('table', { class: 'anr-readout' });
@@ -77,12 +77,12 @@ function card(title, rowEls) {
   return c;
 }
 
-function block(text) {
+function block(text: ElChild | ElChild[]) {
   return el('pre', { class: 'anr-git-block' }, text);
 }
 
 // tree = repeated "<mode> <name>\0<20-byte SHA1>" with no separators.
-function parseTree(content) {
+function parseTree(content: Uint8Array) {
   const entries = [];
   let i = 0;
   while (i < content.length && entries.length < 100000) {
@@ -92,7 +92,7 @@ function parseTree(content) {
     let nul = sp + 1;
     while (nul < content.length && content[nul] !== 0x00) nul++;
     if (nul + 21 > content.length) break;
-    const mode = String.fromCharCode.apply(null, content.subarray(i, sp));
+    const mode = String.fromCharCode.apply(null, content.subarray(i, sp) as unknown as number[]);
     const name = new TextDecoder().decode(content.subarray(sp + 1, nul));
     const sha = hexBytes(content.subarray(nul + 1, nul + 21));
     const type = mode === '40000' ? 'tree' : mode === '160000' ? 'submodule' : mode === '120000' ? 'symlink' : 'blob';
@@ -102,7 +102,7 @@ function parseTree(content) {
   return entries;
 }
 
-function renderTextObject(content, type, resultsEl: HTMLElement) {
+function renderTextObject(content: AllowSharedBufferSource|undefined, type: string, resultsEl: HTMLElement) {
   const text = new TextDecoder().decode(content);
   const blank = text.indexOf('\n\n');
   const headPart = blank >= 0 ? text.slice(0, blank) : text;
@@ -127,7 +127,7 @@ function renderTextObject(content, type, resultsEl: HTMLElement) {
   }
 }
 
-function renderTreeObject(content, resultsEl: HTMLElement) {
+function renderTreeObject(content: Uint8Array, resultsEl: HTMLElement) {
   const entries = parseTree(content);
   const c = el('div', { class: 'anr-card' });
   c.appendChild(el('h3', {}, 'Tree (' + entries.length + ' ' + (entries.length === 1 ? 'entry' : 'entries') + ')'));
@@ -139,7 +139,7 @@ function renderTreeObject(content, resultsEl: HTMLElement) {
   resultsEl.appendChild(c);
 }
 
-function renderBlobObject(file: File, content, resultsEl: HTMLElement) {
+function renderBlobObject(file: File, content: Uint8Array, resultsEl: HTMLElement) {
   const c = el('div', { class: 'anr-card' });
   c.appendChild(el('h3', {}, 'Blob'));
 
@@ -165,7 +165,7 @@ function renderBlobObject(file: File, content, resultsEl: HTMLElement) {
   // real type from magic bytes. A Back-bar entry returns here.
   const btn = el('button', { type: 'button', class: 'anr-btn' }, 'Analyse blob content');
   btn.addEventListener('click', () => {
-    const inner = new File([content], file.name || 'blob');
+    const inner = new File([content as BlobPart], file.name || 'blob');
     if (window._anrPushNav) {
       window._anrPushNav('git blob', () => { resultsEl.hidden = false; renderGitObject(file, resultsEl); });
     }
@@ -175,7 +175,7 @@ function renderBlobObject(file: File, content, resultsEl: HTMLElement) {
   resultsEl.appendChild(c);
 }
 
-async function renderPackOrIdx(file: File, resultsEl: HTMLElement, kind) {
+async function renderPackOrIdx(file: File, resultsEl: HTMLElement, kind: string) {
   if (kind === 'pack') {
     const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
     const dv = new DataView(head.buffer);
@@ -230,7 +230,7 @@ export async function renderGitObject(file: File, resultsEl: HTMLElement) {
   }
 
   let nul = 0; while (nul < data.length && data[nul] !== 0x00) nul++;
-  const header = String.fromCharCode.apply(null, data.subarray(0, Math.min(nul, 64)));
+  const header = String.fromCharCode.apply(null, data.subarray(0, Math.min(nul, 64)) as unknown as number[]);
   const sp = header.indexOf(' ');
   const type = sp > 0 ? header.slice(0, sp) : '';
   const size = sp > 0 ? (parseInt(header.slice(sp + 1), 10) || 0) : 0;

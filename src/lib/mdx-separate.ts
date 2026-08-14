@@ -20,11 +20,39 @@
 
 import { makeStftEngine } from './mdx-stft.js';
 
+/** The geometry fields this pipeline reads off an MDX_MODELS entry. */
+export interface MdxModelSpec {
+  nFft: number;
+  hop: number;
+  dimF: number;
+  dimT: number;
+  compensate?: number;
+  [k: string]: any;
+}
+
+/** The injected ONNX call: (input, [1,4,dimF,dimT]) -> the predicted spectrogram. */
+export type MdxRunModel = (input: Float32Array, dims: number[])
+  => ArrayLike<number> | Promise<ArrayLike<number>>;
+
+export interface MdxStemInput {
+  ch: Float32Array[];
+  model: MdxModelSpec;
+  runModel: MdxRunModel;
+  onProgress?: ((frac: number) => void) | null;
+}
+
+export interface MdxSeparateInput {
+  channels: Float32Array[];
+  model: MdxModelSpec;
+  runModel: MdxRunModel;
+  onProgress?: ((frac: number) => void) | null;
+}
+
 export const MDX_SR = 44100;   // MDX-Net models are trained at 44.1 kHz
 
 // Normalise to exactly two channels the way MDX expects: duplicate mono and
 // drop extras.
-export function normStereo(channels) {
+export function normStereo(channels: Float32Array[]) {
   let ch = channels;
   if (ch.length === 1) ch = [ch[0], ch[0]];
   else if (ch.length > 2) ch = [ch[0], ch[1]];
@@ -34,7 +62,7 @@ export function normStereo(channels) {
 // Run one MDX model over pre-normalised stereo `ch` and return its primary stem
 // as [L, R] at the original sample length, with magnitude compensation applied.
 // The caller derives the residual stem from the original signal.
-export async function runStemModel({ ch, model, runModel, onProgress }) {
+export async function runStemModel({ ch, model, runModel, onProgress }: MdxStemInput) {
   const { nFft, hop, dimF, dimT, compensate } = model;
   const eng = makeStftEngine(nFft, hop);
   const nBins = eng.nBins;
@@ -50,7 +78,7 @@ export async function runStemModel({ ch, model, runModel, onProgress }) {
   // Do not reserve both full-song output channels before the first model call.
   // That call is ORT's peak start-up allocation and was where 4 GB iPhones lost
   // the Safari process. Allocate the persistent result only after it succeeds.
-  let stem = null;
+  let stem: Float32Array[] | null = null;
   const dims = [1, 4, dimF, dimT];
   const input = new Float32Array(4 * dimF * dimT);
   const chunk = new Float64Array(chunkSize);
@@ -117,9 +145,9 @@ export async function runStemModel({ ch, model, runModel, onProgress }) {
   // samples land in the stem first, then compensation is applied in place.
   const comp = compensate || 1;
   for (let cc = 0; cc < 2; cc++) {
-    for (let s = 0; s < nSample; s++) stem[cc][s] *= comp;
+    for (let s = 0; s < nSample; s++) stem![cc][s] *= comp;
   }
-  return stem;
+  return stem!;
 }
 
 // 2-stem split (the existing Standard / Lite path): the model's primary stem plus
@@ -127,7 +155,7 @@ export async function runStemModel({ ch, model, runModel, onProgress }) {
 // arrays, so turn those into the residual in place instead of allocating another
 // full-song stereo pair. Mono input needs one extra right channel because normStereo
 // deliberately aliases its single source channel into both model inputs.
-export async function separateVocals({ channels, model, runModel, onProgress }) {
+export async function separateVocals({ channels, model, runModel, onProgress }: MdxSeparateInput) {
   const ch = normStereo(channels);
   const nSample = ch[0].length;
   const [vL, vR] = await runStemModel({ ch, model, runModel, onProgress });

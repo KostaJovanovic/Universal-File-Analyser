@@ -11,9 +11,9 @@ import { percentile, inferColumnTypes, columnValues, parseDateValue, looksMonthF
 // quotes without breaking the row boundaries. (The previous version split the
 // text into lines BEFORE parsing quotes, which silently mangled any quoted
 // field that spanned a newline - a common case in exported spreadsheets.)
-function parseCsv(text, delim) {
-  const rows = [];
-  let row = [];
+function parseCsv(text: string, delim: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
   let cur = '';
   let inQuote = false;
   const endField = () => { row.push(cur); cur = ''; };
@@ -51,7 +51,7 @@ function parseCsv(text, delim) {
   return rows;
 }
 
-function delimiterLabel(d) {
+function delimiterLabel(d: string) {
   if (d === '\t') return 'Tab';
   if (d === ',') return 'Comma';
   if (d === ';') return 'Semicolon';
@@ -60,7 +60,7 @@ function delimiterLabel(d) {
 }
 
 // Trim trailing zeros from a fixed-precision number for compact display.
-function num(n) {
+function num(n: number) {
   if (!isFinite(n)) return String(n);
   return Number(n.toFixed(4)).toString();
 }
@@ -68,7 +68,7 @@ function num(n) {
 // Build the additive "extended" stats: fill rate, numeric quartiles/stddev/
 // median, text cardinality + top values, date ranges, and a data-quality
 // section (ragged rows, duplicates, BOM/line-endings, delimiter confidence).
-function buildProfile(card, ctx) {
+function buildProfile(card: HTMLDivElement, ctx: any) {
   const { headers, dataRows, colCount, colTypes, totalRows, hasHeader, delimiter, hasBom, lineEnding } = ctx;
 
   // Cap the heavy passes so a giant file stays responsive.
@@ -259,7 +259,7 @@ function buildProfile(card, ctx) {
 }
 
 // Human-readable spacing between two timestamps, for the regular-cadence tell.
-function fmtStep(ms) {
+function fmtStep(ms: number) {
   const day = 86400000;
   if (ms % day === 0) { const d = ms / day; return d === 1 ? '1 day' : d + ' days'; }
   if (ms % 3600000 === 0) { const h = ms / 3600000; return h === 1 ? '1 hour' : h + ' hours'; }
@@ -267,7 +267,7 @@ function fmtStep(ms) {
   return Math.round(ms / 1000) + ' seconds';
 }
 
-function truncate(s, n = 24) {
+function truncate(s: string, n = 24) {
   s = String(s);
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
@@ -318,8 +318,8 @@ export async function renderCsv(file: File, resultsEl: HTMLElement) {
       [';', (firstLine.match(/;/g) || []).length],
       ['|', (firstLine.match(/\|/g) || []).length],
     ];
-    candidates.sort((a, b) => b[1] - a[1]);
-    delimiter = candidates[0][1] > 0 ? candidates[0][0] : ',';
+    candidates.sort((a, b) => (b[1] as number) - (a[1] as number));
+    delimiter = (candidates[0][1] as number) > 0 ? candidates[0][0] as string : ',';
   }
 
   // Quote-aware parse of the whole text (handles fields spanning newlines).

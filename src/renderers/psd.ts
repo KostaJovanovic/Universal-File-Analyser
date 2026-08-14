@@ -17,7 +17,7 @@
    ag-psd does not support CMYK / Lab / 16-bit / PSB and re-composites nothing, so
    for those we rely on path 1's embedded thumbnail rather than failing. */
 
-import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, blobImg, downloadBlob } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, blobImg, downloadBlob, type ElChild } from '../core/util.js';
 import { loadScript } from '../core/util.js';
 
 const AGPSD_URL = 'assets/vendor/ag-psd/bundle.js';
@@ -39,7 +39,7 @@ async function loadAgPsd() {
 // Parse the PSD/PSB header (26 bytes) and scan the image-resources block for the
 // embedded thumbnail (resource 1036 / 1033, stored as a JPEG). Returns the header
 // fields plus the thumbnail JPEG bytes (or null). Operates on a leading slice.
-function parsePsdHeader(bytes) {
+function parsePsdHeader(bytes: Uint8Array) {
   if (bytes.length < 26) return null;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) !== '8BPS') return null;
@@ -50,7 +50,7 @@ function parsePsdHeader(bytes) {
     width: dv.getUint32(18),
     depth: dv.getUint16(22),
     mode: dv.getUint16(24),
-    thumb: null,
+    thumb: null as Uint8Array|null,
   };
   let o = 26;
   if (o + 4 > bytes.length) return out;
@@ -78,7 +78,7 @@ function parsePsdHeader(bytes) {
   return out;
 }
 
-function opacityPct(layer) {
+function opacityPct(layer: any) {
   let o = layer.opacity;
   if (o == null) return 100;
   if (o > 1) o = o / 255;
@@ -87,14 +87,14 @@ function opacityPct(layer) {
 
 // Append an HTMLCanvasElement (composite or layer) as a responsive preview, with
 // an "analyse this image" hop that rasterises it to a PNG for the photo pipeline.
-function canvasPreviewCard(canvas, heading, fileBase) {
+function canvasPreviewCard(canvas: HTMLCanvasElement, heading: ElChild | ElChild[], fileBase: string) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, heading));
   canvas.classList.add('anr-iwork-preview');
   card.appendChild(canvas);
   const analyse = el('button', { type: 'button', class: 'anr-btn' }, 'Analyse this image');
   analyse.addEventListener('click', () => {
-    canvas.toBlob((blob) => {
+    canvas.toBlob((blob: Blob|null) => {
       if (blob && window._anrHandleFile) window._anrHandleFile(new File([blob], (fileBase || 'composite') + '.png', { type: 'image/png' }), { nested: true });
     }, 'image/png');
   });
@@ -103,7 +103,7 @@ function canvasPreviewCard(canvas, heading, fileBase) {
 }
 
 // Append an embedded JPEG thumbnail (Uint8Array) as a preview image.
-function thumbPreviewCard(jpegBytes, heading, fileBase) {
+function thumbPreviewCard(jpegBytes: BlobPart, heading: ElChild | ElChild[], fileBase: string) {
   const blob = new Blob([jpegBytes], { type: 'image/jpeg' });
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, heading));
@@ -117,7 +117,7 @@ function thumbPreviewCard(jpegBytes, heading, fileBase) {
 }
 
 // Flatten the layer tree into rows (depth for indentation), groups included.
-function flattenLayers(children, depth, out) {
+function flattenLayers(children: any[], depth: number, out: any[]) {
   for (const layer of children || []) {
     const isGroup = Array.isArray(layer.children);
     out.push({ layer, depth, isGroup });
@@ -127,18 +127,18 @@ function flattenLayers(children, depth, out) {
 }
 
 // A pixel layer's dimensions from its bounds (ag-psd: left/top/right/bottom).
-function layerSize(layer) {
+function layerSize(layer: any) {
   return { w: (layer.right || 0) - (layer.left || 0), h: (layer.bottom || 0) - (layer.top || 0) };
 }
 
 // Download a layer's pixels as a PNG. Returns a button, or null for a layer with
 // no raster (groups, adjustment layers).
-function layerPngButton(layer) {
+function layerPngButton(layer: any) {
   if (!layer.canvas || !layer.canvas.width) return null;
   const btn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm anr-psd-export', title: 'Download this layer as a PNG' }, 'PNG');
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    layer.canvas.toBlob((blob) => {
+    layer.canvas.toBlob((blob: Blob) => {
       if (!blob) return;
       downloadBlob((layer.name || 'layer').replace(/[^\w.-]+/g, '_').slice(0, 80) + '.png', blob);
     }, 'image/png');
@@ -146,7 +146,7 @@ function layerPngButton(layer) {
   return btn;
 }
 
-function layerTreeCard(psd) {
+function layerTreeCard(psd: any) {
   const rows = flattenLayers(psd.children, 0, []);
   if (!rows.length) return null;
   const card = el('div', { class: 'anr-card' });
@@ -182,7 +182,7 @@ function layerTreeCard(psd) {
       const c = layer.canvas;
       const scale = 28 / Math.max(c.width, c.height);
       const tc = el('canvas', { width: Math.max(1, Math.round(c.width * scale)), height: Math.max(1, Math.round(c.height * scale)) });
-      tc.getContext('2d').drawImage(c, 0, 0, tc.width, tc.height);
+      tc.getContext('2d')!.drawImage(c, 0, 0, tc.width, tc.height);
       thumb.appendChild(tc);
     } else {
       thumb.textContent = isGroup ? '▸' : '·';
@@ -205,7 +205,7 @@ function layerTreeCard(psd) {
   return card;
 }
 
-function metaCard(file: File, header, layerCount) {
+function metaCard(file: File, header: any, layerCount: number|null) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Photoshop document', 'An Adobe Photoshop file. Analyser shows the preview image saved inside it and, where it can, the list of layers it is built from.');
   card.appendChild(h); card.appendChild(help);
@@ -257,7 +257,7 @@ export async function renderPsd(file: File, resultsEl: HTMLElement) {
           if (psd.canvas && psd.canvas.width) {
             resultsEl.insertBefore(canvasPreviewCard(psd.canvas, 'Composite image', base), resultsEl.firstChild);
           } else if (header && header.thumb) {
-            resultsEl.insertBefore(thumbPreviewCard(header.thumb, 'Embedded preview', base), resultsEl.firstChild);
+            resultsEl.insertBefore(thumbPreviewCard(header.thumb as BlobPart, 'Embedded preview', base), resultsEl.firstChild);
           } else {
             resultsEl.appendChild(el('div', { class: 'anr-info' },
               'This file does not include a ready-made flattened preview (it was saved with Photoshop’s "Maximize Compatibility" option turned off), so the individual layers are shown below instead.'));
@@ -279,7 +279,7 @@ export async function renderPsd(file: File, resultsEl: HTMLElement) {
   }
   resultsEl.appendChild(metaCard(file, header, null));
   if (header.thumb) {
-    resultsEl.insertBefore(thumbPreviewCard(header.thumb, 'Embedded preview', base), resultsEl.firstChild);
+    resultsEl.insertBefore(thumbPreviewCard(header.thumb as BlobPart, 'Embedded preview', base), resultsEl.firstChild);
     const why = [];
     if (header.mode !== 3 && header.mode !== 1) why.push((COLOR_MODES[header.mode] || 'this colour mode'));
     if (header.depth !== 8) why.push(header.depth + '-bit');

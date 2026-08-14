@@ -15,6 +15,16 @@ import {
 import { g, immortal, saveHi } from './state.js';
 import { burst, makeAsteroid, makePowerup, spawnWave, resetShip, destroyAsteroid, loseLife } from './world.js';
 import { makeUfo } from './ufos.js';
+import type { Ufo } from './ufos.js';
+import type { Powerup } from './world.js';
+
+/** One hittable piece of a boss - a mothership core, a megastructure weak point
+ *  or rim core, a serpent head/segment. As with Boss the per-type extras (ox/oy,
+ *  ax/ay, animation timers) ride on the index signature. */
+export interface BossNode {
+  kind: string; hp: number; maxhp: number; dead: boolean; r: number;
+  [k: string]: any;
+}
 
 // Hoisted (restart() -> spawnWave() runs during init and must be able to call this).
 // Scripted opener bosses on 5 / 8 / 11, then one every 7 waves (18, 25, ...).
@@ -42,7 +52,7 @@ export function bossTypeForWave(w: number) {
 export function bossBuff(w: number) { return w > 11 ? Math.min(2, 1 + 0.18 * Math.floor((w - 11) / 7)) : 1; }
 
 // Human-readable names for the HUD / health bar.
-export const BOSS_NAMES = { mothership: 'MOTHERSHIP', segmented: 'SERPENT', megastructure: 'MEGA' };
+export const BOSS_NAMES: Record<string, string> = { mothership: 'MOTHERSHIP', segmented: 'SERPENT', megastructure: 'MEGA' };
 
 // Re-pin the megastructure to the centre of its shorter edge, hanging just outside so
 // only the inner arc peeks in. Called every frame so the boss stays glued through a resize.
@@ -59,7 +69,7 @@ export function megaAnchor(b: Boss) {
 
 // Once the mega's core is exposed it runs a radar attack: expanding ping rings plus a beam
 // that sweeps around the field, punching the player toward the far side when it passes over.
-export function updateMegaRadar(b, dt: number) {
+export function updateMegaRadar(b: Boss, dt: number) {
   const { cx, cy, S, ship, asteroids } = g;
   const idx = cx - b.x, idy = cy - b.y, il = Math.hypot(idx, idy) || 1;   // inward push direction
   const dirx = idx / il, diry = idy / il;
@@ -107,7 +117,7 @@ export function updateMegaRadar(b, dt: number) {
   }
 }
 // The radar visuals (drawn in world space).
-export function drawMegaRadar(b) {
+export function drawMegaRadar(b: Boss) {
   const ctx = g.ctx, { HW, HH } = g;
   ctx.save();
   ctx.translate(b.x, b.y);
@@ -129,7 +139,7 @@ export function drawMegaRadar(b) {
 // exposed - unless the player already has the ram.
 export function ensureRamPickup() {
   if (g.weapon === 'ram' || g.ship.dead) return;
-  if (g.powerups.some((p) => p.type === 'ram')) return;
+  if (g.powerups.some((p: Powerup) => p.type === 'ram')) return;
   const pu = makePowerup(g.cx, g.cy, 'ram');
   pu.vx = 0; pu.vy = 0; pu.life = Infinity;
   g.powerups.push(pu);
@@ -186,7 +196,7 @@ export function finishMegaOutro() {
   spawnWave();
 }
 // The cinematic itself: shockwave rings, a building core glow, then a full detonation flash.
-export function drawMegaOutro(b) {
+export function drawMegaOutro(b: Boss) {
   const ctx = g.ctx, { cx, cy, HW, HH } = g;
   ctx.save();
   // Crisp rings, no shadowBlur: they expand to field size, so a glow is a full-field software
@@ -270,7 +280,7 @@ export function spawnBossPowerup() {
 export interface Boss {
   type: string; x: number; y: number; angle: number;
   vx: number; vy: number; spin: number; t: number; r: number;
-  nodes: any[]; grace: number;
+  nodes: BossNode[]; grace: number;
   [k: string]: any;
 }
 
@@ -323,7 +333,7 @@ export function spawnBoss(forcedType?: string|undefined) {
 // and none retain it, so this avoids allocating an array on every node/collision check
 // (hundreds per frame in a serpent fight) with no behavioural change.
 const _np = [0, 0];
-export function bossNodePos(b, n) {
+export function bossNodePos(b: Boss, n: BossNode) {
   if (b.type === 'segmented') { _np[0] = n.ax; _np[1] = n.ay; return _np; }
   const c = Math.cos(b.angle), s = Math.sin(b.angle);
   _np[0] = b.x + n.ox * c - n.oy * s; _np[1] = b.y + n.ox * s + n.oy * c;
@@ -331,18 +341,18 @@ export function bossNodePos(b, n) {
 }
 // A node can be damaged unless dead - except the megastructure core, sealed until every
 // weak point is destroyed.
-export function bossNodeVulnerable(b, n) {
+export function bossNodeVulnerable(b: Boss, n: BossNode) {
   if (n.dead || b.grace > 0) return false;   // no hitbox while it's still the arrival outline
   if (n.kind === 'head') return false;       // serpent head is invulnerable (but lethal to touch)
-  if (n.kind === 'core' && b.type === 'megastructure') return b.nodes.every((x) => x.kind !== 'weak' || x.dead);   // core sealed until the rim is cleared
+  if (n.kind === 'core' && b.type === 'megastructure') return b.nodes.every((x: BossNode) => x.kind !== 'weak' || x.dead);   // core sealed until the rim is cleared
   return true;
 }
-export function bossDead(b) {
+export function bossDead(b: Boss) {
   if (b.type === 'mothership') return b.nodes[0].dead;
-  if (b.type === 'segmented') return b.nodes.every((n) => n.kind === 'head' || n.dead);   // all body segments gone
-  return b.nodes.some((n) => n.kind === 'core' && n.dead);   // megastructure: core destroyed
+  if (b.type === 'segmented') return b.nodes.every((n: BossNode) => n.kind === 'head' || n.dead);   // all body segments gone
+  return b.nodes.some((n: BossNode) => n.kind === 'core' && n.dead);   // megastructure: core destroyed
 }
-export function damageBossNode(b, n, dmg: number, hx: number, hy: number, byRam?: boolean|undefined) {
+export function damageBossNode(b: Boss, n: BossNode, dmg: number, hx: number, hy: number, byRam?: boolean|undefined) {
   if (n.dead) return;
   if (b.type === 'megastructure' && n.kind === 'core' && !byRam) return;   // core destroyed only by the ram
   n.hp -= dmg;
@@ -365,7 +375,7 @@ export function hitBossAt(x: number, y: number, padR: number, dmg: number) {
 
 // Body chain follow: each segment trails the one ahead at fixed spacing via the shortest wrapped
 // delta, so it feeds cleanly through the toroidal seam. Shared by the live serpent and its death curl.
-function snakeFollow(b) {
+function snakeFollow(b: Boss) {
   const { cx, cy, HW, HH } = g;
   const W = HW * 2, H2 = HH * 2;
   for (let i = 1; i < b.nodes.length; i++) {
@@ -383,7 +393,7 @@ function snakeFollow(b) {
 
 // Serpent boss: head drives forward at constant speed and can only pivot; the body chain
 // follows via shortest-wrapped-delta so it feeds cleanly through the toroidal seam.
-export function updateSnake(b, dt: number) {
+export function updateSnake(b: Boss, dt: number) {
   const { cx, cy, HW, HH, S } = g;
   const head = b.nodes[0];
   const W = HW * 2, H2 = HH * 2;
@@ -426,7 +436,7 @@ export function updateSnake(b, dt: number) {
 // where it was eaten; a WHITE rock heals 3% of the serpent's full HP. Only the head feeds, and only
 // once every SNAKE_EAT_CD seconds - after a meal it has to digest before it can swallow again.
 const SNAKE_EAT_CD = 5;
-export function serpentEat(b, dt: number) {
+export function serpentEat(b: Boss, dt: number) {
   if (b.eatCd > 0) { b.eatCd -= dt; return; }   // still digesting the last meal
   const head = b.nodes[0];
   for (let ai = g.asteroids.length - 1; ai >= 0; ai--) {
@@ -437,7 +447,7 @@ export function serpentEat(b, dt: number) {
     burst(a.x, a.y, BOSS_COLOR, { count: 8, speed: 110, life: 0.4, lines: true });
     g.asteroids.splice(ai, 1);
     if (a.size === 3) {
-      const seg = b.nodes.find((n) => n.kind === 'segment' && n.dead);   // restore the first lost segment
+      const seg = b.nodes.find((n: BossNode) => n.kind === 'segment' && n.dead);   // restore the first lost segment
       if (seg) { seg.dead = false; seg.hp = seg.maxhp; }
       if (g.powerups.length < MAX_POWERUPS) g.powerups.push(makePowerup(a.x, a.y));   // drop loot where it fed
     } else {
@@ -504,7 +514,7 @@ export function updateSnakeOutro(dt: number) {
     finishSnakeOutro();
   }
 }
-function snakeOutroExplode(b) {
+function snakeOutroExplode(b: Boss) {
   b.exploded = true;
   // Blow the whole coil apart along the ring: a white hull-shard burst at every node position,
   // then violet + accent at the head.
@@ -547,7 +557,7 @@ export function updateBoss(dt: number) {
     if (active) b.spawnCd -= dt;
     if (active && b.spawnCd <= 0) {
       b.spawnCd = 2.2;
-      if (g.ufos.filter((u) => u.fromBoss && !u.leaving).length < 6) {
+      if (g.ufos.filter((u: Ufo) => u.fromBoss && !u.leaving).length < 6) {
         const u = makeUfo(Math.random() < 0.7 ? 'reward' : 'ambient');
         u.fromBoss = true; u.x = b.x; u.y = b.y;   // emerge from the carrier, then ease onto its path
         g.ufos.push(u);
@@ -555,7 +565,7 @@ export function updateBoss(dt: number) {
     }
   } else if (b.type === 'megastructure') {
     b.angle += b.spin * dt;   // slow rotation in place
-    const rimCleared = b.nodes.every((n) => n.kind !== 'weak' || n.dead);
+    const rimCleared = b.nodes.every((n: BossNode) => n.kind !== 'weak' || n.dead);
     if (b.rimState !== 'fighting') b.stage2T += dt;   // second-stage clock: the ram appears 5s after the rim falls
     if (b.rimState === 'fighting') {
       // First phase done (rim satellites cleared): the second stage begins. The ram itself
@@ -634,7 +644,7 @@ export function bossDefeated() {
 }
 
 // Arrival preview: the boss's silhouette as a dimmed, marching-dashed outline.
-export function drawBossOutline(b) {
+export function drawBossOutline(b: Boss) {
   const ctx = g.ctx;
   ctx.save();
   ctx.strokeStyle = BOSS_COLOR; ctx.lineWidth = 2; ctx.lineJoin = 'round';
@@ -672,7 +682,7 @@ function onField(x: number, y: number, r: number) {
 // strokes per frame - the single biggest cost of the mega fight. Its *shape* only changes when
 // a weak point dies or the finale begins, so bake it (glow and all) into a sprite in the boss's
 // local frame and blit it rotated each frame; the blur then runs only on those rare changes.
-function megaShellSprite(b) {
+function megaShellSprite(b: Boss) {
   const dpr = g.dpr;
   const finale = b.rimState === 'finale';
   let mask = '';
@@ -710,7 +720,7 @@ function megaShellSprite(b) {
 // Hunter overlay: while the serpent is chasing a red asteroid, trace the curved path its head will
 // actually take (constant speed, turning toward the target at its cap - the same maths as
 // updateSnake) as a marching dotted line, with a ring on the target. Pure intent telegraph.
-function drawSerpentHunt(b) {
+function drawSerpentHunt(b: Boss) {
   const prey = b.prey;
   if (!prey || !g.asteroids.includes(prey)) return;   // nothing to hunt, or it was just eaten
   const ctx = g.ctx, S = g.S;
@@ -742,7 +752,7 @@ function drawSerpentHunt(b) {
 // the particle blast remains. Drawn like the live serpent (seam-aware, across toroidal offsets so
 // a circle straddling an edge never streaks), but destroyed segments are NOT redrawn as circles -
 // only the surviving segments and the head show. The spine line still runs through every position.
-function drawSnakeOutro(b) {
+function drawSnakeOutro(b: Boss) {
   if (b.exploded) return;   // nothing left but the burst (drawn as particles)
   const ctx = g.ctx, { cx, cy, HW, HH, S, MUTED } = g;
   const W = HW * 2, H2 = HH * 2, mg = b.r + 4 * S;
@@ -834,7 +844,7 @@ export function drawBoss() {
       ctx.restore();   // end shell layer (undo shake, restore shadowBlur)
       ctx.shadowColor = BOSS_COLOR; ctx.strokeStyle = BOSS_COLOR;
     }
-    const mcore = b.nodes.find((n) => n.kind === 'core');
+    const mcore = b.nodes.find((n: BossNode) => n.kind === 'core');
     if (mcore && !mcore.dead && onField(b.x, b.y, mcore.r)) {
       const exposed = bossNodeVulnerable(b, mcore);
       ctx.strokeStyle = exposed ? BOSS_COLOR : MUTED;

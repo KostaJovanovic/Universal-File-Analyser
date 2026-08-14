@@ -144,7 +144,9 @@ async function parseFeed(file) {
     }
     const valid = dates.filter((d) => d instanceof Date && !isNaN(d.getTime()));
     if (valid.length) {
-        const min = new Date(Math.min(...valid)), max = new Date(Math.max(...valid));
+        // Math.min/max coerce each Date through valueOf(); the cast only says so.
+        const nums = valid;
+        const min = new Date(Math.min(...nums)), max = new Date(Math.max(...nums));
         out['Date range'] = fmtDate(min) + '  →  ' + fmtDate(max);
     }
     if (enclosures.length) {

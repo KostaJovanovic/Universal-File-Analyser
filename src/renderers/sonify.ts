@@ -31,7 +31,7 @@
  * Everything stays on-device: File API in, Web Audio out, nothing uploaded.
  */
 
-import { el, downloadBlob, asciiBar, h3help } from '../core/util.js';
+import { el, downloadBlob, asciiBar, h3help, type ElChild, type Drawable} from '../core/util.js';
 import { fft, colormaps } from './spectrogram.js';
 import { renderAudio } from './audio.js';
 
@@ -73,7 +73,7 @@ const DEFAULTS = {
 // ---------- inverse FFT (built on spectrogram.js fft) ----------
 // Inverse DFT via the conjugate trick: conj -> forward FFT -> conj -> /N. Lets
 // us reuse the one audited radix-2 implementation instead of shipping a second.
-function ifft(re, im) {
+function ifft(re: Float32Array, im: Float32Array) {
   const n = re.length;
   for (let i = 0; i < n; i++) im[i] = -im[i];
   fft(re, im);
@@ -84,7 +84,7 @@ function ifft(re, im) {
 // ---------- pixels ----------
 // Draw the (already-decoded) source image into a working canvas, downscaling to
 // the synthesis caps. `src` is an HTMLImageElement/canvas/ImageBitmap.
-function sourceToImageData(src, maxW, maxH) {
+function sourceToImageData(src: Drawable, maxW: number, maxH: number) {
   const sw = src.naturalWidth || src.width;
   const sh = src.naturalHeight || src.height;
   const scale = Math.min(1, maxW / sw, maxH / sh);
@@ -92,7 +92,7 @@ function sourceToImageData(src, maxW, maxH) {
   const h = Math.max(1, Math.round(sh * scale));
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
-  const ctx = c.getContext('2d', { willReadFrequently: true });
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
   ctx.drawImage(src, 0, 0, w, h);
   return { imageData: ctx.getImageData(0, 0, w, h), resized: scale < 1, srcW: sw, srcH: sh, w, h };
 }
@@ -101,9 +101,9 @@ function sourceToImageData(src, maxW, maxH) {
 // finds the ramp position t in [0,1] whose colour is nearest. Used in
 // spectrogram mode to undo viridis/magma back into a magnitude. Grayscale short-
 // circuits to plain luminance.
-function makeColormapInverter(name) {
+function makeColormapInverter(name: string) {
   if (name === 'grayscale' || !colormaps[name]) {
-    return (r, g, b) => (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return (r: number, g: number, b: number) => (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   }
   const cmap = colormaps[name];
   const steps = 256;
@@ -112,7 +112,7 @@ function makeColormapInverter(name) {
     const [cr, cg, cb] = cmap(i / (steps - 1));
     lut[i * 3] = cr; lut[i * 3 + 1] = cg; lut[i * 3 + 2] = cb;
   }
-  return (r, g, b) => {
+  return (r: number, g: number, b: number) => {
     let best = 0, bestD = Infinity;
     for (let i = 0; i < steps; i++) {
       const dr = r - lut[i * 3], dg = g - lut[i * 3 + 1], db = b - lut[i * 3 + 2];
@@ -124,7 +124,7 @@ function makeColormapInverter(name) {
 }
 
 // Pull a single 0..1 intensity for one channel source at integer (x, y).
-function channelValue(px, idx, src) {
+function channelValue(px: Uint8ClampedArray, idx: number, src: string) {
   const r = px[idx], g = px[idx + 1], b = px[idx + 2];
   switch (src) {
     case 'r': return r / 255;
@@ -146,7 +146,7 @@ function channelValue(px, idx, src) {
  * spectrogram Analyser produced round-trips cleanly. Bins outside the band are
  * silent.
  */
-function imageToMagnitude(imageData, o, ear) {
+function imageToMagnitude(imageData: ImageData, o: any, ear: string) {
   const { width: W, height: H, data: px } = imageData;
   const N = o.fftSize;
   const bins = N >> 1;
@@ -172,7 +172,7 @@ function imageToMagnitude(imageData, o, ear) {
     active[b] = 1;
   }
 
-  const toMag = (t) => {
+  const toMag = (t: number) => {
     let v = t < 0 ? 0 : t > 1 ? 1 : t;
     if (o.invert) v = 1 - v;   // negative: dark becomes loud, light becomes quiet
     if (o.mode === 'spectro' && o.dbInvert) {
@@ -213,7 +213,7 @@ function imageToMagnitude(imageData, o, ear) {
 // frames, advanced by an incremental complex phasor so there is no Math.sin in
 // the inner loop. The phasor is renormalised periodically to fight rounding
 // drift over hundreds of thousands of samples.
-async function synthOscillator(mag, o, onProgress) {
+async function synthOscillator(mag: Float32Array, o: any, onProgress?: ((p: number) => void)|null) {
   const N = o.fftSize, bins = N >> 1;
   const frames = o.frames;
   const total = Math.round(o.duration * o.sampleRate);
@@ -258,7 +258,7 @@ async function synthOscillator(mag, o, onProgress) {
 }
 
 // ---------- synthesis: Griffin-Lim ----------
-function hannWindow(N) {
+function hannWindow(N: number) {
   const w = new Float32Array(N);
   for (let i = 0; i < N; i++) w[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1));
   return w;
@@ -267,7 +267,7 @@ function hannWindow(N) {
 // Inverse STFT: rebuild each frame's complex spectrum from target magnitude +
 // the current phase estimate, ifft, window, and overlap-add with window-power
 // normalisation. Hermitian symmetry is enforced so the output is real.
-function istft(mag, phase, o, win) {
+function istft(mag: Float32Array, phase: Float32Array, o: any, win: Float32Array) {
   const N = o.fftSize, bins = N >> 1, half = N >> 1, hop = o.hop, frames = o.frames;
   const total = (frames - 1) * hop + N;
   const out = new Float32Array(total);
@@ -296,7 +296,7 @@ function istft(mag, phase, o, win) {
 
 // Forward STFT keeping only the phase of each bin (magnitude is forced back to
 // the target between iterations, so we never need to store it).
-function stftPhase(samples, o, win) {
+function stftPhase(samples: Float32Array, o: any, win: Float32Array) {
   const N = o.fftSize, half = N >> 1, hop = o.hop, frames = o.frames;
   const pStride = half + 1;
   const phase = new Float32Array(frames * pStride);
@@ -310,7 +310,7 @@ function stftPhase(samples, o, win) {
   return phase;
 }
 
-async function synthGriffin(mag, o, onProgress) {
+async function synthGriffin(mag: Float32Array, o: any, onProgress?: ((p: number) => void)|null) {
   const N = o.fftSize, half = N >> 1, frames = o.frames;
   const win = hannWindow(N);
   const pStride = half + 1;
@@ -329,19 +329,19 @@ async function synthGriffin(mag, o, onProgress) {
 }
 
 // ---------- normalisation + WAV ----------
-function peakNormalise(channels, target = 0.9) {
+function peakNormalise(channels: Float32Array[], target = 0.9) {
   let peak = 1e-9;
   for (const ch of channels) for (let i = 0; i < ch.length; i++) { const a = Math.abs(ch[i]); if (a > peak) peak = a; }
   const g = target / peak;
   for (const ch of channels) for (let i = 0; i < ch.length; i++) ch[i] *= g;
 }
 
-function encodeWav(channels, sampleRate) {
+function encodeWav(channels: Float32Array[], sampleRate: number) {
   const numCh = channels.length;
   const len = channels[0].length;
   const buffer = new ArrayBuffer(44 + len * numCh * 2);
   const view = new DataView(buffer);
-  const wr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+  const wr = (off: number, s: string) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
   wr(0, 'RIFF'); view.setUint32(4, 36 + len * numCh * 2, true); wr(8, 'WAVE');
   wr(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
   view.setUint16(22, numCh, true); view.setUint32(24, sampleRate, true);
@@ -360,13 +360,13 @@ function encodeWav(channels, sampleRate) {
 // ---------- UI helpers (mirroring the spectrogram control markup) ----------
 // A single labelled control: mono-uppercase <label> + the control, styled by the
 // site's .anr-control rules. Pass an empty label for a bare control (e.g. a button).
-const ctl = (label, control) => el('div', { class: 'anr-control' }, label ? [el('label', {}, label), control] : [control]);
+const ctl = (label: ElChild | ElChild[], control: ElChild) => el('div', { class: 'anr-control' }, label ? [el('label', {}, label), control] : [control]);
 // A captioned, hairline-divided cluster of controls (View / Resolution-style).
-const group = (title, items) => el('div', { class: 'anr-control-group' }, [
+const group = (title: ElChild | ElChild[], items: ElChild | ElChild[]) => el('div', { class: 'anr-control-group' }, [
   el('div', { class: 'anr-control-group-label' }, title),
   el('div', { class: 'anr-control-group-items' }, items)
 ]);
-function mkSelect(options, value) {
+function mkSelect(options: [string, string][], value: string) {
   const s = el('select');
   for (const [v, t] of options) { const o = el('option', { value: v }, t); if (v === value) o.selected = true; s.appendChild(o); }
   return s;
@@ -376,7 +376,7 @@ function mkSelect(options, value) {
 // clicking the readout swaps it for a number box so an exact value can be typed -
 // and that value may exceed the slider's max (the slider just pins at its end),
 // which is how the duration field accepts durations past the 180s track.
-function rangeCtl(label, min, max, step, value, fmt, editable?) {
+function rangeCtl(label: ElChild | ElChild[], min: number, max: number, step: number, value: number, fmt: (v: number) => string, editable?: boolean|undefined) {
   const input = el('input', { type: 'range', min, max, step, value });
   const out = el('span', { class: 'anr-range-readout' + (editable ? ' is-editable' : ''), title: editable ? 'Click to type an exact value' : '' }, fmt(value));
   if (editable) out.style.cssText = 'cursor:text;text-decoration:underline dotted;text-underline-offset:2px;';
@@ -411,7 +411,7 @@ function rangeCtl(label, min, max, step, value, fmt, editable?) {
 }
 // Two-button segmented toggle (.anr-toggle, as the spectrogram LOG/LINEAR axis).
 // Selected value lives on `_value`.
-function makeToggle(options, value) {
+function makeToggle(options: [string, string][], value: string) {
   const wrap = el('div', { class: 'anr-toggle' });
   wrap._value = value;
   for (const [v, t] of options) {
@@ -447,7 +447,7 @@ const SETTINGS_HELP =
  *   opts.source - HTMLImageElement / canvas / ImageBitmap to read pixels from.
  *                 When omitted, the File is decoded with createImageBitmap.
  */
-export async function renderSonify(file: File, mountEl, opts: any = {}) {
+export async function renderSonify(file: File, mountEl: HTMLElement, opts: any = {}) {
   mountEl.innerHTML = '';
   const card = el('div', { class: 'anr-card' });
   const [headH, headHelp] = h3help('Image to sound', SETTINGS_HELP);
@@ -466,7 +466,7 @@ export async function renderSonify(file: File, mountEl, opts: any = {}) {
 
   // ---- working-image canvas with scrub playhead ----
   const viewCv = el('canvas', { width: workW, height: workH, style: 'display:block;width:100%;image-rendering:pixelated;cursor:pointer;' });
-  viewCv.getContext('2d').putImageData(imageData, 0, 0);
+  viewCv.getContext('2d')!.putImageData(imageData, 0, 0);
   const cursor = el('div', { style: 'position:absolute;top:0;bottom:0;width:2px;background:var(--accent);pointer-events:none;left:0;display:none;' });
   const viewWrap = el('div', { style: 'position:relative;max-width:640px;margin:0 0 16px;background:var(--media-bg);border:var(--bd-hairline);' }, [viewCv, cursor]);
   card.appendChild(viewWrap);
@@ -482,7 +482,7 @@ export async function renderSonify(file: File, mountEl, opts: any = {}) {
   //     one loudness value, shown as the grayscale "this is what you hear" map.
   // Preview into a separate buffer - the synthesis reads the pristine `imageData` and
   // applies the mapping itself, so baking it into those pixels would double-apply it.
-  const viewCtx = viewCv.getContext('2d');
+  const viewCtx = viewCv.getContext('2d')!;
   const basePixels = new Uint8ClampedArray(imageData.data);
   const displayData = viewCtx.createImageData(workW, workH);
   const gammaLut = new Uint8ClampedArray(256);
@@ -491,8 +491,8 @@ export async function renderSonify(file: File, mountEl, opts: any = {}) {
   // bits of each channel and look that up per pixel. Rebuilt only on colourmap change;
   // grayscale short-circuits to plain luma.
   const CUBE = 32;
-  let cubeName = null, cubeLut = null;
-  function cubeValue(r, g, b) {
+  let cubeName: string|null = null, cubeLut: Float32Array|null = null;
+  function cubeValue(r: number, g: number, b: number) {
     const name = cmapSel.value;
     if (name === 'grayscale' || !colormaps[name]) return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
     if (cubeName !== name) {
@@ -502,7 +502,7 @@ export async function renderSonify(file: File, mountEl, opts: any = {}) {
         cubeLut[(ri * CUBE + gi) * CUBE + bi] = inv(ri * 255 / (CUBE - 1), gi * 255 / (CUBE - 1), bi * 255 / (CUBE - 1));
     }
     const ri = (r * (CUBE - 1) / 255) | 0, gi = (g * (CUBE - 1) / 255) | 0, bi = (b * (CUBE - 1) / 255) | 0;
-    return cubeLut[(ri * CUBE + gi) * CUBE + bi];
+    return cubeLut![(ri * CUBE + gi) * CUBE + bi];
   }
   function redrawImage() {
     const spectro = modeSel.value === 'spectro';
@@ -541,15 +541,15 @@ export async function renderSonify(file: File, mountEl, opts: any = {}) {
   const modeSel   = mkSelect([['image', 'Arbitrary image'], ['spectro', 'Real spectrogram']], DEFAULTS.mode);
   const methodSel = mkSelect([['oscillator', 'Oscillator bank'], ['griffin', 'Griffin-Lim']], DEFAULTS.method);
   const scaleTog  = makeToggle([['log', 'LOG'], ['linear', 'LINEAR']], DEFAULTS.scale);
-  const minSld = rangeCtl('Min', 0, 2000, 10, DEFAULTS.minHz, v => v + ' Hz');
-  const maxSld = rangeCtl('Max', 2000, 22050, 50, DEFAULTS.maxHz, v => (v / 1000).toFixed(1) + ' kHz');
-  const durSld = rangeCtl('Length', 1, 180, 0.5, DEFAULTS.duration, v => v + ' s', true);
+  const minSld = rangeCtl('Min', 0, 2000, 10, DEFAULTS.minHz, (v: number) => v + ' Hz');
+  const maxSld = rangeCtl('Max', 2000, 22050, 50, DEFAULTS.maxHz, (v: number) => (v / 1000).toFixed(1) + ' kHz');
+  const durSld = rangeCtl('Length', 1, 180, 0.5, DEFAULTS.duration, (v: number) => v + ' s', true);
 
   const srSel    = mkSelect([['44100', '44100 Hz'], ['22050', '22050 Hz'], ['48000', '48000 Hz']], String(DEFAULTS.sampleRate));
   const fftSel   = mkSelect([['1024', '1024'], ['2048', '2048'], ['4096', '4096']], String(DEFAULTS.fftSize));
   const winSel   = mkSelect([['hann', 'Hann'], ['hamming', 'Hamming'], ['blackman', 'Blackman'], ['rect', 'Rect']], DEFAULTS.window);
-  const glSld    = rangeCtl('GL iters', 4, 100, 1, DEFAULTS.glIters, v => String(v));
-  const gammaSld = rangeCtl('Gamma', 0.3, 3, 0.1, DEFAULTS.gamma, v => v.toFixed(1));
+  const glSld    = rangeCtl('GL iters', 4, 100, 1, DEFAULTS.glIters, (v) => String(v));
+  const gammaSld = rangeCtl('Gamma', 0.3, 3, 0.1, DEFAULTS.gamma, (v: number) => v.toFixed(1));
   gammaSld._input.addEventListener('input', redrawImage);
   const leftSel  = mkSelect([['luma', 'Luminance'], ['r', 'Red'], ['g', 'Green'], ['b', 'Blue']], DEFAULTS.leftSrc);
   const rightSel = mkSelect([['none', 'None (mono)'], ['luma', 'Luminance'], ['r', 'Red'], ['g', 'Green'], ['b', 'Blue']], DEFAULTS.rightSrc);
@@ -602,9 +602,9 @@ export async function renderSonify(file: File, mountEl, opts: any = {}) {
   card.appendChild(specSlot);
 
   // ---- state ----
-  let lastChannels = null;   // rendered Float32 channels
+  let lastChannels: Float32Array[]|null = null;   // rendered Float32 channels
   let lastRate = DEFAULTS.sampleRate;
-  let audioEl = null;        // the <audio> renderAudio built (drives the image playhead)
+  let audioEl: HTMLAudioElement|null = null;        // the <audio> renderAudio built (drives the image playhead)
   let cursorRaf = 0;         // RAF driving the image playhead while playing
 
   function readOpts() {
@@ -655,7 +655,7 @@ export async function renderSonify(file: File, mountEl, opts: any = {}) {
   // moves the playhead over the picture too.
   async function buildOutput() {
     teardownAudio();
-    const blob = encodeWav(lastChannels, lastRate);
+    const blob = encodeWav(lastChannels!, lastRate);
     const base = (file.name.replace(/\.[^.]+$/, '') || 'sonified') + '-sonified';
     const wavFile = new File([blob], base + '.wav', { type: 'audio/wav' });
     specSlot.style.display = 'block';
@@ -700,7 +700,7 @@ export async function renderSonify(file: File, mountEl, opts: any = {}) {
       for (let e = 0; e < ears.length; e++) {
         const earTag = ears.length > 1 ? ` (${ears[e]})` : '';
         // Each ear is one slice of the overall bar; map its 0..1 onto its slot.
-        const report = (p) => {
+        const report = (p: number) => {
           progBar.set((e + p) / ears.length);
           progLabel.textContent = `${methodName} ${Math.round(p * 100)}%${earTag}`;
         };

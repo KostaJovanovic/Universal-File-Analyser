@@ -39,7 +39,7 @@ function writeAnalyticsQueue(list: string|any[]) {
   } catch (_) { /* storage full / disabled - analytics is best-effort */ }
 }
 
-function enqueueAnalysed(ext, supported: boolean) {
+function enqueueAnalysed(ext: string, supported: boolean) {
   const q = readAnalyticsQueue();
   q.push({ ext: ext || '', supported: !!supported });
   writeAnalyticsQueue(q);
@@ -47,7 +47,7 @@ function enqueueAnalysed(ext, supported: boolean) {
 
 // POST one event. Resolves true only if the server actually recorded it (2xx and
 // not rate-limited); false means "try again later" (offline, blocked, throttled).
-function postAnalysed(ext, supported: boolean) {
+function postAnalysed(ext: string, supported: boolean) {
   return fetch(ANALYSED_EP, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -84,7 +84,7 @@ export function flushAnalyticsQueue() {
   })();
 }
 
-export function recordAnalysed(ext, supported: boolean) {
+export function recordAnalysed(ext: string, supported: boolean) {
   try {
     // Offline: skip the doomed request and bank it straight away.
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -123,7 +123,7 @@ function readHistory() {
   return arr.filter((e) => e && typeof e.when === 'number' && e.when >= cutoff);
 }
 
-export function recordHistory(entry) {
+export function recordHistory(entry: any) {
   try {
     const list = readHistory().filter((e) => !(e.name === entry.name && e.size === entry.size));
     list.unshift(entry);
@@ -134,7 +134,7 @@ export function recordHistory(entry) {
 // Folders bypass handleFile (they render via renderFolder), so record them here.
 // `files` is the walkItems() array of { path, file }; the folder name is the
 // first path segment and the size is the sum of every file inside.
-export function recordFolderHistory(files) {
+export function recordFolderHistory(files: any[]) {
   try {
     const list = Array.isArray(files) ? files : [];
     if (!list.length) return;
@@ -196,7 +196,7 @@ export function renderHistoryPanel() {
 // module variable so it pings the network at most once per page load - SPA
 // navigations reuse the cached totals (the server also dedupes to one counted
 // visit per IP / 3 days, so a stray repeat ping is harmless either way).
-let _visitTotals = null;
+let _visitTotals: any = null;
 export async function recordVisit() {
   if (_visitTotals) return _visitTotals;
   try {

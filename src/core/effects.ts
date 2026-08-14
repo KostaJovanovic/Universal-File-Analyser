@@ -10,6 +10,16 @@
 // plain text, so leaving them in place while gated is invisible.
 const a11yOn = () => document.documentElement.getAttribute('data-a11y') === 'on';
 
+/** One split letter span and the font-weight it eases back to. splitText()
+    returns a flat array of these, and the proximity controllers do nothing but
+    read `base` and write `el.style.fontWeight`. */
+interface Letter { el: HTMLElement; base: number; /** cached base-weight width, stamped by the section effect's lockWidths() */ w?: number }
+
+/** The intro sweep's state while it runs: a virtual cursor travelling from `sx`
+    to `ex` at height `cy`. Null when no sweep is in flight - `t0` is filled in on
+    the first frame, which is why it starts out unset. */
+interface Sweep { t0: number|null; duration: number; sx: number; ex: number; cy: number; vx: number; radius: number }
+
 // Splits an element's text into per-letter inline-block <span>s, each carrying a
 // base font-weight, so a proximity effect can vary letters independently. Bakes
 // letter-spacing as an em ratio (survives browser zoom on vw-sized type). Each
@@ -27,7 +37,7 @@ function splitText(container: HTMLElement, baseWeight: number) {
   const lsPx = parseFloat(cs.letterSpacing);
   const fsPx = parseFloat(cs.fontSize);
   const spacing = (isNaN(lsPx) || !fsPx) ? 'normal' : (lsPx / fsPx) + 'em';
-  const spans = [];
+  const spans: Letter[] = [];
   let word: HTMLSpanElement|null = null;  // current per-word wrapper; null between words
   function makeSpan(ch: string|null, parent: ChildNode) {
     if (ch === ' ') {
@@ -60,12 +70,12 @@ function splitText(container: HTMLElement, baseWeight: number) {
   for (const node of nodes) {
     word = null;  // never carry a word across a child-element boundary (e.g. the byline <a>)
     if (node.nodeType === 3) {
-      for (const ch of node.textContent) makeSpan(ch, container);
+      for (const ch of node.textContent!) makeSpan(ch, container);
     } else {
       const text = node.textContent;
       node.textContent = '';
       container.appendChild(node);
-      for (const ch of text) makeSpan(ch, node);
+      for (const ch of text!) makeSpan(ch, node);
     }
     word = null;
   }
@@ -76,7 +86,7 @@ function splitText(container: HTMLElement, baseWeight: number) {
 // element's box during the split so emptying its text (splitText clears
 // textContent) can't reflow the surrounding layout mid-split. Returns the flat
 // { el, base } letter list for the proximity controller.
-function splitFrozen(targets) {
+function splitFrozen(targets: { el: HTMLElement; weight: number }[]) {
   for (const t of targets) {
     t.el.style.width = t.el.offsetWidth + 'px';
     t.el.style.height = t.el.offsetHeight + 'px';
@@ -113,7 +123,7 @@ function bindSweepFx(mark: HTMLElement, letters: any[], opts: any = {})  {
   const SWEEP_DURATION = opts.sweepDuration || 3500;
 
   let mx = -9999, my = -9999, inside = false;
-  let sweep = null;                 // { t0, duration, sx, ex, cy, vx, radius } | null
+  let sweep: Sweep|null = null;     // { t0, duration, sx, ex, cy, vx, radius } | null
   let raf = 0, running = false, fxT = 0;
 
   // Read every letter's centre in one pass, then write every weight. Reading a
@@ -130,7 +140,7 @@ function bindSweepFx(mark: HTMLElement, letters: any[], opts: any = {})  {
       cys[i] = r.top + r.height / 2;
     }
   }
-  function letterWeight(l, cx: number, cy: number) {
+  function letterWeight(l: Letter, cx: number, cy: number) {
     let t = 1;
     if (inside) t = Math.min(t, Math.hypot(mx - cx, my - cy) / RADIUS_HOVER);
     if (sweep)  t = Math.min(t, Math.hypot(sweep.vx - cx, sweep.cy - cy) / sweep.radius);
@@ -203,8 +213,8 @@ function bindSweepFx(mark: HTMLElement, letters: any[], opts: any = {})  {
 // guard on the element keeps it from binding twice to the same header.
 export function setupHeaderFx() {
   const mark = document.querySelector<HTMLElement>('.site-mark');
-  const title = document.querySelector('.site-title');
-  const byline = document.querySelector('.site-byline');
+  const title = document.querySelector<HTMLElement>('.site-title');
+  const byline = document.querySelector<HTMLElement>('.site-byline');
   if (!mark || !title || !byline || mark._anrFx) return;
   const letters = splitFrozen([{ el: title, weight: 600 }, { el: byline, weight: 700 }]);
   bindSweepFx(mark, letters, { ivHolder: setupHeaderFx });
@@ -275,7 +285,7 @@ export function setupSectionFx() {
         cys[i] = r.top + r.height / 2;
       }
     };
-    const weight = (l, cx: number, cy: number) => {
+    const weight = (l: Letter, cx: number, cy: number) => {
       const t = inside ? Math.min(1, Math.hypot(mx - cx, my - cy) / RADIUS) : 1;
       return Math.round(l.base * t + 300 * (1 - t));
     };
@@ -373,7 +383,7 @@ function bindLetterFx(mark: HTMLElement) {
       for (const l of letters) l.w = l.el.getBoundingClientRect().width;
       measuredW = window.innerWidth;
     }
-    for (const l of letters) l.el.style.width = l.w + 'px';
+    for (const l of letters) l.el.style.width = l.w! + 'px';
   };
   const unlockWidths = () => { for (const l of letters) l.el.style.width = ''; };
 
@@ -388,20 +398,20 @@ function bindLetterFx(mark: HTMLElement) {
       cys[i] = r.top + r.height / 2;
     }
   };
-  const weight = (l, cx: number, cy: number) => {
+  const weight = (l: Letter, cx: number, cy: number) => {
     const t = inside ? Math.min(1, Math.hypot(mx - cx, my - cy) / RADIUS) : 1;
     return Math.round(l.base * t + 300 * (1 - t));
   };
   const settle = () => {
     clearTimeout(fxT);
-    for (const l of letters) { l.el.style.transition = 'font-weight 0.4s ease'; l.el.style.fontWeight = l.base; }
+    for (const l of letters) { l.el.style.transition = 'font-weight 0.4s ease'; l.el.style.fontWeight = String(l.base); }
     fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; unlockWidths(); }, 500);
   };
   const frame = () => {
     if (inside) {
       readCentres();
       for (let i = 0; i < letters.length; i++) {
-        letters[i].el.style.fontWeight = weight(letters[i], cxs[i], cys[i]);
+        letters[i].el.style.fontWeight = String(weight(letters[i], cxs[i], cys[i]));
       }
       raf = requestAnimationFrame(frame);
     } else {

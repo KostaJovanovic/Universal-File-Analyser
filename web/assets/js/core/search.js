@@ -16,7 +16,7 @@ export function initSearch() {
             initSearch._resize = null;
         }
         const nav = searchWrap.closest('nav');
-        let debounceTimer = null;
+        let debounceTimer;
         let matches = [];
         let matchIdx = -1;
         const isMobile = () => window.innerWidth <= 700;

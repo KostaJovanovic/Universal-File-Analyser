@@ -16,26 +16,33 @@ import { parsePlist } from '../lib/plist.js';
 import { openZip } from '../renderers/zip.js';
 import type { Row, ParseFn } from '../core/types.js';
 
+/** One decoded DER tag/length/value node. `[content, end)` is the value range
+ *  inside the buffer it was read from. */
+interface DerNode {
+  cls: number; constructed: boolean; tag: number;
+  hdrLen: number; len: number; start: number; end: number; content: number;
+}
+
 // ---------- small helpers ----------
 
 // Base64 (standard alphabet) -> Uint8Array, tolerant of whitespace.
-function b64ToBytes(s) {
+function b64ToBytes(s: string) {
   s = s.replace(/[^A-Za-z0-9+/=]/g, '');
   const bin = atob(s);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
-function bytesToB64(bytes) {
+function bytesToB64(bytes: Uint8Array) {
   let bin = '';
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
 }
 
 // SHA-256 of bytes -> base64 (OpenSSH fingerprint style, no padding). async.
-async function sha256b64(bytes) {
+async function sha256b64(bytes: Uint8Array) {
   try {
-    const buf = await crypto.subtle.digest('SHA-256', bytes);
+    const buf = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
     return 'SHA256:' + bytesToB64(new Uint8Array(buf)).replace(/=+$/, '');
   } catch (_) { return null; }
 }
@@ -48,7 +55,7 @@ async function readText(file: File, cap = 2_000_000) {
 // ---------- PEM keys: .key / .pub / .p8 ----------
 const PEM_RE = /-----BEGIN ([A-Z0-9 ]+?)-----/;
 
-function pemKind(banner) {
+function pemKind(banner: string) {
   const b = banner.toUpperCase();
   if (b.includes('OPENSSH PRIVATE')) return { type: 'OpenSSH', scheme: 'OpenSSH', priv: true };
   if (b.includes('RSA PRIVATE')) return { type: 'RSA', scheme: 'PKCS#1', priv: true };
@@ -62,7 +69,7 @@ function pemKind(banner) {
 }
 
 // OpenSSH single-line public key: "ssh-rsa AAAA... comment"
-async function parseOpenSshPub(text) {
+async function parseOpenSshPub(text: string) {
   const m = text.trim().match(/^((?:ssh|ecdsa|sk)-[\w@.-]+)\s+([A-Za-z0-9+/=]+)(?:\s+(.*))?$/);
   if (!m) return null;
   const algo = m[1], blob = m[2], comment = (m[3] || '').trim();
@@ -88,7 +95,7 @@ async function parsePemKey(file: File, ext: string) {
     if (ext === 'pub') return await parseOpenSshPub(text);
     return null;
   }
-  const banner = text.match(PEM_RE)[1].trim();
+  const banner = text.match(PEM_RE)![1].trim();
   const kind = pemKind(banner);
   const out: Row = {
     'Format': 'PEM ' + banner.toLowerCase(),
@@ -144,12 +151,12 @@ async function parseP8(file: File) {
 }
 
 // ---------- PEM identify-only: .csr / .crl / .p7b / .p7c ----------
-async function parsePemIdentify(file: File, label, banners, note) {
+async function parsePemIdentify(file: File, label: string, banners: string[], note?: string) {
   const text = await readText(file, 500_000);
   const m = text.match(PEM_RE);
   if (!m) return null;
   const banner = m[1].trim().toUpperCase();
-  if (!banners.some((b) => banner.includes(b))) return null;
+  if (!banners.some((b: string) => banner.includes(b))) return null;
   const out: Row = { 'Format': label, 'PEM banner': m[1].trim() };
   if (note) out['Note'] = note;
 
@@ -244,7 +251,7 @@ async function parseWireguard(file: File, ext: string) {
 const X509_DN_ATTR: Record<string, string> = { '2.5.4.3': 'CN', '2.5.4.10': 'O', '2.5.4.11': 'OU', '2.5.4.6': 'C', '2.5.4.7': 'L', '2.5.4.8': 'ST', '1.2.840.113549.1.9.1': 'E' };
 
 // Decode a DER Name (RDNSequence) node into a short "CN=.., O=.." string.
-function derName(b, nameNode) {
+function derName(b: Uint8Array, nameNode: DerNode) {
   const parts = [];
   try {
     for (const rdn of derChildren(b, nameNode.content, nameNode.end)) {        // SET OF
@@ -260,7 +267,7 @@ function derName(b, nameNode) {
 }
 
 // Decode a DER UTCTime (0x17) / GeneralizedTime (0x18) node to a Date, or null.
-function derTime(b, n) {
+function derTime(b: Uint8Array, n: DerNode) {
   try {
     const s = ascii(b, n.content, n.len);
     let year, rest;
@@ -273,7 +280,7 @@ function derTime(b, n) {
 }
 
 // Best-effort subject/issuer/validity from an X.509 certificate DER (RFC 5280).
-function x509Summary(der) {
+function x509Summary(der: Uint8Array) {
   try {
     const cert = derRead(der, 0);                                             // Certificate ::= SEQUENCE
     const tbs = [...derChildren(der, cert.content, cert.end)][0];             // tbsCertificate
@@ -286,9 +293,9 @@ function x509Summary(der) {
 }
 
 // SHA-256 of bytes -> uppercase colon-separated hex (the fingerprint keytool prints).
-async function sha256hex(bytes) {
+async function sha256hex(bytes: Uint8Array) {
   try {
-    const buf = await crypto.subtle.digest('SHA-256', bytes);
+    const buf = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
     return hexBytes(new Uint8Array(buf), ':').toUpperCase();
   } catch (_) { return null; }
 }
@@ -332,7 +339,7 @@ async function parseJks(file: File) {
         const tag = r.u32();
         const alias = utf8(r.bytes_(r.u16()));   // Java modified UTF-8 (ASCII-compatible)
         const created = r.u64num();              // ms since epoch
-        const e = { alias, created, kind: null, certs: [] };
+        const e: { alias: string; created: number; kind: string | null; certs: Uint8Array[] } = { alias, created, kind: null, certs: [] };
         if (tag === 1) {                          // KEY entry: encrypted key + cert chain
           e.kind = 'PrivateKeyEntry'; keys++;
           r.bytes_(r.u32());                       // protected (encrypted) key blob - skipped
@@ -415,7 +422,7 @@ async function parseMobileconfig(file: File) {
   if (v.PayloadUUID) out['UUID'] = String(v.PayloadUUID);
   const payloads = Array.isArray(v.PayloadContent) ? v.PayloadContent : [];
   out['Payloads'] = payloads.length;
-  const types = payloads.map((p) => (p && p.PayloadType) || '?');
+  const types = payloads.map((p: any) => (p && p.PayloadType) || '?');
   if (types.length) out['Payload types'] = Array.from(new Set(types)).join(', ');
   // A signed .mobileconfig is CMS-wrapped (not raw plist) - parsePlist would have
   // failed, so reaching here means unsigned XML/binary.
@@ -524,7 +531,7 @@ async function parseSldreg(file: File) {
 
 // ---------- pcap / pcapng (basic header) ----------
 const PCAP_LINKTYPES: Record<number, string> = { 0: 'NULL', 1: 'Ethernet', 6: 'Token Ring', 105: '802.11', 113: 'Linux SLL', 127: '802.11 radiotap', 228: 'IPv4', 229: 'IPv6', 276: 'Linux SLL2' };
-function parsePcap(head) {
+function parsePcap(head: Uint8Array) {
   if (head.length < 24) return null;
   const r0 = new Reader(head);
   const be = r0.u32At(0);
@@ -550,7 +557,7 @@ function parsePcap(head) {
     'Link-layer type': (PCAP_LINKTYPES[link] || 'type ' + link) + ' (' + link + ')',
   };
 }
-function parsePcapng(head) {
+function parsePcapng(head: Uint8Array) {
   if (head.length < 32) return null;
   // Section Header Block: type 0x0A0D0D0A, then byte-order magic 0x1A2B3C4D.
   const r0 = new Reader(head);
@@ -582,7 +589,7 @@ function parsePcapng(head) {
 // Minimal DER reader. Parses tag/length/value (definite length only). Returns a
 // node { cls, constructed, tag, hdrLen, len, start, end, content } where
 // [content, end) is the value range within `b`. Throws on malformed input.
-function derRead(b, pos) {
+function derRead(b: Uint8Array, pos: number): DerNode {
   if (pos >= b.length) throw new Error('der: eof');
   const id = b[pos];
   const cls = id >> 6;                 // 0=universal 1=app 2=context 3=private
@@ -609,7 +616,7 @@ function derRead(b, pos) {
 }
 
 // Iterate the immediate children of a constructed node's value range.
-function* derChildren(b, start, end) {
+function* derChildren(b: Uint8Array, start: number, end: number): Generator<DerNode> {
   let p = start;
   while (p < end) {
     const n = derRead(b, p);
@@ -619,7 +626,7 @@ function* derChildren(b, start, end) {
 }
 
 // Decode an OID node's bytes into dotted-decimal string.
-function derOid(b, n) {
+function derOid(b: Uint8Array, n: DerNode) {
   const bytes = b.subarray(n.content, n.end);
   if (!bytes.length) return '';
   const parts = [];
@@ -636,7 +643,7 @@ function derOid(b, n) {
 }
 
 // Decode a (small) INTEGER node to a JS number; returns null if too large.
-function derInt(b, n) {
+function derInt(b: Uint8Array, n: DerNode) {
   if (n.len === 0 || n.len > 6) return null;
   let v = 0;
   for (let i = n.content; i < n.end; i++) v = (v * 256) + b[i];
@@ -738,8 +745,8 @@ async function parseP12(file: File) {
     // scheme. The contents are encrypted, but bag-type and algorithm OIDs sit in
     // the plaintext ASN.1 structure surrounding each encrypted blob.
     const bagCounts: any = {};
-    const encAlgos = [];
-    walkOids(b, 0, pfx.end, (oid) => {
+    const encAlgos: string[] = [];
+    walkOids(b, 0, pfx.end, (oid: string) => {
       const bag = PKCS12_OIDS[oid];
       if (bag) bagCounts[bag] = (bagCounts[bag] || 0) + 1;
       if (ENC_OIDS[oid] && !encAlgos.includes(ENC_OIDS[oid])) encAlgos.push(ENC_OIDS[oid]);
@@ -774,7 +781,7 @@ async function parseP12(file: File) {
 // SafeContents inside a primitive OCTET STRING (PKCS#7 `data`), so we also try
 // to descend into OCTET STRINGs whose bytes themselves start a DER SEQUENCE -
 // that's where the certBag / keyBag OIDs live. Bounded & try/catch-safe.
-function walkOids(b, start, end, cb, depth) {
+function walkOids(b: Uint8Array, start: number, end: number, cb: (oid: string) => void, depth: number) {
   if (depth > 40) return;              // recursion guard
   let p = start;
   while (p < end) {
@@ -811,7 +818,7 @@ function p12Fallback() {
 // ---------- legacy Windows Event Log: .evt ----------
 // Pre-Vista binary log. File header: 0x30 size, "LfLe" magic at offset 4, then
 // version words, first/last record numbers, file size and a flags field.
-function parseEvt(head) {
+function parseEvt(head: Uint8Array) {
   if (head.length < 48) return null;
   const r = new Reader(head, true);          // little-endian
   const hdrLen = r.u32();
@@ -902,7 +909,7 @@ async function parseRules(file: File) {
     const ct = (r.line.match(/classtype\s*:\s*([^;]+);/) || [])[1];
     if (ct) classtypes[ct.trim()] = (classtypes[ct.trim()] || 0) + 1;
   }
-  const fmtTally = (o) => Object.entries<number>(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
+  const fmtTally = (o: Record<string, number>) => Object.entries<number>(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
   const out: Row = {
     'Format': 'Snort / Suricata IDS rules',
     'Rules': rules.length,
@@ -932,7 +939,7 @@ async function parseStix(file: File) {
   else if (j && typeof j.type === 'string') objects = [j];
   else return null;
   // Confirm it smells like STIX (objects carry a `type` and most a stix id).
-  const looksStix = objects.some((o) => o && typeof o.type === 'string' && (/^[a-z0-9-]+--/.test(o.id || '') || j.spec_version));
+  const looksStix = objects.some((o: any) => o && typeof o.type === 'string' && (/^[a-z0-9-]+--/.test(o.id || '') || j.spec_version));
   if (!looksStix && !(j && j.spec_version)) return null;
   const out: Row = { 'Format': 'STIX threat intelligence' };
   if (j.spec_version) out['Spec version'] = String(j.spec_version);
@@ -941,13 +948,13 @@ async function parseStix(file: File) {
   const byType: Record<string, number> = {};
   for (const o of objects) { const t = (o && o.type) || '?'; byType[t] = (byType[t] || 0) + 1; }
   out['Object types'] = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
-  const indicators = objects.filter((o) => o && o.type === 'indicator');
+  const indicators = objects.filter((o: any) => o && o.type === 'indicator');
   if (indicators.length) out['Indicators'] = indicators.length;
-  const actors = objects.filter((o) => o && o.type === 'threat-actor').map((o) => o.name).filter(Boolean);
+  const actors = objects.filter((o: any) => o && o.type === 'threat-actor').map((o: any) => o.name).filter(Boolean);
   if (actors.length) out['Threat actors'] = Array.from(new Set(actors)).slice(0, 10).join(', ');
-  const labels = Array.from(new Set(objects.flatMap((o) => (o && Array.isArray(o.labels)) ? o.labels : []))).slice(0, 15);
+  const labels = Array.from(new Set(objects.flatMap((o: any) => (o && Array.isArray(o.labels)) ? o.labels : []))).slice(0, 15);
   if (labels.length) out['Labels'] = labels.join(', ');
-  const patterns = indicators.map((o) => o.pattern).filter(Boolean);
+  const patterns = indicators.map((o: any) => o.pattern).filter(Boolean);
   if (patterns.length) out._sections = [{ title: 'Indicator patterns (' + patterns.length + ')', node: preBlock(patterns.slice(0, 200).join('\n')) }];
   return out;
 }
@@ -959,7 +966,7 @@ async function parseIoc(file: File) {
   const out: Row = { 'Format': 'OpenIOC indicator (Mandiant)' };
   const id = (text.match(/<ioc\b[^>]*\bid\s*=\s*"([^"]+)"/i) || [])[1];
   if (id) out['IOC id'] = id;
-  const grab = (tag) => (text.match(new RegExp('<' + tag + '\\b[^>]*>([\\s\\S]*?)<\\/' + tag + '>', 'i')) || [])[1];
+  const grab = (tag: string) => (text.match(new RegExp('<' + tag + '\\b[^>]*>([\\s\\S]*?)<\\/' + tag + '>', 'i')) || [])[1];
   const name = grab('short_description') || grab('description');
   if (name) out['Description'] = name.trim().replace(/\s+/g, ' ').slice(0, 200);
   const author = grab('authored_by');
@@ -1015,7 +1022,7 @@ async function parseSaz(file: File) {
     const m = t.match(/^HTTP\/[\d.]+\s+(\d{3})/);
     if (m) statuses[m[1]] = (statuses[m[1]] || 0) + 1;
   }
-  const fmtTally = (o) => Object.entries<number>(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
+  const fmtTally = (o: Record<string, number>) => Object.entries<number>(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
   if (Object.keys(methods).length) out['Methods'] = fmtTally(methods);
   if (Object.keys(statuses).length) out['Status codes'] = fmtTally(statuses);
   const hostList = Array.from(hosts).filter(Boolean).sort();
@@ -1071,7 +1078,7 @@ async function parse1pux(file: File) {
 }
 
 // ---------- 1Password OPVault: .opvault (bundle / folder upload) ----------
-async function parseOpvault(file: File, ext: string, name) {
+async function parseOpvault(file: File, ext: string, name: string) {
   // .opvault is normally a directory bundle; if one inner file is opened we can
   // still recognise its profile.js / band JSON, but most often this is the
   // package itself which a browser delivers as an opaque blob - identify only.
@@ -1088,7 +1095,7 @@ async function parseOpvault(file: File, ext: string, name) {
 }
 
 // ---------- Apple Keychain: .keychain (binary "kych") ----------
-function parseKeychain(head) {
+function parseKeychain(head: Uint8Array) {
   if (head.length < 4) return null;
   // SQLite keychain (keychain-db) starts "SQLite format 3"; classic keychain
   // begins with the Apple CSSM DL "kych" magic.
@@ -1117,7 +1124,7 @@ function parseKeychain(head) {
 }
 
 // ---------- AFF forensic image: .aff (legacy AFFLIB) ----------
-function parseAff(head) {
+function parseAff(head: Uint8Array) {
   if (head.length < 4) return null;
   // Legacy AFF (AFFLIB) segmented format begins with the "AFF" / "AFF10" banner.
   const sig = ascii(head.subarray(0, 5));
@@ -1173,7 +1180,7 @@ const PGP_TAGS: Record<string, string> = {
 
 // Walk OpenPGP packets (RFC 4880 old + new format headers) over a byte range.
 // Returns { tags:{tag:count}, info:{} } or null if the stream is not OpenPGP.
-function pgpWalk(b, limit) {
+function pgpWalk(b: Uint8Array, limit: number) {
   const tags: any = {};
   const info: any = {};
   let p = 0;
@@ -1269,7 +1276,7 @@ async function parsePgp(file: File, ext: string) {
 }
 
 // ---------- partial: KeePass 1.x: .kdb (mirror of kdbx) ----------
-function parseKdb(head) {
+function parseKdb(head: Uint8Array) {
   if (head.length < 12) return null;
   const r = new Reader(head, true);          // little-endian
   const sig1 = r.u32();
@@ -1290,7 +1297,7 @@ function parseKdb(head) {
 }
 
 // ---------- partial: Microsoft private key: .pvk ----------
-function parsePvk(head) {
+function parsePvk(head: Uint8Array) {
   if (head.length < 24) return null;
   const r = new Reader(head, true);          // little-endian
   const magic = r.u32();
@@ -1314,7 +1321,7 @@ function parsePvk(head) {
 }
 
 // ---------- identification-only (rare AND hard) ----------
-function idOnly(format, note) {
+function idOnly(format: string, note: string) {
   return () => ({ 'Format': format, 'Note': note });
 }
 

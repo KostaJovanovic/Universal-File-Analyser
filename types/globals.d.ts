@@ -11,9 +11,17 @@
       injecting a <script> tag at runtime rather than by ES import, so the
       library lands on `window` with no static import to type it.
 
-   Phase 1 posture: everything is `any`. These get real types in Phase 3 as each
-   directory is tightened - see the migration plan. Do not add app code types
-   here; those belong in src/core/types.ts. */
+   Most of these are still `any`, and that is now a deliberate resting state
+   rather than a migration to-do: the vendor globals are untyped third-party
+   builds, and the `_anr*` channel is a loose message bus by design. Typing a
+   vendor library properly means a hand-written stub in types/vendor/, which is
+   worth doing per-library when someone touches it, not as a sweep.
+
+   Two rules for this file. Only underscore-prefixed **app** expandos belong on
+   the `Element` interface below - a real DOM property that fails to type
+   (`hidden`, `style`, `naturalWidth`) means the value needs narrowing at the
+   call site, not a widened global. And app-code types belong in
+   src/core/types.d.ts, not here. */
 
 export {};
 
@@ -105,7 +113,9 @@ declare global {
      silence a real class of error and lie about the DOM. */
   interface Element {
     _advLazyRan?: any;
+    _aggregateRects?: any;
     _anim?: any;
+    _anrAudioNode?: any;
     _anrCt?: any;
     _anrEnsure?: any;
     _anrFx?: any;
@@ -122,22 +132,27 @@ declare global {
     _anrTransport?: any;
     _anrWired?: any;
     _backClose?: any;
+    _bar?: any;
     _busy?: any;
     _carve?: any;
     _carveFile?: any;
     _carveFmt?: any;
     _close?: any;
     _cmpWired?: any;
+    _collapsedRects?: any;
     _confirmBound?: any;
     _corrupt?: any;
     _cta?: any;
     _elaStats?: any;
     _extNavWired?: any;
+    _fileRects?: any;
     _fmtRandWired?: any;
     _fmtWired?: any;
     _gate?: any;
+    _headerRects?: any;
     _hide?: any;
     _hideT?: any;
+    _hierarchy?: any;
     _i?: any;
     _input?: any;
     _key?: any;
@@ -150,6 +165,7 @@ declare global {
     _realFrac?: any;
     _resetZoom?: any;
     _roTimer?: any;
+    _salvageUrl?: any;
     _show?: any;
     __syncPause?: any;
     __syncPlay?: any;
@@ -162,6 +178,7 @@ declare global {
     _trimHScroll?: any;
     _updatePanCursor?: any;
     _value?: any;
+    _viewNode?: any;
     _wired?: any;
     _yaw?: any;
     _zoom?: any;

@@ -388,12 +388,12 @@ export function adtsToM4a(arrayBuffer) {
     const stszBox = 20 + N * 4, moov = 540 + N * 4, total = 568 + N * 4 + rawSize, chunkOff = 568 + N * 4;
     const out = new Uint8Array(total), dv = new DataView(out.buffer);
     let o = 0;
-    const w4 = v => { dv.setUint32(o, v); o += 4; };
-    const w2 = v => { dv.setUint16(o, v); o += 2; };
-    const w1 = v => { out[o++] = v; };
-    const ws = s => { for (let j = 0; j < s.length; j++)
+    const w4 = (v) => { dv.setUint32(o, v); o += 4; };
+    const w2 = (v) => { dv.setUint16(o, v); o += 2; };
+    const w1 = (v) => { out[o++] = v; };
+    const ws = (s) => { for (let j = 0; j < s.length; j++)
         out[o++] = s.charCodeAt(j); };
-    const sk = n => { o += n; };
+    const sk = (n) => { o += n; };
     const bx = (t, s) => { w4(s); ws(t); };
     bx('ftyp', 20);
     ws('M4A ');

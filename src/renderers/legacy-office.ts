@@ -13,27 +13,27 @@
    throwing. Formatting, images and exact layout are intentionally not attempted.
    ============================================================================ */
 
-import { el, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, buildReadout, fmtBytes, integrityCard, errorCard, type ElChild } from '../core/util.js';
 import { HASH_FILE_MAX } from '../core/limits.js';
 import { openCfbf } from '../lib/cfbf.js';
 import { paginateFlow, pagedPreviewCard, pagedTextCard, makePage, pagePreviewSkeleton } from './paged.js';
 
-const dvOf = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-const u16 = (dv, off) => (off + 2 <= dv.byteLength ? dv.getUint16(off, true) : 0);
-const u32 = (dv, off) => (off + 4 <= dv.byteLength ? dv.getUint32(off, true) >>> 0 : 0);
+const dvOf = (bytes: Uint8Array) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+const u16 = (dv: DataView<any>, off: number) => (off + 2 <= dv.byteLength ? dv.getUint16(off, true) : 0);
+const u32 = (dv: DataView<any>, off: number) => (off + 4 <= dv.byteLength ? dv.getUint32(off, true) >>> 0 : 0);
 
-let dec1252, decUtf16;
-function cp1252(bytes) {
+let dec1252: TextDecoder, decUtf16: TextDecoder;
+function cp1252(bytes: Uint8Array) {
   if (!dec1252) { try { dec1252 = new TextDecoder('windows-1252'); } catch (_) { dec1252 = new TextDecoder('latin1'); } }
   return dec1252.decode(bytes);
 }
-function utf16le(bytes) {
+function utf16le(bytes: Uint8Array) {
   if (!decUtf16) decUtf16 = new TextDecoder('utf-16le');
   return decUtf16.decode(bytes);
 }
 
 // Word/PowerPoint use a few control codes as structure; normalise to text.
-function cleanText(s) {
+function cleanText(s: string) {
   return s
     .replace(/[\x13\x14\x15]/g, '')        // field begin/separator/end markers
     .replace(/[\r\x0B\x07\x0C]/g, '\n')    // para / line / cell / page breaks -> newline
@@ -41,7 +41,7 @@ function cleanText(s) {
 }
 
 // Split cleaned text into paragraph <p> blocks for pagination.
-function textToContent(text) {
+function textToContent(text: string) {
   const container = document.createElement('div');
   const paras = text.split('\n');
   let blanks = 0;
@@ -59,7 +59,7 @@ function textToContent(text) {
 
 // ---------- .doc (Word 97-2003) ----------
 
-function extractDocText(cf) {
+function extractDocText(cf: any) {
   const wd = cf.readStream('WordDocument');
   if (!wd) return null;
   const dv = dvOf(wd);
@@ -119,20 +119,20 @@ function extractDocText(cf) {
 
 // Last-resort: pull printable runs out of a stream when structured parsing
 // is not possible. Chooses whichever of cp1252 / utf-16le reads better.
-function scrapeText(bytes) {
+function scrapeText(bytes: Uint8Array) {
   const a = cleanText(cp1252(bytes));
   const b = cleanText(utf16le(bytes));
-  const score = (s) => (s.match(/[A-Za-zÀ-ɏ]/g) || []).length;
+  const score = (s: string) => (s.match(/[A-Za-zÀ-ɏ]/g) || []).length;
   const pick = score(b) > score(a) * 1.2 ? b : a;
   // Drop control noise; keep lines that still carry a real word or number.
-  const lines = pick.split('\n').map((l) => l.replace(/[\x00-\x1F\x7F]/g, '').trim())
-    .filter((l) => /[A-Za-z0-9]{3,}/.test(l));
+  const lines = pick.split('\n').map((l: string) => l.replace(/[\x00-\x1F\x7F]/g, '').trim())
+    .filter((l: string) => /[A-Za-z0-9]{3,}/.test(l));
   return lines.join('\n');
 }
 
 // ---------- .xls (Excel BIFF8) ----------
 
-function decodeRK(rk) {
+function decodeRK(rk: number) {
   let n;
   if (rk & 0x02) n = rk >> 2;                          // signed 30-bit integer
   else {
@@ -145,7 +145,7 @@ function decodeRK(rk) {
   return n;
 }
 
-function fmtNum(n) {
+function fmtNum(n: number) {
   if (!isFinite(n)) return '';
   if (Number.isInteger(n)) return String(n);
   return String(parseFloat(n.toPrecision(12)));
@@ -153,7 +153,7 @@ function fmtNum(n) {
 
 // Read a BIFF8 unicode string at `off`; returns {text, next}. Does not follow
 // CONTINUE records (used for short inline strings only).
-function readShortStr(dv, bytes, off) {
+function readShortStr(dv: DataView, bytes: Uint8Array, off: number) {
   const cch = u16(dv, off);
   const grbit = bytes[off + 2];
   const high = grbit & 0x01;
@@ -167,7 +167,7 @@ function readShortStr(dv, bytes, off) {
 // Parse the SST shared-string table, threading through CONTINUE records. Each
 // record's data is concatenated, but string char-data that crosses a boundary
 // resumes with a fresh 1-byte grbit at the start of the next CONTINUE.
-function parseSST(records, startIdx) {
+function parseSST(records: any[], startIdx: number) {
   const strings = [];
   try {
     const bufs = [records[startIdx].data];
@@ -181,7 +181,7 @@ function parseSST(records, startIdx) {
     const readU32 = () => { const a = readU16(), b = readU16(); return (a | (b << 16)) >>> 0; };
     // Read `nChars` characters of `high` width, splitting across buffers and
     // honouring the per-buffer grbit reset at each boundary.
-    const readChars = (nChars, high) => {
+    const readChars = (nChars: number, high: number) => {
       let s = '';
       let left = nChars;
       while (left > 0) {
@@ -220,7 +220,7 @@ function parseSST(records, startIdx) {
   return strings;
 }
 
-function extractXlsSheets(cf) {
+function extractXlsSheets(cf: any) {
   const wb = cf.readStream('Workbook') || cf.readStream('Book');
   if (!wb) return null;
   // Split the whole stream into BIFF records once.
@@ -238,7 +238,7 @@ function extractXlsSheets(cf) {
 
   // Globals: BOUNDSHEET names + positions, and the SST.
   const sheets = [];   // { name, pos }
-  let sst = [];
+  let sst: any[] = [];
   for (let i = 0; i < records.length; i++) {
     const r = records[i];
     if (r.type === 0x0085) {           // BOUNDSHEET
@@ -264,9 +264,9 @@ function extractXlsSheets(cf) {
   for (let s = 0; s < sheetList.length; s++) {
     let startRec = recAtPos.get(sheetList[s].pos);
     if (startRec == null) startRec = 0;
-    const grid = [];
+    const grid: any[] = [];
     let maxCol = 0;
-    const put = (r, c, v) => {
+    const put = (r: number, c: number, v: string) => {
       if (r >= MAX_ROWS || c >= MAX_COLS) return;
       if (!grid[r]) grid[r] = [];
       grid[r][c] = v;
@@ -306,7 +306,7 @@ function extractXlsSheets(cf) {
   return out;
 }
 
-function renderXlsSheetPage(sheet) {
+function renderXlsSheetPage(sheet: any) {
   const page = makePage('sheet');
   page.appendChild(el('div', { class: 'anr-sheet-name' }, sheet.name));
   if (!sheet.grid.length) { page.appendChild(el('p', { style: 'color:#888;' }, '(empty sheet)')); return page; }
@@ -327,13 +327,13 @@ function renderXlsSheetPage(sheet) {
 
 // ---------- .ppt (PowerPoint 97-2003) ----------
 
-function extractPptText(cf) {
+function extractPptText(cf: any) {
   const doc = cf.readStream('PowerPoint Document') || cf.readStream(/PowerPoint Document/);
   if (!doc) return null;
   const dv = dvOf(doc);
-  const runs = [];
+  const runs: any[] = [];
   // Walk the record tree; collect TextCharsAtom / TextBytesAtom in order.
-  const walk = (start, end, depth) => {
+  const walk = (start: number, end: number, depth: number) => {
     let p = start;
     while (p + 8 <= end && depth < 30) {
       const verInst = u16(dv, p);
@@ -363,9 +363,9 @@ function extractPptText(cf) {
 // PowerPoint use a 'Macros' storage, Excel a '_VBA_PROJECT_CUR' storage, both
 // holding a 'VBA' sub-storage with the '_VBA_PROJECT' stream. The presence of any
 // of these directory entries is a reliable macro flag (we don't decompile the code).
-function hasVbaMacros(cf) {
+function hasVbaMacros(cf: any) {
   try {
-    return (cf.entries || []).some((e) => {
+    return (cf.entries || []).some((e: any) => {
       const n = e.name || '';
       return n === 'Macros' || n === '_VBA_PROJECT_CUR' || n === 'VBA' || /_VBA_PROJECT/i.test(n);
     });
@@ -377,7 +377,7 @@ function hasVbaMacros(cf) {
 // ways and pull http(s) URLs out. The 'http(s)://' anchor is specific enough that
 // the "wrong" decode of a given stretch almost never yields a false hit.
 const LEGACY_URL_RE = /https?:\/\/[^\s"'<>()[\]\x00-\x1F]{4,}/gi;
-function scanUrls(bytes, set) {
+function scanUrls(bytes: Uint8Array|null, set: Set<string>) {
   if (!bytes || !bytes.length || set.size > 500) return;
   for (const txt of [cp1252(bytes), utf16le(bytes)]) {
     LEGACY_URL_RE.lastIndex = 0;
@@ -392,7 +392,7 @@ function scanUrls(bytes, set) {
 
 // ---------- shared shell ----------
 
-function infoCard(file: File, appLabel, extraRows, links) {
+function infoCard(file: File, appLabel: ElChild | ElChild[], extraRows: any[], links: string[]) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, appLabel));
   card.appendChild(buildReadout([
@@ -415,7 +415,7 @@ function infoCard(file: File, appLabel, extraRows, links) {
   return card;
 }
 
-export async function renderLegacyOffice(file: File, container, kind) {
+export async function renderLegacyOffice(file: File, container: HTMLElement, kind: string) {
   container.hidden = false;
   container.innerHTML = '';
   // Ghost sheets stand in while the OLE2 container is opened and its streams are
@@ -462,7 +462,7 @@ export async function renderLegacyOffice(file: File, container, kind) {
     // Security signals (additive): VBA macros + external hyperlink URLs. Scan the
     // app's main content stream(s) - hyperlink targets and monikers live there.
     const macros = hasVbaMacros(cf);
-    const urlSet = new Set();
+    const urlSet = new Set<string>();
     try {
       const scanStreams = { xls: ['Workbook', 'Book'], ppt: ['PowerPoint Document'], doc: ['WordDocument', '1Table', '0Table'] }[kind] || [];
       for (const sname of scanStreams) scanUrls(cf.readStream(sname), urlSet);
@@ -492,6 +492,6 @@ export async function renderLegacyOffice(file: File, container, kind) {
   }
 }
 
-export const renderDoc = (file: File, container) => renderLegacyOffice(file, container, 'doc');
-export const renderXls = (file: File, container) => renderLegacyOffice(file, container, 'xls');
-export const renderPpt = (file: File, container) => renderLegacyOffice(file, container, 'ppt');
+export const renderDoc = (file: File, container: HTMLElement) => renderLegacyOffice(file, container, 'doc');
+export const renderXls = (file: File, container: HTMLElement) => renderLegacyOffice(file, container, 'xls');
+export const renderPpt = (file: File, container: HTMLElement) => renderLegacyOffice(file, container, 'ppt');

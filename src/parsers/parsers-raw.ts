@@ -71,7 +71,7 @@ async function parseNksc(file: File) {
   return out;
 }
 
-const idOnly = (ext: string, name) => ({ 'Format': name, 'Note': 'Identified - ' + ext.toUpperCase() + ' camera edit/preview sidecar.' });
+const idOnly = (ext: string, name: string) => ({ 'Format': name, 'Note': 'Identified - ' + ext.toUpperCase() + ' camera edit/preview sidecar.' });
 
 export const PARSERS: Record<string, ParseFn> = {
   aae: (c) => parseAae(c.file),

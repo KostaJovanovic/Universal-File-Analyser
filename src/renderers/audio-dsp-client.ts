@@ -18,7 +18,7 @@
 // second copy of a gigabyte-scale buffer in memory.
 const MAX_DSP_TRANSFER_BYTES = 256 * 1024 * 1024;
 
-let worker = null;
+let worker: Worker|null = null;
 function getWorker() {
   if (!worker) worker = new Worker(new URL('./audio-dsp-worker.js', import.meta.url), { type: 'module' });
   return worker;
@@ -36,7 +36,7 @@ let _jobSeq = 0;
  * length of the analysis, which is fine for a song and reckless for a
  * multi-hour recording - hence the ceiling.
  */
-export function canOffloadDsp(audioBuffer) {
+export function canOffloadDsp(audioBuffer: AudioBuffer) {
   const bytes = audioBuffer.numberOfChannels * audioBuffer.length * 4;
   return bytes <= MAX_DSP_TRANSFER_BYTES;
 }
@@ -47,13 +47,13 @@ export function canOffloadDsp(audioBuffer) {
  * @param {{ needBpm: boolean, signal?: AbortSignal, onPass: (name: string, value: any) => void }} opts
  * @returns {Promise<void>} resolves when every pass has landed
  */
-export function runAudioDsp(audioBuffer, { needBpm, signal, onPass }) {
+export function runAudioDsp(audioBuffer: AudioBuffer, { needBpm, signal, onPass }: { needBpm: boolean; signal?: AbortSignal; onPass: (name: string, value: any) => void }) {
   return new Promise<void>((resolve, reject) => {
-    let w;
+    let w: Worker;
     try { w = getWorker(); } catch (e) { reject(e); return; }
     const jobId = ++_jobSeq;
 
-    const onMsg = (e) => {
+    const onMsg = (e: MessageEvent) => {
       const m = e.data;
       if (!m || m.jobId !== jobId) return;   // a reply belonging to another job
       if (m.type === 'pass') { try { onPass(m.name, m.value); } catch (_) {} }

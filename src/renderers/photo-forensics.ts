@@ -9,11 +9,11 @@
    The heavy lifting is plain canvas + typed-array maths; callers build the card
    chrome (headings, sliders, lightbox) so this module stays UI-free and reusable. */
 
-import { md5Hex } from '../core/util.js';
+import { md5Hex, type Drawable} from '../core/util.js';
 
 // Draw an image (or canvas) onto a fresh 2D context at a bounded size. Returns
 // { canvas, ctx, w, h } or null when the source has no dimensions.
-function drawBounded(src, maxDim) {
+function drawBounded(src: Drawable, maxDim: number) {
   const nw = src.naturalWidth || src.width, nh = src.naturalHeight || src.height;
   if (!nw || !nh) return null;
   let w = nw, h = nh;
@@ -24,7 +24,7 @@ function drawBounded(src, maxDim) {
   }
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.drawImage(src, 0, 0, w, h);
   return { canvas, ctx, w, h };
 }
@@ -36,7 +36,7 @@ function drawBounded(src, maxDim) {
 // expectation. Returns per-channel embedding probability (0..1) and the max, or
 // null when the image is too small/flat to judge. Detects LSB *replacement*
 // (the classic case); it does not flag LSB matching or transform-domain hiding.
-function gammln(xx) {
+function gammln(xx: number) {
   const cof = [76.18009172947146, -86.50532032941677, 24.01409824083091,
     -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
   let x = xx, y = xx, tmp = x + 5.5;
@@ -45,14 +45,14 @@ function gammln(xx) {
   for (let j = 0; j < 6; j++) { y++; ser += cof[j] / y; }
   return -tmp + Math.log(2.5066282746310005 * ser / x);
 }
-function gser(a, x) {
+function gser(a: number, x: number) {
   if (x <= 0) return 0;
   const gln = gammln(a);
   let ap = a, sum = 1 / a, del = sum;
   for (let n = 0; n < 300; n++) { ap++; del *= x / ap; sum += del; if (Math.abs(del) < Math.abs(sum) * 1e-12) break; }
   return sum * Math.exp(-x + a * Math.log(x) - gln);
 }
-function gcf(a, x) {
+function gcf(a: number, x: number) {
   const FPMIN = 1e-300, gln = gammln(a);
   let b = x + 1 - a, c = 1 / FPMIN, d = 1 / b, h = d;
   for (let i = 1; i <= 300; i++) {
@@ -64,9 +64,9 @@ function gcf(a, x) {
   return Math.exp(-x + a * Math.log(x) - gln) * h;
 }
 // Regularised lower incomplete gamma P(a,x) = chi-square CDF at 2x with 2a d.o.f.
-function gammp(a, x) { if (x < 0 || a <= 0) return 0; return x < a + 1 ? gser(a, x) : 1 - gcf(a, x); }
+function gammp(a: number, x: number) { if (x < 0 || a <= 0) return 0; return x < a + 1 ? gser(a, x) : 1 - gcf(a, x); }
 
-function channelEmbedProb(hist) {
+function channelEmbedProb(hist: Float64Array) {
   let chi = 0, df = 0;
   for (let k = 0; k < 128; k++) {
     const a = hist[2 * k], b = hist[2 * k + 1];
@@ -79,7 +79,7 @@ function channelEmbedProb(hist) {
   return 1 - gammp((df - 1) / 2, chi / 2);  // p(embedding): small chi -> near 1
 }
 
-export function lsbChiSquare(src, { maxDim = 1024 } : any = {}) {
+export function lsbChiSquare(src: Drawable, { maxDim = 1024 } : any = {}) {
   const base = drawBounded(src, maxDim);
   if (!base) return null;
   const { ctx, w, h } = base;
@@ -92,8 +92,8 @@ export function lsbChiSquare(src, { maxDim = 1024 } : any = {}) {
   return { R, G, B, max: Math.max(...vals) };
 }
 
-function loadImage(url) {
-  return new Promise((res, rej) => {
+function loadImage(url: string) {
+  return new Promise<HTMLImageElement>((res, rej) => {
     const im = new Image();
     im.onload = () => res(im);
     im.onerror = rej;
@@ -106,7 +106,7 @@ function loadImage(url) {
 // - amplify: gain applied to the absolute difference so faint errors are visible.
 // - maxDim: cap the working resolution so very large images stay responsive.
 // Returns an HTMLCanvasElement holding the amplified error map, or null on failure.
-export async function computeElaCanvas(src, { quality = 0.9, amplify = 18, maxDim = 1600 } : any = {}) {
+export async function computeElaCanvas(src: Drawable, { quality = 0.9, amplify = 18, maxDim = 1600 } : any = {}) {
   const base = drawBounded(src, maxDim);
   if (!base) return null;
   const { canvas, ctx, w, h } = base;
@@ -116,9 +116,9 @@ export async function computeElaCanvas(src, { quality = 0.9, amplify = 18, maxDi
   const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/jpeg', quality));
   if (!blob) return null;
   const url = URL.createObjectURL(blob);
-  let recImg;
+  let recImg: HTMLImageElement;
   try {
-    recImg = await new Promise((res, rej) => {
+    recImg = await new Promise<HTMLImageElement>((res, rej) => {
       const im = new Image();
       im.onload = () => res(im);
       im.onerror = rej;
@@ -128,7 +128,7 @@ export async function computeElaCanvas(src, { quality = 0.9, amplify = 18, maxDi
 
   const rc = document.createElement('canvas');
   rc.width = w; rc.height = h;
-  const rctx = rc.getContext('2d', { willReadFrequently: true });
+  const rctx = rc.getContext('2d', { willReadFrequently: true })!;
   rctx.drawImage(recImg, 0, 0, w, h);
   URL.revokeObjectURL(url);
   const rec = rctx.getImageData(0, 0, w, h);
@@ -151,7 +151,7 @@ export async function computeElaCanvas(src, { quality = 0.9, amplify = 18, maxDi
   }
   const outCanvas = document.createElement('canvas');
   outCanvas.width = w; outCanvas.height = h;
-  outCanvas.getContext('2d').putImageData(out, 0, 0);
+  outCanvas.getContext('2d')!.putImageData(out, 0, 0);
   outCanvas._elaStats = { maxErr, meanErr: n ? sumErr / n : 0, w, h };
   return outCanvas;
 }
@@ -185,15 +185,15 @@ const STD_CHROMA = [
   99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99,
 ];
 
-function ijgScale(q) { q = Math.max(1, Math.min(100, Math.round(q))); return q < 50 ? Math.floor(5000 / q) : 200 - q * 2; }
-function ijgTable(std, q) {
+function ijgScale(q: number) { q = Math.max(1, Math.min(100, Math.round(q))); return q < 50 ? Math.floor(5000 / q) : 200 - q * 2; }
+function ijgTable(std: any[], q: number) {
   const s = ijgScale(q);
-  return std.map((v) => Math.max(1, Math.min(255, Math.floor((v * s + 50) / 100))));
+  return std.map((v: number) => Math.max(1, Math.min(255, Math.floor((v * s + 50) / 100))));
 }
-function tableDiff(a, b) { let d = 0; for (let i = 0; i < 64; i++) d += Math.abs(a[i] - b[i]); return d; }
+function tableDiff(a: number[], b: number[]) { let d = 0; for (let i = 0; i < 64; i++) d += Math.abs(a[i] - b[i]); return d; }
 // Best-fit IJG quality for an observed table against a given standard table.
 // Returns { quality, diff } where diff 0 means an exact standard-table match.
-function bestQuality(observed, std) {
+function bestQuality(observed: any[], std: number[]) {
   let best = 1, bestD = Infinity;
   for (let q = 1; q <= 100; q++) {
     const d = tableDiff(observed, ijgTable(std, q));
@@ -204,7 +204,7 @@ function bestQuality(observed, std) {
 
 // Parse every DQT table in a JPEG. Returns [{ id, precision, table (64 natural) }]
 // or [] when the bytes are not a JPEG / carry no tables.
-export function parseJpegQuantTables(bytes) {
+export function parseJpegQuantTables(bytes: Uint8Array) {
   if (!bytes || bytes.length < 4 || bytes[0] !== 0xFF || bytes[1] !== 0xD8) return [];
   const n = bytes.length;
   const out = [];
@@ -241,7 +241,7 @@ export function parseJpegQuantTables(bytes) {
 }
 
 // Full analysis for the card. Returns null when there are no tables to fingerprint.
-export function analyzeJpegQuantization(bytes) {
+export function analyzeJpegQuantization(bytes: Uint8Array) {
   const tables = parseJpegQuantTables(bytes);
   if (!tables.length) return null;
   const luma = tables.find((t) => t.id === 0) || tables[0];
@@ -268,7 +268,7 @@ export function analyzeJpegQuantization(bytes) {
 // near q, while its surroundings do not - revealing content spliced in from a
 // differently-compressed source. Returns [{ quality, canvas (block-res grayscale) }]
 // normalised across the whole set so the maps are directly comparable, or null.
-export async function computeJpegGhosts(src, { qualities, maxDim = 1024, block = 4 } : any = {}) {
+export async function computeJpegGhosts(src: Drawable, { qualities, maxDim = 1024, block = 4 } : any = {}) {
   qualities = qualities || [40, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95];
   const base = drawBounded(src, maxDim);
   if (!base) return null;
@@ -284,7 +284,7 @@ export async function computeJpegGhosts(src, { qualities, maxDim = 1024, block =
     try { im = await loadImage(url); } catch (_) { URL.revokeObjectURL(url); continue; }
     const rc = document.createElement('canvas');
     rc.width = w; rc.height = h;
-    const rctx = rc.getContext('2d', { willReadFrequently: true });
+    const rctx = rc.getContext('2d', { willReadFrequently: true })!;
     rctx.drawImage(im, 0, 0, w, h);
     URL.revokeObjectURL(url);
     const rec = rctx.getImageData(0, 0, w, h).data;
@@ -312,7 +312,7 @@ export async function computeJpegGhosts(src, { qualities, maxDim = 1024, block =
   return maps.map((m) => {
     const cv = document.createElement('canvas');
     cv.width = w; cv.height = h;
-    const ctx = cv.getContext('2d');
+    const ctx = cv.getContext('2d')!;
     const id = ctx.createImageData(w, h);
     for (let y = 0; y < h; y++) {
       const brow = Math.floor(y / block) * bw;
@@ -328,10 +328,10 @@ export async function computeJpegGhosts(src, { qualities, maxDim = 1024, block =
 }
 
 // ---------- XMP edit history + Photoshop IPTC-digest check ----------
-function extractXmpText(bytes) {
+function extractXmpText(bytes: Uint8Array) {
   const open = '<x:xmpmeta';
   // Byte scan for the packet start/end (the XMP may sit in any APPn / iTXt).
-  const find = (needle, from) => {
+  const find = (needle: string, from: number) => {
     outer: for (let i = from; i <= bytes.length - needle.length; i++) {
       for (let j = 0; j < needle.length; j++) if (bytes[i + j] !== needle.charCodeAt(j)) continue outer;
       return i;
@@ -346,13 +346,13 @@ function extractXmpText(bytes) {
   for (let i = s; i < end; i++) out += String.fromCharCode(bytes[i]);
   return out;
 }
-function xmlDecode(str) {
+function xmlDecode(str: string) {
   return str.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(+d)).replace(/&amp;/g, '&');
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d: string|number) => String.fromCodePoint(+d)).replace(/&amp;/g, '&');
 }
 // Parse xmpMM:History (Lightroom/Photoshop edit log) plus a few provenance ids.
-export function parseXmpHistory(bytes) {
+export function parseXmpHistory(bytes: Uint8Array) {
   const xmp = extractXmpText(bytes);
   if (!xmp) return null;
   const history = [];
@@ -360,7 +360,7 @@ export function parseXmpHistory(bytes) {
   if (hm) {
     const items = hm[1].split(/<rdf:li/).slice(1);
     for (const it of items) {
-      const g = (name) => {
+      const g = (name: string) => {
         let m = it.match(new RegExp('stEvt:' + name + '="([^"]*)"'));
         if (m) return xmlDecode(m[1]);
         m = it.match(new RegExp('<stEvt:' + name + '>([\\s\\S]*?)</stEvt:' + name + '>'));
@@ -372,7 +372,7 @@ export function parseXmpHistory(bytes) {
       history.push({ action, when, softwareAgent: soft, changed: g('changed'), params: g('parameters') });
     }
   }
-  const one = (re) => { const m = xmp.match(re); return m ? xmlDecode(m[1].trim()) : ''; };
+  const one = (re: RegExp) => { const m = xmp.match(re); return m ? xmlDecode(m[1].trim()) : ''; };
   return {
     history,
     creatorTool: one(/xmp:CreatorTool>([\s\S]*?)</) || one(/xmp:CreatorTool="([^"]*)"/),
@@ -380,14 +380,14 @@ export function parseXmpHistory(bytes) {
     instanceId: one(/xmpMM:InstanceID>([\s\S]*?)</) || one(/xmpMM:InstanceID="([^"]*)"/),
   };
 }
-function startsWithAscii(bytes, off, s) {
+function startsWithAscii(bytes: Uint8Array, off: number, s: string) {
   for (let i = 0; i < s.length; i++) if (bytes[off + i] !== s.charCodeAt(i)) return false;
   return true;
 }
 // Photoshop stores an MD5 of the IPTC (8BIM resource 0x0404) in resource 0x0425.
 // If the two disagree, the IPTC metadata was changed after Photoshop last wrote it.
 // Returns { hasDigest, match, stored, computed } or null when there's nothing to check.
-export function checkIptcDigest(bytes) {
+export function checkIptcDigest(bytes: Uint8Array) {
   if (!(bytes[0] === 0xFF && bytes[1] === 0xD8)) return null;
   const n = bytes.length;
   let irb = null, p = 2;

@@ -52,7 +52,7 @@ async function createGs() {
     noInitialRun: true,
     print() {},
     printErr() {},
-    instantiateWasm(imports, success) {
+    instantiateWasm(imports: any, success: (instance: any, module: any) => void) {
       WebAssembly.instantiate(wasmBytes, imports)
         .then((res) => success(res.instance, res.module))
         .catch((err) => { try { console.warn('gs wasm instantiate failed', err); } catch (_) {} });
@@ -68,7 +68,7 @@ async function createGs() {
  * @param {string} ext                    lowercase extension (eps/epsf/epsi/ps)
  * @returns {Promise<Blob|null>}          a PNG Blob (first page) or null on any failure
  */
-export async function renderPostScript(bytes, ext: string) {
+export async function renderPostScript(bytes: Uint8Array|ArrayBuffer, ext: string) {
   try {
     const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     if (!u8 || !u8.length) return null;

@@ -39,7 +39,7 @@ function looksLikeDate(val: string) {
 // looksMonthFirst). If the preferred reading isn't actually valid for this
 // particular value (e.g. toggled to month-first but this row only parses
 // day-first), the other reading is used instead rather than losing the date.
-export function parseDateValue(val, monthFirst?: boolean|undefined) {
+export function parseDateValue(val: unknown, monthFirst?: boolean|undefined) {
   const s = (val == null ? '' : String(val)).trim();
   let m;
   if ((m = YYYY_DOT_MM.exec(s))) return Date.UTC(+m[1], +m[2] - 1, 1);
@@ -65,7 +65,7 @@ export function parseDateValue(val, monthFirst?: boolean|undefined) {
 // initial day-first/month-first default; columns where every row is
 // ambiguous (both fields <= 12, e.g. "3/4/2024") keep the day-first default
 // and rely on the "Dates: D/M/Y" toggle instead.
-export function looksMonthFirst(rows, colCount: number, colTypes: string[]) {
+export function looksMonthFirst(rows: any[], colCount: number, colTypes: string[]) {
   for (let c = 0; c < colCount; c++) {
     if (colTypes[c] !== 'date') continue;
     for (const r of rows) {
@@ -108,7 +108,7 @@ export function inferColumnTypes(rows: any[], colCount: number) {
 }
 
 // '' / non-numeric -> NaN (same coercion csv.js uses today: Number(val.trim())).
-export function toNumber(cell) {
+export function toNumber(cell: unknown) {
   const s = (cell == null ? '' : String(cell)).trim();
   if (s === '') return NaN;
   return Number(s);
@@ -116,7 +116,7 @@ export function toNumber(cell) {
 
 // Typed, non-empty values of column c across rows, per its inferred type.
 export function columnValues(rows: any[], c: number, type: string) {
-  const out = [];
+  const out: any[] = [];
   for (const r of rows) {
     const raw = (r[c] || '').trim();
     if (raw === '') continue;
@@ -134,7 +134,7 @@ export function columnValues(rows: any[], c: number, type: string) {
 }
 
 // Percentile from an ASCENDING-sorted numeric array (linear interpolation).
-export function percentile(sorted: string|any[], p: number) {
+export function percentile(sorted: ArrayLike<number>, p: number) {
   if (sorted.length === 0) return NaN;
   if (sorted.length === 1) return sorted[0];
   const idx = (sorted.length - 1) * p;
@@ -145,7 +145,7 @@ export function percentile(sorted: string|any[], p: number) {
 }
 
 // {count,sum,mean,min,max,median,stddev,distinct} over a numeric array.
-export function describe(nums: any[]|Iterable<unknown>|null|undefined) {
+export function describe(nums: number[]) {
   const n = nums.length;
   if (n === 0) return { count: 0, sum: 0, mean: NaN, min: NaN, max: NaN, median: NaN, stddev: NaN, distinct: 0 };
   const sorted = nums.slice().sort((a: number, b: number) => a - b);
@@ -166,9 +166,9 @@ export function describe(nums: any[]|Iterable<unknown>|null|undefined) {
 
 // Pearson correlation coefficient, NaN-safe (returns NaN when either series has
 // zero variance or the paired, finite-value count is under 2).
-export function pearson(xs: string|any[], ys: string|any[]) {
+export function pearson(xs: ArrayLike<number>, ys: ArrayLike<number>) {
   const n = Math.min(xs.length, ys.length);
-  const px = [], py = [];
+  const px: number[] = [], py: number[] = [];
   for (let i = 0; i < n; i++) {
     const x = xs[i], y = ys[i];
     if (isFinite(x) && isFinite(y)) { px.push(x); py.push(y); }
@@ -188,9 +188,9 @@ export function pearson(xs: string|any[], ys: string|any[]) {
 
 // Group rows by keyCol (as a string key), aggregating valCol with `agg`
 // (count|sum|avg|min|max|median). Returns [[key, value], ...] in first-seen order.
-export function groupBy(rows, keyCol: number, valCol: number, agg: string) {
-  const order = [];
-  const buckets = new Map();
+export function groupBy(rows: any[], keyCol: number, valCol: number, agg: string) {
+  const order: string[] = [];
+  const buckets = new Map<string, number[]>();
   for (const r of rows) {
     const key = (r[keyCol] == null ? '' : String(r[keyCol])).trim();
     if (key === '') continue;
@@ -203,10 +203,10 @@ export function groupBy(rows, keyCol: number, valCol: number, agg: string) {
       bucket.push(1);
     }
   }
-  const out = [];
+  const out: [string, number][] = [];
   for (const key of order) {
-    const vals = buckets.get(key);
-    let value;
+    const vals = buckets.get(key)!;
+    let value!: number;
     if (agg === 'count') value = vals.length;
     else if (vals.length === 0) value = NaN;
     else if (agg === 'sum') value = vals.reduce((s, v) => s + v, 0);

@@ -12,6 +12,12 @@ export type ElChild = string | Node | null | undefined | false;
 /** Attribute bag. `class` sets className, `html` sets innerHTML, `onX` binds a
     listener, everything else becomes a plain attribute - see the loop below. */
 export type ElAttrs = Record<string, any>;
+/** Anything drawImage() accepts, as the pixel helpers actually use it. They are
+    handed an <img> by one caller, a <canvas> by another and a <video> by a third,
+    and probe defensively for whichever measurement that member carries
+    (`naturalWidth || width`, `videoWidth`, `duration`), so the index signature is
+    part of the contract rather than a shortcut. */
+export type Drawable = CanvasImageSource & Record<string, any>;
 
 // Overloads only - the implementation signature below is deliberately loose and
 // is NOT visible to callers. The tag-name overload is what makes `el('canvas')`
@@ -654,7 +660,7 @@ export function attachViewCube(viewer: any) {
     lx = x; ly = y; viewer.markDirty();
   };
   const en = () => { drag = false; };
-  const onWinMove = (e: PointerEvent) => mv(e.clientX, e.clientY);
+  const onWinMove = (e: MouseEvent) => mv(e.clientX, e.clientY);
   const onWinUp = en;
   box.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); dn(e.clientX, e.clientY); });
   window.addEventListener('mousemove', onWinMove);

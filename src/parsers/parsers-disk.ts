@@ -21,24 +21,24 @@ import type { Row, ParseFn } from '../core/types.js';
 
 // ---------- small shared helpers ----------
 
-async function readBytes(file: File, n) {
+async function readBytes(file: File, n: number) {
   return new Uint8Array(await file.slice(0, Math.min(file.size, n)).arrayBuffer());
 }
-async function readRange(file: File, start, end) {
+async function readRange(file: File, start: number, end: number) {
   start = Math.max(0, start);
   end = Math.min(end, file.size);
   if (end <= start) return new Uint8Array(0);
   return new Uint8Array(await file.slice(start, end).arrayBuffer());
 }
-const hex = (n, w = 8) => '0x' + (n >>> 0).toString(16).toUpperCase().padStart(w, '0');
-const hex64 = (n) => '0x' + n.toString(16).toUpperCase();
+const hex = (n: number, w = 8) => '0x' + (n >>> 0).toString(16).toUpperCase().padStart(w, '0');
+const hex64 = (n: number|bigint) => '0x' + n.toString(16).toUpperCase();
 
 // Pull a tag's text content out of an XML string (first match), namespace-loose.
-function xmlText(xml, tag) {
+function xmlText(xml: string, tag: string) {
   const m = xml.match(new RegExp('<(?:\\w+:)?' + tag + '\\b[^>]*>([\\s\\S]*?)</(?:\\w+:)?' + tag + '>', 'i'));
   return m ? m[1].replace(/<[^>]+>/g, '').trim() : null;
 }
-function xmlAttr(xml, tag, attr) {
+function xmlAttr(xml: string, tag: string, attr: string) {
   const m = xml.match(new RegExp('<(?:\\w+:)?' + tag + '\\b[^>]*\\b' + attr + '="([^"]*)"', 'i'));
   return m ? m[1] : null;
 }
@@ -48,7 +48,7 @@ function xmlAttr(xml, tag, attr) {
 // ===================================================================
 
 // ---------- OVF descriptor (XML) ----------
-function parseOvfXml(xml) {
+function parseOvfXml(xml: string) {
   const out: Row = { 'Format': 'OVF (Open Virtualization Format)' };
   const vsId = xmlAttr(xml, 'VirtualSystem', 'ovf:id') || xmlAttr(xml, 'VirtualSystem', 'id');
   if (vsId) out['VM name'] = vsId;
@@ -101,12 +101,12 @@ async function parseOvf(file: File) {
 }
 
 // ---------- OVA (TAR of ovf + manifest) ----------
-function tarStr(bytes, off, len) {
+function tarStr(bytes: Uint8Array, off: number, len: number) {
   let end = off;
   while (end < off + len && bytes[end] !== 0) end++;
   return ascii(bytes, off, end - off).trim();
 }
-function tarOctal(bytes, off, len) {
+function tarOctal(bytes: Uint8Array, off: number, len: number) {
   let s = '';
   for (let i = off; i < off + len; i++) {
     const c = bytes[i];
@@ -264,7 +264,7 @@ async function parseCue(file: File) {
 async function parseCcd(file: File) {
   const text = await file.slice(0, Math.min(file.size, 512 * 1024)).text();
   if (!/\[CloneCD\]/i.test(text) && !/\[Disc\]/i.test(text)) return null;
-  const get = (k) => { const m = text.match(new RegExp('^' + k + '\\s*=\\s*(.+)$', 'im')); return m ? m[1].trim() : null; };
+  const get = (k: string) => { const m = text.match(new RegExp('^' + k + '\\s*=\\s*(.+)$', 'im')); return m ? m[1].trim() : null; };
   const out: Row = { 'Format': 'CloneCD control file (.ccd)' };
   const ver = (text.match(/\[CloneCD\][\s\S]*?Version\s*=\s*(\d+)/i) || [])[1];
   if (ver) out['Version'] = ver;
@@ -472,7 +472,7 @@ const ELF_OSABI: Record<string, string> = {
   0: 'System V', 1: 'HP-UX', 2: 'NetBSD', 3: 'Linux', 6: 'Solaris', 7: 'AIX',
   9: 'FreeBSD', 0x0c: 'OpenBSD', 0x40: 'ARM EABI', 0x61: 'ARM',
 };
-function parseElf(head) {
+function parseElf(head: Uint8Array) {
   if (!(head[0] === 0x7f && head[1] === 0x45 && head[2] === 0x4c && head[3] === 0x46)) return null;
   const ei_class = head[4];   // 1 = 32-bit, 2 = 64-bit
   const ei_data = head[5];    // 1 = LE, 2 = BE
@@ -582,7 +582,7 @@ const MBR_TYPES: Record<string, string> = {
   0x83: 'Linux', 0x8e: 'Linux LVM', 0xa5: 'FreeBSD', 0xa8: 'macOS UFS', 0xaf: 'HFS / HFS+',
   0xee: 'GPT protective', 0xef: 'EFI System', 0xfd: 'Linux RAID',
 };
-function parseMbrEntries(b, out) {
+function parseMbrEntries(b: Uint8Array, out: Row) {
   const parts = [];
   for (let i = 0; i < 4; i++) {
     const off = 446 + i * 16;
@@ -828,7 +828,7 @@ async function parseRomfs(file: File) {
 //                       WIM (Windows Imaging)
 // ===================================================================
 
-const WIM_COMP = (flags) => {
+const WIM_COMP = (flags: number) => {
   if (flags & 0x00020000) return 'XPRESS';
   if (flags & 0x00040000) return 'LZX';
   if (flags & 0x00080000) return 'LZMS';
@@ -1245,7 +1245,7 @@ async function parseDjiFirmware(file: File) {
     b[0x0c] === 0x44 && b[0x0d] === 0x4a && b[0x0e] === 0x49;   // 0x12345678 + "DJI"
   if (!isDji) return null;
   const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
-  const verStr = (v) => ((v >>> 24) & 0xff) + '.' + ((v >>> 16) & 0xff) + '.' + ((v >>> 8) & 0xff) + '.' + (v & 0xff);
+  const verStr = (v: number) => ((v >>> 24) & 0xff) + '.' + ((v >>> 16) & 0xff) + '.' + ((v >>> 8) & 0xff) + '.' + (v & 0xff);
   // Target / model string at 0x1C (null-terminated ASCII, e.g. "dm102").
   let model = '';
   for (let i = 0x1c; i < 0x2c && b[i]; i++) model += String.fromCharCode(b[i]);
@@ -1276,7 +1276,7 @@ async function parseDjiFirmware(file: File) {
 // ===================================================================
 //                       identification-only (rare AND hard)
 // ===================================================================
-function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
+function ident(name: string, note: string) { return () => ({ 'Format': name, 'Note': note }); }
 
 // ===================================================================
 //                       dispatch

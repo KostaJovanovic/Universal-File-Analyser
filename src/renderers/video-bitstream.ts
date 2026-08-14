@@ -65,6 +65,10 @@ export interface StreamInfo {
   paramSets?: any;
   partialParse?: any;
   partial?: any;
+  // Set by the Annex B / raw-elementary-stream scan: which parameter sets the
+  // bitstream carries in-band (an SPS is always present or there is no result).
+  hasVps?: boolean;
+  hasPps?: boolean;
   rotation?: any;
   // Audio-only members (Matroska A_ tracks share this shape).
   channels?: any;
@@ -96,27 +100,27 @@ export interface MatroskaInfo {
 
 // ---------- shared code-point tables (ISO/IEC 23001-8) ----------
 
-const CHROMA_FORMATS = { 0: 'monochrome', 1: '4:2:0', 2: '4:2:2', 3: '4:4:4' };
+const CHROMA_FORMATS: Record<number, string> = { 0: 'monochrome', 1: '4:2:0', 2: '4:2:2', 3: '4:4:4' };
 
-export const COLOUR_PRIMARIES = {
+export const COLOUR_PRIMARIES: Record<number, string> = {
   1: 'BT.709', 4: 'BT.470M', 5: 'BT.601 (PAL)', 6: 'BT.601 (NTSC)', 7: 'SMPTE 240M',
   8: 'Film', 9: 'BT.2020', 10: 'SMPTE ST 428', 11: 'DCI-P3', 12: 'Display P3'
 };
 
-export const TRANSFER_CHARS = {
+export const TRANSFER_CHARS: Record<number, string> = {
   1: 'BT.709', 4: 'Gamma 2.2', 5: 'Gamma 2.8', 6: 'BT.601', 7: 'SMPTE 240M',
   8: 'Linear', 11: 'IEC 61966-2-4', 13: 'sRGB', 14: 'BT.2020 (10-bit)',
   15: 'BT.2020 (12-bit)', 16: 'PQ', 17: 'SMPTE ST 428', 18: 'HLG'
 };
 
-export const MATRIX_COEFFS = {
+export const MATRIX_COEFFS: Record<number, string> = {
   0: 'Identity (RGB)', 1: 'BT.709', 4: 'FCC', 5: 'BT.601 (PAL)', 6: 'BT.601 (NTSC)',
   7: 'SMPTE 240M', 8: 'YCgCo', 9: 'BT.2020 non-constant', 10: 'BT.2020 constant',
   11: 'SMPTE ST 2085', 14: 'ICtCp'
 };
 
 // general_profile_idc -> name (H.265 Annex A).
-const HEVC_PROFILES = {
+const HEVC_PROFILES: Record<number, string> = {
   1: 'Main', 2: 'Main 10', 3: 'Main Still Picture', 4: 'Range Extensions',
   5: 'High Throughput', 6: 'Multiview Main', 7: 'Scalable Main', 8: '3D Main',
   9: 'Screen Content Coding', 10: 'Scalable Range Extensions',
@@ -124,7 +128,7 @@ const HEVC_PROFILES = {
 };
 
 // profile_idc -> name (H.264 Annex A).
-const AVC_PROFILES = {
+const AVC_PROFILES: Record<number, string> = {
   66: 'Baseline', 77: 'Main', 88: 'Extended', 100: 'High', 110: 'High 10',
   122: 'High 4:2:2', 244: 'High 4:4:4 Predictive', 44: 'CAVLC 4:4:4 Intra',
   83: 'Scalable Baseline', 86: 'Scalable High', 118: 'Multiview High',
@@ -133,7 +137,7 @@ const AVC_PROFILES = {
 
 // A colour description is only worth showing when it says something. Files that
 // leave the fields at "unspecified" (2) carry no information at all.
-export const isSpecifiedColourCode = (n) => n != null && n !== 2 && n !== 0;
+export const isSpecifiedColourCode = (n: number|null) => n != null && n !== 2 && n !== 0;
 
 // ---------- bit reader (exp-Golomb, for SPS parsing) ----------
 
@@ -145,7 +149,7 @@ class BitReader {
   end: number;
   /** Latched when a read runs past the end - see the note above. */
   overrun: boolean;
-  constructor(bytes) { this.b = bytes; this.pos = 0; this.end = bytes.length * 8; this.overrun = false; }
+  constructor(bytes: Uint8Array) { this.b = bytes; this.pos = 0; this.end = bytes.length * 8; this.overrun = false; }
   bit() {
     if (this.pos >= this.end) { this.overrun = true; return 0; }
     const v = (this.b[this.pos >> 3] >> (7 - (this.pos & 7))) & 1;
@@ -153,8 +157,8 @@ class BitReader {
     return v;
   }
   // Multiplies rather than shifts so 32-bit reads don't wrap into negatives.
-  bits(n) { let v = 0; for (let i = 0; i < n; i++) v = v * 2 + this.bit(); return v; }
-  skip(n) { this.pos += n; if (this.pos > this.end) { this.pos = this.end; this.overrun = true; } }
+  bits(n: number) { let v = 0; for (let i = 0; i < n; i++) v = v * 2 + this.bit(); return v; }
+  skip(n: number) { this.pos += n; if (this.pos > this.end) { this.pos = this.end; this.overrun = true; } }
   ue() {
     let zeros = 0;
     while (zeros < 32 && !this.overrun && this.bit() === 0) zeros++;
@@ -165,7 +169,7 @@ class BitReader {
 }
 
 // Remove emulation-prevention bytes (00 00 03 -> 00 00) to recover the RBSP.
-export function stripEpb(bytes) {
+export function stripEpb(bytes: Uint8Array) {
   const out = new Uint8Array(bytes.length);
   let n = 0, zeros = 0;
   for (let i = 0; i < bytes.length; i++) {
@@ -178,7 +182,7 @@ export function stripEpb(bytes) {
 
 // Locate Annex B NAL units in `buf`. Returns [{ type, start, end }] where `start`
 // is the first byte of the NAL header. Handles both 3- and 4-byte start codes.
-function findAnnexBNals(buf, hevc, max = 256) {
+function findAnnexBNals(buf: Uint8Array, hevc: boolean, max = 256) {
   const nals = [];
   for (let i = 0; i + 3 < buf.length; i++) {
     if (buf[i] !== 0 || buf[i + 1] !== 0) continue;
@@ -206,7 +210,7 @@ function findAnnexBNals(buf, hevc, max = 256) {
 // source/constraint flags, then general_level_idc, then the optional per-sub-layer
 // records. Consumes exactly what the syntax defines so the reader stays aligned
 // for everything that follows.
-function profileTierLevel(br, maxSubLayersMinus1) {
+function profileTierLevel(br: BitReader, maxSubLayersMinus1: number) {
   br.skip(2);                            // general_profile_space
   const tier = br.bit();                 // general_tier_flag
   const profileIdc = br.bits(5);
@@ -229,7 +233,7 @@ function profileTierLevel(br, maxSubLayersMinus1) {
 }
 
 // scaling_list_data(): four size ids, six matrices each (three at size id 3).
-function skipScalingListData(br) {
+function skipScalingListData(br: BitReader) {
   for (let sizeId = 0; sizeId < 4; sizeId++) {
     for (let matrixId = 0; matrixId < 6; matrixId += (sizeId === 3 ? 3 : 1)) {
       if (!br.bit()) br.ue();            // scaling_list_pred_matrix_id_delta
@@ -245,7 +249,7 @@ function skipScalingListData(br) {
 
 // st_ref_pic_set(): the reason a naive SPS parser desynchronises before the VUI.
 // Returns NumDeltaPocs for this set, which the next inter-predicted set needs.
-function stRefPicSet(br, idx, numSets, numDeltaPocs) {
+function stRefPicSet(br: BitReader, idx: number, numSets: number, numDeltaPocs: any[]) {
   let interPred = 0;
   if (idx !== 0) interPred = br.bit();
   if (interPred) {
@@ -274,7 +278,7 @@ function stRefPicSet(br, idx, numSets, numDeltaPocs) {
 // vui_parameters(): read only as far as the timing info, which is what carries
 // the real frame rate. Everything past it (HRD, bitstream restriction) is noise
 // for our purposes.
-function hevcVui(br, out) {
+function hevcVui(br: BitReader, out: StreamInfo) {
   if (br.bit()) {                                   // aspect_ratio_info_present_flag
     const idc = br.bits(8);
     if (idc === 255) { out.sarWidth = br.bits(16); out.sarHeight = br.bits(16); }
@@ -306,7 +310,7 @@ function hevcVui(br, out) {
 // Parse an HEVC SPS. `rbsp` is the NAL payload with the 2-byte NAL header already
 // removed and emulation-prevention bytes stripped. Returns null if it doesn't
 // parse cleanly enough to trust the essentials.
-export function parseHevcSps(rbsp) {
+export function parseHevcSps(rbsp: Uint8Array) {
   const br = new BitReader(rbsp);
   const out: StreamInfo = { codec: 'hevc' };
   br.skip(4);                                       // sps_video_parameter_set_id
@@ -357,7 +361,7 @@ export function parseHevcSps(rbsp) {
   }
   const numSets = br.ue();
   if (numSets > 64) return essentials;
-  const numDeltaPocs = [];
+  const numDeltaPocs: any[] = [];
   for (let i = 0; i < numSets; i++) {
     numDeltaPocs[i] = stRefPicSet(br, i, numSets, numDeltaPocs);
     if (br.overrun) return essentials;
@@ -378,7 +382,7 @@ export function parseHevcSps(rbsp) {
 
 // ---------- H.264 / AVC sequence parameter set ----------
 
-function skipAvcScalingList(br, size) {
+function skipAvcScalingList(br: BitReader, size: number) {
   let lastScale = 8, nextScale = 8;
   for (let i = 0; i < size; i++) {
     if (nextScale !== 0) {
@@ -390,7 +394,7 @@ function skipAvcScalingList(br, size) {
   }
 }
 
-function avcVui(br, out) {
+function avcVui(br: BitReader, out: StreamInfo) {
   if (br.bit()) {                                   // aspect_ratio_info_present_flag
     const idc = br.bits(8);
     if (idc === 255) { out.sarWidth = br.bits(16); out.sarHeight = br.bits(16); }
@@ -417,7 +421,7 @@ function avcVui(br, out) {
 
 // Parse an H.264 SPS. `rbsp` is the payload after the 1-byte NAL header, with
 // emulation-prevention bytes stripped.
-export function parseAvcSps(rbsp) {
+export function parseAvcSps(rbsp: Uint8Array) {
   const br = new BitReader(rbsp);
   const out: StreamInfo = { codec: 'avc' };
   const profileIdc = br.bits(8);
@@ -477,7 +481,7 @@ export function parseAvcSps(rbsp) {
 // hvcC (ISO/IEC 14496-15 §8.3.3.1). Also carries the SPS in its NAL arrays, so
 // the VUI - colour, and the only frame rate HEVC ever states - is reachable from
 // an MP4 or a Matroska CodecPrivate without touching the media data.
-export function parseHvcC(u8) {
+export function parseHvcC(u8: Uint8Array|null) {
   if (!u8 || u8.length < 23) return null;
   const out: StreamInfo = { codec: 'hevc' };
   const b1 = u8[1];
@@ -516,7 +520,7 @@ export function parseHvcC(u8) {
 }
 
 // avcC (ISO/IEC 14496-15 §5.3.3.1), same idea: config bytes plus the SPS itself.
-export function parseAvcC(u8) {
+export function parseAvcC(u8: Uint8Array|null) {
   if (!u8 || u8.length < 7) return null;
   const out: StreamInfo = { codec: 'avc' };
   out.profileIdc = u8[1];
@@ -560,12 +564,13 @@ export function parseAvcC(u8) {
 // Fold an embedded SPS parse into the config record. The record wins on profile
 // and level (it is what the container advertises); the SPS supplies everything
 // the record has no field for - frame rate, colour description, exact geometry.
-function mergeSps(rec) {
+function mergeSps(rec: StreamInfo) {
   const sps = rec.sps;
   if (!sps) return rec;
+  const r = rec as Record<string, any>;
   for (const k of ['width', 'height', 'fps', 'fpsSource', 'fullRange', 'primaries',
                    'transfer', 'matrix', 'sarWidth', 'sarHeight']) {
-    if (rec[k] === undefined && sps[k] !== undefined) rec[k] = sps[k];
+    if (r[k] === undefined && sps[k] !== undefined) r[k] = sps[k];
   }
   if (rec.bitDepthLuma === undefined && sps.bitDepthLuma) {
     rec.bitDepthLuma = sps.bitDepthLuma; rec.bitDepthChroma = sps.bitDepthChroma;
@@ -580,7 +585,7 @@ function mergeSps(rec) {
 // extractRawParamSets() in video.js produces): profile/tier/level, geometry,
 // bit depth, chroma, colour description and - crucially - the frame rate, which
 // is the one thing the raw-stream path has always had to assume.
-export function parseAnnexBStreamInfo(bytes, hevc) {
+export function parseAnnexBStreamInfo(bytes: Uint8Array, hevc: boolean) {
   const nals = findAnnexBNals(bytes, hevc);
   const spsType = hevc ? 33 : 7;
   const sps = nals.find((n) => n.type === spsType);
@@ -597,7 +602,7 @@ export function parseAnnexBStreamInfo(bytes, hevc) {
 
 // ---------- Matroska / WebM (EBML) ----------
 
-const MKV_VIDEO_CODECS = {
+const MKV_VIDEO_CODECS: Record<string, string> = {
   'V_MPEGH/ISO/HEVC': 'H.265 / HEVC', 'V_MPEG4/ISO/AVC': 'H.264 / AVC',
   'V_AV1': 'AV1', 'V_VP9': 'VP9', 'V_VP8': 'VP8',
   'V_MPEG4/ISO/ASP': 'MPEG-4 Visual (ASP)', 'V_MPEG4/ISO/SP': 'MPEG-4 Visual (SP)',
@@ -608,7 +613,7 @@ const MKV_VIDEO_CODECS = {
   'V_UNCOMPRESSED': 'Uncompressed', 'V_DIRAC': 'Dirac', 'V_REAL/RV40': 'RealVideo 9/10'
 };
 
-const MKV_AUDIO_CODECS = {
+const MKV_AUDIO_CODECS: Record<string, string> = {
   'A_AAC': 'AAC', 'A_AC3': 'Dolby Digital (AC-3)', 'A_EAC3': 'Dolby Digital Plus (E-AC-3)',
   'A_TRUEHD': 'Dolby TrueHD', 'A_MLP': 'MLP', 'A_DTS': 'DTS', 'A_DTS/EXPRESS': 'DTS Express',
   'A_DTS/LOSSLESS': 'DTS-HD Master Audio', 'A_MPEG/L3': 'MP3', 'A_MPEG/L2': 'MP2',
@@ -618,7 +623,7 @@ const MKV_AUDIO_CODECS = {
   'A_PCM/FLOAT/IEEE': 'PCM (float)', 'A_MS/ACM': 'ACM-wrapped', 'A_REAL/COOK': 'RealAudio Cook'
 };
 
-const MKV_SUBTITLE_CODECS = {
+const MKV_SUBTITLE_CODECS: Record<string, string> = {
   'S_TEXT/UTF8': 'SubRip (SRT)', 'S_TEXT/ASS': 'ASS', 'S_TEXT/SSA': 'SSA',
   'S_TEXT/WEBVTT': 'WebVTT', 'S_TEXT/USF': 'USF', 'S_HDMV/PGS': 'PGS (Blu-ray)',
   'S_HDMV/TEXTST': 'TextST (Blu-ray)', 'S_VOBSUB': 'VobSub (DVD)', 'S_DVBSUB': 'DVB subtitles',
@@ -641,7 +646,7 @@ const EBML = {
 
 // EBML numbers are variable-length with a leading marker bit. `id` keeps the
 // marker (element ids are conventionally written that way); `size` strips it.
-function readVint(b, p, keepMarker) {
+function readVint(b: Uint8Array, p: number, keepMarker: boolean) {
   if (p >= b.length) return null;
   const first = b[p];
   if (first === 0) return null;
@@ -657,17 +662,17 @@ function readVint(b, p, keepMarker) {
   return { len, val, unknown: !keepMarker && allOnes };
 }
 
-const uintOf = (b, s, e) => { let v = 0; for (let i = s; i < e; i++) v = v * 256 + b[i]; return v; };
-const floatOf = (b, s, e) => {
+const uintOf = (b: Uint8Array, s: number, e: number) => { let v = 0; for (let i = s; i < e; i++) v = v * 256 + b[i]; return v; };
+const floatOf = (b: Uint8Array, s: number, e: number) => {
   const dv = new DataView(b.buffer, b.byteOffset + s, e - s);
   if (e - s === 4) return dv.getFloat32(0);
   if (e - s === 8) return dv.getFloat64(0);
   return null;
 };
-const strOf = (b, s, e) => new TextDecoder('utf-8').decode(b.subarray(s, e)).replace(/\0+$/, '').trim();
+const strOf = (b: Uint8Array, s: number, e: number) => new TextDecoder('utf-8').decode(b.subarray(s, e)).replace(/\0+$/, '').trim();
 
 // Walk the children of one EBML master element, calling `fn(id, dataStart, dataEnd)`.
-function eachChild(b, start, end, fn) {
+function eachChild(b: Uint8Array, start: number, end: number, fn: (id: number, dataStart: number, dataEnd: number) => void) {
   let p = start, guard = 0;
   while (p < end && guard++ < 20000) {
     const id = readVint(b, p, true);
@@ -683,7 +688,7 @@ function eachChild(b, start, end, fn) {
   }
 }
 
-function parseMkvTrackEntry(b, start, end) {
+function parseMkvTrackEntry(b: Uint8Array, start: number, end: number) {
   const t: any = {};
   eachChild(b, start, end, (id, s, e) => {
     switch (id) {
@@ -786,7 +791,7 @@ export async function parseMatroskaTracks(file: File) {
 
     if (id.val === EBML.INFO && size.val < 8 * 1024 * 1024) {
       const b = new Uint8Array(await file.slice(dataStart, dataEnd).arrayBuffer());
-      eachChild(b, 0, b.length, (cid, s, e) => {
+      eachChild(b, 0, b.length, (cid, s: number, e: number) => {
         switch (cid) {
           case EBML.TIMECODE_SCALE: timecodeScale = uintOf(b, s, e) || 1000000; break;
           case EBML.DURATION: rawDuration = floatOf(b, s, e) || 0; break;
@@ -805,7 +810,7 @@ export async function parseMatroskaTracks(file: File) {
       infoDone = true;
     } else if (id.val === EBML.TRACKS && size.val < 32 * 1024 * 1024) {
       const b = new Uint8Array(await file.slice(dataStart, dataEnd).arrayBuffer());
-      eachChild(b, 0, b.length, (cid, s, e) => {
+      eachChild(b, 0, b.length, (cid: number, s: number, e: number) => {
         if (cid === EBML.TRACK_ENTRY) out.tracks.push(parseMkvTrackEntry(b, s, e));
       });
       tracksDone = true;
@@ -834,7 +839,7 @@ export async function parseMatroskaTracks(file: File) {
       if (t.displayWidth > 0 && t.displayHeight > 0 && t.width > 0 && t.height > 0
           && (t.displayWidth !== t.width || t.displayHeight !== t.height)) {
         const num = t.displayWidth * t.height, den = t.displayHeight * t.width;
-        const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+        const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
         const g = gcd(num, den) || 1;
         if (num !== den) v.pixelAspect = (num / g) + ':' + (den / g);
       }

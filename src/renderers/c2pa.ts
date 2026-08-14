@@ -17,12 +17,25 @@
 import { el, row, rowHelp, wireInfoToggle } from '../core/util.js';
 import { ascii, utf8 } from '../core/binutil.js';
 
+/** One JUMBF box as parseBoxes/interpretBox return it: either a superbox with
+ *  children, its 'jumd' description, or a leaf data box holding raw payload. */
+interface JumbfNode {
+  type: string;
+  tag?: string;
+  label?: string;
+  children?: JumbfNode[];
+  data?: Uint8Array;
+}
+
+/** One DER TLV as derRead() returns it. */
+interface DerNode { cls: number; tag: number; content: number; end: number; len: number; }
+
 // ---------- extraction: pull the JUMBF manifest-store bytes out of a file ----------
 
 // JPEG: reassemble the C2PA JUMBF from its APP11 (FFEB) fragments. Each APP11
 // payload is CI(2 "JP") + box-instance(2) + packet-seq(4) + a slice of the box.
 // Fragments sharing a box-instance number concatenate in packet-seq order.
-function extractFromJpeg(b) {
+function extractFromJpeg(b: Uint8Array) {
   if (b[0] !== 0xFF || b[1] !== 0xD8) return null;
   const frags = new Map(); // instance -> [{ seq, bytes }]
   let i = 2;
@@ -45,7 +58,7 @@ function extractFromJpeg(b) {
   if (!frags.size) return null;
   // Pick the instance whose reassembly is a c2pa/jumb box (usually the only one).
   for (const parts of frags.values()) {
-    parts.sort((a, c) => a.seq - c.seq);
+    parts.sort((a: { seq: number }, c: { seq: number }) => a.seq - c.seq);
     let total = 0; for (const p of parts) total += p.bytes.length;
     const out = new Uint8Array(total);
     let o = 0; for (const p of parts) { out.set(p.bytes, o); o += p.bytes.length; }
@@ -55,7 +68,7 @@ function extractFromJpeg(b) {
 }
 
 // PNG: the `caBX` ancillary chunk holds the JUMBF store verbatim.
-function extractFromPng(b) {
+function extractFromPng(b: Uint8Array) {
   if (b[0] !== 0x89 || b[1] !== 0x50) return null;
   let i = 8;
   while (i + 8 <= b.length) {
@@ -70,12 +83,12 @@ function extractFromPng(b) {
   return null;
 }
 
-function looksLikeJumbf(b) {
+function looksLikeJumbf(b: Uint8Array) {
   // A JUMBF superbox: 4-byte LBox, then TBox 'jumb'.
   return b.length > 8 && ascii(b, 4, 4) === 'jumb';
 }
 
-function extractC2pa(b) {
+function extractC2pa(b: Uint8Array) {
   if (b[0] === 0xFF && b[1] === 0xD8) return extractFromJpeg(b);
   if (b[0] === 0x89 && b[1] === 0x50) return extractFromPng(b);
   if (looksLikeJumbf(b)) return b;      // a bare .c2pa manifest
@@ -85,8 +98,8 @@ function extractC2pa(b) {
 // ---------- JUMBF box tree ----------
 // Parse a run of JUMBF boxes into nodes. A superbox (type 'jumb') carries a
 // description box ('jumd') giving its UUID tag + label, then content boxes.
-function parseBoxes(b, start, end) {
-  const nodes = [];
+function parseBoxes(b: Uint8Array, start: number, end: number): JumbfNode[] {
+  const nodes: JumbfNode[] = [];
   let p = start;
   while (p + 8 <= end) {
     let len = (b[p] << 24 | b[p + 1] << 16 | b[p + 2] << 8 | b[p + 3]) >>> 0;
@@ -106,10 +119,10 @@ function parseBoxes(b, start, end) {
   return nodes;
 }
 
-function interpretBox(b, type, content, end) {
+function interpretBox(b: Uint8Array, type: string, content: number, end: number): JumbfNode {
   if (type === 'jumb') {
     // First child is the description box 'jumd'.
-    const kids = parseBoxes(b, content, end);
+    const kids: JumbfNode[] = parseBoxes(b, content, end);
     const jumd = kids.find((k) => k.type === 'jumd');
     const rest = kids.filter((k) => k !== jumd);
     return { type: 'jumb', tag: jumd && jumd.tag, label: jumd && jumd.label, children: rest };
@@ -128,15 +141,15 @@ function interpretBox(b, type, content, end) {
 }
 
 // Depth-first search for the first content data box under a node.
-function dataOf(node) {
+function dataOf(node: JumbfNode|null) {
   if (!node || !node.children) return null;
   return node.children.find((k) => k.type === 'cbor' || k.type === 'json') || null;
 }
 
 // ---------- minimal CBOR decoder ----------
-function decodeCbor(b, offRef?) {
+function decodeCbor(b: Uint8Array, offRef?: { p: number }): any {
   const st = offRef || { p: 0 };
-  const read = () => {
+  const read = (): any => {
     const ib = b[st.p++];
     const major = ib >> 5, minor = ib & 0x1f;
     let len = minor;
@@ -166,23 +179,23 @@ function decodeCbor(b, offRef?) {
 }
 
 // ---------- compact X.509 (self-contained; mirrors parsers-security.js) ----------
-const DN = { '2.5.4.3': 'CN', '2.5.4.10': 'O', '2.5.4.11': 'OU', '2.5.4.6': 'C', '2.5.4.7': 'L', '2.5.4.8': 'ST', '1.2.840.113549.1.9.1': 'E' };
-function derRead(b, pos) {
+const DN: Record<string, string> = { '2.5.4.3': 'CN', '2.5.4.10': 'O', '2.5.4.11': 'OU', '2.5.4.6': 'C', '2.5.4.7': 'L', '2.5.4.8': 'ST', '1.2.840.113549.1.9.1': 'E' };
+function derRead(b: Uint8Array, pos: number) {
   const id = b[pos]; let tag = id & 0x1f, p = pos + 1;
   if (tag === 0x1f) { tag = 0; let bb; do { bb = b[p++]; tag = (tag << 7) | (bb & 0x7f); } while (bb & 0x80); }
   let len = b[p++];
   if (len & 0x80) { const n = len & 0x7f; len = 0; for (let i = 0; i < n; i++) len = len * 256 + b[p++]; }
   return { cls: id >> 6, tag, content: p, end: p + len, len };
 }
-function* derKids(b, s, e) { let p = s; while (p < e) { const n = derRead(b, p); yield n; p = n.end; } }
-function derOid(b, n) {
+function* derKids(b: Uint8Array, s: number, e: number) { let p = s; while (p < e) { const n = derRead(b, p); yield n; p = n.end; } }
+function derOid(b: Uint8Array, n: DerNode) {
   const by = b.subarray(n.content, n.end); if (!by.length) return '';
   const parts = [Math.floor(by[0] / 40), by[0] % 40]; let v = 0;
   for (let i = 1; i < by.length; i++) { v = v * 128 + (by[i] & 0x7f); if (!(by[i] & 0x80)) { parts.push(v); v = 0; } }
   return parts.join('.');
 }
-function derName(b, node) {
-  const parts = [];
+function derName(b: Uint8Array, node: DerNode) {
+  const parts: string[] = [];
   try {
     for (const rdn of derKids(b, node.content, node.end))
       for (const atv of derKids(b, rdn.content, rdn.end)) {
@@ -192,7 +205,7 @@ function derName(b, node) {
   } catch (_) {}
   return parts.join(', ');
 }
-function derTime(b, n) {
+function derTime(b: Uint8Array, n: DerNode) {
   try {
     const s = ascii(b, n.content, n.len); let year, rest;
     if (n.tag === 0x17) { const yy = +s.slice(0, 2); year = yy >= 50 ? 1900 + yy : 2000 + yy; rest = s.slice(2); }
@@ -201,7 +214,7 @@ function derTime(b, n) {
     return new Date(Date.UTC(year, +rest.slice(0, 2) - 1, +rest.slice(2, 4), +rest.slice(4, 6) || 0, +rest.slice(6, 8) || 0, +rest.slice(8, 10) || 0));
   } catch (_) { return null; }
 }
-function x509Summary(der) {
+function x509Summary(der: Uint8Array) {
   try {
     const cert = derRead(der, 0);
     const tbs = [...derKids(der, cert.content, cert.end)][0];
@@ -213,7 +226,7 @@ function x509Summary(der) {
 }
 
 // ---------- interpret the manifest tree ----------
-function findByTag(nodes, tag, label) {
+function findByTag(nodes: JumbfNode[]|undefined, tag: string, label: string): JumbfNode|null {
   for (const n of nodes || []) {
     if (n.type === 'jumb' && (n.tag === tag || n.label === label)) return n;
   }
@@ -221,7 +234,7 @@ function findByTag(nodes, tag, label) {
 }
 
 // Extract signer certificate(s) from a COSE_Sign1 [protected, unprotected, payload, sig].
-function certsFromCose(cose) {
+function certsFromCose(cose: any) {
   if (!Array.isArray(cose) || cose.length < 2) return [];
   const headers = [];
   if (cose[0] instanceof Uint8Array && cose[0].length) { const h = decodeCbor(cose[0]); if (h) headers.push(h); }
@@ -245,14 +258,14 @@ interface C2paManifest {
   [k: string]: any;
 }
 
-function parseManifest(node) {
+function parseManifest(node: JumbfNode) {
   const out: C2paManifest = { label: node.label, actions: [], ingredients: [], assertions: [], ai: [] };
   const assertionStore = findByTag(node.children, 'c2as', 'c2pa.assertions');
   if (assertionStore) {
     for (const a of assertionStore.children || []) {
       if (a.type !== 'jumb') continue;
       const db = dataOf(a);
-      const val = db ? (db.type === 'cbor' ? decodeCbor(db.data) : safeJson(db.data)) : null;
+      const val = db ? (db.type === 'cbor' ? decodeCbor(db.data!) : safeJson(db.data)) : null;
       out.assertions.push(a.label);
       if (a.label === 'c2pa.actions' && val && Array.isArray(val.actions)) {
         for (const act of val.actions) {
@@ -272,7 +285,7 @@ function parseManifest(node) {
   const claimBox = findByTag(node.children, 'c2cl', 'c2pa.claim') || findByTag(node.children, 'c2cl', 'c2pa.claim.v2');
   if (claimBox) {
     const db = dataOf(claimBox);
-    const claim = db ? decodeCbor(db.data) : null;
+    const claim = db ? decodeCbor(db.data!) : null;
     if (claim) {
       out.generator = claim.claim_generator || generatorInfo(claim.claim_generator_info);
       out.title = claim['dc:title'] || claim.title;
@@ -283,17 +296,17 @@ function parseManifest(node) {
   }
   const sigBox = findByTag(node.children, 'c2cs', 'c2pa.signature');
   if (sigBox) {
-    const db = (sigBox.children || []).find((k) => k.type === 'cbor' || k.type === 'uuid');
-    const cose = db ? decodeCbor(db.data) : null;
+    const db = (sigBox.children || []).find((k: JumbfNode) => k.type === 'cbor' || k.type === 'uuid');
+    const cose = db ? decodeCbor(db.data!) : null;
     const certs = certsFromCose(cose);
     if (certs.length) { out.signer = x509Summary(certs[0]); out.certCount = certs.length; }
   }
   return out;
 }
 
-function safeJson(bytes) { try { return JSON.parse(utf8(bytes)); } catch (_) { return null; } }
-function softwareAgentName(sa) { return sa == null ? null : (typeof sa === 'string' ? sa : (sa.name || null)); }
-function generatorInfo(info) {
+function safeJson(bytes: Uint8Array|AllowSharedBufferSource|undefined) { try { return JSON.parse(utf8(bytes)); } catch (_) { return null; } }
+function softwareAgentName(sa: any) { return sa == null ? null : (typeof sa === 'string' ? sa : (sa.name || null)); }
+function generatorInfo(info: any[]) {
   if (!info) return null;
   const first = Array.isArray(info) ? info[0] : info;
   if (!first) return null;
@@ -301,7 +314,7 @@ function generatorInfo(info) {
 }
 
 // Parse the whole manifest store into a list of manifests.
-export function parseC2paStore(storeBytes) {
+export function parseC2paStore(storeBytes: Uint8Array) {
   const top = parseBoxes(storeBytes, 0, storeBytes.length);
   const store = top.find((n) => n.type === 'jumb');
   if (!store) return null;
@@ -324,9 +337,9 @@ const C2PA_HELP = 'Content Credentials (C2PA) is a built-in history that some ca
 // `manifests` is optional: pass an already-parsed readC2pa() result to avoid
 // re-reading and re-parsing the file (photo.js shares one read across this card
 // and the AI-signals card). Omit it and the card reads the file itself.
-export async function buildC2paCard(file: File, manifests) {
+export async function buildC2paCard(file: File, manifests: any[]|undefined) {
   if (manifests === undefined) {
-    try { manifests = await readC2pa(file); } catch (_) { return null; }
+    try { manifests = await readC2pa(file) as any[]|undefined; } catch (_) { return null; }
   }
   if (!manifests || !manifests.length) return null;
 
@@ -340,7 +353,7 @@ export async function buildC2paCard(file: File, manifests) {
   card.appendChild(head);
   card.appendChild(help);
 
-  manifests.forEach((m, idx) => {
+  manifests.forEach((m, idx: number) => {
     if (manifests.length > 1) card.appendChild(el('div', { class: 'anr-readout-section' }, 'Manifest ' + (idx + 1)));
 
     const t = el('table', { class: 'anr-readout' });
@@ -351,7 +364,7 @@ export async function buildC2paCard(file: File, manifests) {
     if (m.signer) {
       if (m.signer.subject) t.appendChild(row('Signed by', m.signer.subject));
       if (m.signer.issuer) t.appendChild(rowHelp('Certificate issuer', m.signer.issuer + (m.signer.subject === m.signer.issuer ? '  (self-signed)' : ''), 'Who issued the digital certificate that signed this record. ‘Self-signed’ means the signer vouched for themselves rather than a recognised authority, which is weaker evidence.'));
-      const fmtD = (d) => d ? d.toISOString().replace('T', ' ').replace(/\..*$/, '') : null;
+      const fmtD = (d: Date|null|undefined) => d ? d.toISOString().replace('T', ' ').replace(/\..*$/, '') : null;
       if (m.signer.notBefore || m.signer.notAfter) t.appendChild(rowHelp('Certificate validity', (fmtD(m.signer.notBefore) || '?') + '  to  ' + (fmtD(m.signer.notAfter) || '?'), 'The dates the signing certificate itself is valid between - this is about the certificate, not when the photo was taken or edited.'));
     } else {
       t.appendChild(row('Signature', 'present (certificate could not be decoded)'));
@@ -388,9 +401,9 @@ export async function buildC2paCard(file: File, manifests) {
   return card;
 }
 
-const ACTION_NAMES = {
+const ACTION_NAMES: Record<string, string> = {
   'c2pa.created': 'Created', 'c2pa.edited': 'Edited', 'c2pa.opened': 'Opened', 'c2pa.placed': 'Placed',
   'c2pa.cropped': 'Cropped', 'c2pa.resized': 'Resized', 'c2pa.colorAdjustments': 'Colour adjustments',
   'c2pa.drawing': 'Drawing', 'c2pa.filtered': 'Filtered', 'c2pa.converted': 'Converted', 'c2pa.published': 'Published',
 };
-function actionLabel(a) { return (ACTION_NAMES[a] || a || 'Action') + (ACTION_NAMES[a] ? '  (' + a + ')' : ''); }
+function actionLabel(a: string) { return (ACTION_NAMES[a] || a || 'Action') + (ACTION_NAMES[a] ? '  (' + a + ')' : ''); }

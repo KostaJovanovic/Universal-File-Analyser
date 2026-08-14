@@ -3,7 +3,7 @@
    and magic bytes. Extracts whatever metadata is accessible without
    full format parsers. */
 
-import { el, row, rowHelp, fmtBytes, preBlock } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, preBlock, type ElChild } from '../core/util.js';
 import { findBytes, utf16, utf8, ascii } from '../core/binutil.js';
 import { openZip } from './zip.js';
 import { FORMATS } from './proprietary-formats.js';
@@ -449,7 +449,7 @@ async function parseExe(c: ParseCtx) {
       }
       if (sig >= 0) {
         const v = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-        const ver = (ms, ls) => (ms >>> 16) + '.' + (ms & 0xFFFF) + '.' + (ls >>> 16) + '.' + (ls & 0xFFFF);
+        const ver = (ms: number, ls: number) => (ms >>> 16) + '.' + (ms & 0xFFFF) + '.' + (ls >>> 16) + '.' + (ls & 0xFFFF);
         const fileMS = v.getUint32(sig + 8, true), fileLS = v.getUint32(sig + 12, true);
         const prodMS = v.getUint32(sig + 16, true), prodLS = v.getUint32(sig + 20, true);
         if (fileMS || fileLS) result['File version'] = ver(fileMS, fileLS);
@@ -851,7 +851,7 @@ function sfntTableOffsets(buf: Uint8Array, base: number) {
 async function inflateZlib(bytes: Uint8Array) {
   if (typeof DecompressionStream === 'undefined') throw new Error('no DecompressionStream');
   const ds = new DecompressionStream('deflate');
-  const ab = await new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer();
+  const ab = await new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(ds)).arrayBuffer();
   return new Uint8Array(ab);
 }
 
@@ -1564,7 +1564,7 @@ const ANDROID_API: Record<number, string> = {
   31: '12', 32: '12L', 33: '13', 34: '14', 35: '15', 36: '16',
 };
 function androidApiLabel(v: string | number) {
-  const n = parseInt(v, 10);
+  const n = parseInt(String(v), 10);
   if (isNaN(n)) return String(v);
   return 'API ' + n + (ANDROID_API[n] ? ' (Android ' + ANDROID_API[n] + ')' : '');
 }
@@ -3959,7 +3959,7 @@ async function parseVdf(file: File) {
   // Tokenise: quoted strings (with escapes), braces, or bare tokens. Line // and
   // block comments are stripped first.
   text = text.replace(/\/\/[^\n]*/g, '');
-  const tokens = [];
+  const tokens: any[] = [];
   const re = /"((?:[^"\\]|\\.)*)"|(\{)|(\})|([^\s"{}]+)/g;
   let m;
   while ((m = re.exec(text)) !== null) {
@@ -4117,9 +4117,9 @@ const PARSERS: Record<string, ParseFn> = {
 };
 
 // ---------- main render ----------
-export async function renderProprietary(file: File, container, extOverride?) {
+export async function renderProprietary(file: File, container: HTMLElement, extOverride?: string) {
   const ext = extOverride || extFromName(file.name);
-  const fmt = FORMATS[ext];
+  const fmt = (FORMATS as Record<string, any>)[ext];
   if (!fmt) return false;
 
   container.hidden = false;
@@ -4189,16 +4189,16 @@ export async function renderProprietary(file: File, container, extOverride?) {
     const vname = detectVariant(ext, head, ascii(head, 0, Math.min(head.length, 1024)), { specificOnly: true });
     if (vname) {
       h3El.textContent = vname;
-      appRow.lastChild.textContent = vname;
+      appRow.lastChild!.textContent = vname;
       const v = EXT_VARIANTS[ext].variants.find((x) => x.name === vname);
       if (v && v.tell) tbl.appendChild(rowHelp('Detected as', vname, v.tell));
     }
   }
 
-  let extraFileList = null;
+  let extraFileList: any = null;
   if (extra) {
     // A parser can pin down the exact application once the bytes identify it.
-    if (extra._app) { h3El.textContent = extra._app; appRow.lastChild.textContent = extra._app; }
+    if (extra._app) { h3El.textContent = extra._app; appRow.lastChild!.textContent = extra._app; }
     // Optional per-field tooltips (e.g. the PE/EXE readout sets extra._help).
     const help = extra._help || null;
     for (const [k, v] of Object.entries(extra)) {
@@ -4280,7 +4280,7 @@ export async function renderProprietary(file: File, container, extOverride?) {
         // then shrinks it into the preview box. Desktop = the full wide layout; Mobile
         // = the page's phone layout. An inner "scaler" sized to the scaled dimensions
         // keeps the stage scrollable through the whole page.
-        const MODES = { desktop: 1280, mobile: 390 };
+        const MODES: Record<string, number> = { desktop: 1280, mobile: 390 };
         let mode = (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) ? 'mobile' : 'desktop';
 
         const blob = new Blob([forceDeviceViewport(fullText)], { type: 'text/html;charset=utf-8' });
@@ -4308,7 +4308,7 @@ export async function renderProprietary(file: File, container, extOverride?) {
         };
 
         const btnRow = el('div', { class: 'anr-btn-row', style: 'gap:6px;margin-top:10px' });
-        const mkBtn = (label, m) => {
+        const mkBtn = (label: ElChild | ElChild[], m: string) => {
           const b = el('button', { type: 'button', class: 'anr-btn' + (m === mode ? ' is-active' : '') }, label);
           b.addEventListener('click', () => {
             mode = m;
@@ -4354,7 +4354,7 @@ export async function renderProprietary(file: File, container, extOverride?) {
         const overlay = el('div', { class: 'fmt-overlay anr-text-overlay' }, [inner]);
         document.body.appendChild(overlay);
         document.body.style.overflow = 'hidden';
-        const onKey = (ev) => { if (ev.key === 'Escape') close(); };
+        const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') close(); };
         function close() { overlay.remove(); document.body.style.overflow = ''; document.removeEventListener('keydown', onKey); }
         closeBtn.addEventListener('click', close);
         overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(); });

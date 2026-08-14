@@ -15,15 +15,15 @@
    or an empty model), and always show the raw counts.
    ============================================================================ */
 
-import { el, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, buildReadout, fmtBytes, integrityCard, errorCard, type ElChild } from '../core/util.js';
 import { HASH_FILE_MAX } from '../core/limits.js';
 import { inflate } from '../core/binutil.js';
 
-function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-function parseXml(text) { const d = new DOMParser().parseFromString(text, 'application/xml'); return d.querySelector('parsererror') ? null : d; }
+function esc(s: string) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function parseXml(text: string) { const d = new DOMParser().parseFromString(text, 'application/xml'); return d.querySelector('parsererror') ? null : d; }
 
 // Wrap an SVG markup string in a scrollable, pannable preview stage.
-function svgCard(title, svgMarkup) {
+function svgCard(title: ElChild | ElChild[], svgMarkup: string) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, title));
   const stage = el('div', { class: 'anr-diagram-stage' });
@@ -33,7 +33,7 @@ function svgCard(title, svgMarkup) {
 }
 
 // ---------- draw.io ----------
-async function decodeDiagram(node) {
+async function decodeDiagram(node: Element) {
   // A <diagram> may contain an inline <mxGraphModel> child, or compressed text.
   const inner = node.querySelector('mxGraphModel');
   if (inner) return inner;
@@ -52,8 +52,8 @@ async function decodeDiagram(node) {
   } catch (_) { return null; }
 }
 
-function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; }
-function labelOf(cell) {
+function num(v: string|null) { const n = parseFloat(v!); return Number.isFinite(n) ? n : 0; }
+function labelOf(cell: Element) {
   let v = cell.getAttribute('value') || '';
   if (!v) return '';
   // Cells with html=1 carry HTML; strip to text. Use DOMParser, not a detached
@@ -71,7 +71,7 @@ interface MxVert {
   cx?: number; cy?: number;
 }
 
-function renderMxModel(model) {
+function renderMxModel(model: Element) {
   const cells = Array.from<Element>(model.getElementsByTagName('mxCell'));
   const verts = [];
   const edges = [];
@@ -79,7 +79,7 @@ function renderMxModel(model) {
   for (const c of cells) {
     const geo = c.getElementsByTagName('mxGeometry')[0];
     if (c.getAttribute('vertex') === '1' && geo && geo.getAttribute('width')) {
-      const v: MxVert = { id: c.getAttribute('id'), x: num(geo.getAttribute('x')), y: num(geo.getAttribute('y')),
+      const v: MxVert = { id: c.getAttribute('id')!, x: num(geo.getAttribute('x')), y: num(geo.getAttribute('y')),
         w: num(geo.getAttribute('width')), h: num(geo.getAttribute('height')),
         style: c.getAttribute('style') || '', label: labelOf(c) };
       v.cx = v.x + v.w / 2; v.cy = v.y + v.h / 2;
@@ -99,7 +99,7 @@ function renderMxModel(model) {
   let body = '';
   // Edges first (under the boxes).
   for (const e of edges) {
-    const s = byId[e.source], t = byId[e.target];
+    const s = byId[e.source!], t = byId[e.target!];
     if (!s || !t) continue;
     body += '<line x1="' + s.cx + '" y1="' + s.cy + '" x2="' + t.cx + '" y2="' + t.cy + '" class="anr-dg-edge"/>';
     if (e.label) body += '<text x="' + ((s.cx + t.cx) / 2) + '" y="' + ((s.cy + t.cy) / 2) + '" class="anr-dg-elabel">' + esc(e.label) + '</text>';
@@ -115,7 +115,7 @@ function renderMxModel(model) {
   return { svg, verts: verts.length, edges: edges.length };
 }
 
-export async function renderDrawio(file: File, container) {
+export async function renderDrawio(file: File, container: HTMLElement) {
   container.hidden = false;
   container.innerHTML = '';
   container.appendChild(el('div', { class: 'anr-info' }, 'Reading diagram...'));
@@ -165,9 +165,9 @@ export async function renderDrawio(file: File, container) {
 
 // ---------- DXF (ASCII) ----------
 // Parse the flat (code,value) pair stream into entity objects.
-function parseDxfEntities(text) {
+function parseDxfEntities(text: string) {
   const lines = text.split(/\r\n|\r|\n/);
-  const pairs = [];
+  const pairs: [number, string][] = [];
   for (let i = 0; i + 1 < lines.length; i += 2) pairs.push([parseInt(lines[i].trim(), 10), lines[i + 1]]);
 
   // Find the ENTITIES section.
@@ -180,8 +180,8 @@ function parseDxfEntities(text) {
     if (pairs[i][0] === 0 && (pairs[i][1] || '').trim() === 'ENDSEC') { end = i; break; }
   }
 
-  const entities = [];
-  let cur = null;
+  const entities: any[] = [];
+  let cur: any = null;
   for (let i = start; i < end; i++) {
     const code = pairs[i][0], val = pairs[i][1];
     if (code === 0) {
@@ -200,12 +200,12 @@ function parseDxfEntities(text) {
   return entities;
 }
 
-function dxfToSvg(entities) {
+function dxfToSvg(entities: any[]) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  const see = (x, y) => { if (Number.isFinite(x) && Number.isFinite(y)) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); } };
+  const see = (x: number, y: number) => { if (Number.isFinite(x) && Number.isFinite(y)) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); } };
   const counts: any = {};
   const draw = [];
-  const Y = (y) => -y;   // flip so the drawing is upright
+  const Y = (y: number) => -y;   // flip so the drawing is upright
 
   for (const e of entities) {
     counts[e.type] = (counts[e.type] || 0) + 1;
@@ -245,7 +245,7 @@ function dxfToSvg(entities) {
   return { svg, counts };
 }
 
-export async function renderDxf(file: File, container) {
+export async function renderDxf(file: File, container: HTMLElement) {
   container.hidden = false;
   container.innerHTML = '';
   container.appendChild(el('div', { class: 'anr-info' }, 'Reading DXF drawing...'));

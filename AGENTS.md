@@ -26,9 +26,13 @@ or the `tools/*.mjs` generators that import the emitted `core/formats.js` break.
 - `node tools/check-build.mjs` - a build gate; fails when output is missing or
   stale relative to `src/`.
 - The tree compiles **clean** under both configs, so `tsc` exiting non-zero means
-  something is actually wrong - fix it. `strict` stays off deliberately:
-  `strictNullChecks` + `noImplicitAny` report ~5,400 mostly-null-guard sites,
-  which is its own project (see `CLAUDE.md`).
+  something is actually wrong - fix it. `strict` is **on** (`strictNullChecks` +
+  `noImplicitAny` included). Fix a strict error with an annotation, an `as` cast,
+  a `!` assertion or a new `interface` - **never** a runtime guard: type syntax
+  erases, so the emitted JS must stay byte-identical, and that is the only
+  regression net this repo has. Never place a `type`/`interface` between a doc
+  comment and the declaration it documents - the comment is deleted from the
+  emit. See `CLAUDE.md` for the full rule and the `inferFromUsage` caveat.
 
 - `server.bat` - start the development server at `http://localhost:3000` plus two `tsc --watch` windows; use it instead of `python -m http.server` because `serve.py` mirrors production clean-URL and SPA routing. Without a watcher running, edits to `src/` have no effect on the served site.
 - `node tools/prerender-formats.mjs` - regenerate the static formats hub when working on its generator inputs.

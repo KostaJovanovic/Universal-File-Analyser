@@ -64,6 +64,8 @@ export function fireLaser() {
 export function findLightningTarget() {
     const { ship, boss } = g;
     let best = null, bestD = Infinity;
+    // `_bossNode` rides along on the boss-node candidates so the winner can be
+    // traced back to the node it came from; every other caller passes a bare entity.
     const consider = (o) => {
         const [dx, dy] = wrapDelta(ship.x, ship.y, o.x, o.y);
         const dist = Math.hypot(dx, dy);

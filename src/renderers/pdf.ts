@@ -11,7 +11,7 @@ const PDFJS_URL      = new URL('../../vendor/pdfjs/pdf.min.mjs', import.meta.url
 const WORKER_URL     = new URL('../../vendor/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
 const TESSERACT_URL  = 'assets/vendor/tesseract/tesseract.min.js';
 
-let pdfjsLib = null;
+let pdfjsLib: any = null;
 
 async function loadPdfJs() {
   if (pdfjsLib) return pdfjsLib;
@@ -23,10 +23,10 @@ async function loadPdfJs() {
 // Resolve a PDF image XObject by name from a page's object store. pdf.js stores
 // these asynchronously; race against a timeout so a never-resolving name can't
 // hang the whole extraction.
-function getPdfImage(page, name) {
-  return new Promise((resolve) => {
+function getPdfImage(page: any, name: string) {
+  return new Promise<any>((resolve) => {
     let done = false;
-    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    const finish = (v: any) => { if (!done) { done = true; resolve(v); } };
     try {
       if (page.objs.has && page.objs.has(name)) { finish(page.objs.get(name)); return; }
       page.objs.get(name, finish);
@@ -37,20 +37,20 @@ function getPdfImage(page, name) {
 
 // Convert a pdf.js image object (bitmap, or raw data with an ImageKind) to a
 // canvas. Handles RGBA/RGB/1-bpp-grayscale; returns null for anything exotic.
-function pdfImageToCanvas(img) {
+function pdfImageToCanvas(img: any) {
   if (!img) return null;
   const cv = document.createElement('canvas');
   const bitmap = (typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap) ? img
     : (img.bitmap instanceof ImageBitmap ? img.bitmap : null);
   if (bitmap) {
     cv.width = bitmap.width; cv.height = bitmap.height;
-    cv.getContext('2d').drawImage(bitmap, 0, 0);
+    cv.getContext('2d')!.drawImage(bitmap, 0, 0);
     return cv;
   }
   const w = img.width, h = img.height, data = img.data;
   if (!w || !h || !data) return null;
   cv.width = w; cv.height = h;
-  const ctx = cv.getContext('2d');
+  const ctx = cv.getContext('2d')!;
   const out = ctx.createImageData(w, h);
   const px = w * h;
   if (img.kind === 3 || data.length >= px * 4) {
@@ -72,7 +72,7 @@ function pdfImageToCanvas(img) {
   return cv;
 }
 
-function fmtDate(d) {
+function fmtDate(d: any) {
   if (!d) return '-';
   // PDF dates are often in the format D:YYYYMMDDHHmmSS
   if (typeof d === 'string' && d.startsWith('D:')) {
@@ -91,7 +91,7 @@ function fmtDate(d) {
 
 // Parse a PDF date string (D:YYYYMMDDHHmmSS±HH'mm') into a Date, or null. Used by
 // the timestamp-anomaly check; a missing timezone is treated as UTC.
-function pdfDate(d) {
+function pdfDate(d: string|Date) {
   if (typeof d !== 'string') return d instanceof Date ? d : null;
   const m = /D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?([+\-Z])?(\d{2})?'?(\d{2})?/.exec(d);
   if (!m) return null;
@@ -106,7 +106,7 @@ function pdfDate(d) {
 // times the file was saved (each save appends an %%EOF marker), whether it is
 // linearised for "fast web view", and whether anything non-whitespace trails the
 // final %%EOF (appended / polyglot data, a classic tamper/smuggling tell).
-function scanRawPdf(bytes) {
+function scanRawPdf(bytes: AllowSharedBufferSource|undefined) {
   const text = new TextDecoder('latin1').decode(bytes);
   let eof = 0, idx = 0;
   while ((idx = text.indexOf('%%EOF', idx)) !== -1) { eof++; idx += 5; }
@@ -129,7 +129,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Loading PDF library…`));
 
-  let lib;
+  let lib: any;
   try {
     lib = await loadPdfJs();
   } catch (e) {
@@ -141,7 +141,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));
 
-  let pdf;
+  let pdf: any;
   try {
     const buf = await file.arrayBuffer();
     pdf = await lib.getDocument({ data: buf }).promise;
@@ -227,7 +227,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
     const stbl = el('table', { class: 'anr-readout' });
     let structRows = 0;       // count of plain readout rows added
     const extras = [];        // collapsible <details> blocks to append after the table
-    const addRow = (node) => { stbl.appendChild(node); structRows++; };
+    const addRow = (node: HTMLTableRowElement) => { stbl.appendChild(node); structRows++; };
 
     // -- Raw-byte forensics: revisions, linearisation, appended data --
     // getDocument() detaches the buffer we passed it, so re-read the file here.
@@ -310,11 +310,11 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
         { label: 'crypto', re: /\b(?:encrypt|decrypt|Crypt)\b/i },
       ];
       // Trigger names that fire automatically (no user choice) - the dangerous ones.
-      const AUTO_TRIGGERS = { OpenAction: 'Document open', WillPrint: 'Before print', DidPrint: 'After print', WillSave: 'Before save', DidSave: 'After save', WillClose: 'Before close' };
-      const triggerLabel = (k) => AUTO_TRIGGERS[k] ? AUTO_TRIGGERS[k] + ' (auto-run)' : 'Named script: ' + k;
-      const actions = [];          // { trigger, source, flags }
-      const seen = new Set();
-      const pushAction = (k, s) => {
+      const AUTO_TRIGGERS: Record<string, string> = { OpenAction: 'Document open', WillPrint: 'Before print', DidPrint: 'After print', WillSave: 'Before save', DidSave: 'After save', WillClose: 'Before close' };
+      const triggerLabel = (k: string) => AUTO_TRIGGERS[k] ? AUTO_TRIGGERS[k] + ' (auto-run)' : 'Named script: ' + k;
+      const actions: { trigger: string; source: string; flags: string[] }[] = [];          // { trigger, source, flags }
+      const seen = new Set<string>();
+      const pushAction = (k: string, s: any) => {
         if (!s) return;
         const src = String(s);
         const key = k + '\x00' + src;
@@ -370,8 +370,8 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
       }
       if (Array.isArray(perms) && lib.PermissionFlag) {
         const PF = lib.PermissionFlag;
-        const has = (flag) => flag != null && perms.indexOf(flag) !== -1;
-        const allowed = [];
+        const has = (flag: any) => flag != null && perms.indexOf(flag) !== -1;
+        const allowed: string[] = [];
         if (has(PF.PRINT) || has(PF.PRINT_HIGH_QUALITY)) allowed.push('print');
         if (has(PF.COPY)) allowed.push('copy');
         if (has(PF.MODIFY_CONTENTS) || has(PF.MODIFY_ANNOTATIONS)) allowed.push('modify');
@@ -409,7 +409,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
 
     // -- XMP metadata (Keywords / Subject / PDF/A) --
     try {
-      const getXmp = (key) => {
+      const getXmp = (key: string) => {
         if (!metaXmp || typeof metaXmp.get !== 'function') return null;
         try { const v = metaXmp.get(key); return v ? String(v).trim() : null; } catch (_) { return null; }
       };
@@ -431,9 +431,9 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
     try {
       const cap = Math.min(pdf.numPages, 15);
       const fonts = new Map();   // id -> { name, embedded, type }
-      const resolveFont = (page, id) => new Promise<any>((resolve) => {
+      const resolveFont = (page: any, id: any) => new Promise<any>((resolve) => {
         let done = false;
-        const finish = (v) => { if (!done) { done = true; resolve(v); } };
+        const finish = (v: any) => { if (!done) { done = true; resolve(v); } };
         try {
           if (page.commonObjs.has && page.commonObjs.has(id)) { finish(page.commonObjs.get(id)); return; }
           page.commonObjs.get(id, finish);
@@ -508,7 +508,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
 
   // Reconstruct line breaks: pdf.js flags the last item of a visual line with
   // hasEOL, so honouring it reads far closer to the page than a space-joined blob.
-  const pageTexts = [];     // { n, text }
+  const pageTexts: { n: number; text: string }[] = [];     // { n, text }
   const emptyPages = [];    // pages with no extractable text (likely scanned images)
   for (let i = 1; i <= pdf.numPages; i++) {
     try {
@@ -596,8 +596,8 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
   });
 
   const PDF_ZOOM = 2;   // double-click / double-tap zoom factor in the viewer
-  function openPageViewer(startPage) {
-    let overlay = document.getElementById('anr-pdf-viewer');
+  function openPageViewer(startPage: number) {
+    let overlay = document.getElementById('anr-pdf-viewer')!;
     if (!overlay) {
       overlay = el('div', { id: 'anr-pdf-viewer', class: 'lightbox anr-doc-lightbox' });
       const closeBtn = el('button', { type: 'button', class: 'lightbox-close' }, 'Close');
@@ -642,7 +642,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
       // scaled overflow to the stage's scroll area, so the pan/scroll math below
       // is unchanged. Supported browsers keep the identical `zoom` path.
       const hasCssZoom = !!(window.CSS && CSS.supports && CSS.supports('zoom', '2'));
-      const applyScale = (factor) => {
+      const applyScale = (factor: number) => {
         if (!factor || factor === 1) {
           if (hasCssZoom) pagebox.style.zoom = '';
           else { pagebox.style.transform = ''; pagebox.style.transformOrigin = ''; }
@@ -655,7 +655,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
       };
       let zoomed = false;
       overlay._resetZoom = () => { zoomed = false; applyScale(1); overlay._trimHScroll && overlay._trimHScroll(); };
-      overlay._toggleZoom = (clientX, clientY) => {
+      overlay._toggleZoom = (clientX: number, clientY: number) => {
         zoomed = !zoomed;
         if (!zoomed) { applyScale(1); overlay._trimHScroll && overlay._trimHScroll(); overlay._updatePanCursor && overlay._updatePanCursor(); return; }
         // Zooming in can add real horizontal overflow, so re-enable the axis
@@ -698,7 +698,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
       overlay._trimHScroll = () => {
         stage.style.overflowX = stage.scrollWidth - stage.clientWidth > 3 ? 'auto' : 'hidden';
       };
-      let panId = null, panX = 0, panY = 0, panL = 0, panT = 0, panAllowX = false, panAllowY = false;
+      let panId: number|null = null, panX = 0, panY = 0, panL = 0, panT = 0, panAllowX = false, panAllowY = false;
       stage.addEventListener('pointerdown', (e) => {
         if (e.pointerType === 'touch' || e.button !== 0 || !canPan()) return;
         panId = e.pointerId;
@@ -716,7 +716,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
         if (panAllowX) stage.scrollLeft = panL - (e.clientX - panX);
         if (panAllowY) stage.scrollTop = panT - (e.clientY - panY);
       });
-      const endPan = (e) => {
+      const endPan = (e: PointerEvent) => {
         if (panId === null || e.pointerId !== panId) return;
         try { stage.releasePointerCapture(panId); } catch (_) {}
         panId = null;
@@ -727,19 +727,19 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
 
       document.body.appendChild(overlay);
     }
-    const stage = overlay.querySelector('.anr-pdf-stage');
-    const pagebox = overlay.querySelector<HTMLElement>('.anr-pdf-pagebox');
-    const cv = pagebox.querySelector('canvas');
-    const textLayer = pagebox.querySelector<HTMLElement>('.textLayer');
-    const toolbar = overlay.querySelector('.lightbox-toolbar');
-    const meta = overlay.querySelector('.lightbox-meta');
+    const stage = overlay.querySelector<HTMLElement>('.anr-pdf-stage')!;
+    const pagebox = overlay.querySelector<HTMLElement>('.anr-pdf-pagebox')!;
+    const cv = pagebox.querySelector('canvas')!;
+    const textLayer = pagebox.querySelector<HTMLElement>('.textLayer')!;
+    const toolbar = overlay.querySelector<HTMLElement>('.lightbox-toolbar')!;
+    const meta = overlay.querySelector<HTMLElement>('.lightbox-meta')!;
     toolbar.innerHTML = '';
 
     let current = startPage;
     let hiRes = true;             // on by default; toggled by the High-res button below
 
     // Overlay a selectable, position-aligned text layer on top of the canvas.
-    async function buildTextLayer(pg, cssScale, cssW, cssH) {
+    async function buildTextLayer(pg: any, cssScale: number, cssW: number, cssH: number) {
       textLayer.innerHTML = '';
       textLayer.style.width = cssW + 'px';
       textLayer.style.height = cssH + 'px';
@@ -752,7 +752,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
       } catch (_) { /* page just won't be selectable */ }
     }
 
-    async function showPage(num, keepZoom?) {
+    async function showPage(num: number, keepZoom?: boolean|undefined) {
       current = num;
       if (!keepZoom) { overlay._resetZoom(); stage.scrollTop = 0; stage.scrollLeft = 0; }
       meta.textContent = 'Page ' + num + ' / ' + pdf.numPages + (hiRes ? '  (hi-res)' : '') +
@@ -824,7 +824,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
   }
 
   // Render a page to a high-resolution canvas (for photo analysis / OCR).
-  async function renderPageHiRes(pageNum) {
+  async function renderPageHiRes(pageNum: number) {
     const pg = await pdf.getPage(pageNum);
     const vp = pg.getViewport({ scale: 1 });
     const scale = Math.min(3, 2000 / Math.max(vp.width, vp.height));
@@ -837,7 +837,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
   }
 
   // Lightweight overlay used to show a single page's OCR result.
-  function showOcrOverlay(pageNum, text) {
+  function showOcrOverlay(pageNum: number, text: string) {
     const overlay = el('div', {
       style: 'position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center;'
     });
@@ -860,12 +860,12 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
     const backClose = openOverlayBack(hide);   // device Back closes it
     closeBtn.addEventListener('click', backClose);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) backClose(); });
-    const onKey = (e) => { if (e.key === 'Escape') backClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') backClose(); };
     document.addEventListener('keydown', onKey);
   }
 
   let thumbsRendered = 0;
-  async function renderThumb(pageNum) {
+  async function renderThumb(pageNum: number) {
     try {
       const page = await pdf.getPage(pageNum);
       const vp = page.getViewport({ scale: 1 });
@@ -908,7 +908,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
         try {
           const cv = await renderPageHiRes(pageNum);
           cv.toBlob((blob) => {
-            const url = URL.createObjectURL(blob);
+            const url = URL.createObjectURL(blob!);
             const a = el('a', { href: url, download: file.name.replace(/\.pdf$/i, '') + '-page-' + pageNum + '.png' });
             document.body.appendChild(a); a.click(); a.remove();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -923,7 +923,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
         try {
           const cv = await renderPageHiRes(pageNum);
           cv.toBlob((blob) => {
-            const photoFile = new File([blob], 'page-' + pageNum + '.png', { type: 'image/png' });
+            const photoFile = new File([blob!], 'page-' + pageNum + '.png', { type: 'image/png' });
             const photoResults = revealPhotoSection();
             if (photoResults) {
               renderPhoto(photoFile, photoResults,
@@ -1061,8 +1061,8 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
           link.appendChild(el('div', { style: 'margin-top:4px;' }, cv.width + '×' + cv.height));
           link.addEventListener('click', (e) => {
             e.preventDefault();
-            cv.toBlob((b) => {
-              const url = URL.createObjectURL(b);
+            cv.toBlob((b: Blob|null) => {
+              const url = URL.createObjectURL(b!);
               const a = el('a', { href: url, download: link.getAttribute('download') });
               document.body.appendChild(a); a.click(); a.remove();
               setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -1070,7 +1070,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
           });
           const wrap = el('div', { style: 'text-align:center;' }, [link]);
           const aBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', style: 'margin-top:4px;' }, 'Analyse');
-          aBtn.addEventListener('click', () => cv.toBlob((b) => { if (b && window._anrHandleFile) window._anrHandleFile(new File([b], 'pdf-image.png', { type: 'image/png' }), { nested: true }); }, 'image/png'));
+          aBtn.addEventListener('click', () => cv.toBlob((b: Blob|null) => { if (b && window._anrHandleFile) window._anrHandleFile(new File([b], 'pdf-image.png', { type: 'image/png' }), { nested: true }); }, 'image/png'));
           wrap.appendChild(aBtn);
           imgGrid.appendChild(wrap);
           if (found >= 300) break;
@@ -1111,14 +1111,14 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
   ocrCard.appendChild(ocrDet);
   resultsEl.appendChild(ocrCard);
 
-  function setOcrBar(frac) {
+  function setOcrBar(frac: number) {
     const ch = parseFloat(getComputedStyle(ocrBarEl).fontSize) * 0.6 || 8;
-    const total = Math.max(10, Math.floor((ocrBarEl.parentElement.clientWidth - ch * 2) / ch));
+    const total = Math.max(10, Math.floor((ocrBarEl.parentElement!.clientWidth - ch * 2) / ch));
     const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
     ocrBarEl.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' + ' '.repeat(total - filled) + ']';
   }
 
-  let ocrPageTexts = [];
+  let ocrPageTexts: string[] = [];
   let ocrVisible = 0;
   let ocrBusy = false;
 

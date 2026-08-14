@@ -2,7 +2,7 @@
    Reads .pptx (Office Open XML presentation) and renders each slide as a card
    with its text (title + body) and any embedded images, in presentation order. */
 
-import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, openOverlayBack, blobImg } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, openOverlayBack, blobImg, type ElChild } from '../core/util.js';
 import { openZip } from './zip.js';
 
 const EMU_PER_PX = 9525; // 914400 EMU/inch ÷ 96 px/inch
@@ -12,7 +12,7 @@ const EMU_PER_PX = 9525; // 914400 EMU/inch ÷ 96 px/inch
 // comment node marks its place in the grid so it can be returned on close. The
 // slide sizes its text from container-query units (see .anr-pptx-slide), so at
 // the overlay's width the text renders large instead of thumbnail-sized.
-function openSlideLightbox(box, label) {
+function openSlideLightbox(box: HTMLElement, label: ElChild | ElChild[]) {
   const placeholder = document.createComment('pptx-slide');
   box.replaceWith(placeholder);
   box.classList.add('anr-pptx-lightboxed');
@@ -38,17 +38,17 @@ function openSlideLightbox(box, label) {
   // Let in-slide actions (e.g. analysing an embedded image) dismiss the lightbox
   // so their result isn't hidden behind the overlay.
   box._anrLightboxClose = close;
-  function onKey(e) { if (e.key === 'Escape') close(); }
+  function onKey(e: KeyboardEvent) { if (e.key === 'Escape') close(); }
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey);
 }
 
-function parseXml(text) {
-  return new DOMParser().parseFromString(text, 'application/xml');
+function parseXml(text: string|null) {
+  return new DOMParser().parseFromString(text!, 'application/xml');
 }
 
-function resolveRel(basePath, target) {
+function resolveRel(basePath: string, target: string) {
   const dir = basePath.slice(0, basePath.lastIndexOf('/') + 1);
   const combined = (dir + target).split('/');
   const out = [];
@@ -79,20 +79,20 @@ export async function renderPptx(file: File, resultsEl: HTMLElement) {
     const pres = parseXml(await zip.text('ppt/presentation.xml'));
     const sz = pres.getElementsByTagName('p:sldSz')[0] || pres.getElementsByTagName('sldSz')[0];
     if (sz) {
-      slideW = (parseInt(sz.getAttribute('cx'), 10) || 9144000) / EMU_PER_PX;
-      slideH = (parseInt(sz.getAttribute('cy'), 10) || 5143500) / EMU_PER_PX;
+      slideW = (parseInt(sz.getAttribute('cx')!, 10) || 9144000) / EMU_PER_PX;
+      slideH = (parseInt(sz.getAttribute('cy')!, 10) || 5143500) / EMU_PER_PX;
     }
     // Order comes from sldIdLst → r:id → rels
     const rels: any = {};
     if (zip.has('ppt/_rels/presentation.xml.rels')) {
       const rd = parseXml(await zip.text('ppt/_rels/presentation.xml.rels'));
       for (const r of rd.getElementsByTagName('Relationship'))
-        rels[r.getAttribute('Id')] = r.getAttribute('Target');
+        rels[r.getAttribute('Id')!] = r.getAttribute('Target');
     }
     for (const sid of pres.getElementsByTagName('p:sldId')) {
       const rid = sid.getAttribute('r:id') || sid.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
-      if (rels[rid]) {
-        const path = resolveRel('ppt/presentation.xml', rels[rid]);
+      if (rels[rid!]) {
+        const path = resolveRel('ppt/presentation.xml', rels[rid!]);
         slideOrder.push(path);
         // p:sld @show='0' on the slide part marks it hidden during a slideshow
         // (the attribute lives on the slide root, not the p:sldId list entry).
@@ -124,7 +124,7 @@ export async function renderPptx(file: File, resultsEl: HTMLElement) {
     'The width and height of each slide, in pixels. The shape of the slides - widescreen 16:9 or the older 4:3 - is worked out from these two numbers.'));
   if (zip.has('docProps/core.xml')) {
     const core = parseXml(await zip.text('docProps/core.xml'));
-    const get = (t) => { const e = core.getElementsByTagName(t)[0]; return e ? e.textContent : ''; };
+    const get = (t: string) => { const e = core.getElementsByTagName(t)[0]; return e ? e.textContent : ''; };
     const creator = get('dc:creator'); if (creator) metaTbl.appendChild(row('Author', creator));
     const title = get('dc:title'); if (title) metaTbl.appendChild(row('Title', title));
   }
@@ -244,7 +244,7 @@ export async function renderPptx(file: File, resultsEl: HTMLElement) {
         const rels = parseXml(await zip.text(relsPath));
         const relMap: any = {};
         for (const r of rels.getElementsByTagName('Relationship')) {
-          relMap[r.getAttribute('Id')] = r.getAttribute('Target');
+          relMap[r.getAttribute('Id')!] = r.getAttribute('Target');
           // External hyperlink rels (TargetMode='External', or a bare http target)
           // point off-document - the same signal docx/xlsx flag.
           const type = r.getAttribute('Type') || '';

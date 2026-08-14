@@ -24,7 +24,7 @@ const GM = [
   'Guitar Fret Noise','Breath Noise','Seashore','Bird Tweet','Telephone Ring','Helicopter','Applause','Gunshot',
 ];
 
-function fmtDur(sec) {
+function fmtDur(sec: number) {
   if (!isFinite(sec) || sec <= 0) return '-';
   const m = Math.floor(sec / 60), s = sec % 60;
   return m + ':' + s.toFixed(1).padStart(4, '0');
@@ -34,11 +34,11 @@ export async function renderMidi(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
 
-  let buf;
+  let buf: Uint8Array;
   try { buf = new Uint8Array(await file.arrayBuffer()); }
   catch (e) { resultsEl.appendChild(errorCard('Could not read this MIDI file.')); return; }
 
-  const ascii = (o, l) => String.fromCharCode(...buf.slice(o, o + l));
+  const ascii = (o: number, l: number) => String.fromCharCode(...buf.slice(o, o + l));
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   if (buf.length < 14 || ascii(0, 4) !== 'MThd') {
     resultsEl.appendChild(errorCard('Not a Standard MIDI File (missing "MThd" header).'));
@@ -62,7 +62,7 @@ export async function renderMidi(file: File, resultsEl: HTMLElement) {
   let maxTick = 0;
   const dec = new TextDecoder();
 
-  function readVLQ(p) { let v = 0, b; do { b = buf[p++]; v = (v << 7) | (b & 0x7F); } while (b & 0x80); return [v, p]; }
+  function readVLQ(p: number) { let v = 0, b; do { b = buf[p++]; v = (v << 7) | (b & 0x7F); } while (b & 0x80); return [v, p]; }
 
   let pos = 14;
   for (let t = 0; t < ntrks && pos + 8 <= buf.length; t++) {

@@ -23,7 +23,7 @@ export interface CodecDetail {
 // --- File header peek (sample rate, bit depth, codec hints) ---
 export async function peekContainer(file: File) {
   const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
-  const ascii = (s, l) => String.fromCharCode(...head.slice(s, s + l));
+  const ascii = (s: number, l: number) => String.fromCharCode(...head.slice(s, s + l));
 
   // WAV
   if (ascii(0, 4) === 'RIFF' && ascii(8, 4) === 'WAVE') {
@@ -87,7 +87,7 @@ export async function peekContainer(file: File) {
 
 // --- FLAC STREAMINFO extras (total samples, MD5, compression ratio) ---
 // `b` is the file head (>= 42 bytes), with STREAMINFO data starting at offset 8.
-function detailFlac(b, fileSize, sampleRate, channels, bitDepth) {
+function detailFlac(b: string|any[]|Uint8Array, fileSize: number, sampleRate: number, channels: number, bitDepth: number) {
   const out: any = {};
   // total samples: 36-bit field. Laid out after sampleRate(20)+channels(3)+
   // bitsPerSample(5) = 28 bits into the 8 bytes starting at b[18], so it's the low
@@ -119,7 +119,7 @@ function detailFlac(b, fileSize, sampleRate, channels, bitDepth) {
 // --- MP3 frame / Xing / VBRI / LAME decode (bitrate, CBR/VBR, encoder) ---
 // MPEG audio bitrate table [version][layer][index], kbps. version: 1=MPEG1,
 // 2=MPEG2/2.5. layer index: 1=L1,2=L2,3=L3.
-const MP3_BITRATES = {
+const MP3_BITRATES: Record<number, Record<number, number[]>> = {
   1: { // MPEG1
     1: [0,32,64,96,128,160,192,224,256,288,320,352,384,416,448],
     2: [0,32,48,56,64,80,96,112,128,160,192,224,256,320,384],
@@ -131,12 +131,12 @@ const MP3_BITRATES = {
     3: [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160],
   },
 };
-const MP3_SRATE = {
+const MP3_SRATE: Record<number, number[]> = {
   3: [44100, 48000, 32000],   // MPEG1
   2: [22050, 24000, 16000],   // MPEG2
   0: [11025, 12000, 8000],    // MPEG2.5
 };
-const MP3_LAME_PRESETS = {
+const MP3_LAME_PRESETS: Record<number, string> = {
   // a small map of common LAME preset codes (from the LAME tag) to names
   0xFB: 'V0', 0xF4: 'V2', 0x3C0: 'CBR 320',
 };
@@ -199,7 +199,7 @@ async function detailMp3(file: File) {
   let vbr = false, frameCount = 0, encoder = null, hasXing = false, hasVbri = false;
   const xingOff = h + 4 + (verBits === 3 ? (channels === 1 ? 17 : 32)
                                          : (channels === 1 ? 9 : 17));
-  const tag4 = (p) => p + 4 <= buf.length
+  const tag4 = (p: number) => p + 4 <= buf.length
     ? String.fromCharCode(buf[p], buf[p + 1], buf[p + 2], buf[p + 3]) : '';
   const xt = tag4(xingOff);
   if (xt === 'Xing' || xt === 'Info') {
@@ -268,11 +268,11 @@ async function detailMp3(file: File) {
 // estimate (flagged durationEstimated), replaced by the exact value once decoded.
 // Each AAC frame is 1024 samples, hence the *1024.
 const AAC_RATES = [96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350];
-const AAC_PROFILES = { 1: 'Main', 2: 'LC', 3: 'SSR', 4: 'LTP' };
+const AAC_PROFILES: Record<number, string> = { 1: 'Main', 2: 'LC', 3: 'SSR', 4: 'LTP' };
 // Walk ADTS frames in `b`, starting near `from`, requiring a short run of valid
 // consecutive frames before counting so a stray 0xFFF in the payload can't lock a
 // false sync. Returns { first, frames, bytes } over the fully-contained frames.
-function scanAdts(b, from) {
+function scanAdts(b: string|any[]|Uint8Array, from: number) {
   for (let start = from; start + 7 <= b.length; start++) {
     if (b[start] !== 0xFF || (b[start + 1] & 0xF6) !== 0xF0) continue;
     // Trial-walk from here; accept only if at least 3 frames chain cleanly.
@@ -325,7 +325,7 @@ async function detailAac(file: File) {
   if (totFrames >= 3 && totBytes > 0) {
     const avgFrame = totBytes / totFrames;
     const totalFrames = file.size / avgFrame;         // frames-per-byte extrapolated to the whole file
-    const dur = totalFrames * 1024 / out.sampleRate;
+    const dur = totalFrames * 1024 / out.sampleRate!;
     if (dur > 0 && isFinite(dur)) {
       out.durationEst = dur;
       out.durationEstimated = true;
@@ -335,11 +335,11 @@ async function detailAac(file: File) {
   return out;
 }
 
-export function adtsToM4a(arrayBuffer) {
+export function adtsToM4a(arrayBuffer: ArrayBuffer) {
   const src = new Uint8Array(arrayBuffer);
   const RATES = [96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350];
   const frameData = [], frameSizes = [];
-  let profile, freqIdx, chanCfg, i = 0;
+  let profile!: number, freqIdx!: number, chanCfg!: number, i = 0;
   if (src.length > 10 && src[0] === 0x49 && src[1] === 0x44 && src[2] === 0x33)
     i = 10 + (((src[6]&0x7F)<<21)|((src[7]&0x7F)<<14)|((src[8]&0x7F)<<7)|(src[9]&0x7F));
   while (i + 7 <= src.length) {
@@ -359,12 +359,12 @@ export function adtsToM4a(arrayBuffer) {
   const stszBox = 20+N*4, moov = 540+N*4, total = 568+N*4+rawSize, chunkOff = 568+N*4;
   const out = new Uint8Array(total), dv = new DataView(out.buffer);
   let o = 0;
-  const w4 = v => { dv.setUint32(o,v); o+=4; };
-  const w2 = v => { dv.setUint16(o,v); o+=2; };
-  const w1 = v => { out[o++]=v; };
-  const ws = s => { for(let j=0;j<s.length;j++) out[o++]=s.charCodeAt(j); };
-  const sk = n => { o+=n; };
-  const bx = (t,s) => { w4(s); ws(t); };
+  const w4 = (v: number): void => { dv.setUint32(o,v); o+=4; };
+  const w2 = (v: number): void => { dv.setUint16(o,v); o+=2; };
+  const w1 = (v: number): void => { out[o++]=v; };
+  const ws = (s: string): void => { for(let j=0;j<s.length;j++) out[o++]=s.charCodeAt(j); };
+  const sk = (n: number): void => { o+=n; };
+  const bx = (t: string,s: number) => { w4(s); ws(t); };
   bx('ftyp',20); ws('M4A '); w4(0); ws('isom');
   bx('moov',moov);
   bx('mvhd',108); sk(4); sk(8); w4(rate); w4(N*1024);
@@ -463,7 +463,7 @@ export async function extractCoverArt(file: File) {
   return null;
 }
 
-async function extractId3Pic(file: File, head) {
+async function extractId3Pic(file: File, head: Uint8Array) {
   const ver = head[3];
   const tagSize = ((head[6] & 0x7F) << 21) | ((head[7] & 0x7F) << 14) |
                   ((head[8] & 0x7F) << 7) | (head[9] & 0x7F);
@@ -570,7 +570,7 @@ export async function readAudioTags(file: File) {
   return { tags: [], lyrics: null };
 }
 
-function decodeStr(bytes, enc) {
+function decodeStr(bytes: AllowSharedBufferSource|undefined, enc: number) {
   try {
     if (enc === 1) return new TextDecoder('utf-16').decode(bytes);     // UTF-16 w/ BOM
     if (enc === 2) return new TextDecoder('utf-16be').decode(bytes);   // UTF-16BE
@@ -578,9 +578,9 @@ function decodeStr(bytes, enc) {
     return new TextDecoder('iso-8859-1').decode(bytes);               // Latin-1
   } catch (_) { try { return new TextDecoder().decode(bytes); } catch (__) { return ''; } }
 }
-const clean = (s) => (s || '').replace(/\0+$/, '').trim();
+const clean = (s: string) => (s || '').replace(/\0+$/, '').trim();
 
-const ID3_NAMES = {
+const ID3_NAMES: Record<string, string> = {
   TIT2: 'Title', TT2: 'Title', TPE1: 'Artist', TP1: 'Artist', TPE2: 'Album artist', TP2: 'Album artist',
   TALB: 'Album', TAL: 'Album', TYER: 'Year', TYE: 'Year', TDRC: 'Year', TDAT: 'Date', TCON: 'Genre', TCO: 'Genre',
   TRCK: 'Track', TRK: 'Track', TPOS: 'Disc', TCOM: 'Composer', TCM: 'Composer', TBPM: 'BPM', TB: 'BPM',
@@ -588,7 +588,7 @@ const ID3_NAMES = {
   TEXT: 'Lyricist', TOAL: 'Original album', TLAN: 'Language', WXXX: 'URL', WOAR: 'Artist URL',
 };
 
-async function readId3Tags(file: File, head) {
+async function readId3Tags(file: File, head: Uint8Array) {
   const ver = head[3];
   const tagSize = ((head[6] & 0x7F) << 21) | ((head[7] & 0x7F) << 14) | ((head[8] & 0x7F) << 7) | (head[9] & 0x7F);
   const needed = Math.min(tagSize + 10, file.size, 20 * 1024 * 1024);
@@ -628,14 +628,14 @@ async function readId3Tags(file: File, head) {
   return { tags, lyrics };
 }
 
-const VORBIS_NAMES = {
+const VORBIS_NAMES: Record<string, string> = {
   TITLE: 'Title', ARTIST: 'Artist', ALBUM: 'Album', ALBUMARTIST: 'Album artist', DATE: 'Year', YEAR: 'Year',
   GENRE: 'Genre', TRACKNUMBER: 'Track', DISCNUMBER: 'Disc', COMPOSER: 'Composer', PERFORMER: 'Performer',
   ORGANIZATION: 'Publisher', PUBLISHER: 'Publisher', COMMENT: 'Comment', DESCRIPTION: 'Description',
   BPM: 'BPM', ISRC: 'ISRC', COPYRIGHT: 'Copyright', ENCODER: 'Encoder', LANGUAGE: 'Language',
 };
 // Parse a Vorbis-comment block (vendor + count + KEY=VALUE entries) into tags.
-function parseVorbisComments(buf, start, dv) {
+function parseVorbisComments(buf: Uint8Array, start: number, dv: DataView<ArrayBuffer>) {
   const tags = []; let lyrics = null; let p = start;
   // The block opens with a vendor string: the library + version that encoded
   // the stream (e.g. "reference libFLAC 1.4.3", "libopus 1.3.1", "Lavf60.16").
@@ -700,7 +700,7 @@ async function readVorbisLikeTags(file: File) {
   return { tags: [], lyrics: null };
 }
 
-const MP4_NAMES = {
+const MP4_NAMES: Record<string, string> = {
   '©nam': 'Title', '©ART': 'Artist', 'aART': 'Album artist', '©alb': 'Album', '©day': 'Year',
   '©gen': 'Genre', 'gnre': 'Genre', '©wrt': 'Composer', '©cmt': 'Comment', '©too': 'Encoder',
   '©lyr': 'Lyrics', 'cprt': 'Copyright', '©grp': 'Grouping', 'desc': 'Description', 'ldes': 'Long description',

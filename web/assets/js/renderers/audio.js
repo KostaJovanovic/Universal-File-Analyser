@@ -1271,8 +1271,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // immediately so the thumb tracks the pointer, and coalesce the redraw to at
     // most one per animation frame.
     let sensRaf = 0, sensManual = false;
-    function applySensitivity(v) {
-        v = Math.max(0, Math.min(300, Math.round(v)));
+    function applySensitivity(raw) {
+        const v = Math.max(0, Math.min(300, Math.round(raw)));
         sensIn.value = String(v);
         state.dbFloor = -60 - (v / 100) * 30; // 0% -> -60 dB, 100% -> -90 dB, 300% -> -150 dB
         sensOut.textContent = v + '%';
@@ -5472,7 +5472,8 @@ export function initAudio({ dropEl, inputEl, recordBtn, liveBtn, resultsEl, onFi
     const handle = onFile || ((file) => renderAudio(file, resultsEl));
     if (inputEl)
         inputEl.addEventListener('change', (e) => {
-            const file = e.target.files && e.target.files[0];
+            const t = e.target;
+            const file = t.files && t.files[0];
             if (file)
                 handle(file);
             inputEl.value = '';

@@ -22,7 +22,7 @@ import { el, fileExt, fmtBytes, wireInfoToggle } from '../core/util.js';
 // we reach SOS we can copy the remainder verbatim.
 const JPEG_KEEP_APP = new Set([0xE0, 0xE2, 0xEE]); // APP0 JFIF, APP2 ICC, APP14 Adobe
 
-function app1Label(bytes, payloadStart) {
+function app1Label(bytes: Uint8Array, payloadStart: number) {
   // Identify what an APP1 segment carries from its leading signature.
   const sig = latin1(bytes, payloadStart, 34);
   if (sig.startsWith('Exif')) return 'EXIF';
@@ -31,7 +31,7 @@ function app1Label(bytes, payloadStart) {
   return 'APP1 metadata';
 }
 
-function stripJpeg(b) {
+function stripJpeg(b: Uint8Array) {
   if (b[0] !== 0xFF || b[1] !== 0xD8) return null;
   const keep = [[0, 2]];          // SOI
   const removed = [];
@@ -70,7 +70,7 @@ function stripJpeg(b) {
 const PNG_SIG = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 const PNG_DROP = new Set(['tEXt', 'zTXt', 'iTXt', 'eXIf', 'tIME']);
 
-function stripPng(b) {
+function stripPng(b: Uint8Array) {
   for (let k = 0; k < 8; k++) if (b[k] !== PNG_SIG[k]) return null;
   const keep = [[0, 8]];
   const removed = [];
@@ -102,7 +102,7 @@ function stripPng(b) {
 // RIFF: "RIFF" size(4 LE) "WEBP" then FourCC(4) size(4 LE) data pad(to even).
 // Drop the EXIF and XMP chunks; clear their presence flags in the VP8X header so
 // the container stays self-consistent. The RIFF size is recomputed on assembly.
-function stripWebp(b) {
+function stripWebp(b: Uint8Array) {
   if (latin1(b, 0, 4) !== 'RIFF' || latin1(b, 8, 4) !== 'WEBP') return null;
   const removed = [];
   const chunks = [];         // kept chunk byte-ranges (excluding the 12-byte RIFF header)
@@ -143,7 +143,7 @@ function stripWebp(b) {
 }
 
 // ---------- shared helpers ----------
-function latin1(b, start, len) {
+function latin1(b: Uint8Array, start: number, len: number) {
   let s = '';
   const end = Math.min(start + len, b.length);
   for (let k = start; k < end; k++) s += String.fromCharCode(b[k]);
@@ -151,7 +151,7 @@ function latin1(b, start, len) {
 }
 
 // Concatenate a set of [start, end) byte-ranges from `b` into one Uint8Array.
-function assemble(b, ranges) {
+function assemble(b: Uint8Array, ranges: number[][]) {
   let total = 0;
   for (const [s, e] of ranges) total += e - s;
   const out = new Uint8Array(total);
@@ -160,10 +160,10 @@ function assemble(b, ranges) {
   return out;
 }
 
-const STRIPPERS = { jpeg: stripJpeg, png: stripPng, webp: stripWebp };
+const STRIPPERS: Record<string, (b: Uint8Array) => { out: Uint8Array; removed: { label: string; bytes: number }[] } | null> = { jpeg: stripJpeg, png: stripPng, webp: stripWebp };
 
 // Pick a stripper from the magic bytes (trust the bytes, not the extension).
-function detectFormat(b) {
+function detectFormat(b: Uint8Array) {
   if (b[0] === 0xFF && b[1] === 0xD8) return 'jpeg';
   if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return 'png';
   if (latin1(b, 0, 4) === 'RIFF' && latin1(b, 8, 4) === 'WEBP') return 'webp';
@@ -193,7 +193,7 @@ export async function stripImage(file: File) {
 // confirm nothing remains, and offers the clean copy for download.
 const SCRUB_HELP = 'Removes identifying information (EXIF, GPS location, XMP, IPTC and comments) by cutting out only those parts of the file - the actual image and its colour profile are copied across untouched, so the picture itself does not change. The cleaned copy is made here on your device and never uploaded. Colour-management data (ICC) is kept so the image still looks the same.';
 
-export function attachImageScrub(file: File, cardEl) {
+export function attachImageScrub(file: File, cardEl: HTMLDivElement) {
   if (!scrubSupportsImage(file)) return;
 
   const wrap = el('div', { class: 'anr-scrub', style: 'margin-top:14px;' });
@@ -252,7 +252,7 @@ export function attachImageScrub(file: File, cardEl) {
         : 'Stripped ' + fmtBytes(totalRemoved) + ', but a re-scan still sees metadata - the file may use an unusual structure.'));
 
     const cleanName = (file.name || 'image').replace(/(\.[^.]+)?$/, (m) => '-clean' + (m || ''));
-    const blob = new Blob([res.out], { type: file.type || 'application/octet-stream' });
+    const blob = new Blob([res.out as BlobPart], { type: file.type || 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const dl = el('a', { class: 'anr-btn anr-btn--cta', href: url, download: cleanName, style: 'margin-top:10px;' }, 'Download clean copy (' + fmtBytes(res.out.length) + ')');
     dl.addEventListener('click', () => setTimeout(() => URL.revokeObjectURL(url), 2000));

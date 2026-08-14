@@ -48,15 +48,31 @@ three module workers compile under `tsconfig.worker.json`.)
 error is a real one, not migration backlog, so fix it rather than adding it to a
 pile. `save.bat` prints the count prominently when it isn't zero.
 
-`strict` is deliberately still off, and that is not laziness - it is two very
-different asks wearing one flag. The cheap half (`noImplicitThis`,
-`strictBindCallApply`) is already on. The expensive half is `strictNullChecks` +
-`noImplicitAny`, which together report **~5,400** sites, nearly all of the form
-"this `querySelector` / parse result might be null". They're right, but each one
-needs a real guard rather than an annotation, and adding guards changes runtime
-behaviour in a codebase with **no tests**. Treat it as its own project: one
-directory at a time (`core` -> `lib` -> `parsers` -> `games` -> `renderers`),
-never bundled with another change.
+**`strict` is ON**, `strictNullChecks` and `noImplicitAny` included. Getting
+there meant clearing ~11,400 sites, and the discipline that made it safe in a
+codebase with **no tests** is the thing to preserve: **the emitted JS must not
+change**. Type syntax erases, so the correct fix for a strict error is an
+annotation, an `as` cast, a `!` assertion or a new `interface` - not a runtime
+guard, which is a behaviour change wearing a type fix's clothes. Verify by
+compiling the previous commit's `src/` into a scratch out-dir and diffing it
+against a build of the working tree; a clean pass is byte-identical.
+
+Two traps cost real time in that pass and will bite again:
+
+- A `type` / `interface` / `import type` placed **between a doc comment and the
+  declaration it documents deletes that comment from the emitted JS** - the
+  comment attaches to a node that erases. Put new type declarations *above* the
+  comment, and watch for vanished comments in the emit diff.
+- TypeScript's own `inferFromUsage` codefix writes plausible-looking junk
+  (`string|any[]`, `Document` where the value is an `Element`, `Set<unknown>`,
+  bare `|null` on a parameter that can never be null). Several were actively
+  wrong - one rejected the `Float32Array` its only caller passes. Check every
+  annotation it writes against the real call sites.
+
+One member of the `strict` family is off: `useUnknownInCatchVariables`. Nearly
+every `catch` here is `catch (e) { errorCard('...' + (e && e.message)) }` around
+a parser that may throw anything, already defensive about what it got; typing
+those ~97 sites as `unknown` buys an `(e as any)` each and nothing else.
 
 Two things are fatal at commit time. **Syntax errors (TS1xxx)** mean the parse
 failed, so the emitted JS may be wrong or truncated - `save.bat` prints those

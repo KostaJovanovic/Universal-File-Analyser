@@ -253,7 +253,7 @@ export async function carveAvccToAnnexB(reader, mdatStart, mdatEnd, opts = {}) {
     // the caller so frames before the first in-band copy still decode.
     const isParam = (t) => h265 ? (t === 32 || t === 33 || t === 34) : (t === 7 || t === 8);
     const paramSeen = new Set();
-    const paramNals = []; // { t, nal }
+    const paramNals = [];
     // Read a uint of lenSize big-endian at buf offset i.
     const readLen = (buf, i) => {
         let v = 0;

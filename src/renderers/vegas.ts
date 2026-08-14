@@ -22,7 +22,7 @@ import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard } from '..
 const MAX_BYTES = 64 * 1024 * 1024;   // .veg projects are small; cap defensively
 
 // Known Sony/MAGIX plugin ids -> friendly names (fallback derives from the id).
-const FX_NAMES = {
+const FX_NAMES: Record<string, string> = {
   solidcolor: 'Solid Color', titlesandtext: 'Titles & Text', cookiecutter: 'Cookie Cutter',
   text: 'Legacy Text', credits: 'Credit Roll', colorcorrector: 'Colour Corrector',
   colorcorrectorsecondary: 'Secondary Colour Corrector', gaussianblur: 'Gaussian Blur',
@@ -31,11 +31,11 @@ const FX_NAMES = {
   glow: 'Glow', mask: 'Mask Generator', gradient: 'Gradient', checkerboard: 'Checkerboard',
   noisetexture: 'Noise Texture', testpattern: 'Test Pattern', timecode: 'Timecode',
 };
-const fxName = (id) => FX_NAMES[id] || id.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^\w/, (c) => c.toUpperCase());
+const fxName = (id: string) => FX_NAMES[id] || id.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^\w/, (c: string) => c.toUpperCase());
 
 // Pull every printable UTF-16LE run (the format stores text as little-endian
 // UTF-16), keeping byte offsets so we can read the metadata block in file order.
-function utf16Runs(buf, min) {
+function utf16Runs(buf: Uint8Array, min: number) {
   const out = []; let cur = [], start = -1;
   for (let i = 0; i + 1 < buf.length; i += 2) {
     const lo = buf[i], hi = buf[i + 1];
@@ -48,17 +48,17 @@ function utf16Runs(buf, min) {
 
 // Minimal RTF -> plain text: drop the header groups, turn \par into newlines,
 // decode \'xx and \uN, strip remaining control words and braces.
-function rtfToText(rtf) {
+function rtfToText(rtf: string) {
   let s = rtf.replace(/\\par[d]?\b/g, '\n').replace(/\\line\b/g, '\n');
-  s = s.replace(/\\'([0-9a-fA-F]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16)));
-  s = s.replace(/\\u(-?\d+)\s?\??/g, (m, n) => { const c = parseInt(n, 10); return c >= 0 ? String.fromCharCode(c) : ''; });
+  s = s.replace(/\\'([0-9a-fA-F]{2})/g, (m, h: string) => String.fromCharCode(parseInt(h, 16)));
+  s = s.replace(/\\u(-?\d+)\s?\??/g, (m, n: string) => { const c = parseInt(n, 10); return c >= 0 ? String.fromCharCode(c) : ''; });
   s = s.replace(/\{\\\*[^{}]*\}/g, '');                 // ignore destinations (\*\... groups)
   s = s.replace(/\\[a-zA-Z]+-?\d* ?/g, '');             // strip control words
   s = s.replace(/[{}]/g, '');                           // strip group braces
   return s.replace(/\x00/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{2,}/g, '\n').trim();
 }
 
-function parseVegas(buf) {
+function parseVegas(buf: Uint8Array) {
   const u16 = utf16Runs(buf, 3);
   const all = u16.map((r) => r.s);
 
@@ -105,7 +105,7 @@ function parseVegas(buf) {
   // strings while they stay tightly packed (the block's runs sit ~40-60 bytes
   // apart; unrelated data is much further off).
   const summary = [];
-  const strong = (s) => /@[\w.-]+\.\w{2,}|all rights reserved|©|\(c\)\s|copyright|\b(19|20)\d\d\b.{0,40}https?:/i.test(s);
+  const strong = (s: string) => /@[\w.-]+\.\w{2,}|all rights reserved|©|\(c\)\s|copyright|\b(19|20)\d\d\b.{0,40}https?:/i.test(s);
   const anchor = u16.findIndex((r) => strong(r.s));
   if (anchor >= 0) {
     const block = [u16[anchor]];

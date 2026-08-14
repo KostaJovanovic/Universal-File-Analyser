@@ -430,7 +430,7 @@ function bindLetterFx(mark) {
         clearTimeout(fxT);
         for (const l of letters) {
             l.el.style.transition = 'font-weight 0.4s ease';
-            l.el.style.fontWeight = l.base;
+            l.el.style.fontWeight = String(l.base);
         }
         fxT = setTimeout(() => { for (const l of letters)
             l.el.style.transition = ''; unlockWidths(); }, 500);
@@ -439,7 +439,7 @@ function bindLetterFx(mark) {
         if (inside) {
             readCentres();
             for (let i = 0; i < letters.length; i++) {
-                letters[i].el.style.fontWeight = weight(letters[i], cxs[i], cys[i]);
+                letters[i].el.style.fontWeight = String(weight(letters[i], cxs[i], cys[i]));
             }
             raf = requestAnimationFrame(frame);
         }

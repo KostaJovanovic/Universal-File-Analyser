@@ -14,17 +14,25 @@
    before/after of memory colours and a hue/luma test chart pushed through the
    LUT, and an interactive 3D scatter of the colour cube it defines. */
 
-import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, attachZoomPan, openOverlayBack, wheelZoomToggle } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, attachZoomPan, openOverlayBack, wheelZoomToggle, type ElChild } from '../core/util.js';
 import { hexByte } from '../core/binutil.js';
 
-const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
-const to255 = (v) => Math.round(clamp01(v) * 255);
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const to255 = (v: number) => Math.round(clamp01(v) * 255);
 const hex2 = hexByte;
-const rgbHex = (r, g, b) => '#' + hex2(to255(r)) + hex2(to255(g)) + hex2(to255(b));
-const rgbCss = (r, g, b) => `rgb(${to255(r)},${to255(g)},${to255(b)})`;
+const rgbHex = (r: number, g: number, b: number) => '#' + hex2(to255(r)) + hex2(to255(g)) + hex2(to255(b));
+const rgbCss = (r: number, g: number, b: number) => `rgb(${to255(r)},${to255(g)},${to255(b)})`;
+
+type CubeLut = {
+  title: string; type: any; size: number;
+  domainMin: number[]; domainMax: number[]; comments: any[]; data: any;
+  expected: number; count: number; complete: boolean; range: number[];
+};
+type Sampler = (r: number, g: number, b: number) => number[];
+type PreviewItem = { img: ImageData; caption: string; url?: string };
 
 // ---- parse a .cube file ------------------------------------------------------
-function parseCubeLut(text) {
+function parseCubeLut(text: string): CubeLut | null {
   // The head is read from the .cube preamble; the tail is filled in once the
   // data rows have been counted, so it stays optional.
   const lut: {
@@ -64,7 +72,7 @@ function parseCubeLut(text) {
   let mn = Infinity, mx = -Infinity;
   for (let i = 0; i < rows.length; i++) { if (rows[i] < mn) mn = rows[i]; if (rows[i] > mx) mx = rows[i]; }
   lut.range = [mn, mx];
-  return lut;
+  return lut as CubeLut;
 }
 
 // ---- Adobe SpeedGrade / Iridas .look ----------------------------------------
@@ -73,9 +81,9 @@ function parseCubeLut(text) {
 // and a <data> blob of little-endian float32 R,G,B triplets, red varying fastest
 // - the same lattice order as a .cube. That baked LUT is the whole grade stack
 // flattened, so we visualise it exactly like a .cube and also list the stages.
-const looksLikeLook = (text) => /<look[\s>]/i.test(text.slice(0, 4096));
+const looksLikeLook = (text: string) => /<look[\s>]/i.test(text.slice(0, 4096));
 
-function hexLEToFloats(hex) {
+function hexLEToFloats(hex: string) {
   const n = hex.length >> 3;                              // 8 hex chars per float32
   const out = new Float32Array(n);
   const dv = new DataView(new ArrayBuffer(4));
@@ -90,15 +98,15 @@ function hexLEToFloats(hex) {
   return out;
 }
 
-function parseLookShaders(text) {
-  const stages = [];
+function parseLookShaders(text: string) {
+  const stages: any[] = [];
   const re = /<shader>([\s\S]*?)<\/shader>/g;
   let m;
   while ((m = re.exec(text))) {
     const body = m[1];
-    const get = (tag) => { const r = body.match(new RegExp('<' + tag + '>\\s*"?([^"<]*)"?\\s*</' + tag + '>', 'i')); return r ? r[1] : ''; };
+    const get = (tag: string) => { const r = body.match(new RegExp('<' + tag + '>\\s*"?([^"<]*)"?\\s*</' + tag + '>', 'i')); return r ? r[1] : ''; };
     const pblk = (body.match(/<parameters>([\s\S]*?)<\/parameters>/i) || [])[1] || '';
-    const params = [];
+    const params: string[][] = [];
     const pre = /<([A-Za-z_][\w.]*)>\s*"?([^"<]*)"?\s*<\/\1>/g;
     let pm;
     while ((pm = pre.exec(pblk))) params.push([pm[1], pm[2]]);
@@ -107,9 +115,9 @@ function parseLookShaders(text) {
   return stages;
 }
 
-function parseLook(text) {
+function parseLook(text: string) {
   if (!looksLikeLook(text)) return null;
-  const look = { lut: null, stages: parseLookShaders(text) };
+  const look: { lut: CubeLut|null; stages: any[] } = { lut: null, stages: parseLookShaders(text) };
   const m = text.match(/<LUT>\s*<size>\s*"?(\d+)"?\s*<\/size>\s*<data>([\s\S]*?)<\/data>\s*<\/LUT>/i);
   if (m) {
     const size = parseInt(m[1], 10);
@@ -132,16 +140,16 @@ function parseLook(text) {
 // structural working-space fields that aren't creative adjustments) so the
 // readout shows what each stage actually does.
 const LOOK_SKIP_PARAMS = new Set(['Range', 'Gamma']);
-function lookActiveParams(params) {
+function lookActiveParams(params: any[]) {
   return params.filter(([k, v]) => !k.startsWith('__') && !LOOK_SKIP_PARAMS.has(k) &&
     /^-?\d+(\.\d+)?$/.test(v) && v !== '0' && v !== '1' && Math.abs(parseFloat(v)) > 1e-4);
 }
-const prettyLookParam = (k) => k.replace(/\./g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
-const fmtLookNum = (v) => { const n = parseFloat(v); return Number.isInteger(n) ? String(n) : n.toFixed(2); };
+const prettyLookParam = (k: string) => k.replace(/\./g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+const fmtLookNum = (v: string) => { const n = parseFloat(v); return Number.isInteger(n) ? String(n) : n.toFixed(2); };
 
-function lookNamedStages(stages) { return stages.filter((s) => s.name && !s.name.startsWith('__')); }
+function lookNamedStages(stages: any[]) { return stages.filter((s) => s.name && !s.name.startsWith('__')); }
 
-function buildLookStack(stages) {
+function buildLookStack(stages: any[]) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Grade stack',
     'The grading stages this look applies, in order, as built in Adobe SpeedGrade / Premiere Lumetri. Stages left at their defaults are marked so; the baked 3D LUT is the whole stack flattened into one table.');
@@ -162,15 +170,15 @@ function buildLookStack(stages) {
 }
 
 // ---- LUT sampling (trilinear for 3D, linear for 1D) --------------------------
-function makeSampler(lut) {
+function makeSampler(lut: CubeLut): Sampler {
   const { data, size: n } = lut;
   const dmn = lut.domainMin, dmx = lut.domainMax;
-  const norm = (v, c) => {
+  const norm = (v: number, c: number) => {
     const lo = dmn[c], hi = dmx[c];
     return hi > lo ? (v - lo) / (hi - lo) : v;
   };
   if (lut.type === '1D') {
-    return (r, g, b) => {
+    return (r: number, g: number, b: number) => {
       const out = [r, g, b];
       const inp = [r, g, b];
       for (let c = 0; c < 3; c++) {
@@ -182,8 +190,8 @@ function makeSampler(lut) {
     };
   }
   // 3D trilinear. Index = r + g*n + b*n*n (red fastest).
-  const at = (x, y, z, c) => data[3 * (x + y * n + z * n * n) + c];
-  return (r, g, b) => {
+  const at = (x: number, y: number, z: number, c: number) => data[3 * (x + y * n + z * n * n) + c];
+  return (r: number, g: number, b: number) => {
     const fx = clamp01(norm(r, 0)) * (n - 1), fy = clamp01(norm(g, 1)) * (n - 1), fz = clamp01(norm(b, 2)) * (n - 1);
     const x0 = Math.floor(fx), y0 = Math.floor(fy), z0 = Math.floor(fz);
     const x1 = Math.min(x0 + 1, n - 1), y1 = Math.min(y0 + 1, n - 1), z1 = Math.min(z0 + 1, n - 1);
@@ -202,26 +210,26 @@ function makeSampler(lut) {
 }
 
 // HSL -> RGB (h,s,l in 0..1) for the test chart.
-function hslToRgb(h, s, l) {
+function hslToRgb(h: number, s: number, l: number) {
   if (s === 0) return [l, l, l];
   const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
   const p = 2 * l - q;
-  const hue = (t) => { t = (t % 1 + 1) % 1; if (t < 1 / 6) return p + (q - p) * 6 * t; if (t < 1 / 2) return q; if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6; return p; };
+  const hue = (t: number) => { t = (t % 1 + 1) % 1; if (t < 1 / 6) return p + (q - p) * 6 * t; if (t < 1 / 2) return q; if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6; return p; };
   return [hue(h + 1 / 3), hue(h), hue(h - 1 / 3)];
 }
 
 // ---- neutral tone-response curve (the LUT's contrast + colour cast) ----------
-function toneCurveSvg(sample, W, H) {
+function toneCurveSvg(sample: Sampler, W: number, H: number) {
   const pad = 26, w = W - pad - 8, h = H - pad - 8, x0 = pad, y0 = 6;
-  const X = (t) => x0 + t * w, Y = (v) => y0 + (1 - v) * h;
+  const X = (t: number) => x0 + t * w, Y = (v: number) => y0 + (1 - v) * h;
   const N = 64;
-  const ch = [[], [], []];
+  const ch: number[][][] = [[], [], []];
   for (let i = 0; i <= N; i++) {
     const t = i / N;
     const o = sample(t, t, t);
     for (let c = 0; c < 3; c++) ch[c].push([t, o[c]]);
   }
-  const path = (pts) => pts.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1)).join(' ');
+  const path = (pts: any[]) => pts.map((p: any[], i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1)).join(' ');
   let g = '';
   // frame + identity diagonal + mid gridlines
   g += `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="rgba(128,128,128,.05)" stroke="currentColor" stroke-opacity=".15"/>`;
@@ -235,9 +243,9 @@ function toneCurveSvg(sample, W, H) {
 }
 
 // ---- a hue/luma + grey-ramp test chart, pushed through the LUT ----------------
-function paintChart(canvas, sample, apply) {
+function paintChart(canvas: HTMLCanvasElement, sample: Sampler, apply: boolean) {
   const w = canvas.width, h = canvas.height, split = Math.round(h * 0.66);
-  const img = canvas.getContext('2d').createImageData(w, h);
+  const img = canvas.getContext('2d')!.createImageData(w, h);
   const d = img.data;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -254,7 +262,7 @@ function paintChart(canvas, sample, apply) {
       d[o] = to255(r); d[o + 1] = to255(g); d[o + 2] = to255(b); d[o + 3] = 255;
     }
   }
-  canvas.getContext('2d').putImageData(img, 0, 0);
+  canvas.getContext('2d')!.putImageData(img, 0, 0);
 }
 
 // ---- memory-colour swatches, before vs after ---------------------------------
@@ -268,10 +276,10 @@ const SWATCHES: [string, number, number, number][] = [
 // Rendered straight into a uint32 ImageData buffer (packed colours, square point
 // splats, one shared projection + depth sort feeding both cubes) instead of the
 // canvas arc()/fillStyle path API, which was the source of the lag.
-function buildCubePair(lut, sample) {
+function buildCubePair(lut: CubeLut, sample: Sampler) {
   const S = 460;     // backing-store pixels (CSS-scaled down)
   const n = lut.size, step = Math.max(1, Math.ceil(n / 20));
-  const packed = (r, g, b) => (255 << 24) | (to255(b) << 16) | (to255(g) << 8) | to255(r);   // little-endian ABGR
+  const packed = (r: number, g: number, b: number) => (255 << 24) | (to255(b) << 16) | (to255(g) << 8) | to255(r);   // little-endian ABGR
   const positions = [];
   let M = 0;
   for (let z = 0; z < n; z += step) for (let y = 0; y < n; y += step) for (let x = 0; x < n; x += step) M++;
@@ -289,7 +297,7 @@ function buildCubePair(lut, sample) {
   // Scratch projection buffers + a reusable depth-sorted index list.
   const sx = new Float32Array(M), sy = new Float32Array(M), dep = new Float32Array(M);
   const idx = new Int32Array(M); for (let k = 0; k < M; k++) idx[k] = k;
-  const corners = [];
+  const corners: number[][] = [];
   for (let c = 0; c < 8; c++) corners.push([(c & 1 ? 0.5 : -0.5), (c & 2 ? -0.5 : 0.5), (c & 4 ? 0.5 : -0.5)]);
   const edges = [[0, 1], [0, 2], [0, 4], [1, 3], [1, 5], [2, 3], [2, 6], [3, 7], [4, 5], [4, 6], [5, 7], [6, 7]];
   const WIRE = (0x55 << 24) | (128 << 16) | (128 << 8) | 128;   // faint translucent grey
@@ -297,7 +305,7 @@ function buildCubePair(lut, sample) {
   const state = { yaw: -0.7, pitch: -0.5, zoom: 1 };
   const mk = () => el('canvas', { width: String(S), height: String(S), style: 'width:100%;max-width:280px;aspect-ratio:1;touch-action:none;cursor:grab;display:block;border-radius:8px;background:radial-gradient(circle at 50% 45%, rgba(128,128,128,.06), transparent 72%)' });
   const cN = mk(), cL = mk();
-  const ctxN = cN.getContext('2d'), ctxL = cL.getContext('2d');
+  const ctxN = cN.getContext('2d')!, ctxL = cL.getContext('2d')!;
   const imgN = ctxN.createImageData(S, S), imgL = ctxL.createImageData(S, S);
   const bufN = new Uint32Array(imgN.data.buffer), bufL = new Uint32Array(imgL.data.buffer);
 
@@ -312,19 +320,19 @@ function buildCubePair(lut, sample) {
     }
     idx.sort((a, b) => dep[a] - dep[b]);
   }
-  function projC(c) {
+  function projC(c: number[]) {
     const cy = Math.cos(state.yaw), sw = Math.sin(state.yaw), cp = Math.cos(state.pitch), sp = Math.sin(state.pitch);
     const sc = S * 0.6 * state.zoom, off = S / 2;
     const x1 = c[0] * cy + c[2] * sw, z1 = -c[0] * sw + c[2] * cy, y1 = c[1] * cp - z1 * sp;
     return [off + x1 * sc, off + y1 * sc];
   }
-  function line(buf, x0, y0, x1, y1) {
+  function line(buf: Uint32Array, x0: number, y0: number, x1: number, y1: number) {
     x0 |= 0; y0 |= 0; x1 |= 0; y1 |= 0;
     const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0), stepx = x0 < x1 ? 1 : -1, stepy = y0 < y1 ? 1 : -1;
     let err = dx - dy;
     for (;;) { if (x0 >= 0 && x0 < S && y0 >= 0 && y0 < S) buf[y0 * S + x0] = WIRE; if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += stepx; } if (e2 < dx) { err += dx; y0 += stepy; } }
   }
-  function paint(buf, cols, half) {
+  function paint(buf: Uint32Array, cols: Uint32Array, half: number) {
     buf.fill(0);
     const cp = corners.map(projC);
     for (const [a, b] of edges) line(buf, cp[a][0], cp[a][1], cp[b][0], cp[b][1]);
@@ -348,7 +356,7 @@ function buildCubePair(lut, sample) {
   // the second cube) arms/disarms the wheel on both.
   const wheelZoom = wheelZoomToggle();
   let drag = false, lx = 0, ly = 0, pinch = 0;
-  const attach = (cv) => {
+  const attach = (cv: HTMLCanvasElement) => {
     cv.addEventListener('pointerdown', (e) => { drag = true; lx = e.clientX; ly = e.clientY; cv.style.cursor = 'grabbing'; try { cv.setPointerCapture(e.pointerId); } catch (_) {} });
     cv.addEventListener('pointermove', (e) => {
       if (!drag) return;
@@ -357,7 +365,7 @@ function buildCubePair(lut, sample) {
       state.pitch = Math.max(-1.55, Math.min(1.55, state.pitch));
       lx = e.clientX; ly = e.clientY; queue();
     });
-    const end = (e) => { drag = false; cv.style.cursor = 'grab'; try { cv.releasePointerCapture(e.pointerId); } catch (_) {} };
+    const end = (e: PointerEvent) => { drag = false; cv.style.cursor = 'grab'; try { cv.releasePointerCapture(e.pointerId); } catch (_) {} };
     cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
     cv.addEventListener('wheel', (e) => { if (!wheelZoom.enabled()) return; e.preventDefault(); state.zoom = Math.max(0.5, Math.min(6, state.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12))); queue(); }, { passive: false });
     cv.addEventListener('touchmove', (e) => {
@@ -375,7 +383,7 @@ function buildCubePair(lut, sample) {
 
   // The toggle needs a positioned box that shrink-fits the canvas (max-width
   // 280px, same as the canvas) so bottom-right of the box is the cube's corner.
-  const wrap = (cv, label, pill?) => el('div', { style: 'flex:1 1 220px;min-width:180px;max-width:300px' }, [
+  const wrap = (cv: ElChild, label: ElChild | ElChild[], pill?: ElChild) => el('div', { style: 'flex:1 1 220px;min-width:180px;max-width:300px' }, [
     el('div', { style: 'position:relative;max-width:280px' }, pill ? [cv, pill] : [cv]),
     el('div', { class: 'anr-hint', style: 'text-align:center;margin-top:4px' }, label),
   ]);
@@ -384,7 +392,7 @@ function buildCubePair(lut, sample) {
 
 // ---- apply the LUT to your own photo / video ---------------------------------
 // Apply the LUT to an ImageData, in place-free fashion, at full resolution.
-function applyLut(src, sample) {
+function applyLut(src: ImageData, sample: Sampler) {
   const out = new ImageData(src.width, src.height);
   const s = src.data, d = out.data;
   for (let i = 0; i < s.length; i += 4) {
@@ -393,12 +401,12 @@ function applyLut(src, sample) {
   }
   return out;
 }
-const tcLabel = (t) => { const m = Math.floor(t / 60), s = Math.floor(t % 60), c = Math.round((t % 1) * 100); return `${m}:${String(s).padStart(2, '0')}.${String(c).padStart(2, '0')}`; };
+const tcLabel = (t: number) => { const m = Math.floor(t / 60), s = Math.floor(t % 60), c = Math.round((t % 1) * 100); return `${m}:${String(s).padStart(2, '0')}.${String(c).padStart(2, '0')}`; };
 
-function seekVideo(v, t) {
+function seekVideo(v: HTMLVideoElement, t: number) {
   return new Promise<void>((res) => { const on = () => { v.removeEventListener('seeked', on); res(); }; v.addEventListener('seeked', on); try { v.currentTime = t; } catch (_) { res(); } });
 }
-async function extractVideoFrames(file: File, count, maxW) {
+async function extractVideoFrames(file: File, count: number, maxW: number) {
   const url = URL.createObjectURL(file);
   const v = document.createElement('video');
   v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
@@ -407,8 +415,8 @@ async function extractVideoFrames(file: File, count, maxW) {
     const dur = v.duration || 0, vw = v.videoWidth || 1280, vh = v.videoHeight || 720;
     const scale = Math.min(1, maxW / vw), W = Math.max(1, Math.round(vw * scale)), H = Math.max(1, Math.round(vh * scale));
     const cap = document.createElement('canvas'); cap.width = W; cap.height = H;
-    const cx = cap.getContext('2d', { willReadFrequently: true });
-    const frames = [];
+    const cx = cap.getContext('2d', { willReadFrequently: true })!;
+    const frames: { t: number; img: ImageData }[] = [];
     for (let i = 0; i < count; i++) {
       const t = dur > 0 ? dur * (i + 0.5) / count : 0;
       await seekVideo(v, t);
@@ -418,11 +426,11 @@ async function extractVideoFrames(file: File, count, maxW) {
     return { frames, W, H };
   } finally { URL.revokeObjectURL(url); }
 }
-async function loadImageFrame(file: Blob, maxW) {
+async function loadImageFrame(file: Blob, maxW: number) {
   const bmp = await createImageBitmap(file);
   const scale = Math.min(1, maxW / bmp.width), W = Math.max(1, Math.round(bmp.width * scale)), H = Math.max(1, Math.round(bmp.height * scale));
   const cap = document.createElement('canvas'); cap.width = W; cap.height = H;
-  const cx = cap.getContext('2d', { willReadFrequently: true });
+  const cx = cap.getContext('2d', { willReadFrequently: true })!;
   cx.drawImage(bmp, 0, 0, W, H);
   if (bmp.close) bmp.close();
   return { frames: [{ t: null, img: cx.getImageData(0, 0, W, H) }], W, H };
@@ -432,7 +440,7 @@ async function loadImageFrame(file: Blob, maxW) {
 // their own footage. Fetched as a blob so loadImageFrame's createImageBitmap path
 // (and the maxW downscale) can be reused unchanged.
 const SAMPLE_IMG_URL = '/assets/img/LUT_TEST.jpg';
-async function loadSampleFrame(maxW) {
+async function loadSampleFrame(maxW: number) {
   const resp = await fetch(SAMPLE_IMG_URL);
   if (!resp.ok) throw new Error('sample image unavailable (' + resp.status + ')');
   return loadImageFrame(await resp.blob(), maxW);
@@ -441,22 +449,22 @@ async function loadSampleFrame(maxW) {
 // Draw an ImageData into a fixed-aspect thumbnail canvas (CSS object-fit handles
 // the uniform display size, so every thumbnail looks the same regardless of the
 // source resolution or aspect).
-function thumb(img) {
+function thumb(img: ImageData) {
   const cv = el('canvas', { width: String(img.width), height: String(img.height), class: 'anr-lut-thumb', title: 'Click to open' });
-  cv.getContext('2d').putImageData(img, 0, 0);
+  cv.getContext('2d')!.putImageData(img, 0, 0);
   return cv;
 }
 // Lazily turn an item's ImageData into a data URL the lightbox <img> can show.
-function itemUrl(it) {
+function itemUrl(it: PreviewItem) {
   if (!it.url) {
     const c = document.createElement('canvas'); c.width = it.img.width; c.height = it.img.height;
-    c.getContext('2d').putImageData(it.img, 0, 0);
+    c.getContext('2d')!.putImageData(it.img, 0, 0);
     it.url = c.toDataURL('image/png');
   }
   return it.url;
 }
 
-function buildTryout(sample) {
+function buildTryout(sample: Sampler) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('See the look',
     'Your file is handled on your device - nothing is uploaded. A video is sampled at 8 equally spaced frames at full resolution. Click any frame to open it full-size, then step through with the arrows (or ← / → keys).');
@@ -474,7 +482,7 @@ function buildTryout(sample) {
 
   // Flat, ordered list of every preview image (each frame's original then its
   // graded version), shared by the thumbnails and the lightbox.
-  let items = [];
+  let items: PreviewItem[] = [];
 
   // --- Lightbox: chrome built ONCE PER PAGE, re-pointed at this render's items ---
   // The overlay is looked up by id, the way the comic and document readers do it,
@@ -482,8 +490,8 @@ function buildTryout(sample) {
   // more #anr-lut-lightbox in document.body and one more permanent keydown listener
   // behind for every LUT analysed, each closure pinning that render's whole set of
   // original+graded preview bitmaps for the life of the page.
-  function openLightbox(start) {
-    let overlay = document.getElementById('anr-lut-lightbox');
+  function openLightbox(start: number) {
+    let overlay = document.getElementById('anr-lut-lightbox')!;
     if (!overlay) {
       overlay = el('div', { id: 'anr-lut-lightbox', class: 'lightbox' });
       const closeBtn = el('button', { type: 'button', class: 'lightbox-close' }, 'Close');
@@ -519,11 +527,11 @@ function buildTryout(sample) {
     // Bind the shared chrome to THIS render's items. Re-done on every open, so a
     // second LUT analysed on the same page drives the same overlay with its own
     // frames instead of the first one's.
-    const img = overlay.querySelector<HTMLImageElement>('.lightbox-img-wrap img');
-    const meta = overlay.querySelector('.lightbox-meta');
-    const prevBtn = overlay.querySelector<HTMLElement>('.anr-lut-prev');
-    const nextBtn = overlay.querySelector<HTMLElement>('.anr-lut-next');
-    const show = (i) => {
+    const img = overlay.querySelector<HTMLImageElement>('.lightbox-img-wrap img')!;
+    const meta = overlay.querySelector<HTMLElement>('.lightbox-meta')!;
+    const prevBtn = overlay.querySelector<HTMLElement>('.anr-lut-prev')!;
+    const nextBtn = overlay.querySelector<HTMLElement>('.anr-lut-next')!;
+    const show = (i: number) => {
       overlay._i = i;
       if (overlay._zoom) overlay._zoom.reset();
       img.src = itemUrl(items[i]);
@@ -542,11 +550,11 @@ function buildTryout(sample) {
     overlay._show(start);
   }
 
-  function renderGrid(frames) {
+  function renderGrid(frames: any[]) {
     grid.innerHTML = ''; items = [];
     grid.classList.toggle('anr-lut-frames--single', frames.length === 1);
     const multi = frames.length > 1;
-    frames.forEach((f, fi) => {
+    frames.forEach((f, fi: number) => {
       const graded = applyLut(f.img, sample);
       const base = (multi ? 'Frame ' + (fi + 1) + '/' + frames.length + (f.t != null ? ' · ' + tcLabel(f.t) : '') + ' · ' : '');
       const oIdx = items.length;
@@ -629,24 +637,24 @@ export async function renderLut(file: File, resultsEl: HTMLElement) {
     return;
   }
 
-  const sample = makeSampler(lut);
+  const sample = makeSampler(lut!);
   resultsEl.innerHTML = '';
 
   // ---- Identity / metadata ----
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Colour LUT'));
   const tbl = el('table', { class: 'anr-readout' });
-  tbl.appendChild(row('Format', look ? `SpeedGrade look (.look) - baked ${lut.size}x${lut.size}x${lut.size} 3D LUT` : 'Cube LUT (.cube)'));
+  tbl.appendChild(row('Format', look ? `SpeedGrade look (.look) - baked ${lut!.size}x${lut!.size}x${lut!.size} 3D LUT` : 'Cube LUT (.cube)'));
   if (look) tbl.appendChild(rowHelp('Grade stages', lookNamedStages(look.stages).length + ' stages', 'The number of separate colour-grading steps stored in this look (exposure, contrast, colour balance and so on), applied one after another.'));
-  if (lut.title) tbl.appendChild(row('Title', lut.title));
-  tbl.appendChild(rowHelp('Type', lut.type === '3D' ? '3D LUT (full colour cube)' : '1D LUT (per-channel curve)',
+  if (lut!.title) tbl.appendChild(row('Title', lut!.title));
+  tbl.appendChild(rowHelp('Type', lut!.type === '3D' ? '3D LUT (full colour cube)' : '1D LUT (per-channel curve)',
     'A LUT (look-up table) is a colour recipe. A 3D LUT can remap any red/green/blue mix, so it can shift both colour and richness; a 1D LUT only adjusts each colour channel on its own, like a simple brightness curve.'));
-  tbl.appendChild(rowHelp('Grid size', lut.type === '3D' ? `${lut.size} x ${lut.size} x ${lut.size}  (${lut.count.toLocaleString()} entries)` : `${lut.size} points`,
+  tbl.appendChild(rowHelp('Grid size', lut!.type === '3D' ? `${lut!.size} x ${lut!.size} x ${lut!.size}  (${lut!.count.toLocaleString()} entries)` : `${lut!.size} points`,
     'How finely the colour table is sampled. Colours that fall between the stored points are blended smoothly from the nearest ones (trilinear interpolation).'));
-  if (!lut.complete) tbl.appendChild(rowHelp('Entries', lut.count.toLocaleString() + ' of ' + lut.expected.toLocaleString() + ' (truncated)', 'The table holds fewer entries than it says it should, so the file looks incomplete or cut off.'));
-  if (lut.domainMin.some((v, i) => v !== 0 || lut.domainMax[i] !== 1)) tbl.appendChild(rowHelp('Input domain', `[${lut.domainMin.join(', ')}] - [${lut.domainMax.join(', ')}]`, 'The range of input values the LUT expects for each colour channel, normally 0 to 1 (black to white). A different range means it was built for a special input such as log or HDR footage.'));
-  if (lut.range[0] < -0.001 || lut.range[1] > 1.001) tbl.appendChild(rowHelp('Output range', lut.range[0].toFixed(3) + ' - ' + lut.range[1].toFixed(3), 'Values reaching outside the normal 0 to 1 range mean this is an extended-range LUT, meant for HDR or scene-linear footage.'));
-  if (lut.comments.length) tbl.appendChild(row('Source', lut.comments.slice(0, 3).join(' · ')));
+  if (!lut!.complete) tbl.appendChild(rowHelp('Entries', lut!.count.toLocaleString() + ' of ' + lut!.expected.toLocaleString() + ' (truncated)', 'The table holds fewer entries than it says it should, so the file looks incomplete or cut off.'));
+  if (lut!.domainMin.some((v, i) => v !== 0 || lut!.domainMax[i] !== 1)) tbl.appendChild(rowHelp('Input domain', `[${lut!.domainMin.join(', ')}] - [${lut!.domainMax.join(', ')}]`, 'The range of input values the LUT expects for each colour channel, normally 0 to 1 (black to white). A different range means it was built for a special input such as log or HDR footage.'));
+  if (lut!.range[0] < -0.001 || lut!.range[1] > 1.001) tbl.appendChild(rowHelp('Output range', lut!.range[0].toFixed(3) + ' - ' + lut!.range[1].toFixed(3), 'Values reaching outside the normal 0 to 1 range mean this is an extended-range LUT, meant for HDR or scene-linear footage.'));
+  if (lut!.comments.length) tbl.appendChild(row('Source', lut!.comments.slice(0, 3).join(' · ')));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
   card.appendChild(tbl);
   resultsEl.appendChild(card);
@@ -669,7 +677,7 @@ export async function renderLut(file: File, resultsEl: HTMLElement) {
     'A hue x brightness field and a neutral grey ramp, shown straight (left) and pushed through this LUT (right).');
   chartCard.appendChild(baH); chartCard.appendChild(baHelp);
   const cW = 300, cH = 200;
-  const mk = (label, apply) => {
+  const mk = (label: ElChild | ElChild[], apply: boolean) => {
     const cv = el('canvas', { width: String(cW), height: String(cH), style: 'width:100%;border-radius:6px;display:block;image-rendering:auto' });
     paintChart(cv, sample, apply);
     return el('div', { style: 'flex:1 1 220px;min-width:200px' }, [cv, el('div', { class: 'anr-hint', style: 'text-align:center;margin-top:4px' }, label)]);
@@ -700,14 +708,14 @@ export async function renderLut(file: File, resultsEl: HTMLElement) {
   resultsEl.appendChild(swCard);
 
   // ---- 3D colour-cube scatter (original vs LUT, synced) ----
-  if (lut.type === '3D') {
+  if (lut!.type === '3D') {
     const cubeCard = el('div', { class: 'anr-card' });
     const [ccH, ccHelp] = h3help('Colour cube',
       'The left cube is the untouched RGB space; the right is the same lattice recoloured by this LUT, so the difference is exactly what the LUT does. Each point sits at its input R/G/B position.');
     cubeCard.appendChild(ccH); cubeCard.appendChild(ccHelp);
     cubeCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px' },
       'Drag either cube to rotate both, scroll (or pinch) to zoom in and look inside.'));
-    cubeCard.appendChild(buildCubePair(lut, sample));
+    cubeCard.appendChild(buildCubePair(lut!, sample));
     resultsEl.insertBefore(cubeCard, _renderAnchor);
   }
 

@@ -19,7 +19,7 @@
    Styling is .anr-carve-* in analyser.css; the thumbnails are bare, with their
    Analyse / Download actions overlaid on hover (see /test for the demo). */
 
-import { el, downloadBlob } from '../core/util.js';
+import { el, downloadBlob, type Drawable} from '../core/util.js';
 import { decodeJpegPartial, detectCorruptCut } from './jpeg-salvage.js';
 
 // Longest edge of a gallery thumbnail, in CSS pixels. Matches the 200px cap in
@@ -27,12 +27,12 @@ import { decodeJpegPartial, detectCorruptCut } from './jpeg-salvage.js';
 const THUMB_MAX = 200;
 
 // Only one lightbox image is open at a time, so only one URL is kept alive.
-let lbUrl = null;
+let lbUrl: string|null = null;
 
 // Open a carve full-size in the shared photo lightbox. photo.js is imported at
 // click time, not up front: unknown.js is the fallback for files we can't
 // identify and must not pull in the (large) photo module just to list carves.
-function openCarve(file: File, salvageUrl) {
+function openCarve(file: File, salvageUrl: string) {
   const prev = lbUrl;
   // A carve the browser couldn't decode was shown from the salvage decoder; the
   // lightbox opens that recovered raster (a data URL, no revoke) rather than the
@@ -52,25 +52,25 @@ function downloadCarve(file: File) {
 }
 
 // Downscale an Image or canvas into a fresh canvas whose long edge is <= maxD.
-function downscaleTo(src, maxD) {
+function downscaleTo(src: Drawable, maxD: number) {
   const w = src.naturalWidth || src.width, h = src.naturalHeight || src.height;
   const scale = Math.min(1, maxD / Math.max(w, h));
   const cv = document.createElement('canvas');
   cv.width = Math.max(1, Math.round(w * scale));
   cv.height = Math.max(1, Math.round(h * scale));
-  cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height);
+  cv.getContext('2d')!.drawImage(src, 0, 0, cv.width, cv.height);
   return cv;
 }
 
 // Full-resolution salvage canvas from the fault-tolerant decoder (jpeg-salvage.js):
 // the recovered top rows over mid-grey fill. null if nothing decoded.
-export function salvageFullCanvas(bytes) {
+export function salvageFullCanvas(bytes: Uint8Array) {
   let dec;
   try { dec = decodeJpegPartial(bytes); } catch (_) { return null; }
   if (!dec || !dec.rows) return null;
   const cv = document.createElement('canvas');
   cv.width = dec.width; cv.height = dec.height;
-  cv.getContext('2d').putImageData(new ImageData(dec.data, dec.width, dec.height), 0, 0);
+  cv.getContext('2d')!.putImageData(new ImageData(dec.data, dec.width, dec.height), 0, 0);
   cv._realFrac = (dec.realRows != null ? dec.realRows : dec.rows) / dec.height;
   cv._thumb = !!dec.thumb;                              // the file's embedded thumbnail (full image gone)
   cv._corrupt = !!dec.corrupt;                          // top strip real, remainder decoder noise (the disk-image gallery reads this)
@@ -83,12 +83,12 @@ export function salvageFullCanvas(bytes) {
 // or corrupt JPEG, the tolerant decoder recovers whatever top strip survives. A
 // carve that yields nothing at all keeps its text placeholder. Returns a Promise
 // that settles once decoded (or failed), so the gallery runs these one at a time.
-function decodeThumb(thumb) {
+function decodeThumb(thumb: HTMLElement) {
   const file = thumb._carveFile;
   const fmt = (thumb._carveFmt || '').toLowerCase();
   const placeholder = thumb.querySelector('.anr-hint');
   const isJpeg = fmt === 'jpeg' || fmt === 'jpg';
-  const show = (cv, salvaged, partial) => {
+  const show = (cv: HTMLCanvasElement, salvaged: boolean, partial: boolean) => {
     if (placeholder) placeholder.replaceWith(cv); else thumb.prepend(cv);
     thumb.classList.remove('is-plain');
     thumb.title = partial ? 'Click to view full size (recovered data is incomplete)' : 'Click to view full size';
@@ -113,7 +113,7 @@ function decodeThumb(thumb) {
       const w = im.naturalWidth || 0, h = im.naturalHeight || 0;
       if (!w || !h) { cleanup(); salvage(); return; }
       const cv = downscaleTo(im, THUMB_MAX);
-      const ctx = cv.getContext('2d');
+      const ctx = cv.getContext('2d')!;
       let frac = 1, corrupt = false;
       try { frac = emptyFraction(ctx, cv.width, cv.height); } catch (_) {}
       // The browser draws a desynced JPEG as a real top strip over saturated colour-block
@@ -135,9 +135,9 @@ function decodeThumb(thumb) {
 // JPEG leaves behind. 0 = a full picture, ~1 = nothing decoded. Used only to set a
 // tooltip hint now - nothing is hidden by it; every carve that produced a raster is
 // shown. The narrow ±2 gray band avoids catching a genuinely grey photo.
-export function emptyFraction(ctx, w, h) {
+export function emptyFraction(ctx: CanvasRenderingContext2D|null, w: number, h: number) {
   try {
-    const d = ctx.getImageData(0, 0, w, h).data;
+    const d = ctx!.getImageData(0, 0, w, h).data;
     const total = d.length / 4;
     if (total < 8) return 0;
     let fill = 0;
@@ -168,13 +168,13 @@ export function createCarveGallery() {
   // scroll can bring dozens of large carves into view together, and decoding them
   // concurrently exhausts the browser's image decoder so some come back blank and
   // show a false "no preview".
-  const queue = [];
+  const queue: HTMLElement[] = [];
   let pumping = false;
   const pump = async () => {
     if (pumping) return;
     pumping = true;
     while (queue.length) {
-      await decodeThumb(queue.shift());
+      await decodeThumb(queue.shift()!);
       await new Promise((r) => setTimeout(r));         // let the bitmap be reclaimed
     }
     pumping = false;
@@ -183,12 +183,12 @@ export function createCarveGallery() {
     for (const en of entries) {
       if (!en.isIntersecting) continue;
       io.unobserve(en.target);
-      queue.push(en.target);
+      queue.push(en.target as HTMLElement);
     }
     pump();
   }, { rootMargin: '300px' });
 
-  function add({ file, format, width, height, complete, onAnalyse }) {
+  function add({ file, format, width, height, complete, onAnalyse }: { file: File; format: string; width?: number; height?: number; complete?: boolean; onAnalyse?: () => void }) {
     const fmt = (format || 'data').toUpperCase();
     const cell = el('div', { class: 'anr-carve-cell' });
 

@@ -22,19 +22,19 @@
      Pad   (2): pascal-name block + main block (layer@0 x@13 y@17 sizeX@21 sizeY@25 hole@45 shape@49 rot@52(f64))
 */
 
-import { el, row, rowHelp, h3help, fmtBytes, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, errorCard, type ElChild } from '../core/util.js';
 import { openCfbf } from '../lib/cfbf.js';
 import { buildViewer, fitBox, grow, safeBox } from './eda-viewer.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
-const svg = (tag, attrs) => {
+const svg = (tag: string, attrs: Record<string, any>|null) => {
   const n = document.createElementNS(SVGNS, tag);
   if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
   return n;
 };
 
 // Altium colours are packed BGR integers (R = low byte). Returns a CSS string.
-function bgr(v) {
+function bgr(v: string) {
   const n = parseInt(v, 10);
   if (!Number.isFinite(n)) return null;
   const r = n & 0xFF, g = (n >> 8) & 0xFF, b = (n >> 16) & 0xFF;
@@ -43,7 +43,7 @@ function bgr(v) {
 
 // Standard Altium layer identities for the layer ids we render. Anything not
 // listed degrades to a neutral teal "Layer N" so unusual stacks still draw.
-const LAYER_INFO = {
+const LAYER_INFO: Record<number, { name: string; color: string }> = {
   1:  { name: 'Top Layer',       color: '#c81410' },
   32: { name: 'Bottom Layer',    color: '#1538c8' },
   33: { name: 'Top Overlay',     color: '#7a6a00' },
@@ -57,7 +57,7 @@ const LAYER_INFO = {
 // Mechanical layers (assembly / courtyard / dimension) cluster in the 57-88
 // range depending on Altium version; give them distinct hues by id.
 const MECH_COLORS = ['#0a8a8a', '#9a0a9a', '#3a8a0a', '#955f10', '#0a6498', '#9a0a4a'];
-function layerInfo(n) {
+function layerInfo(n: number) {
   if (LAYER_INFO[n]) return LAYER_INFO[n];
   if (n >= 56 && n <= 88) return { name: 'Mechanical ' + (n - 56), color: MECH_COLORS[(n - 56) % MECH_COLORS.length] };
   return { name: 'Layer ' + n, color: '#2a5a44' };
@@ -67,7 +67,7 @@ function layerInfo(n) {
 
 const dec = new TextDecoder('latin1');
 // Parse an ASCII `|KEY=VALUE|KEY=VALUE` record into a case-insensitive map.
-function parseFields(bytes) {
+function parseFields(bytes: AllowSharedBufferSource|undefined) {
   const txt = dec.decode(bytes).replace(/\0+$/, '');
   const f: any = {};
   for (const kv of txt.split('|')) {
@@ -76,9 +76,9 @@ function parseFields(bytes) {
   }
   return f;
 }
-const num = (f, k, d = 0) => { const v = parseFloat(f[k]); return Number.isFinite(v) ? v : d; };
+const num = (f: any, k: string, d = 0) => { const v = parseFloat(f[k]); return Number.isFinite(v) ? v : d; };
 // Altium escapes a few XML entities in description text.
-const unesc = (s) => (s || '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+const unesc = (s: string) => (s || '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 
 // ---- schematic ------------------------------------------------------------
 
@@ -87,9 +87,9 @@ const unesc = (s) => (s || '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').repla
 // parameters) is this ordinal minus one - the header is excluded from that index
 // space - so a record owns the component at ord === OwnerIndex + 1. We must NOT
 // skip zero-length records here, or the ordinals would drift out of step.
-function schRecords(head) {
+function schRecords(head: Uint8Array) {
   const dv = new DataView(head.buffer, head.byteOffset, head.byteLength);
-  const out = [];
+  const out: { f: any; ord: number }[] = [];
   let off = 0, ord = 0, guard = 0;
   while (off + 4 <= head.length && guard++ < 200000) {
     const ln = dv.getUint32(off, true) >>> 0;
@@ -100,14 +100,14 @@ function schRecords(head) {
   return out;
 }
 
-function parseSchematic(reader) {
+function parseSchematic(reader: any) {
   const head = reader.readStream('FileHeader');
   if (!head) return null;
   const records = schRecords(head);
-  const objs = [];            // drawable {kind,...}
-  const parts = [];           // component summary rows
+  const objs: any[] = [];            // drawable {kind,...}
+  const parts: any[] = [];           // component summary rows
   let header = null;
-  const params = [];          // sheet-level (document) parameters
+  const params: any[] = [];          // sheet-level (document) parameters
   const compByOwner = new Map();   // OwnerIndex value -> component
 
   for (const { f, ord } of records) {
@@ -192,10 +192,10 @@ function parseSchematic(reader) {
 // Parse a footprint `<name>/Data` stream: each record is [u8 type][u32 len][payload].
 // Pads (type 2) are several consecutive [u32 len][block]s; the largest block holds
 // the geometry. Returns { prims, layers }.
-function parseFootprintData(bytes) {
+function parseFootprintData(bytes: Uint8Array) {
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const prims = [];
-  const layers = new Set();
+  const layers = new Set<number>();
   // skip the leading [u32 len][pascal name] header
   let off = 0;
   if (bytes.length >= 4) off = 4 + (dv.getUint32(0, true) >>> 0);
@@ -222,7 +222,7 @@ function parseFootprintData(bytes) {
       let main = blocks[0];
       for (const bk of blocks) if (bk[1] > main[1]) main = bk;
       const mo = main[0];
-      const i32 = (k) => dv.getInt32(mo + k, true);
+      const i32 = (k: number) => dv.getInt32(mo + k, true);
       const layer = bytes[mo];
       layers.add(layer);
       prims.push({ kind: 'pad', layer, name,
@@ -234,7 +234,7 @@ function parseFootprintData(bytes) {
     const ln = dv.getUint32(off + 1, true) >>> 0;
     if (ln === 0 || off + 5 + ln > bytes.length) { off += 5; if (ln > bytes.length) break; continue; }
     const p = off + 5;
-    const i32 = (k) => dv.getInt32(p + k, true);
+    const i32 = (k: number) => dv.getInt32(p + k, true);
     const layer = bytes[p];
     if (type === 4) {                       // track
       layers.add(layer);
@@ -256,7 +256,7 @@ function parseFootprintData(bytes) {
 // Parse a PcbDoc per-type binary stream (Tracks6/Arcs6/Pads6/Fills6 Data).
 // These records are [u32 len][payload] with NO leading type byte; `kind` says
 // how to read the payload. Empty in unrouted boards.
-function parsePcbStream(bytes, kind) {
+function parsePcbStream(bytes: Uint8Array, kind: string) {
   if (!bytes || !bytes.length) return [];
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const prims = [];
@@ -265,7 +265,7 @@ function parsePcbStream(bytes, kind) {
     const ln = dv.getUint32(off, true) >>> 0;
     if (ln === 0 || off + 4 + ln > bytes.length) break;
     const p = off + 4;
-    const i32 = (k) => dv.getInt32(p + k, true);
+    const i32 = (k: number) => dv.getInt32(p + k, true);
     const layer = bytes[p];
     if (kind === 'line') prims.push({ kind: 'line', layer, x1: i32(13) / 1e4, y1: i32(17) / 1e4, x2: i32(21) / 1e4, y2: i32(25) / 1e4, w: i32(29) / 1e4 });
     else if (kind === 'arc') prims.push({ kind: 'arc', layer, cx: i32(13) / 1e4, cy: i32(17) / 1e4, r: i32(21) / 1e4, a1: dv.getFloat64(p + 25, true), a2: dv.getFloat64(p + 33, true), w: i32(41) / 1e4 });
@@ -275,7 +275,7 @@ function parsePcbStream(bytes, kind) {
 }
 
 // Board outline + key board fields from Board6/Data (one big ASCII record).
-function parseBoard(bytes) {
+function parseBoard(bytes: AllowSharedBufferSource|undefined) {
   if (!bytes) return null;
   const f = parseFields(bytes);
   const outline = [];
@@ -284,7 +284,7 @@ function parseBoard(bytes) {
     if (vx == null || vy == null) break;
     outline.push([parseFloat(vx) / 1e4, parseFloat(vy) / 1e4]);
   }
-  const mil = (k) => { const v = parseFloat(f[k]); return Number.isFinite(v) ? v / 1e4 : null; };
+  const mil = (k: string) => { const v = parseFloat(f[k]); return Number.isFinite(v) ? v / 1e4 : null; };
   return { outline, originX: mil('ORIGINX'), originY: mil('ORIGINY'), fields: f };
 }
 
@@ -295,10 +295,10 @@ function parseBoard(bytes) {
 // at each pcbView call site; safeBox keeps its default 50/100 pads.
 
 // Render a schematic (Y flipped so the sheet reads the right way up).
-function schView(parsed) {
+function schView(parsed: any) {
   const v = buildViewer((g) => {
     const b = fitBox();
-    const Y = (v) => -v;
+    const Y = (v: number) => -v;
     for (const o of parsed.objs) {
       if (o.kind === 'rect') {
         const x = Math.min(o.x1, o.x2), y = Math.min(o.y1, o.y2), w = Math.abs(o.x2 - o.x1), h = Math.abs(o.y2 - o.y1);
@@ -310,7 +310,7 @@ function schView(parsed) {
         if (o.desig) { const t = svg('text', { x: o.x2, y: Y(o.y2) - 1, 'font-size': 6, fill: '#0a5a8a' }); t.textContent = o.desig; g.appendChild(t); }
         grow(b, o.x, Y(o.y)); grow(b, o.x2, Y(o.y2));
       } else if (o.kind === 'wire' || o.kind === 'poly') {
-        const pts = o.pts.map(([x, y]) => `${x},${Y(y)}`).join(' ');
+        const pts = o.pts.map(([x, y]: number[]) => `${x},${Y(y)}`).join(' ');
         g.appendChild(svg('polyline', { points: pts, fill: 'none', stroke: o.stroke, 'stroke-width': o.kind === 'wire' ? 1.6 : 1 }));
         for (const [x, y] of o.pts) grow(b, x, Y(y));
       } else if (o.kind === 'text') {
@@ -340,12 +340,12 @@ function schView(parsed) {
 }
 
 // Render PCB / footprint primitives with per-layer colouring + toggles.
-function pcbView(prims, layers, outline) {
+function pcbView(prims: any[], layers: Set<number>, outline: any) {
   return buildViewer((g) => {
     const b = fitBox();
-    const Y = (v) => -v;
+    const Y = (v: number) => -v;
     if (outline && outline.length >= 2) {
-      const pts = outline.map(([x, y]) => `${x},${Y(y)}`).join(' ');
+      const pts = outline.map(([x, y]: number[]) => `${x},${Y(y)}`).join(' ');
       g.appendChild(svg('polygon', { points: pts, fill: 'rgba(40,120,80,0.05)', stroke: '#1f6a3a', 'stroke-width': 2, 'data-layer': 'outline' }));
       for (const [x, y] of outline) grow(b, x, Y(y));
     }
@@ -379,12 +379,12 @@ function pcbView(prims, layers, outline) {
     return safeBox(b);
   }, { layers: [...layers].sort((a, b) => a - b).map((id) => { const inf = layerInfo(id); return { id, name: inf.name, color: inf.color }; }) });
 }
-function group1(n, layer) { n.setAttribute('data-layer', layer); return n; }
-function padLabel(p, Y) {
+function group1(n: SVGElement, layer: string) { n.setAttribute('data-layer', layer); return n; }
+function padLabel(p: any, Y: (v: number) => number) {
   const t = svg('text', { x: p.x, y: Y(p.y) + Math.min(p.sx, p.sy) * 0.18, 'font-size': Math.min(p.sx, p.sy) * 0.5, fill: '#fff', 'text-anchor': 'middle', 'data-layer': p.layer, 'font-weight': 700 });
   t.textContent = p.name; return t;
 }
-function arcPath(p, Y, col) {
+function arcPath(p: any, Y: (v: number) => number, col: string) {
   const a1 = p.a1 * Math.PI / 180, a2 = p.a2 * Math.PI / 180;
   const x1 = p.cx + p.r * Math.cos(a1), y1 = p.cy + p.r * Math.sin(a1);
   const x2 = p.cx + p.r * Math.cos(a2), y2 = p.cy + p.r * Math.sin(a2);
@@ -399,7 +399,7 @@ function arcPath(p, Y, col) {
 // Rows are [label, value] or [label, value, helpText]; a help string routes the
 // row through rowHelp for a local [?] tooltip (kept out of the shared LABEL_HELP
 // map, which would mis-attach to same-named rows elsewhere).
-function metaCard(title, helpText, rows, file: File, extra?) {
+function metaCard(title: string, helpText: string, rows: any[][], file: File, extra?: Node) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help(title, helpText);
   card.appendChild(h); card.appendChild(help);
@@ -412,7 +412,7 @@ function metaCard(title, helpText, rows, file: File, extra?) {
 // Local column-header [?] tooltip - helpTh is not exported from util.js, so this
 // mirrors it for the table headers that need a plain-language note.
 let _thTipInit = false;
-function helpTh(label, help) {
+function helpTh(label: string|null, help: ElChild | ElChild[]) {
   const th = el('th', {});
   if (!help) { th.textContent = label; return th; }
   if (!_thTipInit) { _thTipInit = true; document.addEventListener('click', () => document.querySelectorAll('.anr-tip.is-active').forEach((t) => t.classList.remove('is-active'))); }
@@ -475,7 +475,7 @@ async function renderEpw(file: File, resultsEl: HTMLElement) {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const srcLine = lines.find((l) => /^Source=/i.test(l));
   const source = srcLine ? srcLine.split('=')[1] : '';
-  const SRC = { ms: 'Mouser', fa: 'Farnell / element14', di: 'Digi-Key', rs: 'RS Components', ar: 'Arrow' };
+  const SRC: Record<string, string> = { ms: 'Mouser', fa: 'Farnell / element14', di: 'Digi-Key', rs: 'RS Components', ar: 'Arrow' };
   const desc = lines.find((l) => /^\d+\/\d+\//.test(l));
   const parts = desc ? desc.split('/') : [];
   const [compId, partId, ver, pinCount, units, category] = parts;
@@ -497,7 +497,7 @@ async function renderEpw(file: File, resultsEl: HTMLElement) {
 }
 
 // Shared "Source" card showing the raw text of a small text-based Altium file.
-function sourceCard(text) {
+function sourceCard(text: string) {
   const src = el('div', { class: 'anr-card' });
   src.appendChild(el('h3', {}, 'Source'));
   const pre = el('pre', { class: 'anr-pagetext anr-code-src' });
@@ -508,12 +508,12 @@ function sourceCard(text) {
 
 // Parse a .PrjPcb INI into { projName, docs[], version, cfg, outCount }. The
 // member documents are [DocumentN] DocumentPath= entries, in project order.
-function parsePrj(text, fileName) {
+function parsePrj(text: string, fileName: string) {
   const docs = [];
   const reDoc = /\[Document\d+\][^[]*?DocumentPath=([^\r\n]+)/gi;
   let m;
   while ((m = reDoc.exec(text))) docs.push(m[1].trim());
-  const grab = (k) => { const r = new RegExp('^' + k + '=([^\\r\\n]+)', 'im').exec(text); return r ? r[1].trim() : ''; };
+  const grab = (k: string) => { const r = new RegExp('^' + k + '=([^\\r\\n]+)', 'im').exec(text); return r ? r[1].trim() : ''; };
   return {
     projName: (fileName || '').replace(/\.[^.]+$/, ''),
     docs, version: grab('Version'), cfg: grab('DefaultConfiguration'),
@@ -569,7 +569,7 @@ async function renderPreview(file: File, resultsEl: HTMLElement) {
   // into a map with one literal regex (no dynamic-escaping pitfalls).
   const ini: any = {};
   for (const m of head.matchAll(/^([A-Za-z]+)=([^\r\n]+)/gm)) ini[m[1].toLowerCase()] = m[2];
-  const g = (k) => (/^\d+$/.test(ini[k.toLowerCase()] || '') ? ini[k.toLowerCase()] : null);
+  const g = (k: string) => (/^\d+$/.test(ini[k.toLowerCase()] || '') ? ini[k.toLowerCase()] : null);
   const lw = g('LargeImageWidth'), lh = g('LargeImageHeight');
   resultsEl.appendChild(metaCard('Altium preview thumbnail', 'A saved preview picture Altium keeps next to a document (.SchDocPreview / .PcbDocPreview) - a small thumbnail of the schematic or board, so a file browser can show what it looks like without opening the original.', [
     ['Format', 'Altium document preview'],
@@ -582,7 +582,7 @@ async function renderPreview(file: File, resultsEl: HTMLElement) {
   resultsEl.appendChild(el('div', { class: 'anr-info' }, 'Internal thumbnail cache - the matching .SchDoc / .PcbDoc opens as the full interactive view.'));
 }
 
-function renderSch(file: File, reader, resultsEl: HTMLElement, ext: string) {
+function renderSch(file: File, reader: any, resultsEl: HTMLElement, ext: string) {
   const lib = ext === 'schlib';
   const parsed = parseSchematic(reader);
   const isLib = lib || !parsed || !parsed.objs.length;
@@ -632,7 +632,7 @@ function renderSch(file: File, reader, resultsEl: HTMLElement, ext: string) {
 // geometry lives in a top-level `<name>/Data` stream (exactly one path segment
 // before Data) - not Library/Data (the library TOC) nor the deeper
 // `<name>/UniqueIDPrimitiveInformation/Data` sidecar. Pick the largest.
-function parsePcbLibData(reader) {
+function parsePcbLibData(reader: any) {
   let fpName = '', best = -1;
   for (const e of reader.entries) {
     if (e.type !== 2) continue;
@@ -640,12 +640,12 @@ function parsePcbLibData(reader) {
     if (!m || /^(Library|FileVersionInfo)$/i.test(m[1])) continue;
     if (e.size > best) { best = e.size; fpName = m[1]; }
   }
-  let prims = [], layers = new Set();
+  let prims: any[] = [], layers = new Set<number>();
   if (fpName) { const db = reader.readStream(fpName + '/Data'); if (db) ({ prims, layers } = parseFootprintData(db)); }
   return { prims, layers, pads: prims.filter((p) => p.kind === 'pad'), fpName };
 }
 
-function renderPcbLib(file: File, reader, resultsEl: HTMLElement) {
+function renderPcbLib(file: File, reader: any, resultsEl: HTMLElement) {
   const { prims, layers, pads, fpName } = parsePcbLibData(reader);
 
   resultsEl.appendChild(metaCard('Altium footprint library', 'An Altium library of PCB footprints (.PcbLib) - the solder-pad patterns that components sit on. Analyser decodes each footprint’s pads, tracks and arcs and redraws them to scale.', [
@@ -676,7 +676,7 @@ function renderPcbLib(file: File, reader, resultsEl: HTMLElement) {
 }
 
 // Shared pad-table builder (used by the library view and the project view).
-function padsTable(pads) {
+function padsTable(pads: any[]) {
   const tbl = el('table', { class: 'anr-readout anr-altium-pads' });
   tbl.appendChild(el('tr', {}, [
     helpTh('Pad', 'The pad’s number or name - the label matching the component pin that solders to it.'),
@@ -684,8 +684,8 @@ function padsTable(pads) {
     helpTh('Hole', 'The diameter of the hole drilled through the pad, for pins that pass through the board. Blank for surface pads with no hole.'),
     helpTh('Type', 'How the pad mounts: THT (through-hole, a pin through a drilled hole) or SMD (surface-mount, soldered to the top).'),
   ]));
-  const mm = (mil) => (mil * 0.0254).toFixed(3);
-  const shapeName = { 1: 'Round', 2: 'Rect', 3: 'Rounded' };
+  const mm = (mil: number) => (mil * 0.0254).toFixed(3);
+  const shapeName: Record<number, string> = { 1: 'Round', 2: 'Rect', 3: 'Rounded' };
   for (const p of pads) {
     tbl.appendChild(el('tr', {}, [
       el('td', {}, p.name || '?'),
@@ -699,12 +699,12 @@ function padsTable(pads) {
 }
 
 // Decode a .PcbDoc reader into { prims, layers, outline, fields, boardW, boardH }.
-function parsePcbDocData(reader) {
-  const board = parseBoard(reader.readStream((e) => /Board6\/Data$/i.test(e.path)));
-  const layers = new Set();
-  let prims = [];
+function parsePcbDocData(reader: any) {
+  const board = parseBoard(reader.readStream((e: any) => /Board6\/Data$/i.test(e.path)));
+  const layers = new Set<number>();
+  let prims: any[] = [];
   for (const [nm, kind] of [['Tracks6', 'line'], ['Arcs6', 'arc'], ['Fills6', 'line']]) {
-    const bytes = reader.readStream((e) => new RegExp(nm + '/Data$', 'i').test(e.path));
+    const bytes = reader.readStream((e: any) => new RegExp(nm + '/Data$', 'i').test(e.path));
     const got = parsePcbStream(bytes, kind);
     for (const p of got) layers.add(p.layer);
     prims = prims.concat(got);
@@ -720,7 +720,7 @@ function parsePcbDocData(reader) {
   return { prims, layers, outline, fields, boardW, boardH };
 }
 
-function renderPcbDoc(file: File, reader, resultsEl: HTMLElement) {
+function renderPcbDoc(file: File, reader: any, resultsEl: HTMLElement) {
   const { prims, layers, outline, fields: f, boardW, boardH } = parsePcbDocData(reader);
 
   resultsEl.appendChild(metaCard('Altium PCB', 'An Altium Designer printed-circuit-board layout (.PcbDoc) - the physical board design. Analyser decodes the board outline and any routed copper wiring from its internal binary data and draws them to scale.', [
@@ -729,7 +729,7 @@ function renderPcbDoc(file: File, reader, resultsEl: HTMLElement) {
     ['Size', fmtBytes(file.size)],
     ['Saved', f.DATE ? `${f.DATE} ${f.TIME || ''}`.trim() : null],
     ['Units', f.DISPLAYUNIT === '1' ? 'Imperial (mil)' : f.DISPLAYUNIT ? 'Metric (mm)' : null],
-    ['Board size', boardW ? `${boardW.toFixed(1)} × ${boardH.toFixed(1)} mm` : null],
+    ['Board size', boardW ? `${boardW.toFixed(1)} × ${boardH!.toFixed(1)} mm` : null],
     ['Routed primitives', prims.length, 'The count of individual copper objects laid out on the board - each track (wire) segment, arc and filled area.'],
   ], file));
 
@@ -751,20 +751,20 @@ function renderPcbDoc(file: File, reader, resultsEl: HTMLElement) {
 // into a single tabbed workbench and lets a BOM row cross-probe straight to the
 // part on its schematic sheet.
 
-const base = (p) => p.split(/[\\/]/).pop();
-const extOfName = (n) => (n.split('.').pop() || '').toLowerCase();
+const base = (p: string) => p.split(/[\\/]/).pop()!;
+const extOfName = (n: string) => (n.split('.').pop() || '').toLowerCase();
 
 // True for any file that belongs to an Altium project (used by folder.js to
 // decide whether to offer the combined view).
 // Pull a parameter value by trying each name pattern in priority order.
-function paramVal(params, patterns) {
+function paramVal(params: any[], patterns: RegExp[]) {
   for (const re of patterns) {
-    const m = (params || []).find((p) => re.test(p.name));
+    const m = (params || []).find((p: any) => re.test(p.name));
     if (m && m.value) return m.value;
   }
   return '';
 }
-function bomFields(comp) {
+function bomFields(comp: any) {
   const p = comp.params || [];
   return {
     mfr: paramVal(p, [/^manufacturer.?name$/i, /^manufacturer$/i, /manufacturer(?!.*part)/i]),
@@ -774,7 +774,7 @@ function bomFields(comp) {
 }
 
 // Small key/value table for a doc panel header (lighter than the full metaCard).
-function miniMeta(rows) {
+function miniMeta(rows: any[][]) {
   const tbl = el('table', { class: 'anr-readout' });
   for (const [k, v, htxt] of rows) if (v != null && v !== '') tbl.appendChild(htxt ? rowHelp(k, String(v), htxt) : row(k, String(v)));
   return tbl;
@@ -782,10 +782,10 @@ function miniMeta(rows) {
 
 // Build a project card from the Altium files found in a dropped folder.
 // `altFiles` are folder entries: { path, file }. Returns a card element.
-export async function buildAltiumProjectCard(altFiles, folderName) {
+export async function buildAltiumProjectCard(altFiles: any[], folderName: string) {
   // Categorise the files by role.
-  let prjFile = null;
-  const schF = [], pcbF = [], libF = [], epwF = [], prevF = [];
+  let prjFile: any = null;
+  const schF: any[] = [], pcbF: any[] = [], libF: any[] = [], epwF: any[] = [], prevF: any[] = [];
   for (const af of altFiles) {
     const ext = extOfName(base(af.path));
     if (ext === 'prjpcb' || ext === 'prjpcbstructure') { if (!prjFile) prjFile = af; }
@@ -796,13 +796,13 @@ export async function buildAltiumProjectCard(altFiles, folderName) {
     else if (/preview$/.test(ext)) prevF.push(af);
   }
 
-  let prj = null;
+  let prj: any = null;
   if (prjFile) { try { prj = parsePrj(await prjFile.file.text(), base(prjFile.path)); } catch (_) {} }
 
   // Parse each OLE document. Failures are skipped so one bad file can't sink the
   // whole project view.
-  const docs = [];
-  async function addDoc(af, kind) {
+  const docs: any[] = [];
+  async function addDoc(af: any, kind: string) {
     try {
       const reader = await openCfbf(af.file);
       if (!reader) return;
@@ -817,8 +817,8 @@ export async function buildAltiumProjectCard(altFiles, folderName) {
 
   // Order documents the way the .PrjPcb lists them, then anything left over.
   if (prj && prj.docs.length) {
-    const ordOf = (name) => {
-      const i = prj.docs.findIndex((d) => base(d).toLowerCase() === name.toLowerCase());
+    const ordOf = (name: string) => {
+      const i = prj.docs.findIndex((d: string) => base(d).toLowerCase() === name.toLowerCase());
       return i < 0 ? 999 : i;
     };
     docs.sort((a, b) => ordOf(a.name) - ordOf(b.name));
@@ -826,7 +826,7 @@ export async function buildAltiumProjectCard(altFiles, folderName) {
 
   // Combined BOM across every schematic.
   const schDocs = docs.filter((d) => d.kind === 'sch');
-  const bom = [];
+  const bom: { comp: any; doc: any }[] = [];
   for (const d of schDocs) {
     for (const c of (d.parsed ? d.parsed.parts : []) || []) {
       if (c.libref || c.designator) bom.push({ comp: c, doc: d });
@@ -845,8 +845,8 @@ export async function buildAltiumProjectCard(altFiles, folderName) {
   card.appendChild(tabsBar);
   card.appendChild(panels);
 
-  const tabs = [];
-  function addTab(label, buildPanel) {
+  const tabs: any[] = [];
+  function addTab(label: ElChild | ElChild[], buildPanel: (panel: HTMLElement) => any) {
     const idx = tabs.length;
     const btn = el('button', { type: 'button', class: 'anr-btn anr-altium-tab' }, label);
     const panel = el('div', { class: 'anr-altium-tabpanel', hidden: '' });
@@ -856,21 +856,21 @@ export async function buildAltiumProjectCard(altFiles, folderName) {
     tabs.push({ btn, panel, build: buildPanel, built: false, view: null });
     return idx;
   }
-  function setActive(i) {
+  function setActive(i: number) {
     tabs.forEach((t, j) => { t.btn.classList.toggle('is-on', j === i); t.panel.hidden = j !== i; });
     const t = tabs[i];
     if (t && !t.built) { t.built = true; t.view = t.build(t.panel) || null; }
   }
 
   // Overview tab (built last so it can reference every doc's tab index).
-  const overviewIdx = addTab('Overview', (panel) => buildOverview(panel));
+  const overviewIdx = addTab('Overview', (panel: HTMLElement) => buildOverview(panel));
 
   // One tab per document.
   for (const d of docs) {
-    d.tabIndex = addTab(d.name, (panel) => buildDocPanel(panel, d));
+    d.tabIndex = addTab(d.name, (panel: HTMLElement) => buildDocPanel(panel, d));
   }
 
-  function buildDocPanel(panel, d) {
+  function buildDocPanel(panel: HTMLElement, d: any) {
     if (d.kind === 'sch') {
       const p = d.parsed;
       const isLib = /schlib$/i.test(d.name) || !p || !p.objs.length;
@@ -914,7 +914,7 @@ export async function buildAltiumProjectCard(altFiles, folderName) {
     return null;
   }
 
-  function buildOverview(panel) {
+  function buildOverview(panel: HTMLElement) {
     // Project summary.
     panel.appendChild(miniMeta([
       ['Project', (prj && prj.projName) || folderName],
@@ -932,7 +932,7 @@ export async function buildAltiumProjectCard(altFiles, folderName) {
       bomCard.appendChild(bh); bomCard.appendChild(bhp);
       const multiSheet = schDocs.length > 1;
       const tbl = el('table', { class: 'anr-readout anr-altium-bom' });
-      const HEAD_HELP = {
+      const HEAD_HELP: Record<string, string> = {
         'Designator': 'The short reference label a part is given, such as R1 for a resistor or U2 for a chip.',
         'Mfr part №': 'The manufacturer’s own part number for the component - the code you would order it by.',
       };
@@ -976,7 +976,7 @@ export async function buildAltiumProjectCard(altFiles, folderName) {
       list.appendChild(el('tr', {}, [el('th', {}, 'SamacSys model'), el('th', {}, 'Component ID'), el('th', {}, 'Source')]));
       panel.appendChild(el('h3', {}, 'Sourced library parts'));
       panel.appendChild(list);
-      const SRC = { ms: 'Mouser', fa: 'Farnell / element14', di: 'Digi-Key', rs: 'RS Components', ar: 'Arrow' };
+      const SRC: Record<string, string> = { ms: 'Mouser', fa: 'Farnell / element14', di: 'Digi-Key', rs: 'RS Components', ar: 'Arrow' };
       epwF.forEach(async (af) => {
         let text = '';
         try { text = await af.file.text(); } catch (_) {}
@@ -997,7 +997,7 @@ export async function buildAltiumProjectCard(altFiles, folderName) {
     const filesCard = el('table', { class: 'anr-readout' });
     panel.appendChild(el('h3', {}, 'Project files'));
     panel.appendChild(filesCard);
-    const roleOf = (n) => {
+    const roleOf = (n: string) => {
       const e = extOfName(n);
       if (e === 'prjpcb' || e === 'prjpcbstructure') return 'Project manifest';
       if (e === 'schdoc') return 'Schematic';

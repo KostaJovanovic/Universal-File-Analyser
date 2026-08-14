@@ -47,13 +47,13 @@ function extOf(name) {
     return m ? m[1].toLowerCase() : '';
 }
 export function normalizeFolder(files) {
-    return files.map(f => {
+    return files.map((f) => {
         const ext = extOf(f.path);
         return { path: f.path, size: f.size, file: f.file || null, entry: null, category: categorizeExt(ext), ext };
     });
 }
 export function normalizeArchive(entries) {
-    return entries.filter(e => !e.isDir).map(e => {
+    return entries.filter((e) => !e.isDir).map((e) => {
         const ext = extOf(e.name);
         return { path: e.name, size: e.uncompSize, file: null, entry: e, category: categorizeExt(ext), ext };
     });

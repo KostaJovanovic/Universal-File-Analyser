@@ -11,18 +11,18 @@ const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 
-function wFirst(parent, name) {
+function wFirst(parent: Element, name: string) {
   return parent.getElementsByTagNameNS(W, name)[0] || null;
 }
 
-function wChildren(parent, name) {
+function wChildren(parent: Element, name: string) {
   const out = [];
   for (const c of parent.children)
     if (c.localName === name && c.namespaceURI === W) out.push(c);
   return out;
 }
 
-function wAttr(elem, name) {
+function wAttr(elem: Element, name: string) {
   return elem.getAttributeNS(W, name) || elem.getAttribute('w:' + name) || '';
 }
 
@@ -30,7 +30,7 @@ function wAttr(elem, name) {
 
 // Pull an embedded image out of a run's <w:drawing>/<a:blip> (or legacy
 // <v:imagedata>) and return an <img> sized from the drawing extent, or null.
-function runImage(run, imageMap) {
+function runImage(run: Element, imageMap: any) {
   if (!imageMap) return null;
   let rid = null;
   const blip = run.getElementsByTagNameNS(A, 'blip')[0];
@@ -60,13 +60,13 @@ function runImage(run, imageMap) {
   let extent = null;
   for (const n of run.getElementsByTagName('*')) { if (n.localName === 'extent') { extent = n; break; } }
   if (extent) {
-    const cx = parseInt(extent.getAttribute('cx'), 10);
+    const cx = parseInt(extent.getAttribute('cx')!, 10);
     if (cx) im.style.width = Math.round(cx / 9525) + 'px';
   }
   return im;
 }
 
-function parseRuns(paragraph, imageMap) {
+function parseRuns(paragraph: Element, imageMap: any) {
   const frag = document.createDocumentFragment();
   for (const child of paragraph.children) {
     if (child.namespaceURI !== W) continue;
@@ -115,7 +115,7 @@ function parseRuns(paragraph, imageMap) {
   return frag;
 }
 
-function renderParagraph(p, imageMap) {
+function renderParagraph(p: Element, imageMap: any) {
   const pPr = wFirst(p, 'pPr');
   let tag = 'p';
   let isList = false;
@@ -166,7 +166,7 @@ function renderParagraph(p, imageMap) {
   return elem;
 }
 
-function renderTable(tbl, imageMap) {
+function renderTable(tbl: Element, imageMap: any) {
   const table = document.createElement('table');
   table.style.cssText = 'border-collapse:collapse;width:100%;margin:12px 0;';
   for (const tr of wChildren(tbl, 'tr')) {
@@ -186,7 +186,7 @@ function renderTable(tbl, imageMap) {
   return table;
 }
 
-function renderDocumentXml(xmlStr, imageMap) {
+function renderDocumentXml(xmlStr: string, imageMap: any) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlStr, 'application/xml');
   if (doc.querySelector('parsererror'))
@@ -214,7 +214,7 @@ function revokeDocxImageUrls() {
   _docxImageUrls.clear();
 }
 
-async function buildImageMap(zip) {
+async function buildImageMap(zip: any) {
   const map: any = {};
   if (!zip.has('word/_rels/document.xml.rels')) return map;
   const relsXml = await zip.text('word/_rels/document.xml.rels');
@@ -246,12 +246,12 @@ async function buildImageMap(zip) {
 
 // ---------- Metadata ----------
 
-async function extractMeta(zip) {
+async function extractMeta(zip: any) {
   const fields: any = {};
   if (zip.has('docProps/core.xml')) {
     const xml = await zip.text('docProps/core.xml');
     if (xml) {
-      const grab = (tag) => {
+      const grab = (tag: string) => {
         const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<'));
         return m ? m[1].trim() : null;
       };
@@ -272,7 +272,7 @@ async function extractMeta(zip) {
   if (zip.has('docProps/app.xml')) {
     const xml = await zip.text('docProps/app.xml');
     if (xml) {
-      const grab = (tag) => {
+      const grab = (tag: string) => {
         const m = xml.match(new RegExp('<' + tag + '[^>]*>([^<]+)<'));
         return m ? m[1].trim() : null;
       };
@@ -294,7 +294,7 @@ async function extractMeta(zip) {
 // flags and extended document properties. Returns an .anr-card element, or
 // null when nothing of interest was found. Fully guarded so a failure here
 // never affects the main document rendering.
-async function buildCollabCard(zip) {
+async function buildCollabCard(zip: any) {
   try {
     const card = el('div', { class: 'anr-card' });
     card.appendChild(el('h3', {}, 'Collaboration & metadata'));
@@ -310,7 +310,7 @@ async function buildCollabCard(zip) {
       if (zip.has('docProps/core.xml')) {
         const xml = await zip.text('docProps/core.xml');
         if (xml) {
-          const grab = (tag) => { const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
+          const grab = (tag: string) => { const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
           const creator = grab('creator');
           const lastBy = grab('lastModifiedBy');
           if (creator && lastBy && creator !== lastBy) {
@@ -369,7 +369,7 @@ async function buildCollabCard(zip) {
           if (n) {
             // Tally insertions/deletions per author for an edit-density breakdown.
             const byAuthor = new Map();   // author -> { ins, del }
-            const tally = (list, key) => {
+            const tally = (list: HTMLCollectionOf<Element>, key: string) => {
               for (const e of list) {
                 const a = wAttr(e, 'author') || '(unknown)';
                 const rec = byAuthor.get(a) || { ins: 0, del: 0 };
@@ -453,7 +453,7 @@ async function buildCollabCard(zip) {
       if (zip.has('docProps/app.xml')) {
         const xml = await zip.text('docProps/app.xml');
         if (xml) {
-          const grab = (tag) => { const m = xml.match(new RegExp('<' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
+          const grab = (tag: string) => { const m = xml.match(new RegExp('<' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
           const company = grab('Company'); if (company) { tbl.appendChild(row('Company', company)); any = true; }
           const manager = grab('Manager'); if (manager) { tbl.appendChild(row('Manager', manager)); any = true; }
           const total = grab('TotalTime');
@@ -467,7 +467,7 @@ async function buildCollabCard(zip) {
       if (zip.has('docProps/core.xml')) {
         const xml = await zip.text('docProps/core.xml');
         if (xml) {
-          const grab = (tag) => { const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
+          const grab = (tag: string) => { const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
           const subject = grab('subject'); if (subject) { tbl.appendChild(row('Subject', subject)); any = true; }
           const keywords = grab('keywords'); if (keywords) { tbl.appendChild(row('Keywords', keywords)); any = true; }
         }
@@ -485,7 +485,7 @@ async function buildCollabCard(zip) {
 
 // ---------- Main render ----------
 
-export async function renderDocx(file: File, container) {
+export async function renderDocx(file: File, container: HTMLElement) {
   container.hidden = false;
   container.innerHTML = '';
   revokeDocxImageUrls();   // free the previous document's embedded-image object URLs

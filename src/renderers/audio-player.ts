@@ -8,7 +8,7 @@
 import { el, setPlayerFill } from '../core/util.js';
 import { isSynced, getAudioOwner, onAudioOwner, getAudioCompanion } from '../core/video-sync.js';
 
-export function makePlayer(mediaEl, knownDuration?, opts: any = {}) {
+export function makePlayer(mediaEl: HTMLAudioElement, knownDuration?: number|undefined, opts: any = {}) {
   const listenerOpts = opts.signal ? { signal: opts.signal } : undefined;
   // MediaRecorder blobs (recorded audio) are written without a duration header, so
   // mediaEl.duration is Infinity until the clip is played/seeked to the end. When the
@@ -25,7 +25,7 @@ export function makePlayer(mediaEl, knownDuration?, opts: any = {}) {
     if (isFinite(d) && d > 0) return d;
     return (typeof knownDuration === 'number' && isFinite(knownDuration)) ? knownDuration : 0;
   }
-  function fmt(sec) {
+  function fmt(sec: number) {
     if (!isFinite(sec) || sec < 0) return '0:00';
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
@@ -48,7 +48,7 @@ export function makePlayer(mediaEl, knownDuration?, opts: any = {}) {
   // scrubbing to that controller, with the controller pushing the fill/time/glyph
   // back via update(). The spectrogram's blend slider uses this so the play button
   // under the spectrogram drives the separated-stem playback, in sync.
-  let controller = null;
+  let controller: { toggle(): void; seek(frac: number): void }|null = null;
   // A volume-less synced player still needs to track the shared level/mute, so
   // register it directly (makeVolume already registers the ones that have a UI).
   const unregisterVol = opts.noVolume && !opts.mutedPreview
@@ -86,7 +86,7 @@ export function makePlayer(mediaEl, knownDuration?, opts: any = {}) {
   }, listenerOpts);
 
   let dragging = false;
-  function scrub(clientX) {
+  function scrub(clientX: number) {
     const rect = trackEl.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     setPlayerFill(fillEl, frac);
@@ -106,7 +106,7 @@ export function makePlayer(mediaEl, knownDuration?, opts: any = {}) {
   }
   // Window listeners are added on press and removed on release so they don't
   // pile up across files.
-  function onMouseMove(e) { if (dragging) { scrub(e.clientX); tick(); } }
+  function onMouseMove(e: MouseEvent) { if (dragging) { scrub(e.clientX); tick(); } }
   function onMouseUp() {
     dragging = false;
     window.removeEventListener('mousemove', onMouseMove);
@@ -117,7 +117,7 @@ export function makePlayer(mediaEl, knownDuration?, opts: any = {}) {
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
   });
-  function onTouchMove(e) { if (dragging && e.touches[0]) { scrub(e.touches[0].clientX); tick(); } }
+  function onTouchMove(e: TouchEvent) { if (dragging && e.touches[0]) { scrub(e.touches[0].clientX); tick(); } }
   function onTouchEnd() {
     dragging = false;
     window.removeEventListener('touchmove', onTouchMove);
@@ -153,7 +153,7 @@ export function makePlayer(mediaEl, knownDuration?, opts: any = {}) {
   // driving. The spectrogram blend uses this so the under-spectrogram play button
   // controls the separated-stem playback and every scrubber stays in sync.
   container._anrTransport = {
-    attach(ctl) { controller = ctl; },
+    attach(ctl: { toggle(): void; seek(frac: number): void }) { controller = ctl; },
     detach() {
       controller = null;
       playBtn.classList.toggle('is-replay', mediaEl.ended);
@@ -161,7 +161,7 @@ export function makePlayer(mediaEl, knownDuration?, opts: any = {}) {
       playBtn.setAttribute('aria-label', mediaEl.ended ? 'Replay from start' : (mediaEl.paused ? 'Play' : 'Pause'));
       tick();
     },
-    update(frac, curSec, durSec, playing) {
+    update(frac: number, curSec: number, durSec: number, playing: boolean) {
       setPlayerFill(fillEl, frac);
       timeEl.textContent = fmt(curSec) + ' / ' + fmt(durSec);
       playBtn.classList.remove('is-replay');
@@ -219,14 +219,14 @@ const volPlayers = new Set<{ mediaEl: any; wrap: HTMLElement; sync: () => void }
 // on the element. Both features share the returned object: boost drives
 // boostGain.gain; isolation connects FROM boostGain, reworking only its OUTPUT and
 // never touching the source -> boostGain link. One shared context serves both.
-let sharedCtx = null;
+let sharedCtx: AudioContext|null = null;
 export function playerAudioCtx() {
   if (!sharedCtx) sharedCtx = new (window.AudioContext || window.webkitAudioContext)();
   return sharedCtx;
 }
 // Returns { ctx, source, boostGain } for mediaEl, or null if it can't be routed
 // (already claimed by another context, cross-origin-tainted, etc.).
-export function playerAudioNode(mediaEl) {
+export function playerAudioNode(mediaEl: HTMLMediaElement) {
   if (mediaEl._anrAudioNode) return mediaEl._anrAudioNode;
   try {
     const ctx = playerAudioCtx();
@@ -269,7 +269,7 @@ export function playerAudioNode(mediaEl) {
 // Apply a 0-MAX_VOL level to an element. Below 100% with no graph yet, the cheap
 // native .volume is enough; going past 100% - or an element already routed through
 // the graph by isolation - drives the boost gain instead, native pinned to 1.
-function applyVolumeTo(mediaEl, level) {
+function applyVolumeTo(mediaEl: HTMLMediaElement, level: number) {
   let node = mediaEl._anrAudioNode;
   if (!node && level > 1) node = playerAudioNode(mediaEl);
   try {
@@ -279,7 +279,7 @@ function applyVolumeTo(mediaEl, level) {
 }
 // Register a media element with the shared-volume system. Both makeVolume (UI
 // players) and the noVolume path (section-03 mini) funnel through here.
-function registerVolPlayer(mediaEl, wrap, sync) {
+function registerVolPlayer(mediaEl: HTMLAudioElement, wrap: HTMLDivElement, sync: () => void) {
   const entry = { mediaEl, wrap, sync };
   volPlayers.add(entry);
   return () => volPlayers.delete(entry);
@@ -320,10 +320,10 @@ onAudioOwner(() => applyShared());
 // mirroring a boost into its display sensitivity) subscribes here. The callback
 // gets the current level (0..MAX_VOL) and mute flag; returns an unsubscribe fn.
 const volListeners = new Set<(vol: number, muted: boolean) => void>();
-export function onSharedVolume(cb) { volListeners.add(cb); return () => volListeners.delete(cb); }
+export function onSharedVolume(cb: (vol: number, muted: boolean) => void) { volListeners.add(cb); return () => volListeners.delete(cb); }
 export function sharedVolume() { return sharedVol; }
 
-function setShared(v, m) {
+function setShared(v: number, m: boolean) {
   sharedVol = Math.max(0, Math.min(MAX_VOL, v));
   if (sharedVol > 0) lastNonZero = sharedVol;
   sharedMuted = !!m;
@@ -337,7 +337,7 @@ function setShared(v, m) {
 // above. The track mirrors the seek track's press/drag pattern (listeners
 // attached on press, removed on release), just along the Y axis and scaled to
 // MAX_VOL instead of 0-1.
-function makeVolume(mediaEl, signal) {
+function makeVolume(mediaEl: HTMLMediaElement, signal?: AbortSignal) {
   const muteBtn = el('button', { type: 'button', class: 'anr-player-mute', 'aria-label': 'Mute', html: ICON_HI });
   const pctEl = el('div', { class: 'anr-player-volpct' }, '100%');
   const volFill = el('div', { class: 'anr-player-volfill' });
@@ -370,7 +370,7 @@ function makeVolume(mediaEl, signal) {
   // Only real hover-capable pointers get the mouseenter/leave handlers; attaching
   // them on touch would fire on the synthesized mouseenter a tap emits and pre-open
   // the popup, breaking the first-tap-reveals behaviour.
-  let hovering = false, dragging = false, closeTimer = null;
+  let hovering = false, dragging = false, closeTimer: number|null|undefined = null;
   const canHover = !IS_IOS && !!(window.matchMedia && window.matchMedia('(hover: hover)').matches);
   function open() { if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; } wrap.classList.add('is-open'); }
   function closeNow() { if (!dragging) wrap.classList.remove('is-open'); }
@@ -393,9 +393,9 @@ function makeVolume(mediaEl, signal) {
     }
     // An outside tap/click dismisses an open popup at once (the main way to close on
     // touch) - the intent there is unambiguous, so no grace delay.
-    function onDocPointerDown(e) {
+    function onDocPointerDown(e: PointerEvent) {
       if (!wrap.isConnected) { document.removeEventListener('pointerdown', onDocPointerDown); return; }
-      if (!wrap.contains(e.target)) closeNow();
+      if (!wrap.contains(e.target as Node)) closeNow();
     }
     document.addEventListener('pointerdown', onDocPointerDown, signal ? { signal } : undefined);
   }
@@ -408,14 +408,14 @@ function makeVolume(mediaEl, signal) {
     open();
   });
 
-  function setVol(clientY) {
+  function setVol(clientY: number) {
     const rect = volTrack.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (rect.bottom - clientY) / rect.height));
     let v = frac * MAX_VOL;
     if (Math.abs(v - 1) <= 0.06) v = 1;   // detent at the 100% slit (see the ::after tick)
     setShared(v, false);
   }
-  function onMove(e) { if (dragging) setVol(e.clientY); }
+  function onMove(e: MouseEvent) { if (dragging) setVol(e.clientY); }
   function onUp() {
     dragging = false;
     window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp);
@@ -425,7 +425,7 @@ function makeVolume(mediaEl, signal) {
     dragging = true; setVol(e.clientY); e.preventDefault();
     window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
   });
-  function onTMove(e) { if (dragging && e.touches[0]) { setVol(e.touches[0].clientY); e.preventDefault(); } }
+  function onTMove(e: TouchEvent) { if (dragging && e.touches[0]) { setVol(e.touches[0].clientY); e.preventDefault(); } }
   function onTEnd() {
     dragging = false;
     window.removeEventListener('touchmove', onTMove); window.removeEventListener('touchend', onTEnd);

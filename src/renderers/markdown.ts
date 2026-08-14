@@ -12,16 +12,16 @@
 import { el, row, rowHelp, fileExt, errorCard } from '../core/util.js';
 import { paginateFlow, openDocLightbox } from './paged.js';
 
-function esc(s) {
+function esc(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-function escAttr(s) {
+function escAttr(s: string) {
   return esc(s).replace(/"/g, '&quot;');
 }
 
 // Neutralise dangerous URL schemes. Allows http(s), mailto, tel, relative,
 // anchor, and data:image; anything else (javascript:, vbscript:, …) → '#'.
-function safeUrl(raw) {
+function safeUrl(raw: string) {
   const url = (raw || '').trim();
   if (/^(https?:|mailto:|tel:|#|\/|\.|[^:]*$)/i.test(url) || /^data:image\//i.test(url)) {
     return escAttr(url);
@@ -33,13 +33,13 @@ function safeUrl(raw) {
 // Operates on already-HTML-escaped text. Order matters: code spans are pulled
 // out first (so * and _ inside them are left alone), then images, links, then
 // emphasis, then autolinks and hard breaks.
-function inlineMd(escaped) {
+function inlineMd(escaped: string) {
   let s = escaped;
 
   // Code spans: a run of N backticks ... N backticks. Protect their contents
   // by stashing them behind a placeholder while the rest is processed.
-  const codeStash = [];
-  s = s.replace(/(`+)([\s\S]+?)\1/g, (m, ticks, body) => {
+  const codeStash: any[] = [];
+  s = s.replace(/(`+)([\s\S]+?)\1/g, (m, ticks, body: string) => {
     const i = codeStash.length;
     codeStash.push('<code class="anr-md-icode">' + body.replace(/^ | $/g, '') + '</code>');
     return '\x00C' + i + '\x00';
@@ -53,13 +53,13 @@ function inlineMd(escaped) {
 
   // Links: [text](href "title")
   s = s.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+&quot;([^)]*?)&quot;)?\)/g,
-    (m, text, href, title) =>
+    (m, text: string, href, title) =>
       '<a class="anr-md-link" href="' + safeUrl(href) + '" target="_blank" rel="noopener noreferrer"' +
       (title ? ' title="' + escAttr(title) + '"' : '') + '>' + text + '</a>');
 
   // Autolinks: <https://…> (angle brackets are escaped to &lt; / &gt;)
   s = s.replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g,
-    (m, url) => '<a class="anr-md-link" href="' + safeUrl(url) + '" target="_blank" rel="noopener noreferrer">' + url + '</a>');
+    (m, url: string) => '<a class="anr-md-link" href="' + safeUrl(url) + '" target="_blank" rel="noopener noreferrer">' + url + '</a>');
 
   // Emphasis. Bold+italic first, then bold, then italic, then strikethrough.
   s = s.replace(/\*\*\*([^*]+?)\*\*\*/g, '<strong><em>$1</em></strong>');
@@ -73,20 +73,20 @@ function inlineMd(escaped) {
   s = s.replace(/ {2,}\n/g, '<br>\n');
 
   // Restore code spans.
-  s = s.replace(/\x00C(\d+)\x00/g, (m, i) => codeStash[+i]);
+  s = s.replace(/\x00C(\d+)\x00/g, (m, i: string|number) => codeStash[+i]);
   return s;
 }
 
 // If a rendered fragment is a single wrapping <p>…</p>, drop the tags so tight
 // list items don't get paragraph spacing.
-function unwrapP(html) {
+function unwrapP(html: string) {
   const m = html.match(/^<p[^>]*>([\s\S]*)<\/p>$/);
   if (m && !/<p[\s>]/.test(m[1])) return m[1];
   return html;
 }
 
 // Split a GFM table row on unescaped pipes, trimming the optional outer pipes.
-function splitTableRow(line) {
+function splitTableRow(line: string) {
   let s = line.trim().replace(/^\|/, '').replace(/\|$/, '');
   const cells = [];
   let cur = '';
@@ -99,17 +99,17 @@ function splitTableRow(line) {
   return cells.map((c) => c.trim());
 }
 
-function isBlockStart(line) {
+function isBlockStart(line: string) {
   return /^\s{0,3}(#{1,6}\s|>|([-*+])\s|\d+[.)]\s|```|~~~|([-*_])\s*\3\s*\3)/.test(line);
 }
 
 // ---------- list parsing (recursive via mdToHtml on item bodies) ----------
-function parseList(lines, start) {
+function parseList(lines: string[], start: number): [string, number] {
   const first = lines[start].match(/^(\s*)([-*+]|\d+[.)])(\s+)(.*)$/);
-  const baseIndent = first[1].length;
-  const ordered = /\d/.test(first[2]);
-  const startNum = ordered ? parseInt(first[2], 10) : 1;
-  const items = [];
+  const baseIndent = first![1].length;
+  const ordered = /\d/.test(first![2]);
+  const startNum = ordered ? parseInt(first![2], 10) : 1;
+  const items: { lines: string[]; contentIndent: number }[] = [];
   let i = start;
   let loose = false;
 
@@ -121,7 +121,7 @@ function parseList(lines, start) {
       let j = i + 1;
       while (j < lines.length && /^\s*$/.test(lines[j])) j++;
       if (j >= lines.length) break;
-      const ind = lines[j].match(/^(\s*)/)[1].length;
+      const ind = lines[j].match(/^(\s*)/)![1].length;
       const itemAhead = lines[j].match(/^(\s*)([-*+]|\d+[.)])\s+/);
       // A more-indented continuation, or another item of the SAME type at the
       // same indent, keeps the (now loose) list going. A same-indent item of the
@@ -140,9 +140,9 @@ function parseList(lines, start) {
     if (m && m[1].length === baseIndent && /\d/.test(m[2]) === ordered) {
       items.push({ lines: [m[4]], contentIndent: m[1].length + m[2].length + m[3].length });
       i++;
-    } else if (items.length && line.match(/^(\s*)/)[1].length > baseIndent) {
+    } else if (items.length && line.match(/^(\s*)/)![1].length > baseIndent) {
       const cur = items[items.length - 1];
-      cur.lines.push(line.slice(Math.min(cur.contentIndent, line.match(/^(\s*)/)[1].length)));
+      cur.lines.push(line.slice(Math.min(cur.contentIndent, line.match(/^(\s*)/)![1].length)));
       i++;
     } else {
       break;
@@ -171,7 +171,7 @@ function parseList(lines, start) {
 }
 
 // ---------- block parsing ----------
-function mdToHtml(md) {
+function mdToHtml(md: string) {
   const lines = md.replace(/\r\n?/g, '\n').replace(/\t/g, '    ').split('\n');
   let html = '';
   let i = 0;

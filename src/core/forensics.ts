@@ -13,10 +13,15 @@ import { hexBytes } from './binutil.js';
 import { SCAN_MED } from './limits.js';
 import { sniffFileType } from './file-sniff.js';
 
+/** What sniffFileType() hands back: `{ kind, ext, label }`, or null when the
+    leading bytes match nothing. Derived from the function rather than restated,
+    so the two can never drift apart. */
+type Sniff = Awaited<ReturnType<typeof sniffFileType>>;
+
 // Re-analyse callback (app.js's handleFile), injected via setReanalyse() so this
 // module doesn't import app.js back. Null until app.js boots.
-let _reanalyse = null;
-export function setReanalyse(fn) { _reanalyse = fn; }
+let _reanalyse: ((file: File, opts?: any) => void)|null = null;
+export function setReanalyse(fn: (file: File, opts?: any) => void) { _reanalyse = fn; }
 
 // ---------- signature-vs-extension mismatch (forensic) ----------
 // Extensions whose true content sniffFileType() can positively confirm, grouped
@@ -31,7 +36,7 @@ export function setReanalyse(fn) { _reanalyse = fn; }
 //   ftyp-sniffed result satisfies any ftyp extension - renaming .m4a to .mp4 is
 //   benign and must not flag. Likewise the whole PK zip family (docx/xlsx/epub ...).
 const ISOBMFF = ['mp4', 'heic', 'avif', 'm4a', '3gp'];
-const SIG_EXPECT = {
+const SIG_EXPECT: Record<string, { sniff: string[]; label: string }> = {
   jpg:  { sniff: ['jpg'],  label: 'JPEG image' }, jpeg: { sniff: ['jpg'], label: 'JPEG image' },
   jpe:  { sniff: ['jpg'],  label: 'JPEG image' }, jfif: { sniff: ['jpg'], label: 'JPEG image' },
   png:  { sniff: ['png'],  label: 'PNG image' },
@@ -77,7 +82,7 @@ const SIG_EXPECT = {
 // bytes. `sniff` is the sniffFileType() result (or null). Returns a descriptor
 // for signatureCard(), or null when the extension is unknown to us or the
 // signature checks out. Reads the first 16 bytes for the hex readout.
-export async function signatureCheck(file: File, sniff) {
+export async function signatureCheck(file: File, sniff: Sniff) {
   const ext = (fileExt(file.name) || '').toLowerCase();
   const expect = SIG_EXPECT[ext];
   if (!expect) return null;                                // no expectation - stay quiet
@@ -92,7 +97,7 @@ export async function signatureCheck(file: File, sniff) {
 
 // Forensic readout card: declared type vs. what the bytes actually are. Styled as
 // a flagged integrity card (accent left border), prepended above the analysis.
-export function signatureCard(info) {
+export function signatureCard(info: any) {
   const card = el('div', { class: 'anr-card anr-sig-flag', role: 'alert' });
   const [h, help] = h3help('Signature mismatch',
     'Every file type opens with a distinctive pattern of bytes - its signature, or “magic number”. '
@@ -219,7 +224,7 @@ async function gifLogicalEnd(file: File) {
 // Decide whether a file carries data past its logical end. `sniff` (from
 // sniffFileType) names the container. Returns a descriptor for trailingCard() or
 // null. Pure zero-padding is treated as benign and ignored.
-export async function trailingDataCheck(file: File, sniff) {
+export async function trailingDataCheck(file: File, sniff: Sniff) {
   if (!sniff) return null;
   const ext = sniff.ext;
   let logicalEnd = null;
@@ -260,7 +265,7 @@ export async function trailingDataCheck(file: File, sniff) {
 // Forensic readout for appended data, styled like the signature-mismatch card.
 // `file` is supplied so the hidden trailing blob can be extracted (downloaded) or
 // fed straight back into the analyser (browse an appended ZIP, view a smuggled JPEG).
-export function trailingCard(info, file: File) {
+export function trailingCard(info: any, file: File) {
   // A plain card (not the red anr-sig-flag alert): trailing data is worth noting
   // but not an integrity failure, and it sits low in the readout, just above the
   // Integrity card, rather than leading the analysis.
@@ -314,7 +319,7 @@ export function trailingCard(info, file: File) {
 // instead keeps the fingerprints as a part inside its Advanced card, which marks
 // itself [data-integrity] so it is still found - and since Advanced is the last
 // card on the page, "just above it" stays the right place for trailing data.
-export function findIntegrityCard(root) {
+export function findIntegrityCard(root: HTMLElement) {
   const part = root.querySelector('[data-integrity]');
   if (part) {
     const card = part.closest('.anr-card');

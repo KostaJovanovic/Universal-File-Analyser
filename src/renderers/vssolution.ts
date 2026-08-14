@@ -14,7 +14,7 @@
 import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 
 // A few well-known project-type GUIDs -> friendly language/kind.
-const PROJECT_TYPES = {
+const PROJECT_TYPES: Record<string, string> = {
   'FAE04EC0-301F-11D3-BF4B-00C04F79EFBC': 'C#',
   '9A19103F-16F7-4668-BE54-9A1E7A4F7556': 'C# (.NET SDK)',
   'F184B08F-C81C-45F6-A57F-5ABD9991F28F': 'Visual Basic',
@@ -28,14 +28,14 @@ const PROJECT_TYPES = {
 
 // Project kind inferred from the project file's extension (used by .slnx, whose
 // <Project> elements usually carry only a Path, leaving the type implicit).
-const EXT_TYPES = {
+const EXT_TYPES: Record<string, string> = {
   csproj: 'C#', vbproj: 'Visual Basic', fsproj: 'F#', vcxproj: 'C++',
   pyproj: 'Python', njsproj: 'Node.js', shproj: 'Shared', sqlproj: 'SQL',
   wapproj: 'Packaging', vcproj: 'C++', dcproj: 'Docker Compose',
 };
 
 // Derive a friendly project name + kind from a .slnx project path / Type attr.
-function slnxProjectKind(path, typeAttr) {
+function slnxProjectKind(path: string, typeAttr: string|null) {
   const ext = (path.split('.').pop() || '').toLowerCase();
   if (typeAttr) {
     const guid = typeAttr.replace(/[{}]/g, '').toUpperCase();
@@ -51,10 +51,10 @@ interface Solution {
   projects: any[];
   slnx?: boolean;
   version?: any; vs?: any; vsVersion?: any; minVersion?: any;
-  folders?: any; solutionConfigs?: any[];
+  folders?: any; solutionConfigs: any[];
 }
 
-function parseSlnx(text): Solution | null {
+function parseSlnx(text: string): Solution | null {
   let doc;
   try { doc = new DOMParser().parseFromString(text, 'application/xml'); } catch (_) { return null; }
   if (!doc || doc.querySelector('parsererror')) return null;
@@ -74,7 +74,7 @@ function parseSlnx(text): Solution | null {
   const buildTypes = [...doc.querySelectorAll('Configurations > BuildType')].map((b) => b.getAttribute('Name')).filter(Boolean);
   const platforms = [...doc.querySelectorAll('Configurations > Platform')].map((b) => b.getAttribute('Name')).filter(Boolean);
   // .slnx expresses configs as the cross product of build types and platforms.
-  const solutionConfigs = [];
+  const solutionConfigs: string[] = [];
   for (const bt of buildTypes.length ? buildTypes : ['']) {
     for (const pf of platforms.length ? platforms : ['']) {
       const label = [bt, pf].filter(Boolean).join('|');
@@ -85,7 +85,7 @@ function parseSlnx(text): Solution | null {
   return { slnx: true, version: '', vs: '', vsVersion: '', minVersion: '', projects, folders, solutionConfigs };
 }
 
-function parseSln(text): Solution | null {
+function parseSln(text: string): Solution | null {
   const verLine = text.match(/Format Version\s+([\d.]+)/i);
   const vsComment = text.match(/#\s*Visual Studio\s+(.+)/i);
   const vsVersion = text.match(/^VisualStudioVersion\s*=\s*(.+)$/m);
@@ -104,7 +104,7 @@ function parseSln(text): Solution | null {
     .filter((c) => /\|/.test(c));
   const solutionConfigs = [...new Set(
     (text.match(/GlobalSection\(SolutionConfigurationPlatforms\)[\s\S]*?EndGlobalSection/) || [''])[0]
-      .split('\n').map((l) => l.trim()).filter((l) => /\|/.test(l) && l.includes('=')).map((l) => l.split('=')[0].trim())
+      .split('\n').map((l: string) => l.trim()).filter((l: string) => /\|/.test(l) && l.includes('=')).map((l: string) => l.split('=')[0].trim())
   )];
 
   return { version: verLine ? verLine[1] : '', vs: vsComment ? vsComment[1].trim() : '', vsVersion: vsVersion ? vsVersion[1].trim() : '', minVersion: minVersion ? minVersion[1].trim() : '', projects, solutionConfigs };

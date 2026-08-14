@@ -48,8 +48,8 @@ const FRAME_MAXDIM = 640;
 // that looked like a header with a huge declared length) - skip it rather than
 // try to allocate a multi-hundred-MB blob that will never decode.
 const MAX_CARVE_BYTES = 64 * 1024 * 1024;
-const CARVE_MIME = { jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
-const CARVE_EXT  = { jpeg: 'jpg', png: 'png', gif: 'gif', webp: 'webp', bmp: 'bmp' };
+const CARVE_MIME: Record<string, string> = { jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
+const CARVE_EXT: Record<string, string>  = { jpeg: 'jpg', png: 'png', gif: 'gif', webp: 'webp', bmp: 'bmp' };
 
 // ---------- main render ----------
 export async function renderDiskImage(file: File, resultsEl: HTMLElement, opts: any = {}) {
@@ -67,8 +67,8 @@ export async function renderDiskImage(file: File, resultsEl: HTMLElement, opts: 
   // Read the front of the image first and only grow if the parse needs it, so a
   // half-gigabyte card doesn't have to be pulled into memory before the tree can
   // be drawn. `readFull` fetches the whole thing, once, on demand.
-  let img;
-  let fullPromise = null;
+  let img: Uint8Array;
+  let fullPromise: Promise<any>|null = null;
   const readFull = () => {
     if (!fullPromise) {
       fullPromise = (img && img.length >= file.size)
@@ -83,7 +83,7 @@ export async function renderDiskImage(file: File, resultsEl: HTMLElement, opts: 
   let layout = 'Bare filesystem (no partition table)';
   let volStart = 0;
 
-  const read = async (n) => new Uint8Array(await file.slice(0, Math.min(file.size, n)).arrayBuffer());
+  const read = async (n: number) => new Uint8Array(await file.slice(0, Math.min(file.size, n)).arrayBuffer());
 
   try {
     // The layout is decided by the first sector alone: a FAT boot sector at
@@ -222,7 +222,7 @@ export async function renderDiskImage(file: File, resultsEl: HTMLElement, opts: 
 // a deleted file whose chain was cleared falls back to the contiguous carve.
 // Opt-in: the scan starts from a button, not automatically - it reads the whole
 // image and carves every signature, so it stays out of the way until asked.
-function carvedImageGallery(readFull, file: File, resultsEl: HTMLElement, vol) {
+function carvedImageGallery(readFull: any, file: File, resultsEl: HTMLElement, vol: any) {
   const card = el('div', { class: 'anr-card anr-collapsible' });
   const [cardH, cardHelp] = h3help('Images in this disk', 'Scans every raw sector of the image for embedded picture signatures, so it finds photos regardless of the filesystem - including deleted and orphaned files the directory no longer lists, plus MJPEG video frames and thumbnails. It can therefore show more, or different, files than the tree above. Fragmented files are reassembled from the filesystem when their allocation map survives; a deleted file whose map was cleared can only be read straight through, so it may come back partly garbled or without a preview.');
   card.appendChild(cardH);
@@ -250,7 +250,7 @@ function carvedImageGallery(readFull, file: File, resultsEl: HTMLElement, vol) {
       return;
     }
 
-    let carved = [];
+    let carved: any[] = [];
     try { carved = carveImages(img, { max: SCAN_CARVE }); } catch (_) { carved = []; }
 
     // Drop false positives: implausibly large extents (a bad signature match) and
@@ -338,13 +338,13 @@ function carvedImageGallery(readFull, file: File, resultsEl: HTMLElement, vol) {
     // single scroll can bring dozens of large photos into view together, and
     // decoding them concurrently exhausts the browser's image decoder so some come
     // back blank and show a false "no preview".
-    const queue = [];
+    const queue: HTMLElement[] = [];
     let pumping = false;
     const pump = async () => {
       if (pumping) return;
       pumping = true;
       while (queue.length) {
-        await renderCarveThumb(queue.shift());
+        await renderCarveThumb(queue.shift()!);
         await new Promise((r) => setTimeout(r));       // let the bitmap be reclaimed
       }
       pumping = false;
@@ -353,22 +353,22 @@ function carvedImageGallery(readFull, file: File, resultsEl: HTMLElement, vol) {
       for (const en of entries) {
         if (!en.isIntersecting) continue;
         io.unobserve(en.target);
-        queue.push(en.target);
+        queue.push(en.target as HTMLElement);
       }
       pump();
     }, { rootMargin: '300px' });
 
-    const cells = [];
+    const cells: { c: any; cell: HTMLElement }[] = [];
     for (let k = 0; k < list.length; k++) { const cell = carveCell(img, file, list[k], k, io, vol); cells.push({ c: list[k], cell }); grid.appendChild(cell); }
 
     // Re-order the built cells for the chosen sort by moving the DOM nodes (a carve
     // with no EXIF date - a video frame, or a reset camera clock - sinks to the
     // bottom of a date sort). The frames toggle still finds cells by their dataset.
-    const bySize = (a, b) => (b.c.end - b.c.start) - (a.c.end - a.c.start);
-    const applySort = (mode) => {
+    const bySize = (a: any, b: any) => (b.c.end - b.c.start) - (a.c.end - a.c.start);
+    const applySort = (mode: string) => {
       const newest = mode === 'newest';
       const arr = cells.slice();
-      arr.sort(mode === 'size' ? bySize : (a, b) => {
+      arr.sort(mode === 'size' ? bySize : (a: any, b: any) => {
         const da = a.c._date, db = b.c._date;
         if (da && db) return da === db ? bySize(a, b) : (newest ? (da < db ? 1 : -1) : (da < db ? -1 : 1));
         if (da) return -1;
@@ -383,15 +383,15 @@ function carvedImageGallery(readFull, file: File, resultsEl: HTMLElement, vol) {
 }
 
 // Current gallery state, so the lightbox arrows / keyboard can step through it.
-let _carveLbUrl = null;
-let _carveList = null, _carveImg = null, _carveFile = null, _carveVol = null;
+let _carveLbUrl: string|null = null;
+let _carveList: any[]|null = null, _carveImg: any = null, _carveFile: File|null = null, _carveVol: any = null;
 
 // Open carved image `pos` full-size in the shared photo lightbox, with prev/next
 // arrows (← / → keys too), Analyse and Download actions, and the alpha
 // checkerboard so a partly recovered image's transparent region shows. The
 // full-resolution blob is built on demand (thumbnails revoke theirs after
 // decoding) and only one lightbox URL is kept alive at a time.
-function openCarveLightboxAt(pos) {
+function openCarveLightboxAt(pos: number) {
   const list = _carveList;
   if (!list || !list.length) return;
   const n = list.length;
@@ -416,7 +416,7 @@ function openCarveLightboxAt(pos) {
       checker: true,
       rawOrientation: true,        // show the stored raster, not the EXIF-rotated view
       actions: [
-        { label: 'Analyse', onClick: () => { closeLightbox(); analyseCarve(img, c, pos, file, vol); } },
+        { label: 'Analyse', onClick: () => { closeLightbox(); analyseCarve(img, c, pos, file!, vol); } },
         { label: 'Download', onClick: () => downloadCarve(img, c, pos, vol) },
       ],
     };
@@ -426,14 +426,14 @@ function openCarveLightboxAt(pos) {
 }
 
 // Run the full analysis on a carved region (registers a Back-nav restore first).
-function analyseCarve(img, c, idx, file: File, vol) {
+function analyseCarve(img: Uint8Array, c: any, idx: number, file: File, vol: any) {
   const f = carvedFile(img, c, idx, vol);
   if (window._anrPushNav) window._anrPushNav(file.name || 'disk image', () => { if (window._anrHandleFile) window._anrHandleFile(file, {}); });
   if (window._anrHandleFile) window._anrHandleFile(f, { nested: true });
 }
 
 // Download a carved region as a file.
-function downloadCarve(img, c, idx, vol) {
+function downloadCarve(img: Uint8Array, c: any, idx: number, vol: any) {
   const f = carvedFile(img, c, idx, vol);
   downloadBlob(f.name, f);
 }
@@ -441,10 +441,10 @@ function downloadCarve(img, c, idx, vol) {
 // A real BMP has its declared file size fitting inside the image and a known DIB
 // header size (12/40/52/56/64/108/124). Random 'BM' pairs almost never satisfy
 // both, so this rejects the false positives the bare 2-byte magic lets through.
-function plausibleBmp(img, off) {
+function plausibleBmp(img: string|any[], off: number) {
   const n = img.length;
   if (off + 26 > n) return false;
-  const u32 = (o) => (img[o] | (img[o + 1] << 8) | (img[o + 2] << 16) | (img[o + 3] * 0x1000000)) >>> 0;
+  const u32 = (o: number) => (img[o] | (img[o + 1] << 8) | (img[o + 2] << 16) | (img[o + 3] * 0x1000000)) >>> 0;
   const fileSize = u32(off + 2);
   if (fileSize < 54 || off + fileSize > n) return false;
   const dib = u32(off + 14);
@@ -452,7 +452,7 @@ function plausibleBmp(img, off) {
 }
 
 // Build a File for one carved region (repairing a cut-off JPEG so it decodes).
-function carvedFile(img, c, idx, vol) {
+function carvedFile(img: Uint8Array, c: any, idx: number, vol: any) {
   const sub = carveBytes(img, vol, c);
   const ext = CARVE_EXT[c.format] || 'bin';
   return new File([sub], 'carved_' + String(idx + 1).padStart(4, '0') + '_0x' + c.start.toString(16) + '.' + ext,
@@ -465,9 +465,9 @@ function carvedFile(img, c, idx, vol) {
 // contiguous carve would garble. Everything else uses the contiguous extent,
 // closing off a cut-off JPEG so it still decodes. Cached on the carve so the
 // thumbnail, lightbox, Analyse and Download all share one result.
-function carveBytes(img, vol, c) {
+function carveBytes(img: Uint8Array, vol: any, c: any) {
   if (c._bytes) return c._bytes;
-  let sub = vol ? recoverViaChain(img, vol, c) : null;
+  let sub: Uint8Array | null = vol ? recoverViaChain(img, vol, c) : null;
   if (sub) { c.recovered = true; }
   else {
     sub = img.subarray(c.start, c.end);
@@ -486,7 +486,7 @@ function carveBytes(img, vol, c) {
 // the reassembled bytes trimmed to their last EOI; otherwise null (a contiguous
 // or a cleared/deleted chain has nothing to add over the plain carve). This is
 // what turns a fragmented-file carve from a garbled preview into the real image.
-function recoverViaChain(img, vol, c) {
+function recoverViaChain(img: Uint8Array, vol: any, c: any) {
   const g = vol.geom;
   if (!g || (g.type !== 'FAT12' && g.type !== 'FAT16' && g.type !== 'FAT32')) return null;
   const dataStart = g.partStart + g.firstDataSector * g.bps;
@@ -495,13 +495,13 @@ function recoverViaChain(img, vol, c) {
   if (rel % g.bytesPerCluster !== 0) return null;          // signature not at a cluster start
   const startCl = rel / g.bytesPerCluster + 2;
 
-  const next = (cl) => {
+  const next = (cl: number) => {
     if (g.type === 'FAT16') { const o = g.fatStart + cl * 2; return (o + 1 < img.length) ? (img[o] | (img[o + 1] << 8)) : 0x0FFFFFFF; }
     if (g.type === 'FAT32') { const o = g.fatStart + cl * 4; return (o + 3 < img.length) ? ((img[o] | (img[o + 1] << 8) | (img[o + 2] << 16) | (img[o + 3] << 24)) & 0x0FFFFFFF) : 0x0FFFFFFF; }
     const o = g.fatStart + Math.floor(cl * 3 / 2); if (o + 1 >= img.length) return 0x0FFFFFFF;
     const v = img[o] | (img[o + 1] << 8); return (cl & 1) ? (v >> 4) : (v & 0x0FFF);
   };
-  const isEoc = (v) => g.type === 'FAT12' ? v >= 0x0FF8 : g.type === 'FAT16' ? v >= 0xFFF8 : v >= 0x0FFFFFF8;
+  const isEoc = (v: number) => g.type === 'FAT12' ? v >= 0x0FF8 : g.type === 'FAT16' ? v >= 0xFFF8 : v >= 0x0FFFFFF8;
 
   // Walk the chain: it must terminate cleanly in an EOC marker, be longer than
   // one cluster, and be non-contiguous (a contiguous chain equals the plain
@@ -533,7 +533,7 @@ function recoverViaChain(img, vol, c) {
 // actions sit overlaid on the image and only appear on hover, matching the PDF
 // page previews. The caption lines go underneath. Clicking the thumbnail itself
 // opens the lightbox, so the buttons stop their click from reaching it.
-function carveCell(img, file: File, c, idx, io, vol) {
+function carveCell(img: Uint8Array<ArrayBufferLike>, file: File, c: any, idx: number, io: IntersectionObserver, vol: any) {
   const cell = el('div', { class: 'anr-carve-cell' });
   if (c.frame) cell.dataset.frame = '1';
 
@@ -568,7 +568,7 @@ function carveCell(img, file: File, c, idx, io, vol) {
 // raw "YYYY:MM:DD HH:MM:SS" string (lexicographically sortable), or null. The
 // header survives carving even for deleted files, so this dates recovered photos.
 // Only the header is scanned (bounded to 64 KB), so it stays cheap over the gallery.
-function carveExifDate(img, start, end) {
+function carveExifDate(img: number[], start: number, end: number) {
   const lim = Math.min(end, start + 65536);
   if (start + 4 > lim || img[start] !== 0xFF || img[start + 1] !== 0xD8) return null;
   // Scan the header for the "Exif\0\0" APP1 signature. A byte scan is used
@@ -581,11 +581,11 @@ function carveExifDate(img, start, end) {
   }
   if (tiff < 0 || tiff + 8 > lim) return null;
   const le = img[tiff] === 0x49;
-  const u16 = (o) => le ? (img[o] | (img[o + 1] << 8)) : ((img[o] << 8) | img[o + 1]);
-  const u32 = (o) => ((le ? (img[o] | (img[o + 1] << 8) | (img[o + 2] << 16) | (img[o + 3] * 0x1000000)) : (img[o] * 0x1000000 + (img[o + 1] << 16) + (img[o + 2] << 8) + img[o + 3])) >>> 0);
+  const u16 = (o: number) => le ? (img[o] | (img[o + 1] << 8)) : ((img[o] << 8) | img[o + 1]);
+  const u32 = (o: number) => ((le ? (img[o] | (img[o + 1] << 8) | (img[o + 2] << 16) | (img[o + 3] * 0x1000000)) : (img[o] * 0x1000000 + (img[o + 1] << 16) + (img[o + 2] << 8) + img[o + 3])) >>> 0);
   if (u16(tiff + 2) !== 0x002A) return null;
-  const readStr = (o, cnt) => { let s = ''; for (let j = 0; j < cnt - 1 && o + j < lim; j++) { const ch = img[o + j]; if (!ch) break; s += String.fromCharCode(ch); } return s; };
-  const readIFD = (ifdOff, wantTag) => {
+  const readStr = (o: number, cnt: number) => { let s = ''; for (let j = 0; j < cnt - 1 && o + j < lim; j++) { const ch = img[o + j]; if (!ch) break; s += String.fromCharCode(ch); } return s; };
+  const readIFD = (ifdOff: number, wantTag: number) => {
     const base = tiff + ifdOff; if (base + 2 > lim) return {};
     const n = u16(base); let exifPtr = 0, dt = null;
     for (let k = 0; k < n; k++) {
@@ -603,7 +603,7 @@ function carveExifDate(img, start, end) {
 
 // Format an EXIF "YYYY:MM:DD HH:MM:SS" date as "YYYY-MM-DD HH:MM" for display, or
 // null if it isn't a real date (an all-zero placeholder).
-function fmtExifDate(s) {
+function fmtExifDate(s: string|null) {
   const m = /^(\d{4}):(\d{2}):(\d{2})\s+(\d{2}):(\d{2})/.exec(s || '');
   return (m && m[1] !== '0000') ? m[1] + '-' + m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5] : null;
 }
@@ -613,16 +613,16 @@ function fmtExifDate(s) {
 // the fault-tolerant decoder (jpeg-salvage.js) recovers whatever top strip survives,
 // or, if even that is gone, the file's embedded EXIF thumbnail. Resolves { canvas,
 // cat, salvaged, thumb }; canvas is null only when nothing at all decodes.
-function decodeCarveToCanvas(sub, format, maxD) {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(new Blob([sub], { type: CARVE_MIME[format] || 'application/octet-stream' }));
+function decodeCarveToCanvas(sub: Uint8Array, format: string, maxD: number) {
+  return new Promise<{ canvas: any; cat: any; salvaged: any; thumb: any; corrupt: any }>((resolve) => {
+    const url = URL.createObjectURL(new Blob([sub as BlobPart], { type: CARVE_MIME[format] || 'application/octet-stream' }));
     const im = new Image();
     // Draw the raw stored raster: ignore the EXIF orientation tag so the preview
     // matches the reported pixel dimensions (and the salvage decoder, which never
     // rotates). A carved photo with a spurious rotate tag then shows as-stored, not
     // silently flipped to portrait.
     im.style.imageOrientation = 'none';
-    const done = (canvas, cat, salvaged, thumb, corrupt?) => { im.onload = im.onerror = null; im.src = ''; URL.revokeObjectURL(url); resolve({ canvas, cat, salvaged: !!salvaged, thumb: !!thumb, corrupt: !!corrupt }); };
+    const done = (canvas: HTMLCanvasElement|null, cat: string, salvaged: boolean, thumb: boolean, corrupt?: boolean|undefined) => { im.onload = im.onerror = null; im.src = ''; URL.revokeObjectURL(url); resolve({ canvas, cat, salvaged: !!salvaged, thumb: !!thumb, corrupt: !!corrupt }); };
     const trySalvage = () => { const s = format === 'jpeg' ? salvageCanvas(sub, maxD) : null; return s ? done(s.canvas, s.cat, true, s.thumb, s.corrupt) : done(null, 'none', false, false); };
     im.onload = () => {
       const nw = im.naturalWidth || 0, nh = im.naturalHeight || 0;
@@ -631,7 +631,7 @@ function decodeCarveToCanvas(sub, format, maxD) {
       const cw = Math.max(1, Math.round(nw * scale)), ch = Math.max(1, Math.round(nh * scale));
       const cv = document.createElement('canvas');
       cv.width = cw; cv.height = ch;
-      const ctx = cv.getContext('2d');
+      const ctx = cv.getContext('2d')!;
       let drew = true;
       try { ctx.drawImage(im, 0, 0, cw, ch); } catch (_) { drew = false; }
       if (!drew) { trySalvage(); return; }
@@ -657,14 +657,14 @@ function decodeCarveToCanvas(sub, format, maxD) {
 // Run the fault-tolerant JPEG decoder over `sub` and paint what it recovered into a
 // downscaled canvas (real top rows + mid-grey fill below, or the embedded thumbnail
 // if the main image was overwritten). Returns { canvas, cat, thumb } or null.
-function salvageCanvas(sub, maxD) {
+function salvageCanvas(sub: Uint8Array, maxD: number) {
   const full = salvageFullCanvas(sub);
   if (!full) return null;
   const scale = Math.min(1, maxD / Math.max(full.width, full.height));
   const cv = document.createElement('canvas');
   cv.width = Math.max(1, Math.round(full.width * scale));
   cv.height = Math.max(1, Math.round(full.height * scale));
-  cv.getContext('2d').drawImage(full, 0, 0, cv.width, cv.height);
+  cv.getContext('2d')!.drawImage(full, 0, 0, cv.width, cv.height);
   // A thumbnail-only recovery is 'partial' (you got a preview, not the full image).
   return { canvas: cv, cat: (full._thumb || full._realFrac <= 0.95) ? 'partial' : 'ok', thumb: full._thumb, corrupt: full._corrupt };
 }
@@ -673,7 +673,7 @@ function salvageCanvas(sub, maxD) {
 // swapped out - the hover-actions overlay is a sibling inside the same thumb and
 // has to survive. Returns a Promise that settles once the thumbnail has decoded (or
 // failed), so the gallery can run these one at a time (the pump in carvedImageGallery).
-function renderCarveThumb(thumbEl) {
+function renderCarveThumb(thumbEl: HTMLElement) {
   const { img, c, vol } = thumbEl._carve;
   const placeholder = thumbEl.querySelector('.anr-hint');
   // carveBytes reassembles a fragmented file via its FAT chain when it can, so a
@@ -698,10 +698,10 @@ function renderCarveThumb(thumbEl) {
 // Name a decode by how much real content it has, for the on-hover caption.
 // Nothing is hidden - even 'empty' carves are shown as whatever grey/noise they
 // decoded to, so the gallery reflects everything the scan found.
-function classifyFill(frac) { return frac < 0.5 ? 'ok' : frac < 0.99 ? 'partial' : 'empty'; }
+function classifyFill(frac: number) { return frac < 0.5 ? 'ok' : frac < 0.99 ? 'partial' : 'empty'; }
 
 // A readout card listing every MBR partition (type, offset, size, bootable).
-function partitionCard(partitions) {
+function partitionCard(partitions: any[]) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Partitions'));
   const t = el('table', { class: 'anr-readout' });

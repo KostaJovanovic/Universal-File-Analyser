@@ -21,11 +21,11 @@
    footprint, which the project view uses for two-way cross-probing.
 */
 
-import { el, row, rowHelp, h3help, fmtBytes, errorCard, inlineLoader, wheelZoomToggle, attachViewCube } from '../core/util.js';
-import { buildViewer, fitBox, grow, safeBox } from './eda-viewer.js';
+import { el, row, rowHelp, h3help, fmtBytes, errorCard, inlineLoader, wheelZoomToggle, attachViewCube, type ElChild } from '../core/util.js';
+import { buildViewer, fitBox, grow, safeBox, type BBox, type EdaViewer } from './eda-viewer.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
-const svg = (tag, attrs) => {
+const svg = (tag: string, attrs: Record<string,any>) => {
   const n = document.createElementNS(SVGNS, tag);
   if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
   return n;
@@ -36,14 +36,14 @@ const svg = (tag, attrs) => {
 // node[0] is the tag string and the rest are atoms (strings) or child arrays.
 // Quoted and bare tokens both become plain strings - we never need to tell them
 // apart for our purposes.
-function parseSexpr(text) {
+function parseSexpr(text: string) {
   let i = 0;
   const n = text.length;
   // Skip a UTF-8 BOM if present.
   if (text.charCodeAt(0) === 0xFEFF) i = 1;
-  function node() {
+  function node(): any[] {
     i++; // consume '('
-    const out = [];
+    const out: any[] = [];
     while (i < n) {
       const c = text[i];
       if (c === '(') out.push(node());
@@ -80,23 +80,23 @@ function parseSexpr(text) {
 }
 
 // node helpers ---------------------------------------------------------------
-const isNode = (x) => Array.isArray(x);
-const tagOf = (x) => (isNode(x) ? x[0] : null);
-const kids = (node, tag) => (isNode(node) ? node.filter((x) => isNode(x) && x[0] === tag) : []);
-const kid = (node, tag) => { if (isNode(node)) for (const x of node) if (isNode(x) && x[0] === tag) return x; return null; };
+const isNode = (x: any[]|null) => Array.isArray(x);
+const tagOf = (x: any[]) => (isNode(x) ? x[0] : null);
+const kids = (node: any[], tag: string) => (isNode(node) ? node.filter((x) => isNode(x) && x[0] === tag) : []);
+const kid = (node: any[], tag: string) => { if (isNode(node)) for (const x of node) if (isNode(x) && x[0] === tag) return x; return null; };
 // Positional scalar arguments (the non-array tokens after the tag).
-const args = (node) => (isNode(node) ? node.slice(1).filter((x) => !isNode(x)) : []);
-const numAt = (node, idx, d = 0) => { const a = args(node); const v = parseFloat(a[idx]); return Number.isFinite(v) ? v : d; };
+const args = (node: any[]|null) => (isNode(node) ? node.slice(1).filter((x) => !isNode(x)) : []);
+const numAt = (node: any[]|null, idx: number, d = 0) => { const a = args(node); const v = parseFloat(a[idx]); return Number.isFinite(v) ? v : d; };
 // (at x y [rot])
-function atOf(node) { const a = kid(node, 'at'); return a ? { x: numAt(a, 0), y: numAt(a, 1), rot: numAt(a, 2, 0) } : null; }
+function atOf(node: any[]) { const a = kid(node, 'at'); return a ? { x: numAt(a, 0), y: numAt(a, 1), rot: numAt(a, 2, 0) } : null; }
 // (property "Name" "Value" ...)
-function propVal(node, name) {
+function propVal(node: any[], name: string) {
   for (const x of node || []) if (isNode(x) && x[0] === 'property' && x[1] === name) return x[2];
   return null;
 }
 // A field's (effects) hide flag: KiCad 7+ writes (hide yes); older writes a bare
 // `hide` token in the effects list.
-function isHidden(eff) {
+function isHidden(eff: any[]|null) {
   if (!eff) return false;
   for (const c of eff) {
     if (c === 'hide') return true;
@@ -106,7 +106,7 @@ function isHidden(eff) {
 }
 // Visible symbol property fields (Reference, Value, ...) with their own placed
 // position, so they render where KiCad puts them rather than a guessed offset.
-function symFields(node) {
+function symFields(node: any[]) {
   const out = [];
   for (const x of node || []) {
     if (!isNode(x) || x[0] !== 'property') continue;
@@ -118,14 +118,14 @@ function symFields(node) {
   return out;
 }
 // list of (xy x y) points inside a (pts ...) child
-function ptsOf(node) {
+function ptsOf(node: any[]) {
   const p = kid(node, 'pts');
   if (!p) return [];
   return kids(p, 'xy').map((xy) => [numAt(xy, 0), numAt(xy, 1)]);
 }
 
 // ---- layer palette (tuned for the dark canvas) ----------------------------
-const LAYER_COLORS = {
+const LAYER_COLORS: Record<string, string> = {
   'F.Cu': '#c01414', 'B.Cu': '#1540c0', 'In1.Cu': '#9a7400', 'In2.Cu': '#0a8a52',
   'F.SilkS': '#54542f', 'B.SilkS': '#6a4480',
   'F.Mask': 'rgba(120,30,150,0.55)', 'B.Mask': 'rgba(80,30,140,0.55)',
@@ -138,14 +138,14 @@ const LAYER_COLORS = {
   'Eco1.User': '#0a8a5a', 'Eco2.User': '#955610', 'Margin': '#b0367a',
   'User.Drawings': '#363c6e', 'User.Comments': '#0a6498',
 };
-function layerColor(name) {
+function layerColor(name: string) {
   if (LAYER_COLORS[name]) return LAYER_COLORS[name];
   if (/\.Cu$/.test(name)) return '#8a5e10';
   if (/User/.test(name)) return '#363c6e';
   return '#2a5a44';
 }
 // Pad fill: copper layer it sits on; through-hole (multiple Cu) reads gold.
-function padColor(layers) {
+function padColor(layers: string|any[]) {
   const hasF = layers.includes('F.Cu') || layers.includes('*.Cu');
   const hasB = layers.includes('B.Cu') || layers.includes('*.Cu');
   if (hasF && hasB) return '#a87800';
@@ -169,7 +169,7 @@ const SCH = {
 // its tighter fit padding; safeBox is called with its 5/50 pads.
 
 // Rotate (dx,dy) by deg degrees clockwise in screen space (Y down).
-function rot(dx, dy, deg) {
+function rot(dx: number, dy: number, deg: number) {
   if (!deg) return [dx, dy];
   const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
   return [dx * c - dy * s, dx * s + dy * c];
@@ -177,7 +177,7 @@ function rot(dx, dy, deg) {
 
 // ---- arc geometry ----------------------------------------------------------
 // Three-point arc (KiCad gr_arc / fp_arc / sym arc: start, mid, end).
-function arc3(x1, y1, xm, ym, x2, y2) {
+function arc3(x1: number, y1: number, xm: number, ym: number, x2: number, y2: number) {
   const ax = x1, ay = y1, bx = xm, by = ym, cx = x2, cy = y2;
   const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
   if (Math.abs(d) < 1e-9) return null;   // collinear
@@ -199,7 +199,7 @@ function arc3(x1, y1, xm, ym, x2, y2) {
 // mirror-invariant - the Bottom view negates X, and the old fixed-direction span
 // calculation then misread every mirrored minor corner arc as the 270 major arc
 // (corners ballooned into full loops). This stays correct in both orientations.
-function isLargeArc(ax, ay, bx, by, ux, uy) {
+function isLargeArc(ax: number, ay: number, bx: number, by: number, ux: number, uy: number) {
   const r2 = (ax - ux) ** 2 + (ay - uy) ** 2;
   if (r2 < 1e-12) return false;
   const dot = (ax - ux) * (bx - ux) + (ay - uy) * (by - uy);
@@ -212,14 +212,14 @@ function isLargeArc(ax, ay, bx, by, ux, uy) {
 // ===========================================================================
 // Collect the drawable graphics of a library symbol (recursively, across its
 // unit sub-symbols). Returns primitives in symbol-local (Y-up) coordinates.
-function symbolGraphics(symNode) {
+function symbolGraphics(symNode: any[]) {
   const prims = [];
   // Pin number/name visibility is a symbol-level setting; the offset positions
   // the name relative to the pin's body end. (Sub-units inherit these.)
   const pnNode = kid(symNode, 'pin_numbers'), nmNode = kid(symNode, 'pin_names');
   const numbersHidden = isHidden(pnNode), namesHidden = isHidden(nmNode);
   const nameOffset = nmNode ? numAt(kid(nmNode, 'offset'), 0, 0.508) : 0.508;
-  const fontOf = (node, dflt) => numAt(kid(kid(node || [], 'font') || [], 'size'), 0, dflt);
+  const fontOf = (node: any[]|null, dflt: number|undefined) => numAt(kid(kid(node || [], 'font') || [], 'size'), 0, dflt);
   (function walk(node) {
     for (const x of node) {
       if (!isNode(x)) continue;
@@ -252,9 +252,9 @@ function symbolGraphics(symNode) {
   })(symNode);
   return prims;
 }
-function fillType(node) { const f = kid(node, 'fill'); const t = f ? (args(kid(f, 'type'))[0] || 'none') : 'none'; return t; }
+function fillType(node: any[]) { const f = kid(node, 'fill'); const t = f ? (args(kid(f, 'type'))[0] || 'none') : 'none'; return t; }
 
-function parseSchematic(rootNode) {
+function parseSchematic(rootNode: any[]) {
   const libs: any = {};   // "Lib:Name" -> graphics[]
   const lib = kid(rootNode, 'lib_symbols');
   if (lib) for (const sym of kids(lib, 'symbol')) libs[sym[1]] = symbolGraphics(sym);
@@ -265,13 +265,13 @@ function parseSchematic(rootNode) {
     if (!isNode(x)) continue;
     const t = x[0];
     if (t === 'symbol') {
-      const libId = args(kid(x, 'lib_id'))[0] || (kid(x, 'lib_id') ? kid(x, 'lib_id')[1] : '');
+      const libId = args(kid(x, 'lib_id'))[0] || (kid(x, 'lib_id') ? kid(x, 'lib_id')![1] : '');
       const p = atOf(x);
       const ref = propVal(x, 'Reference');
       // KiCad power symbols and graphical items aren't real BOM parts.
       instances.push({
         libId, x: p ? p.x : 0, y: p ? p.y : 0, rot: p ? p.rot : 0,
-        mirror: (kid(x, 'mirror') ? (kid(x, 'mirror')[1] || '') : ''),
+        mirror: (kid(x, 'mirror') ? (kid(x, 'mirror')![1] || '') : ''),
         ref, value: propVal(x, 'Value'), footprint: propVal(x, 'Footprint'),
         datasheet: propVal(x, 'Datasheet'), desc: propVal(x, 'Description'),
         inBom: (args(kid(x, 'in_bom'))[0] !== 'no'),
@@ -300,14 +300,14 @@ function parseSchematic(rootNode) {
 }
 // Read a schematic graphic shape (shared by symbol bodies and root-level sheet
 // graphics). Coordinates are returned as-is; the caller decides the space.
-function schShape(x, t) {
+function schShape(x: any[], t: string) {
   if (t === 'rectangle') { const a = kid(x, 'start'), b = kid(x, 'end'); return (a && b) ? { kind: 'rect', x1: numAt(a, 0), y1: numAt(a, 1), x2: numAt(b, 0), y2: numAt(b, 1), fill: fillType(x) } : null; }
   if (t === 'polyline' || t === 'bezier') return { kind: 'poly', pts: ptsOf(x), fill: fillType(x) };
   if (t === 'circle') { const c = kid(x, 'center'); return { kind: 'circle', cx: numAt(c, 0), cy: numAt(c, 1), r: numAt(kid(x, 'radius'), 0), fill: fillType(x) }; }
   if (t === 'arc') { const a = kid(x, 'start'), m = kid(x, 'mid'), e = kid(x, 'end'); return (a && m && e) ? { kind: 'arc', x1: numAt(a, 0), y1: numAt(a, 1), xm: numAt(m, 0), ym: numAt(m, 1), x2: numAt(e, 0), y2: numAt(e, 1) } : null; }
   return null;
 }
-function titleBlock(rootNode) {
+function titleBlock(rootNode: any[]) {
   const tb = kid(rootNode, 'title_block');
   if (!tb) return {};
   return { title: args(kid(tb, 'title'))[0] || '', rev: args(kid(tb, 'rev'))[0] || '',
@@ -317,12 +317,12 @@ function titleBlock(rootNode) {
 // KiCad paper sizes in mm (landscape width x height); portrait swaps them, and
 // "User w h" carries explicit dimensions. KiCad draws the sheet frame + title
 // block from this (the .kicad_sch stores no frame geometry), so we synthesise it.
-const PAPER_MM = {
+const PAPER_MM: Record<string, number[]> = {
   A0: [1189, 841], A1: [841, 594], A2: [594, 420], A3: [420, 297], A4: [297, 210], A5: [210, 148],
   A: [279.4, 215.9], B: [431.8, 279.4], C: [558.8, 431.8], D: [863.6, 558.8], E: [1117.6, 863.6],
   USLetter: [279.4, 215.9], USLegal: [355.6, 215.9], USLedger: [431.8, 279.4],
 };
-function paperSize(raw) {
+function paperSize(raw: string|string[]) {
   if (!raw || !raw.length) return null;
   const name = raw[0];
   if (name === 'User') { const w = parseFloat(raw[1]), h = parseFloat(raw[2]); return (w > 0 && h > 0) ? [w, h] : null; }
@@ -332,7 +332,7 @@ function paperSize(raw) {
 }
 // The drawing frame (page edge + inset border) and title block, in sheet space
 // (origin top-left, Y-down) - matching how KiCad renders the worksheet.
-function drawSheetFrame(g, W, H, parsed, b) {
+function drawSheetFrame(g: SVGElement, W: number, H: number, parsed: any, b: BBox) {
   const M = 10, ink = SCH.frame;                                   // KiCad default 10mm margin
   g.appendChild(svg('rect', { x: 0, y: 0, width: W, height: H, fill: 'none', stroke: ink, 'stroke-width': 0.15, opacity: 0.45 }));
   g.appendChild(svg('rect', { x: M, y: M, width: W - 2 * M, height: H - 2 * M, fill: 'none', stroke: ink, 'stroke-width': 0.3 }));
@@ -355,7 +355,7 @@ function drawSheetFrame(g, W, H, parsed, b) {
   grow(b, 0, 0); grow(b, W, H);
 }
 // A root-level sheet graphic (grouping box / outline) in sheet space.
-function drawSchGraphic(g, gr, b) {
+function drawSchGraphic(g: SVGElement, gr: any, b: BBox) {
   const col = SCH.gfx, W = 0.15;
   if (gr.kind === 'rect') {
     const x = Math.min(gr.x1, gr.x2), y = Math.min(gr.y1, gr.y2), w = Math.abs(gr.x2 - gr.x1), h = Math.abs(gr.y2 - gr.y1);
@@ -363,7 +363,7 @@ function drawSchGraphic(g, gr, b) {
     grow(b, x, y); grow(b, x + w, y + h);
   } else if (gr.kind === 'poly') {
     if (gr.pts.length < 2) return;
-    g.appendChild(svg('polyline', { points: gr.pts.map((p) => p.join(',')).join(' '), fill: gr.fill === 'background' ? SCH.bgFill : 'none', stroke: col, 'stroke-width': W }));
+    g.appendChild(svg('polyline', { points: gr.pts.map((p: any[]) => p.join(',')).join(' '), fill: gr.fill === 'background' ? SCH.bgFill : 'none', stroke: col, 'stroke-width': W }));
     for (const p of gr.pts) grow(b, p[0], p[1]);
   } else if (gr.kind === 'circle') {
     g.appendChild(svg('circle', { cx: gr.cx, cy: gr.cy, r: gr.r, fill: 'none', stroke: col, 'stroke-width': W }));
@@ -376,7 +376,7 @@ function drawSchGraphic(g, gr, b) {
 
 // A symbol property field (Reference/Value/...) drawn at its placed sheet
 // position, anchored per KiCad's justify, skipping hidden + power-symbol refs.
-function drawSchField(g, f, b) {
+function drawSchField(g: SVGElement, f: any, b: BBox) {
   if (f.hide || f.value == null || f.value === '' || f.value === '~') return;
   if (f.key === 'Reference' && /^#/.test(f.value)) return;       // power/hidden pseudo-refs
   if (f.key !== 'Reference' && f.key !== 'Value') return;        // KiCad hides the rest by default
@@ -389,7 +389,7 @@ function drawSchField(g, f, b) {
 }
 
 // Map a symbol-local (Y-up) point through a placed instance to sheet space.
-function placeSym(inst, lx, ly) {
+function placeSym(inst: any, lx: number, ly: number) {
   let x = lx, y = -ly;                 // library Y-up -> sheet Y-down
   if (inst.mirror === 'x') y = -y;     // mirror across X axis
   if (inst.mirror === 'y') x = -x;
@@ -397,7 +397,7 @@ function placeSym(inst, lx, ly) {
   return [inst.x + rx, inst.y + ry];
 }
 
-function schView(parsed) {
+function schView(parsed: any) {
   const v = buildViewer((g) => {
     const b = fitBox();
     // sheet frame + title block (behind everything), synthesised from the paper size
@@ -408,12 +408,12 @@ function schView(parsed) {
     // wires + buses
     for (const w of parsed.wires) {
       if (w.length < 2) continue;
-      g.appendChild(svg('polyline', { points: w.map((p) => p.join(',')).join(' '), fill: 'none', stroke: SCH.wire, 'stroke-width': 0.25 }));
+      g.appendChild(svg('polyline', { points: w.map((p: any[]) => p.join(',')).join(' '), fill: 'none', stroke: SCH.wire, 'stroke-width': 0.25 }));
       for (const p of w) grow(b, p[0], p[1]);
     }
     for (const w of parsed.buses) {
       if (w.length < 2) continue;
-      g.appendChild(svg('polyline', { points: w.map((p) => p.join(',')).join(' '), fill: 'none', stroke: SCH.bus, 'stroke-width': 0.4 }));
+      g.appendChild(svg('polyline', { points: w.map((p: any[]) => p.join(',')).join(' '), fill: 'none', stroke: SCH.bus, 'stroke-width': 0.4 }));
       for (const p of w) grow(b, p[0], p[1]);
     }
     // placed symbols
@@ -449,16 +449,16 @@ function schView(parsed) {
   return v;
 }
 
-function drawSchPrim(g, inst, pr, b) {
+function drawSchPrim(g: SVGElement, inst: any, pr: any, b: BBox) {
   if (pr.kind === 'rect') {
     const p1 = placeSym(inst, pr.x1, pr.y1), p2 = placeSym(inst, pr.x2, pr.y2);
     const x = Math.min(p1[0], p2[0]), y = Math.min(p1[1], p2[1]), w = Math.abs(p2[0] - p1[0]), h = Math.abs(p2[1] - p1[1]);
     g.appendChild(svg('rect', { x, y, width: w, height: h, fill: pr.fill === 'background' ? SCH.bgFill : pr.fill === 'outline' ? SCH.fill : 'none', stroke: SCH.body, 'stroke-width': 0.15 }));
     grow(b, x, y); grow(b, x + w, y + h);
   } else if (pr.kind === 'poly') {
-    const pts = pr.pts.map((p) => placeSym(inst, p[0], p[1]));
+    const pts = pr.pts.map((p: any[]) => placeSym(inst, p[0], p[1]));
     if (pts.length < 2) return;
-    g.appendChild(svg('polyline', { points: pts.map((p) => p.join(',')).join(' '), fill: pr.fill === 'background' ? SCH.bgFill : pr.fill === 'outline' ? SCH.fill : 'none', stroke: SCH.body, 'stroke-width': 0.15 }));
+    g.appendChild(svg('polyline', { points: pts.map((p: any[]) => p.join(',')).join(' '), fill: pr.fill === 'background' ? SCH.bgFill : pr.fill === 'outline' ? SCH.fill : 'none', stroke: SCH.body, 'stroke-width': 0.15 }));
     for (const p of pts) grow(b, p[0], p[1]);
   } else if (pr.kind === 'circle') {
     const c = placeSym(inst, pr.cx, pr.cy);
@@ -490,7 +490,7 @@ function drawSchPrim(g, inst, pr, b) {
   }
 }
 // A small centred pin label (number/name) at a placed sheet position.
-function pinText(g, pos, str, size, col, b) {
+function pinText(g: SVGElement, pos: any[], str: string|null, size: number, col: string, b: BBox) {
   const t = svg('text', { x: pos[0], y: pos[1], 'font-size': size, fill: col, 'text-anchor': 'middle', 'dominant-baseline': 'central' });
   t.textContent = str; g.appendChild(t); grow(b, pos[0], pos[1]);
 }
@@ -501,8 +501,8 @@ function pinText(g, pos, str, size, col, b) {
 // Parse a footprint node (used both inside a board and for a standalone
 // .kicad_mod). originX/originY/originRot place it on the board; for a lone
 // footprint they are 0.
-function parseFootprint(fpNode, ox = 0, oy = 0, orot = 0) {
-  const prims = [];
+function parseFootprint(fpNode: any[], ox = 0, oy = 0, orot = 0) {
+  const prims: any[] = [];
   const pads = [];
   // Rotation: KiCad's RotatePoint(+a) maps (x,y)->(x*cos+y*sin, -x*sin+y*cos),
   // which is our rot() called with -a (rot() is the opposite-handed matrix).
@@ -516,7 +516,7 @@ function parseFootprint(fpNode, ox = 0, oy = 0, orot = 0) {
   // bottom-side components render flipped (pin 1 on the wrong side, asymmetric
   // outlines back-to-front).
   const flip = /^B\./.test(args(kid(fpNode, 'layer'))[0] || '');
-  const place = (lx, ly) => { const [rx, ry] = rot(lx, ly, -orot); return [ox + (flip ? -rx : rx), oy + ry]; };
+  const place = (lx: number, ly: number) => { const [rx, ry] = rot(lx, ly, -orot); return [ox + (flip ? -rx : rx), oy + ry]; };
   const ref = propVal(fpNode, 'Reference'), value = propVal(fpNode, 'Value');
   for (const x of fpNode) {
     if (!isNode(x)) continue;
@@ -555,7 +555,7 @@ function parseFootprint(fpNode, ox = 0, oy = 0, orot = 0) {
 }
 
 // Shared graphic decoder for gr_* (board) and fp_* (footprint) shapes.
-function addGraphic(prims, node, kind, place) {
+function addGraphic(prims: any[], node: any[], kind: string, place: (lx: number, ly: number) => number[]) {
   const layer = args(kid(node, 'layer'))[0] || 'Dwgs.User';
   const width = numAt(kid(node, 'width'), 0, 0) || numAt(kid(kid(node, 'stroke') || [], 'width'), 0, 0.12);
   if (kind === 'line') {
@@ -580,7 +580,7 @@ function addGraphic(prims, node, kind, place) {
   }
 }
 
-function parsePcb(rootNode) {
+function parsePcb(rootNode: any[]) {
   const layersUsed = new Set();
   const prims = [];        // board graphics (gr_*) + footprint graphics
   const pads = [];
@@ -624,13 +624,13 @@ function parsePcb(rootNode) {
 
 // Sample a circular arc (through a -> mid -> b) into a polyline (excludes a,
 // includes b). Falls back to a straight step if the points are collinear.
-function arcPoints(a, m, b, n) {
+function arcPoints(a: number[], m: number[], b: number[], n: number) {
   const [ax, ay] = a, [mx, my] = m, [bx, by] = b;
   const d = 2 * (ax * (my - by) + mx * (by - ay) + bx * (ay - my));
   if (Math.abs(d) < 1e-9) return [b];
   const ux = ((ax * ax + ay * ay) * (my - by) + (mx * mx + my * my) * (by - ay) + (bx * bx + by * by) * (ay - my)) / d;
   const uy = ((ax * ax + ay * ay) * (bx - mx) + (mx * mx + my * my) * (ax - bx) + (bx * bx + by * by) * (mx - ax)) / d;
-  const r = Math.hypot(ax - ux, ay - uy), TWO = 2 * Math.PI, norm = (t) => ((t % TWO) + TWO) % TWO;
+  const r = Math.hypot(ax - ux, ay - uy), TWO = 2 * Math.PI, norm = (t: number) => ((t % TWO) + TWO) % TWO;
   const a0 = Math.atan2(ay - uy, ax - ux), a1 = Math.atan2(by - uy, bx - ux), am = Math.atan2(my - uy, mx - ux);
   const ccw = norm(am - a0) < norm(a1 - a0), span = ccw ? norm(a1 - a0) : -norm(a0 - a1);
   const out = [];
@@ -642,7 +642,7 @@ function arcPoints(a, m, b, n) {
 // substrate and the extruded edge wall, so they all share the exact silhouette -
 // including rounded corners and round/arbitrary boards.
 let _pcbClipSeq = 0;
-function boardOutline(prims) {
+function boardOutline(prims: any[]) {
   const edges = prims.filter((p) => p.layer === 'Edge.Cuts');
   if (!edges.length) return null;
   const circ = edges.length === 1 && edges[0].kind === 'circle' ? edges[0] : null;
@@ -661,8 +661,8 @@ function boardOutline(prims) {
     }
   }
   if (!segs.length) return null;
-  const used = new Array(segs.length).fill(false), eq = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.05;
-  const stepPts = (s, rev) => {
+  const used = new Array(segs.length).fill(false), eq = (p: any[], q: any[]) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.05;
+  const stepPts = (s: any, rev: boolean) => {
     const from = rev ? s.b : s.a, to = rev ? s.a : s.b;
     return s.arc ? arcPoints(from, s.mid, to, 6) : [to];
   };
@@ -686,12 +686,12 @@ function boardOutline(prims) {
 // board/footprint graphics, tracks, pads, vias on top. With opts.substrate the
 // board is drawn as its real Edge.Cuts silhouette (filled + soft shadow) and all
 // content is clipped to it, so nothing spills past the board edge (the 3D faces).
-function paintBoard(g, pcb, opts: any = {}) {
+function paintBoard(g: SVGElement, pcb: any, opts: any = {}) {
   const b = fitBox();
-  const holes = [], labels = [];   // drilled last so a hole cuts through every overlapping pad
+  const holes: any[] = [], labels: any[] = [];   // drilled last so a hole cuts through every overlapping pad
   let host = g;
   if (opts.substrate && opts.outline) {
-    const ptsStr = opts.outline.pts.map((p) => `${p[0]},${p[1]}`).join(' ');
+    const ptsStr = opts.outline.pts.map((p: any[]) => `${p[0]},${p[1]}`).join(' ');
     // Substrate + clip, no SVG filter: feDropShadow on a supersampled face is
     // expensive to rasterise (and can force per-frame re-raster), so the board edge
     // is defined by a plain stroke + the FR4 walls instead - much cheaper.
@@ -721,7 +721,7 @@ function paintBoard(g, pcb, opts: any = {}) {
   return box;
 }
 // A plated/unplated hole, drawn after all copper so it reads as a real drill.
-function drawHole(g, h) {
+function drawHole(g: SVGElement, h: any) {
   if (h.ry > 0 && Math.abs(h.ry - h.rx) > 1e-6) {     // slot (oval drill)
     const n = svg('rect', { x: h.cx - h.rx, y: h.cy - h.ry, width: h.rx * 2, height: h.ry * 2, rx: Math.min(h.rx, h.ry), fill: '#0b0b0f' });
     if (h.rot) n.setAttribute('transform', `rotate(${h.rot} ${h.cx} ${h.cy})`);
@@ -731,7 +731,7 @@ function drawHole(g, h) {
   }
 }
 
-function pcbView(pcb) {
+function pcbView(pcb: any) {
   // Build a layer->colour map for the toggle chips (only layers that drew).
   const layers = [...pcb.layersUsed].sort().map((ly) => ({ id: ly, name: ly, color: layerColor(ly) }));
 
@@ -746,26 +746,26 @@ function pcbView(pcb) {
 // ---- board sides (for the 3D flip + the Top/Bottom flat views) -------------
 // Which side of the board a layer lives on. Through features (Edge.Cuts, vias,
 // plated holes) belong to both; inner copper and documentation default to top.
-function sideOfLayer(layer) {
+function sideOfLayer(layer: string) {
   if (!layer) return 'top';
   if (/^B\./.test(layer)) return 'bottom';
   if (layer === 'Edge.Cuts') return 'both';
   return 'top';
 }
-function padSide(pd) {
+function padSide(pd: any) {
   if (pd.drill > 0) return 'both';                      // plated through-hole
   const L = pd.layers || [];
   if (L.includes('*.Cu')) return 'both';
-  if (L.some((l) => /^B\./.test(l)) && !L.some((l) => /^F\./.test(l))) return 'bottom';
+  if (L.some((l: string) => /^B\./.test(l)) && !L.some((l: string) => /^F\./.test(l))) return 'bottom';
   return 'top';
 }
 // A copy of the board holding only the geometry on one side (keeping the
 // through/outline features so the silhouette and holes show on both faces).
-function sidePcb(pcb, side) {
-  const keep = (layer) => { const s = sideOfLayer(layer); return s === 'both' || s === side; };
-  const prims = pcb.prims.filter((p) => keep(p.layer));
-  const tracks = pcb.tracks.filter((t) => keep(t.layer));
-  const pads = pcb.pads.filter((p) => { const s = padSide(p); return s === 'both' || s === side; });
+function sidePcb(pcb: any, side: string) {
+  const keep = (layer: string) => { const s = sideOfLayer(layer); return s === 'both' || s === side; };
+  const prims = pcb.prims.filter((p: any) => keep(p.layer));
+  const tracks = pcb.tracks.filter((t: any) => keep(t.layer));
+  const pads = pcb.pads.filter((p: any) => { const s = padSide(p); return s === 'both' || s === side; });
   const layersUsed = new Set();
   for (const p of prims) layersUsed.add(p.layer);
   for (const t of tracks) layersUsed.add(t.layer);
@@ -776,22 +776,22 @@ function sidePcb(pcb, side) {
 // bottom side reads correctly (silk forward, left/right as physically flipped).
 // cx defaults to 0 for the standalone flat view; the 3D back face passes the
 // board centre so the mirrored bottom still lines up with the front face.
-function mirrorXPcb(pcb, cx = 0) {
-  const mx = (v) => 2 * cx - v;
-  const mp = (p) => {
+function mirrorXPcb(pcb: any, cx = 0) {
+  const mx = (v: number) => 2 * cx - v;
+  const mp = (p: any) => {
     const q = { ...p };
     if (q.x1 != null) q.x1 = mx(q.x1);
     if (q.x2 != null) q.x2 = mx(q.x2);
     if (q.xm != null) q.xm = mx(q.xm);
     if (q.cx != null) q.cx = mx(q.cx);
-    if (q.pts) q.pts = q.pts.map(([x, y]) => [mx(x), y]);
+    if (q.pts) q.pts = q.pts.map(([x, y]: number[]) => [mx(x), y]);
     return q;
   };
   return {
     prims: pcb.prims.map(mp), tracks: pcb.tracks.map(mp),
-    pads: pcb.pads.map((pd) => ({ ...pd, cx: mx(pd.cx), rot: -pd.rot })),
-    vias: pcb.vias.map((vi) => ({ ...vi, cx: mx(vi.cx) })),
-    footprints: pcb.footprints.map((f) => ({ ...f, cx: mx(f.cx) })),
+    pads: pcb.pads.map((pd: any) => ({ ...pd, cx: mx(pd.cx), rot: -pd.rot })),
+    vias: pcb.vias.map((vi: any) => ({ ...vi, cx: mx(vi.cx) })),
+    footprints: pcb.footprints.map((f: any) => ({ ...f, cx: mx(f.cx) })),
     zones: pcb.zones, layersUsed: pcb.layersUsed, thickness: pcb.thickness, version: pcb.version,
   };
 }
@@ -799,7 +799,7 @@ function mirrorXPcb(pcb, cx = 0) {
 // A flat, non-interactive SVG of one side, used as a face of the 3D board. The
 // content is clipped to the board's Edge.Cuts silhouette so the face shows the
 // real board shape, not a cream rectangle.
-function staticFace(pcb) {
+function staticFace(pcb: any) {
   const s = svg('svg', { class: 'anr-pcb3d-svg' });
   const g = svg('g', {});
   s.appendChild(g);
@@ -820,7 +820,7 @@ const HOME3D = { rx: -0.5 * 180 / Math.PI, ry: 0.6 * 180 / Math.PI };
 // face and the bottom side on the back (a real rotateY(180) flip, so it mirrors
 // physically and you can read the other side). Pure CSS 3D - no WebGL, vector
 // crisp at any angle. Reuses the same painter as the flat view.
-function buildBoard3D(pcb, opts: any = {}) {
+function buildBoard3D(pcb: any, opts: any = {}) {
   const ss = opts.ss !== false;                  // supersampling toggle (Quality popup)
   const view = opts.view || { rx: HOME3D.rx, ry: HOME3D.ry, zoom: 1, panX: 0, panY: 0, spin: false };   // preserved across rebuilds
   const front = staticFace(sidePcb(pcb, 'top'));
@@ -873,7 +873,7 @@ function buildBoard3D(pcb, opts: any = {}) {
   for (const f of [front, back]) {
     f.s.setAttribute('viewBox', vbStr);
     f.s.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    f.s.setAttribute('width', W); f.s.setAttribute('height', H);
+    f.s.setAttribute('width', String(W)); f.s.setAttribute('height', String(H));
   }
 
   // stage = viewport; cam = 2D zoom/pan (outside the perspective, so zooming is a
@@ -887,7 +887,7 @@ function buildBoard3D(pcb, opts: any = {}) {
   for (const d of [cam, scene, board]) { d.style.width = W + 'px'; d.style.height = H + 'px'; }
   scene.appendChild(board); cam.appendChild(scene); stage.appendChild(cam);
 
-  const mkFace = (cls, sNode, tf) => {
+  const mkFace = (cls: string, sNode: SVGElement, tf: string) => {
     const d = el('div', { class: 'anr-pcb3d-face ' + cls });
     d.style.width = W + 'px'; d.style.height = H + 'px'; d.style.transform = tf;
     d.appendChild(sNode);
@@ -901,7 +901,7 @@ function buildBoard3D(pcb, opts: any = {}) {
   // instead of four straight strips with corner gaps. Each polyline segment is a
   // thin quad stood up perpendicular to the board (rotateX 90) and aimed along the
   // segment (rotateZ). Falls back to the bbox rectangle when there's no outline.
-  const wallSeg = (A, B) => {
+  const wallSeg = (A: any[], B: any[]) => {
     const dx = B[0] - A[0], dy = B[1] - A[1], L = Math.hypot(dx, dy);
     if (L < 0.5) return;
     const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2, ang = Math.atan2(dy, dx) * 180 / Math.PI;
@@ -929,14 +929,14 @@ function buildBoard3D(pcb, opts: any = {}) {
   // matches those viewers' 0.003 rad/frame. .is-spinning drops the board's eased
   // transform for the same reason a drag does: an ease per frame lags and rubbers.
   let spinRaf = 0;
-  let spinBtn = null;      // assigned when the bar is built, below
+  let spinBtn: HTMLButtonElement|null = null;      // assigned when the bar is built, below
   const spinTick = () => {
     if (!view.spin || !stage.isConnected) { spinRaf = 0; return; }
     view.ry += 0.003 * 180 / Math.PI;
     applyBoard();
     spinRaf = requestAnimationFrame(spinTick);
   };
-  const setSpin = (v) => {
+  const setSpin = (v: boolean) => {
     if (!!view.spin === !!v) return;
     view.spin = !!v;
     board.classList.toggle('is-spinning', view.spin);
@@ -949,7 +949,7 @@ function buildBoard3D(pcb, opts: any = {}) {
   // cam transition is off during live zoom/pan (it would lag the gesture) and only
   // switched on for this animation, then cleared after the 0.45s ease. Auto-rotate
   // stops first - it would otherwise carry the board straight back off home.
-  let resetTimer = null;
+  let resetTimer: number|null|undefined = null;
   const resetView = () => {
     setSpin(false);
     cam.classList.add('is-animating');
@@ -966,8 +966,8 @@ function buildBoard3D(pcb, opts: any = {}) {
   // and two fingers mid-gesture without the camera jumping.
   const ZMIN = 0.3, ZMAX = 4;
   const pts = new Map();      // pointerId -> { x, y }
-  let mode = null;            // 'rotate' | 'pan' | 'pinch'
-  let pinch = null;          // { dist, cx, cy } baseline for the two-finger gesture
+  let mode: string|null = null;            // 'rotate' | 'pan' | 'pinch'
+  let pinch: { dist: number; cx: number; cy: number }|null = null;          // { dist, cx, cy } baseline for the two-finger gesture
   const twoFinger = () => {
     const a = [...pts.values()];
     return { dist: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) || 1, cx: (a[0].x + a[1].x) / 2, cy: (a[0].y + a[1].y) / 2 };
@@ -994,8 +994,8 @@ function buildBoard3D(pcb, opts: any = {}) {
       // Spread drives the zoom, centroid travel drives the pan - so two fingers
       // zoom and slide the board at once, the way every map app does.
       const t = twoFinger();
-      view.zoom = Math.max(ZMIN, Math.min(ZMAX, view.zoom * (t.dist / pinch.dist)));
-      view.panX += t.cx - pinch.cx; view.panY += t.cy - pinch.cy;
+      view.zoom = Math.max(ZMIN, Math.min(ZMAX, view.zoom * (t.dist / pinch!.dist)));
+      view.panX += t.cx - pinch!.cx; view.panY += t.cy - pinch!.cy;
       pinch = t; applyCam();
     } else if (mode === 'pan') {
       view.panX += e.clientX - px; view.panY += e.clientY - py; applyCam();
@@ -1003,7 +1003,7 @@ function buildBoard3D(pcb, opts: any = {}) {
       view.ry += (e.clientX - px) * 0.5; view.rx = Math.max(-90, Math.min(90, view.rx - (e.clientY - py) * 0.5)); applyBoard();
     }
   });
-  const dropPointer = (e) => {
+  const dropPointer = (e: PointerEvent) => {
     pts.delete(e.pointerId);
     if (pts.size === 0) { mode = null; board.classList.remove('is-dragging'); }
     else if (pts.size === 1) { mode = 'rotate'; pinch = null; }   // back to one finger: resume rotating, no jump
@@ -1033,7 +1033,7 @@ function buildBoard3D(pcb, opts: any = {}) {
   // per-frame drag and its own snap tween into a laggy rubber band. Drop the
   // transition while the cube is driving - the same thing a board drag does - and
   // restore it once the frames stop, so Flip over / Reset still glide home.
-  let cubeSettle = null;
+  let cubeSettle: number|null|undefined = null;
   attachViewCube({
     wrap: stage,
     state: camState,
@@ -1101,17 +1101,17 @@ function buildBoard3D(pcb, opts: any = {}) {
 // Board view with mode buttons: a 3D flip board, plus flat Top and Bottom
 // (interactive, with the usual pan/zoom + per-layer toggles). Returns the same
 // { wrap, focus } shape as pcbView so the project cross-probe still works.
-function boardView(pcb) {
+function boardView(pcb: any) {
   const wrap = el('div', { class: 'anr-board-modes' });
   const bar = el('div', { class: 'anr-altium-bar anr-board-modebar' });
   const host = el('div', { class: 'anr-board-host' });
   const cache: any = {};
-  let topV = null;
+  let topV: EdaViewer|null = null;
   // 3D supersampling state + a camera shared across rebuilds, so toggling
   // supersampling keeps the view. onToggleSS flips it and rebuilds the 3D node.
   let ss3d = true;
   const view3d = { rx: HOME3D.rx, ry: HOME3D.ry, zoom: 1, panX: 0, panY: 0, spin: false };
-  const build = (mode) => {
+  const build = (mode: string) => {
     if (cache[mode]) return cache[mode];
     let node;
     if (mode === 'top') { topV = pcbView(sidePcb(pcb, 'top')); node = topV.wrap; }
@@ -1119,7 +1119,7 @@ function boardView(pcb) {
     else node = buildBoard3D(pcb, { ss: ss3d, view: view3d, onToggleSS: () => { ss3d = !ss3d; cache['3d'] = null; show('3d'); } });
     return (cache[mode] = node);
   };
-  const show = (mode) => {
+  const show = (mode: string) => {
     host.innerHTML = '';
     const node = build(mode);
     host.appendChild(node);
@@ -1137,10 +1137,10 @@ function boardView(pcb) {
   wrap.appendChild(bar); wrap.appendChild(host);
   show('3d');
   // Cross-probe always lands on the flat Top view (it has pan/zoom + ping).
-  return { wrap, focus: (ref) => { show('top'); return topV ? topV.focus(ref) : false; } };
+  return { wrap, focus: (ref: string) => { show('top'); return topV ? topV.focus!(ref) : false; } };
 }
 
-function drawPrim(g, p, b) {
+function drawPrim(g: SVGElement, p: any, b: BBox) {
   const col = layerColor(p.layer);
   const W = Math.max(p.w || 0, 0.05);
   if (p.kind === 'line') {
@@ -1157,12 +1157,12 @@ function drawPrim(g, p, b) {
     const arc = arc3(p.x1, p.y1, p.xm, p.ym, p.x2, p.y2);
     if (arc) { g.appendChild(svg('path', { d: `M ${p.x1} ${p.y1} A ${arc.r} ${arc.r} 0 ${arc.large} ${arc.sweep} ${p.x2} ${p.y2}`, fill: 'none', stroke: col, 'stroke-width': W, 'stroke-linecap': 'round', 'data-layer': p.layer })); grow(b, p.x1, p.y1); grow(b, p.x2, p.y2); grow(b, p.xm, p.ym); }
   } else if (p.kind === 'poly') {
-    const pts = p.pts.map((q) => q.join(',')).join(' ');
+    const pts = p.pts.map((q: any[]) => q.join(',')).join(' ');
     g.appendChild(svg('polygon', { points: pts, fill: p.filled ? hexA(col, p.zone ? 0.18 : 0.5) : 'none', stroke: col, 'stroke-width': W, 'data-layer': p.layer }));
     for (const q of p.pts) grow(b, q[0], q[1]);
   }
 }
-function drawTrack(g, tk, b) {
+function drawTrack(g: SVGElement, tk: any, b: BBox) {
   const col = layerColor(tk.layer), W = Math.max(tk.w, 0.05);
   if (tk.kind === 'line') {
     g.appendChild(svg('line', { x1: tk.x1, y1: tk.y1, x2: tk.x2, y2: tk.y2, stroke: col, 'stroke-width': W, 'stroke-linecap': 'round', 'data-layer': tk.layer }));
@@ -1176,12 +1176,12 @@ function drawTrack(g, tk, b) {
 // hole must be punched after ALL copper (some footprints stack a hole-less
 // "connect" pad over a drilled one - e.g. plated mounting holes - and drawing
 // the hole per-pad would let the larger pad paint over it).
-function drawPad(g, pd, b, holes, labels) {
-  const layerKey = pd.layers.includes('*.Cu') ? 'F.Cu' : (pd.layers.find((l) => /\.Cu$/.test(l)) || pd.layers[0] || 'F.Cu');
+function drawPad(g: SVGElement, pd: any, b: BBox, holes: any[], labels: any[]) {
+  const layerKey = pd.layers.includes('*.Cu') ? 'F.Cu' : (pd.layers.find((l: string) => /\.Cu$/.test(l)) || pd.layers[0] || 'F.Cu');
   // Copper only when the pad is on a copper layer AND is larger than its drill
   // (an annular ring). A pure hole - np_thru_hole, or a pad sized to its drill -
   // carries no copper and renders as a bare hole in the final pass.
-  const hasCu = pd.layers.some((l) => l === '*.Cu' || /\.Cu$/.test(l));
+  const hasCu = pd.layers.some((l: string) => l === '*.Cu' || /\.Cu$/.test(l));
   const copper = hasCu && (!(pd.drill > 0) || Math.max(pd.sx, pd.sy) > pd.drill + 1e-6);
   if (copper) {
     let n;
@@ -1202,7 +1202,7 @@ function drawPad(g, pd, b, holes, labels) {
     t.textContent = pd.num; labels.push(t);
   }
 }
-function hexA(hex, a) {
+function hexA(hex: string, a: number) {
   const m = /^#([0-9a-f]{6})$/i.exec(hex);
   if (!m) return hex;
   const n = parseInt(m[1], 16);
@@ -1215,7 +1215,7 @@ function hexA(hex, a) {
 // Rows are [label, value] or [label, value, helpText]; a help string routes the
 // row through rowHelp so it gets a local [?] tooltip (kept out of the shared
 // LABEL_HELP map, which would mis-attach to same-named rows elsewhere).
-function metaCard(title, help, rows, file: File, extra?) {
+function metaCard(title: string, help: string, rows: any[][], file: File, extra?: Node) {
   const card = el('div', { class: 'anr-card' });
   const [h, hp] = h3help(title, help);
   card.appendChild(h); card.appendChild(hp);
@@ -1225,7 +1225,7 @@ function metaCard(title, help, rows, file: File, extra?) {
   if (extra) card.appendChild(extra);
   return card;
 }
-function miniMeta(rows) {
+function miniMeta(rows: any[][]) {
   const tbl = el('table', { class: 'anr-readout' });
   for (const [k, val, htxt] of rows) if (val != null && val !== '') tbl.appendChild(htxt ? rowHelp(k, String(val), htxt) : row(k, String(val)));
   return tbl;
@@ -1234,7 +1234,7 @@ function miniMeta(rows) {
 // mirrors it for the few table headers that need a plain-language note. Falls
 // back to a bare <th> when no help is supplied.
 let _thTipInit = false;
-function helpTh(label, help) {
+function helpTh(label: string|null, help: ElChild | ElChild[]) {
   const th = el('th', {});
   if (!help) { th.textContent = label; return th; }
   if (!_thTipInit) { _thTipInit = true; document.addEventListener('click', () => document.querySelectorAll('.anr-tip.is-active').forEach((t) => t.classList.remove('is-active'))); }
@@ -1245,7 +1245,7 @@ function helpTh(label, help) {
   th.appendChild(btn); th.appendChild(tip);
   return th;
 }
-function padsTable(pads) {
+function padsTable(pads: any[]) {
   const tbl = el('table', { class: 'anr-readout anr-altium-pads' });
   tbl.appendChild(el('tr', {}, [
     helpTh('Pad', 'The pad’s number or name - the label matching the component pin that solders to it.'),
@@ -1284,7 +1284,7 @@ export async function renderKicad(file: File, resultsEl: HTMLElement) {
     if (lower === 'fp-lib-table' || lower === 'sym-lib-table') return renderLibTable(file, text, resultsEl);
     if (ext === 'wbk') return renderWbk(file, text, resultsEl);
 
-    const node = parseSexpr(text);
+    const node = parseSexpr(text)!;
     const rootTag = tagOf(node);
     if (ext === 'kicad_sch' || rootTag === 'kicad_sch') return renderSchDoc(file, node, resultsEl);
     if (ext === 'kicad_pcb' || rootTag === 'kicad_pcb') return renderPcbDoc(file, node, resultsEl);
@@ -1296,7 +1296,7 @@ export async function renderKicad(file: File, resultsEl: HTMLElement) {
   }
 }
 
-function renderSchDoc(file: File, node, resultsEl: HTMLElement) {
+function renderSchDoc(file: File, node: any[], resultsEl: HTMLElement) {
   const parsed = parseSchematic(node);
   resultsEl.appendChild(metaCard('KiCad schematic', 'A circuit diagram from KiCad’s Eeschema editor (.kicad_sch), showing how the parts connect. It is stored as a bracketed text format (an S-expression); Analyser reads the symbols, wires and labels and redraws them as a crisp, zoomable (vector) picture in the browser.', [
     ['Format', 'KiCad schematic'],
@@ -1319,7 +1319,7 @@ function renderSchDoc(file: File, node, resultsEl: HTMLElement) {
   if (bom.length) resultsEl.appendChild(bomCard(bom, null, null));
 }
 
-function renderPcbDoc(file: File, node, resultsEl: HTMLElement) {
+function renderPcbDoc(file: File, node: any[], resultsEl: HTMLElement) {
   const pcb = parsePcb(node);
   const edge = pcb.prims.filter((p) => p.layer === 'Edge.Cuts');
   let bw = null, bh = null;
@@ -1334,7 +1334,7 @@ function renderPcbDoc(file: File, node, resultsEl: HTMLElement) {
     ['Size', fmtBytes(file.size)],
     ['File version', pcb.version],
     ['Board thickness', pcb.thickness ? pcb.thickness + ' mm' : null],
-    ['Board size', bw ? `${bw.toFixed(1)} × ${bh.toFixed(1)} mm` : null],
+    ['Board size', bw ? `${bw.toFixed(1)} × ${bh!.toFixed(1)} mm` : null],
     ['Footprints', pcb.footprints.length, 'The copper pad patterns that components solder onto - one per part placed on the board. For example a chip’s footprint is the grid of pads its pins land on.'],
     ['Pads', pcb.pads.length, 'The small metal contacts that a component’s pins solder to.'],
     ['Tracks', pcb.tracks.length, 'The copper wires printed on the board that carry signals between components (also called traces).'],
@@ -1348,7 +1348,7 @@ function renderPcbDoc(file: File, node, resultsEl: HTMLElement) {
   resultsEl.insertBefore(dcard, resultsEl.firstChild);
 }
 
-function renderMod(file: File, node, resultsEl: HTMLElement) {
+function renderMod(file: File, node: any[], resultsEl: HTMLElement) {
   const fp = parseFootprint(node);
   const layers = new Set(fp.prims.map((p) => p.layer));
   resultsEl.appendChild(metaCard('KiCad footprint', 'One component’s footprint - the pattern of solder pads and outline a single part sits on - saved as a bracketed text file (.kicad_mod, an S-expression). Analyser draws its pads to scale along with the printed outline (silkscreen) and the part’s keep-clear boundary (courtyard).', [
@@ -1367,7 +1367,7 @@ function renderMod(file: File, node, resultsEl: HTMLElement) {
   resultsEl.insertBefore(dcard, resultsEl.firstChild);
 }
 
-function renderSymLib(file: File, node, resultsEl: HTMLElement) {
+function renderSymLib(file: File, node: any[], resultsEl: HTMLElement) {
   const syms = kids(node, 'symbol');
   resultsEl.appendChild(metaCard('KiCad symbol library', 'A set of schematic symbols (.kicad_sym) - the diagram pictures that stand for components (a resistor, a chip and so on) in a circuit drawing, saved as a bracketed text file (an S-expression). Analyser draws each symbol from the lines and shapes that make it up.', [
     ['Format', 'KiCad symbol library'],
@@ -1384,7 +1384,7 @@ function renderSymLib(file: File, node, resultsEl: HTMLElement) {
   card.appendChild(sel);
   const host = el('div', { class: 'anr-kicad-symhost' });
   card.appendChild(host);
-  const drawSym = (symName) => {
+  const drawSym = (symName: string) => {
     const sym = syms.find((s) => s[1] === symName);
     host.innerHTML = '';
     if (!sym) return;
@@ -1398,7 +1398,7 @@ function renderSymLib(file: File, node, resultsEl: HTMLElement) {
   resultsEl.insertBefore(card, resultsEl.firstChild);
 }
 
-function renderProjectJson(file: File, text, resultsEl: HTMLElement) {
+function renderProjectJson(file: File, text: string, resultsEl: HTMLElement) {
   let data = null;
   try { data = JSON.parse(text); } catch (_) {}
   const ext = (file.name.split('.').pop() || '').toLowerCase();
@@ -1429,12 +1429,12 @@ function renderProjectJson(file: File, text, resultsEl: HTMLElement) {
   }
   resultsEl.appendChild(jsonCard(text));
 }
-const fmtNum = (v) => (v == null ? '—' : String(v));
+const fmtNum = (v: any) => (v == null ? '—' : String(v));
 
 // fp-info-cache is a line-based cache, NOT JSON: a leading hash line, then 7
 // lines per footprint - nickname, name, description, keywords, then three
 // numbers (the middle one is the pad count).
-function parseFpCache(text) {
+function parseFpCache(text: string) {
   const lines = text.split(/\r?\n/);
   const items = [];
   let i = 1;   // skip the leading hash/timestamp line
@@ -1446,7 +1446,7 @@ function parseFpCache(text) {
   }
   return items;
 }
-function renderFpCache(file: File, text, resultsEl: HTMLElement) {
+function renderFpCache(file: File, text: string, resultsEl: HTMLElement) {
   const items = parseFpCache(text);
   resultsEl.appendChild(metaCard('KiCad footprint cache', "KiCad's footprint index (fp-info-cache) - a quick lookup list of every component footprint in the project's libraries, storing each one's nickname, name, description and pad count. It lets the Pcbnew board editor show them instantly without re-reading every .kicad_mod file.", [
     ['Format', 'KiCad footprint info cache'],
@@ -1466,7 +1466,7 @@ function renderFpCache(file: File, text, resultsEl: HTMLElement) {
   }
 }
 
-function renderLibTable(file: File, text, resultsEl: HTMLElement) {
+function renderLibTable(file: File, text: string, resultsEl: HTMLElement) {
   const node = parseSexpr(text);
   const libs = node ? kids(node, 'lib') : [];
   const isFp = /^fp/i.test(file.name);
@@ -1487,22 +1487,22 @@ function renderLibTable(file: File, text, resultsEl: HTMLElement) {
   }
 }
 
-function renderWbk(file: File, text, resultsEl: HTMLElement) {
+function renderWbk(file: File, text: string, resultsEl: HTMLElement) {
   // ngspice simulation workbook: directives + probe list, minimally interpreted.
   const lines = text.split(/\r?\n/);
-  const directive = lines.find((l) => /^\.(tran|ac|dc|op|noise)/i.test(l.trim())) || '';
-  const probes = lines.filter((l) => /^[VIvi]\(/.test(l.trim()));
+  const directive = lines.find((l: string) => /^\.(tran|ac|dc|op|noise)/i.test(l.trim())) || '';
+  const probes = lines.filter((l: string) => /^[VIvi]\(/.test(l.trim()));
   resultsEl.appendChild(metaCard('KiCad simulation workbook', 'A saved setup for KiCad’s built-in circuit simulator (.wbk, using ngspice/SPICE) - it stores which simulation to run and which signals (voltages and currents) to record, ready to run again on the schematic.', [
     ['Format', 'KiCad simulation workbook (.wbk)'],
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
     ['Analysis', directive ? directive.trim().replace(/\{return\}.*/, '') : null, 'The kind of simulation to run - for example transient (how signals change over time), AC (frequency response), DC sweep or operating point (the steady resting state).'],
-    ['Probed signals', probes.length ? probes.map((p) => p.trim()).join(', ') : null, 'The voltages and currents the simulator is told to record and plot, written as V(node) for a voltage or I(part) for a current.'],
+    ['Probed signals', probes.length ? probes.map((p: string) => p.trim()).join(', ') : null, 'The voltages and currents the simulator is told to record and plot, written as V(node) for a voltage or I(part) for a current.'],
   ], file));
   resultsEl.appendChild(sourceCard(text));
 }
 
-function sourceCard(text) {
+function sourceCard(text: string) {
   const c = el('div', { class: 'anr-card' });
   c.appendChild(el('h3', {}, 'Source'));
   const pre = el('pre', { class: 'anr-pagetext anr-code-src' });
@@ -1510,7 +1510,7 @@ function sourceCard(text) {
   c.appendChild(pre);
   return c;
 }
-function jsonCard(text) {
+function jsonCard(text: string) {
   const c = el('div', { class: 'anr-card' });
   c.appendChild(el('h3', {}, 'Raw settings (JSON)'));
   const pre = el('pre', { class: 'anr-pagetext anr-code-src' });
@@ -1522,18 +1522,18 @@ function jsonCard(text) {
 }
 
 // ---- BOM -------------------------------------------------------------------
-function bomFromInstances(instances) {
-  const out = [];
+function bomFromInstances(instances: any[]) {
+  const out: any[] = [];
   for (const inst of instances) {
     if (!inst.ref || /^#/.test(inst.ref)) continue;       // skip power/hidden
     if (inst.inBom === false) continue;
     out.push(inst);
   }
-  out.sort((a, b) => (a.ref || '~').localeCompare(b.ref || '~', undefined, { numeric: true }));
+  out.sort((a: any, b: any) => (a.ref || '~').localeCompare(b.ref || '~', undefined, { numeric: true }));
   return out;
 }
 // bomCard with optional cross-probe callbacks.
-function bomCard(bom, onSch, onPcb) {
+function bomCard(bom: any[], onSch: ((ref: string) => void)|null, onPcb: ((ref: string) => void)|null) {
   const card = el('div', { class: 'anr-altium-bomwrap' });
   if (onSch || onPcb) {
     const [h, hp] = h3help('Bill of materials', 'The list of parts on the board. Click a part’s designator to jump to it on the schematic' + (onPcb ? ', or to its footprint on the board.' : '.'));
@@ -1571,13 +1571,13 @@ function bomCard(bom, onSch, onPcb) {
 // ===========================================================================
 //  combined project view (folder drop)
 // ===========================================================================
-const base = (p) => p.split(/[\\/]/).pop();
-const extOfName = (n) => (n.split('.').pop() || '').toLowerCase();
+const base = (p: string) => p.split(/[\\/]/).pop()!;
+const extOfName = (n: string) => (n.split('.').pop() || '').toLowerCase();
 
-export async function buildKicadProjectCard(kiFiles, folderName) {
+export async function buildKicadProjectCard(kiFiles: any[], folderName: string) {
   // Categorise.
-  let proFile = null, schFile = null, pcbFile = null, symFile = null;
-  const modFiles = [], tableFiles = [], otherFiles = [];
+  let proFile: any = null, schFile: any = null, pcbFile: any = null, symFile: any = null;
+  const modFiles: any[] = [], tableFiles: any[] = [], otherFiles: any[] = [];
   for (const f of kiFiles) {
     const n = base(f.path), ext = extOfName(n), lower = n.toLowerCase();
     if (ext === 'kicad_pro') proFile = proFile || f;
@@ -1590,9 +1590,9 @@ export async function buildKicadProjectCard(kiFiles, folderName) {
   }
 
   // Parse the principal documents.
-  let sch = null, pcb = null, pro = null;
-  if (schFile) { try { sch = parseSchematic(parseSexpr(await schFile.file.text())); } catch (_) {} }
-  if (pcbFile) { try { pcb = parsePcb(parseSexpr(await pcbFile.file.text())); } catch (_) {} }
+  let sch: any = null, pcb: any = null, pro: any = null;
+  if (schFile) { try { sch = parseSchematic(parseSexpr(await schFile.file.text())!); } catch (_) {} }
+  if (pcbFile) { try { pcb = parsePcb(parseSexpr(await pcbFile.file.text())!); } catch (_) {} }
   if (proFile) { try { pro = JSON.parse(await proFile.file.text()); } catch (_) {} }
 
   const bom = sch ? bomFromInstances(sch.instances) : [];
@@ -1606,8 +1606,8 @@ export async function buildKicadProjectCard(kiFiles, folderName) {
   const panels = el('div', { class: 'anr-altium-tabwrap' });
   card.appendChild(tabsBar); card.appendChild(panels);
 
-  const tabs = [];
-  function addTab(label, buildFn) {
+  const tabs: { btn: HTMLElement; panel: HTMLElement; build: (panel: HTMLElement) => any; built: boolean; view: any }[] = [];
+  function addTab(label: ElChild | ElChild[], buildFn: (panel: HTMLElement) => any) {
     const idx = tabs.length;
     const btn = el('button', { type: 'button', class: 'anr-btn anr-altium-tab' }, label);
     const panel = el('div', { class: 'anr-altium-tabpanel', hidden: '' });
@@ -1616,19 +1616,19 @@ export async function buildKicadProjectCard(kiFiles, folderName) {
     tabs.push({ btn, panel, build: buildFn, built: false, view: null });
     return idx;
   }
-  function setActive(i) {
+  function setActive(i: number) {
     tabs.forEach((t, j) => { t.btn.classList.toggle('is-on', j === i); t.panel.hidden = j !== i; });
     const t = tabs[i];
     if (t && !t.built) { t.built = true; t.view = t.build(t.panel) || null; }
   }
 
-  const overviewIdx = addTab('Overview', (panel) => buildOverview(panel));
+  const overviewIdx = addTab('Overview', (panel: HTMLElement) => buildOverview(panel));
   let schTab = -1, pcbTab = -1;
-  if (sch) schTab = addTab(schFile ? base(schFile.path) : 'Schematic', (panel) => {
+  if (sch) schTab = addTab(schFile ? base(schFile.path) : 'Schematic', (panel: HTMLElement) => {
     panel.appendChild(miniMeta([['Title', sch.title], ['Components', bom.length], ['Wires', sch.wires.length]]));
     const v = schView(sch); panel.appendChild(v.wrap); return v;
   });
-  if (pcb) pcbTab = addTab(pcbFile ? base(pcbFile.path) : 'PCB', (panel) => {
+  if (pcb) pcbTab = addTab(pcbFile ? base(pcbFile.path) : 'PCB', (panel: HTMLElement) => {
     panel.appendChild(miniMeta([
       ['Footprints', pcb.footprints.length, 'The copper pad patterns that components solder onto - one per part placed on the board.'],
       ['Tracks', pcb.tracks.length, 'The copper wires printed on the board that carry signals between components (also called traces).'],
@@ -1637,13 +1637,13 @@ export async function buildKicadProjectCard(kiFiles, folderName) {
     ]));
     const v = boardView(pcb); panel.appendChild(v.wrap); return v;
   });
-  if (symFile) addTab(base(symFile.path), (panel) => { buildSymPanel(panel, symFile); });
-  if (modFiles.length) addTab('Footprints (' + modFiles.length + ')', (panel) => buildModPanel(panel, modFiles));
+  if (symFile) addTab(base(symFile.path), (panel: HTMLElement) => { buildSymPanel(panel, symFile); });
+  if (modFiles.length) addTab('Footprints (' + modFiles.length + ')', (panel: HTMLElement) => buildModPanel(panel, modFiles));
 
-  function crossSch(ref) { if (schTab < 0) return; setActive(schTab); const v = tabs[schTab].view; if (v && v.focus) v.focus(ref); tabsBar.scrollIntoView({ block: 'nearest' }); }
-  function crossPcb(ref) { if (pcbTab < 0) return; setActive(pcbTab); const v = tabs[pcbTab].view; if (v && v.focus) v.focus(ref); tabsBar.scrollIntoView({ block: 'nearest' }); }
+  function crossSch(ref: string) { if (schTab < 0) return; setActive(schTab); const v = tabs[schTab].view; if (v && v.focus) v.focus(ref); tabsBar.scrollIntoView({ block: 'nearest' }); }
+  function crossPcb(ref: string) { if (pcbTab < 0) return; setActive(pcbTab); const v = tabs[pcbTab].view; if (v && v.focus) v.focus(ref); tabsBar.scrollIntoView({ block: 'nearest' }); }
 
-  function buildOverview(panel) {
+  function buildOverview(panel: HTMLElement) {
     panel.appendChild(miniMeta([
       ['Project', (pro && pro.meta && pro.meta.filename) ? pro.meta.filename : folderName],
       ['Schematic', schFile ? base(schFile.path) : null],
@@ -1663,7 +1663,7 @@ export async function buildKicadProjectCard(kiFiles, folderName) {
       tbl.appendChild(el('tr', {}, ['Nickname', 'Type', 'URI'].map((h) => el('th', {}, h))));
       panel.appendChild(el('h3', {}, base(tf.path)));
       panel.appendChild(tbl);
-      tf.file.text().then((t) => {
+      tf.file.text().then((t: string) => {
         const nd = parseSexpr(t); libs = nd ? kids(nd, 'lib') : [];
         for (const lib of libs) tbl.appendChild(el('tr', {}, [el('td', {}, args(kid(lib, 'name'))[0] || '—'), el('td', {}, args(kid(lib, 'type'))[0] || '—'), el('td', {}, args(kid(lib, 'uri'))[0] || '—')]));
       }).catch(() => {});
@@ -1676,11 +1676,11 @@ export async function buildKicadProjectCard(kiFiles, folderName) {
     for (const f of kiFiles) filesT.appendChild(row(roleOf(base(f.path)), base(f.path)));
   }
 
-  function buildSymPanel(panel, sf) {
+  function buildSymPanel(panel: HTMLElement, sf: any) {
     panel.appendChild(inlineLoader('Reading symbol library…'));
-    sf.file.text().then((t) => {
+    sf.file.text().then((t: string) => {
       panel.innerHTML = '';
-      const syms = kids(parseSexpr(t), 'symbol');
+      const syms = kids(parseSexpr(t)!, 'symbol');
       panel.appendChild(miniMeta([['Symbols', syms.length]]));
       if (!syms.length) return;
       const sel = el('select', { class: 'anr-btn anr-kicad-select' });
@@ -1688,25 +1688,25 @@ export async function buildKicadProjectCard(kiFiles, folderName) {
       panel.appendChild(sel);
       const host = el('div', { class: 'anr-kicad-symhost' });
       panel.appendChild(host);
-      const draw = (nm) => { const sym = syms.find((s) => s[1] === nm); host.innerHTML = ''; if (!sym) return; const parsed = { libs: { [nm]: symbolGraphics(sym) }, instances: [{ libId: nm, x: 0, y: 0, rot: 0, mirror: '', ref: '' }], wires: [], buses: [], junctions: [], labels: [], noconns: [], texts: [] }; host.appendChild(schView(parsed).wrap); };
+      const draw = (nm: string) => { const sym = syms.find((s) => s[1] === nm); host.innerHTML = ''; if (!sym) return; const parsed = { libs: { [nm]: symbolGraphics(sym) }, instances: [{ libId: nm, x: 0, y: 0, rot: 0, mirror: '', ref: '' }], wires: [], buses: [], junctions: [], labels: [], noconns: [], texts: [] }; host.appendChild(schView(parsed).wrap); };
       sel.addEventListener('change', () => draw(sel.value));
       draw(syms[0][1]);
     }).catch(() => { panel.innerHTML = ''; panel.appendChild(el('div', { class: 'anr-info' }, 'Could not read the symbol library.')); });
   }
 
-  function buildModPanel(panel, mods) {
+  function buildModPanel(panel: HTMLElement, mods: any[]) {
     const sel = el('select', { class: 'anr-btn anr-kicad-select' });
     for (const m of mods) sel.appendChild(el('option', { value: m.path }, base(m.path).replace(/\.kicad_mod$/i, '')));
     panel.appendChild(sel);
     const host = el('div', { class: 'anr-kicad-symhost' });
     panel.appendChild(host);
-    const draw = (p) => {
+    const draw = (p: string) => {
       const mf = mods.find((m) => m.path === p);
       host.innerHTML = '';
       host.appendChild(inlineLoader('Reading footprint…'));
-      mf.file.text().then((t) => {
+      mf.file.text().then((t: string) => {
         host.innerHTML = '';
-        const fp = parseFootprint(parseSexpr(t));
+        const fp = parseFootprint(parseSexpr(t)!);
         host.appendChild(miniMeta([['Footprint', fp.name, 'The name of this footprint - the copper pad pattern and outline one component solders onto.'], ['Description', fp.descr], ['Pads', fp.pads.length, 'The small metal contacts that a component’s pins solder to.']]));
         if (fp.pads.length) host.appendChild(padsTable(fp.pads));
         host.appendChild(pcbView({ prims: fp.prims, pads: fp.pads, tracks: [], vias: [], footprints: [], zones: 0, layersUsed: new Set(fp.prims.map((q) => q.layer)) }).wrap);
@@ -1721,7 +1721,7 @@ export async function buildKicadProjectCard(kiFiles, folderName) {
   return card;
 }
 
-function roleOf(n) {
+function roleOf(n: string) {
   const ext = extOfName(n), lower = n.toLowerCase();
   if (ext === 'kicad_pro') return 'Project';
   if (ext === 'kicad_prl') return 'Local settings';

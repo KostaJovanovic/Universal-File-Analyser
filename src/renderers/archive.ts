@@ -14,7 +14,7 @@ import { lzmaDecompress } from '../lib/lzma-loader.js';
 
 const FFLATE_URL = new URL('../../vendor/fflate.js', import.meta.url).href;
 
-let fflateLib = null;
+let fflateLib: any = null;
 
 async function loadFflate() {
   if (fflateLib) return fflateLib;
@@ -24,10 +24,10 @@ async function loadFflate() {
 
 // ---------- ZIP parsing via central directory ----------
 
-function parseZipEntries(buf) {
+function parseZipEntries(buf: ArrayBuffer) {
   const view = new DataView(buf);
   const bytes = new Uint8Array(buf);
-  const entries = [];
+  const entries: any[] = [];
 
   let eocdOffset = -1;
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
@@ -93,7 +93,7 @@ function parseZipEntries(buf) {
 
 // ---------- MIME guess for extracted files ----------
 
-const MIME_MAP = {
+const MIME_MAP: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
   webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp', ico: 'image/x-icon',
   mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', flac: 'audio/flac',
@@ -108,7 +108,7 @@ function guessMime(ext: string) {
   return MIME_MAP[ext] || 'application/octet-stream';
 }
 
-function extOf(name) {
+function extOf(name: string) {
   const m = name.match(/\.([^./\\]+)$/);
   return m ? m[1].toLowerCase() : '';
 }
@@ -117,7 +117,7 @@ function extOf(name) {
 
 // Decode a DOS date+time pair (as stored in the ZIP central directory) into a
 // readable local timestamp. Returns '' when the fields are zero/invalid.
-function dosDateTime(modDate, modTime) {
+function dosDateTime(modDate: number, modTime: number) {
   try {
     if (!modDate) return '';
     const day    = modDate & 0x1f;
@@ -129,13 +129,13 @@ function dosDateTime(modDate, modTime) {
     if (month < 1 || month > 12 || day < 1 || day > 31) return '';
     const d = new Date(year, month - 1, day, hour, min, sec);
     if (isNaN(d.getTime())) return '';
-    const pad = (n) => String(n).padStart(2, '0');
+    const pad = (n: number) => String(n).padStart(2, '0');
     return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(min)}:${pad(sec)}`;
   } catch { return ''; }
 }
 
 // The high byte of "version made by" identifies the host OS that created the entry.
-const HOST_OS = {
+const HOST_OS: Record<number, string> = {
   0: 'MS-DOS / FAT', 1: 'Amiga', 2: 'OpenVMS', 3: 'Unix', 4: 'VM/CMS', 5: 'Atari ST',
   6: 'OS/2 HPFS', 7: 'Macintosh', 8: 'Z-System', 9: 'CP/M', 10: 'Windows NTFS',
   11: 'MVS', 12: 'VSE', 13: 'Acorn Risc', 14: 'VFAT', 15: 'alternate MVS',
@@ -143,7 +143,7 @@ const HOST_OS = {
 };
 
 // An entry is encrypted when general-purpose bit 0 of its flags is set.
-function isEncrypted(e) {
+function isEncrypted(e: any) {
   return ((e.flags || 0) & 0x0001) !== 0;
 }
 
@@ -151,7 +151,7 @@ function isEncrypted(e) {
 
 // DOS date+time -> epoch milliseconds (local), or null when zero/invalid. Parses
 // the same fields as dosDateTime() but returns a number for span/histogram maths.
-function dosToMs(modDate, modTime) {
+function dosToMs(modDate: number, modTime: number) {
   if (!modDate) return null;
   const day   = modDate & 0x1f;
   const month = (modDate >> 5) & 0x0f;
@@ -164,7 +164,7 @@ function dosToMs(modDate, modTime) {
   return isNaN(d.getTime()) ? null : d.getTime();
 }
 
-function fmtDuration(ms) {
+function fmtDuration(ms: number) {
   if (ms <= 0) return '0 seconds';
   const s = ms / 1000;
   if (s < 60) return (s < 1 ? Math.round(ms) + ' ms' : Math.round(s) + ' second' + (Math.round(s) === 1 ? '' : 's'));
@@ -175,8 +175,8 @@ function fmtDuration(ms) {
 }
 
 // Standard table-based CRC-32 (the polynomial ZIP uses) for entry verification.
-let CRC_TABLE = null;
-function crc32(bytes) {
+let CRC_TABLE: Uint32Array|null = null;
+function crc32(bytes: string|any[]) {
   if (!CRC_TABLE) {
     CRC_TABLE = new Uint32Array(256);
     for (let n = 0; n < 256; n++) {
@@ -191,7 +191,7 @@ function crc32(bytes) {
 }
 
 // A small bar histogram of entry timestamps across [min, max] (left = earliest).
-function buildTimeHistogram(stamps, min, max) {
+function buildTimeHistogram(stamps: number[], min: number, max: number) {
   const N = 24;
   const span = max - min;
   const buckets = new Array(N).fill(0);
@@ -215,7 +215,7 @@ function buildTimeHistogram(stamps, min, max) {
 // Decompress each verifiable entry, recompute its CRC-32, and compare to the
 // value stored in the central directory. Bulk-decompress once, falling back to a
 // per-entry pass so one bad stream can't void the whole run.
-async function verifyArchiveCrcs(buf, verifiable) {
+async function verifyArchiveCrcs(buf: ArrayBuffer, verifiable: any[]) {
   const ffl = await loadFflate();
   const data = new Uint8Array(buf);
   await new Promise((r) => setTimeout(r, 0));   // let the progress bar paint first
@@ -226,7 +226,7 @@ async function verifyArchiveCrcs(buf, verifiable) {
   for (const e of verifiable) {
     let content = decoded ? decoded[e.name] : null;
     if (!content) {
-      try { content = ffl.unzipSync(data, { filter: (f) => f.name === e.name })[e.name]; } catch (_) {}
+      try { content = ffl.unzipSync(data, { filter: (f: any) => f.name === e.name })[e.name]; } catch (_) {}
     }
     if (!content) { skipped++; continue; }
     if (crc32(content) === (e.crc >>> 0)) pass++;
@@ -237,8 +237,8 @@ async function verifyArchiveCrcs(buf, verifiable) {
 
 // Build the "Timing & integrity" card: timestamp summary + flags + histogram, and
 // an on-demand CRC verification control. Returns null when there's nothing to show.
-function buildArchiveForensics(buf, fileEntries) {
-  const dated = fileEntries.map((e) => dosToMs(e.modDate, e.modTime)).filter((t) => t != null).sort((a, b) => a - b);
+function buildArchiveForensics(buf: ArrayBuffer, fileEntries: any[]) {
+  const dated = fileEntries.map((e) => dosToMs(e.modDate, e.modTime)).filter((t) => t != null).sort((a: number, b: number) => a - b);
   const verifiable = fileEntries.filter((e) => !isEncrypted(e));
   if (!dated.length && !verifiable.length) return null;
 
@@ -250,7 +250,7 @@ function buildArchiveForensics(buf, fileEntries) {
 
   if (dated.length) {
     const min = dated[0], max = dated[dated.length - 1], span = max - min;
-    const fmtT = (ms) => { const d = new Date(ms), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+    const fmtT = (ms: string|number|Date) => { const d = new Date(ms), p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
     const tbl = el('table', { class: 'anr-readout' });
     tbl.appendChild(row('Entries dated', `${dated.length} of ${fileEntries.length}`));
     tbl.appendChild(row('Earliest', fmtT(min)));
@@ -260,8 +260,8 @@ function buildArchiveForensics(buf, fileEntries) {
 
     const uniq = new Set(dated).size;
     const now = Date.now();
-    const placeholder = dated.filter((s) => s === new Date(1980, 0, 1, 0, 0, 0).getTime()).length;
-    const future = dated.filter((s) => s > now + 86400000).length;
+    const placeholder = dated.filter((s: number) => s === new Date(1980, 0, 1, 0, 0, 0).getTime()).length;
+    const future = dated.filter((s: number) => s > now + 86400000).length;
     if (fileEntries.length >= 3 && span <= 2000) {
       tbl.appendChild(rowHelp('⚠ Bulk-added', `all ${dated.length} dated entries within ${fmtDuration(span)}`,
         'Every file inside carries almost the same date and time - a sign a program built or repacked the whole archive in one go, rather than files being added one at a time.'));
@@ -312,7 +312,7 @@ function buildArchiveForensics(buf, fileEntries) {
 
 // A name is "unsafe" if it would escape the extraction directory: a parent
 // traversal segment, an absolute POSIX path, or a Windows drive/UNC path.
-function isUnsafePath(name) {
+function isUnsafePath(name: string) {
   if (!name) return false;
   const n = name.replace(/\\/g, '/');
   if (n.startsWith('/')) return true;                 // absolute POSIX
@@ -323,7 +323,7 @@ function isUnsafePath(name) {
 }
 
 // Per-entry compression ratio (uncompressed ÷ compressed). 0 when not measurable.
-function entryRatio(e) {
+function entryRatio(e: any) {
   if (!e || e.isDir || !e.compSize || !e.uncompSize) return 0;
   return e.uncompSize / e.compSize;
 }
@@ -350,7 +350,7 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
     return;
   }
 
-  let buf;
+  let buf: ArrayBuffer;
   try {
     buf = await file.arrayBuffer();
   } catch (e) {
@@ -392,7 +392,7 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
   tbl.appendChild(rowHelp('Total compressed', fmtBytes(totalComp), 'The combined size of all the files as they are actually stored inside the archive, after being squeezed down.'));
   tbl.appendChild(rowHelp('Compression ratio', ratio + '%', 'How much space squeezing the files saved, compared with their full unpacked size - worked out as 1 − compressed ÷ uncompressed. A higher percentage means a smaller archive; 0% means no space was saved.'));
   // Compression methods used across the entries (8 = Deflate, 0 = Stored, etc.).
-  const METHODS = { 0: 'Stored', 8: 'Deflate', 9: 'Deflate64', 12: 'BZIP2', 14: 'LZMA', 93: 'Zstandard', 95: 'XZ', 99: 'AES' };
+  const METHODS: Record<number, string> = { 0: 'Stored', 8: 'Deflate', 9: 'Deflate64', 12: 'BZIP2', 14: 'LZMA', 93: 'Zstandard', 95: 'XZ', 99: 'AES' };
   const methodCounts: any = {};
   for (const e of fileEntries) { const n = METHODS[e.compMethod] || ('Method ' + e.compMethod); methodCounts[n] = (methodCounts[n] || 0) + 1; }
   const methodStr = Object.entries(methodCounts).map(([k, v]) => k + ' ×' + v).join(', ');
@@ -502,10 +502,10 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
   }
 
   // --- Extract a file from the archive (for click-to-analyse) ---
-  async function extractFile(entryName) {
+  async function extractFile(entryName: string) {
     const ffl = await loadFflate();
     const data = new Uint8Array(buf);
-    const unzipped = ffl.unzipSync(data, { filter: (f) => f.name === entryName });
+    const unzipped = ffl.unzipSync(data, { filter: (f: any) => f.name === entryName });
     const content = unzipped[entryName];
     if (!content) return null;
     const ext = extOf(entryName);
@@ -514,11 +514,11 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
   }
 
   // Batch-extract a set of entries into [{ path, file }] for the EDA project views.
-  async function extractFiles(names) {
+  async function extractFiles(names: Iterable<string>) {
     const ffl = await loadFflate();
-    const set = new Set(names);
-    const unzipped = ffl.unzipSync(new Uint8Array(buf), { filter: (f) => set.has(f.name) });
-    const out = [];
+    const set = new Set<string>(names);
+    const unzipped = ffl.unzipSync(new Uint8Array(buf), { filter: (f: any) => set.has(f.name) });
+    const out: { path: string; file: File }[] = [];
     for (const name of names) {
       const content = unzipped[name];
       if (content) out.push({ path: name, file: new File([content], name.split('/').pop() || name, { type: 'application/octet-stream' }) });
@@ -543,7 +543,7 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
     if (altNames.some((n) => ALT_DOC_RE.test(n)) && altNames.length >= 2) loadProjectView('./altium.js', 'buildAltiumProjectCard', altNames, folderLabel, 'Altium');
     if (kiNames.some((n) => KI_DOC_RE.test(n)) && kiNames.length >= 2) loadProjectView('./kicad.js', 'buildKicadProjectCard', kiNames, folderLabel, 'KiCad');
   }
-  function loadProjectView(mod, fn, names, label, kind) {
+  function loadProjectView(mod: string, fn: string, names: any[], label: string, kind: string) {
     const slot = el('div', { class: 'anr-card' }, el('div', { class: 'anr-info' }, `Building combined ${kind} project view…`));
     resultsEl.insertBefore(slot, resultsEl.firstChild);
     Promise.all([import(mod), extractFiles(names)])
@@ -564,7 +564,7 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
   }
 
   // --- Click-to-analyse handler (treemap) ---
-  function onFileClick(item) {
+  function onFileClick(item: any) {
     if (!item || !item.entry) return;
     const ext = extOf(item.entry.name);
     extractFile(item.entry.name).then(f => {
@@ -580,7 +580,7 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
   const entryByName: any = {};
   for (const e of entries) entryByName[e.name] = e;
 
-  function onTreeFileClick(key, val) {
+  function onTreeFileClick(key: any, val: any) {
     const entry = val && val.name ? val : null;
     if (!entry) return;
     const ext = extOf(entry.name);
@@ -595,7 +595,7 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
   // --- Build tree object ---
   const tree: any = {};
   for (const entry of entries) {
-    const parts = entry.name.split('/').filter((p) => p);
+    const parts = entry.name.split('/').filter((p: string) => p);
     let node = tree;
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
@@ -611,9 +611,9 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
   }
 
   renderViewToggle(resultsEl, items, tree, {
-    isDir: (v) => v && typeof v === 'object' && !v.name,
-    fileSize: (v) => (v && v.uncompSize) || 0,
-    copyPath: (_key, entry) => entry && entry.name,
+    isDir: (v: any) => v && typeof v === 'object' && !v.name,
+    fileSize: (v: any) => (v && v.uncompSize) || 0,
+    copyPath: (_key: any, entry: any) => entry && entry.name,
     onFileClick: onTreeFileClick
   }, onFileClick, { treemapFirst: true });
 
@@ -640,7 +640,7 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
       style: 'margin: 0 0 8px; font-size: 12px;'
     }, `${previewable.length} small text file(s) can be previewed.`));
 
-    let ffl = null;
+    let ffl: any = null;
 
     for (const entry of previewable.slice(0, 20)) {
       const details = el('details', {});
@@ -673,7 +673,7 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
           if (!ffl) ffl = await loadFflate();
           const data = new Uint8Array(buf);
           const unzipped = ffl.unzipSync(data, {
-            filter: (f) => f.name === entry.name
+            filter: (f: any) => f.name === entry.name
           });
           const content = unzipped[entry.name];
           if (content) {
@@ -697,18 +697,18 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
 // extracted lazily through the vendored libarchive WASM worker. Same tree +
 // treemap + click-to-analyse UX as the ZIP path, fed from the entry list.
 
-function extLower(name) {
+function extLower(name: string) {
   const m = name.match(/\.([^./\\]+)$/);
   return m ? m[1].toLowerCase() : '';
 }
 
-async function renderLibarchive(file: File, resultsEl: HTMLElement, opts) {
+async function renderLibarchive(file: File, resultsEl: HTMLElement, opts: any) {
   const label = (opts && opts.label) || 'Archive';
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading ${label} archive "${file.name}"…`));
 
-  let handle;
+  let handle: any;
   try {
     handle = await extractArchive(file);
   } catch (e) {
@@ -718,7 +718,7 @@ async function renderLibarchive(file: File, resultsEl: HTMLElement, opts) {
     return;
   }
 
-  const fileEntries = (handle.entries || []).filter((e) => e && e.name && !e.name.endsWith('/'));
+  const fileEntries = (handle.entries || []).filter((e: any) => e && e.name && !e.name.endsWith('/'));
   resultsEl.innerHTML = '';
   if (!fileEntries.length) {
     resultsEl.appendChild(errorCard('No files found inside this archive.'));
@@ -732,7 +732,7 @@ async function renderLibarchive(file: File, resultsEl: HTMLElement, opts) {
 // with click-to-analyse. Shared by renderLibarchive and the compressed-tarball
 // path so neither has to re-open the archive. Also reused by the disk-image
 // browser (diskimage.js), which passes its own entry list + opts.summaryRows.
-export function renderHandleTree(handle, fileEntries, file: File, resultsEl: HTMLElement, opts) {
+export function renderHandleTree(handle: any, fileEntries: any[], file: File, resultsEl: HTMLElement, opts: any) {
   const label = (opts && opts.label) || 'Archive';
   const items = fileEntries.map((e) => {
     const ext = extLower(e.name);
@@ -750,7 +750,7 @@ export function renderHandleTree(handle, fileEntries, file: File, resultsEl: HTM
   // Build the nested tree object (leaf = the libarchive entry, branch = plain {}).
   const tree: any = {};
   for (const e of fileEntries) {
-    const parts = e.name.split('/').filter((p) => p);
+    const parts = e.name.split('/').filter((p: string) => p);
     let node = tree;
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
@@ -763,7 +763,7 @@ export function renderHandleTree(handle, fileEntries, file: File, resultsEl: HTM
     }
   }
 
-  async function openEntry(entry) {
+  async function openEntry(entry: any) {
     try {
       const bytes = await entry.getBytes();
       const f = new File([bytes], entry.name.split('/').pop() || entry.name, { type: 'application/octet-stream' });
@@ -774,13 +774,13 @@ export function renderHandleTree(handle, fileEntries, file: File, resultsEl: HTM
       if (window._anrHandleFile) window._anrHandleFile(f, { nested: true });
     } catch (_) { /* extraction failed - ignore */ }
   }
-  const onFileClick = (item) => { if (item && item.entry) openEntry(item.entry); };
-  const onTreeFileClick = (_key, val) => { if (val && val.name) openEntry(val); };
+  const onFileClick = (item: any) => { if (item && item.entry) openEntry(item.entry); };
+  const onTreeFileClick = (_key: any, val: any) => { if (val && val.name) openEntry(val); };
 
   renderViewToggle(resultsEl, items, tree, {
-    isDir: (v) => v && typeof v === 'object' && !v.name,
-    fileSize: (v) => (v && v.size) || 0,
-    copyPath: (_key, entry) => entry && entry.name,
+    isDir: (v: any) => v && typeof v === 'object' && !v.name,
+    fileSize: (v: any) => (v && v.size) || 0,
+    copyPath: (_key: any, entry: any) => entry && entry.name,
     onFileClick: onTreeFileClick,
   }, onFileClick, { treemapFirst: true });
 }
@@ -797,8 +797,8 @@ async function extractAr(file: File) {
   const MAGIC = [0x21, 0x3c, 0x61, 0x72, 0x63, 0x68, 0x3e, 0x0a]; // !<arch>\n
   if (b.length < 8 || MAGIC.some((c, i) => b[i] !== c)) throw new Error('Not an ar archive');
   const dec = new TextDecoder('latin1');
-  const field = (o, n) => dec.decode(b.subarray(o, o + n));
-  const raw = [];
+  const field = (o: number, n: number) => dec.decode(b.subarray(o, o + n));
+  const raw: any[] = [];
   let pos = 8;
   while (pos + 60 <= b.length) {
     if (b[pos + 58] !== 0x60 || b[pos + 59] !== 0x0a) break;     // member header ends with "`\n"
@@ -811,7 +811,7 @@ async function extractAr(file: File) {
   for (const r of raw) {
     if (r.name16.replace(/ +$/, '') === '//') { longnames = b.subarray(r.dataStart, r.dataStart + r.size); break; }
   }
-  const resolveName = (name16) => {
+  const resolveName = (name16: string) => {
     const lref = name16.match(/^\/(\d+)/);
     if (lref && longnames) {
       const off = parseInt(lref[1], 10);
@@ -827,7 +827,7 @@ async function extractAr(file: File) {
   // "//") and give same-named members - every import stub carries the DLL name -
   // a unique label so they all appear in the tree.
   const used = new Map();
-  const uniq = (name) => {
+  const uniq = (name: string|string[]) => {
     const seen = used.get(name) || 0; used.set(name, seen + 1);
     if (!seen) return name;
     const dot = name.lastIndexOf('.');
@@ -844,12 +844,12 @@ async function extractAr(file: File) {
   return { names: entries.map((e) => e.name), entries, close() {} };
 }
 
-async function renderArEmbedded(file: File, resultsEl: HTMLElement, opts) {
+async function renderArEmbedded(file: File, resultsEl: HTMLElement, opts: any) {
   const label = (opts && opts.label) || 'Library';
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading ${label} "${file.name}"…`));
-  let handle;
+  let handle: any;
   try {
     handle = await extractAr(file);
   } catch (e) {
@@ -858,7 +858,7 @@ async function renderArEmbedded(file: File, resultsEl: HTMLElement, opts) {
     else resultsEl.appendChild(errorCard('Could not read this library in the browser.'));
     return;
   }
-  const fileEntries = (handle.entries || []).filter((e) => e && e.name);
+  const fileEntries = (handle.entries || []).filter((e: any) => e && e.name);
   resultsEl.innerHTML = '';
   if (!fileEntries.length) { resultsEl.appendChild(errorCard('No members found inside this library.')); return; }
   renderHandleTree(handle, fileEntries, file, resultsEl, opts);
@@ -871,7 +871,7 @@ async function renderArEmbedded(file: File, resultsEl: HTMLElement, opts) {
 // it directly (it bundles the gzip/xz/zstd/bzip2 read filters).
 async function decompressStream(file: File) {
   const head = new Uint8Array(await file.slice(0, 13).arrayBuffer());
-  const is = (sig) => sig.every((v, i) => head[i] === v);
+  const is = (sig: number[]) => sig.every((v: number, i: number) => head[i] === v);
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (is([0x1F, 0x8B])) return { data: await gunzip(bytes), codec: 'gzip', drop: /\.(gz|tgz)$/i };
   if (is([0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00])) return { data: await xzDecompress(bytes), codec: 'xz', drop: /\.(xz|txz)$/i };
@@ -891,7 +891,7 @@ async function decompressStream(file: File) {
 // Browse/open a TAR or compressed stream: libarchive reads tar + tarballs
 // (.tar.gz/.tgz/.tar.xz/.tar.zst/.tar.bz2) directly; a bare single compressed
 // file is decompressed so the file inside can be analysed.
-async function renderCompressedEmbedded(file: File, container, label) {
+async function renderCompressedEmbedded(file: File, container: HTMLElement, label: string) {
   const wrap = el('div', {});
   container.appendChild(wrap);
   wrap.appendChild(el('div', { class: 'anr-info' }, `Reading ${label} contents…`));
@@ -932,7 +932,7 @@ async function renderCompressedEmbedded(file: File, container, label) {
 // container we can open. `opts.mode` is 'zip' (pure-JS path), 'libarchive'
 // (RAR/7z/etc.), or 'compressed' (TAR + gz/xz/zst/bz2 tarballs and single
 // streams); `opts.label` names the format.
-export async function renderArchiveEmbedded(file: File, container, opts: any = {}) {
+export async function renderArchiveEmbedded(file: File, container: HTMLElement, opts: any = {}) {
   const compressed = opts.mode === 'compressed';
   const label = opts.label || (opts.mode === 'zip' ? 'ZIP' : 'archive');
   const head = el('div', { class: 'anr-card' });

@@ -13,26 +13,29 @@ import { fmtBytes, preBlock } from '../core/util.js';
 import { Reader, ascii, latin1, utf8, utf16, gunzip } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 import { openCfbf } from '../lib/cfbf.js';
-import type { Row, ParseFn } from '../core/types.js';
+import type { Row, ParseFn, ParseCtx } from '../core/types.js';
+
+/** An axis-aligned bounding box accumulated over a point/vertex stream. */
+interface Bbox { min: number[]; max: number[]; }
 
 // ---------- small helpers ----------
 
 // Read the first `n` bytes of a file as a Uint8Array (clamped to file size).
-async function head(file: File, n) {
+async function head(file: File, n: number) {
   return new Uint8Array(await file.slice(0, Math.min(file.size, n)).arrayBuffer());
 }
 // Read the first `n` bytes as text.
-async function headText(file: File, n) {
+async function headText(file: File, n: number) {
   return file.slice(0, Math.min(file.size, n)).text();
 }
 
 // Format a bounding box from {min:[x,y,z], max:[..]} (3 dp).
-function fmtBbox(bb) {
+function fmtBbox(bb: Bbox | null) {
   if (!bb || !isFinite(bb.min[0])) return null;
-  const r = (a) => a.map((v) => (Math.round(v * 1000) / 1000)).join(', ');
+  const r = (a: number[]) => a.map((v: number) => (Math.round(v * 1000) / 1000)).join(', ');
   return '[' + r(bb.min) + '] -> [' + r(bb.max) + ']';
 }
-function bboxAdd(bb, x, y, z) {
+function bboxAdd(bb: Bbox, x: number, y: number, z: number) {
   if (x < bb.min[0]) bb.min[0] = x; if (x > bb.max[0]) bb.max[0] = x;
   if (y < bb.min[1]) bb.min[1] = y; if (y > bb.max[1]) bb.max[1] = y;
   if (z < bb.min[2]) bb.min[2] = z; if (z > bb.max[2]) bb.max[2] = z;
@@ -106,7 +109,7 @@ async function parsePly(file: File) {
       const p = l.split(/\s+/); cur = { name: p[1], count: parseInt(p[2], 10) || 0 };
       elements.push(cur);
     } else if (l.startsWith('property ')) {
-      const name = l.split(/\s+/).pop().toLowerCase();
+      const name = l.split(/\s+/).pop()!.toLowerCase();
       if (name === 'nx' || name === 'ny' || name === 'nz') hasNormals = true;
       if (name === 'red' || name === 'green' || name === 'blue' || name === 'r' || name === 'g' || name === 'b') hasColor = true;
     }
@@ -173,7 +176,7 @@ async function parseGltf(file: File) {
   if (a.version) out['glTF version'] = a.version;
   if (a.generator) out['Generator'] = a.generator;
   if (a.copyright) out['Copyright'] = a.copyright;
-  const cnt = (k) => Array.isArray(j[k]) ? j[k].length : 0;
+  const cnt = (k: string) => Array.isArray(j[k]) ? j[k].length : 0;
   out['Scenes'] = cnt('scenes');
   out['Nodes'] = cnt('nodes');
   out['Meshes'] = cnt('meshes');
@@ -202,7 +205,7 @@ async function parse3mf(file: File) {
   const out: Row = { 'Format': '3MF (3D Manufacturing Format)' };
   const unit = (xml.match(/\bunit\s*=\s*"([^"]+)"/) || [])[1];
   if (unit) out['Units'] = unit;
-  const meta = (k) => (xml.match(new RegExp('<metadata[^>]*name="(?:[^":]*:)?' + k + '"[^>]*>([^<]*)</metadata>', 'i')) || [])[1];
+  const meta = (k: string) => (xml.match(new RegExp('<metadata[^>]*name="(?:[^":]*:)?' + k + '"[^>]*>([^<]*)</metadata>', 'i')) || [])[1];
   const title = meta('Title'); if (title) out['Title'] = title;
   const designer = meta('Designer'); if (designer) out['Designer'] = designer;
   const app = meta('Application'); if (app) out['Application'] = app;
@@ -237,7 +240,7 @@ async function parseAmf(file: File) {
   if (unit) out['Units'] = unit;
   const ver = (xml.match(/<amf[^>]*\bversion\s*=\s*"([^"]+)"/i) || [])[1];
   if (ver) out['Version'] = ver;
-  const meta = (k) => (xml.match(new RegExp('<metadata[^>]*type="' + k + '"[^>]*>([^<]*)</metadata>', 'i')) || [])[1];
+  const meta = (k: string) => (xml.match(new RegExp('<metadata[^>]*type="' + k + '"[^>]*>([^<]*)</metadata>', 'i')) || [])[1];
   const title = meta('Name') || meta('Title'); if (title) out['Title'] = title;
   const author = meta('Author') || meta('Designer'); if (author) out['Author'] = author;
   out['Objects'] = (xml.match(/<object\b/gi) || []).length;
@@ -287,7 +290,7 @@ async function parseVox(file: File) {
 }
 
 // ---------- COLLADA (.dae) / ZAE ----------
-function parseDaeXml(xml) {
+function parseDaeXml(xml: string) {
   const out: Row = { 'Format': 'COLLADA (DAE)' };
   const tool = (xml.match(/<authoring_tool>([^<]*)<\/authoring_tool>/i) || [])[1];
   if (tool) out['Authoring tool'] = tool;
@@ -604,7 +607,7 @@ async function parseLas(file: File, ext: string) {
 async function parsePcd(file: File) {
   const text = await headText(file, 8192);
   if (!/(^|\n)\s*(#|VERSION|FIELDS)/i.test(text.slice(0, 200)) && !/POINTS/.test(text)) return null;
-  const line = (kw) => { const m = text.match(new RegExp('^' + kw + '\\s+(.+)$', 'mi')); return m ? m[1].trim() : null; };
+  const line = (kw: string) => { const m = text.match(new RegExp('^' + kw + '\\s+(.+)$', 'mi')); return m ? m[1].trim() : null; };
   const fields = line('FIELDS');
   const points = line('POINTS');
   if (!fields && !points) return null;
@@ -633,7 +636,7 @@ async function parsePtsPtx(file: File, ext: string) {
     if (!/^\d+$/.test(cols || '') || !/^\d+$/.test(rows || '')) return null;
     const out: Row = { 'Format': 'PTX point cloud (Leica/Cyclone)' };
     out['Grid'] = cols + ' cols x ' + rows + ' rows';
-    out['Declared points'] = (parseInt(cols, 10) * parseInt(rows, 10)).toLocaleString();
+    out['Declared points'] = (parseInt(cols!, 10) * parseInt(rows!, 10)).toLocaleString();
     // 4 lines scanner registration (position + 3 axis vectors), then 4 lines matrix
     const reg = [];
     for (let k = 0; k < 4; k++) { const l = nextNonEmpty(); if (l) reg.push(l); }
@@ -651,7 +654,7 @@ async function parsePtsPtx(file: File, ext: string) {
   const first = nextNonEmpty();
   if (!first) return null;
   const out: Row = { 'Format': 'PTS point cloud' };
-  let dataLine = first;
+  let dataLine: string | null = first;
   if (/^\d+$/.test(first)) { out['Declared points'] = parseInt(first, 10).toLocaleString(); dataLine = nextNonEmpty(); }
   if (!dataLine) return null;
   const cols = dataLine.split(/\s+/).length;
@@ -668,7 +671,7 @@ async function parsePtsPtx(file: File, ext: string) {
   out['Sampled points'] = counted.toLocaleString() + (file.size > SAMPLE ? ' (first 2 MB)' : '');
   return out;
 }
-function describePtsCols(n) {
+function describePtsCols(n: number) {
   if (n >= 7) return n + ' (XYZ + intensity + RGB)';
   if (n === 6) return '6 (XYZ + RGB)';
   if (n === 4) return '4 (XYZ + intensity)';
@@ -712,19 +715,19 @@ async function parseE57(file: File) {
 }
 
 // ---------- IFC (STEP) / IFCZIP ----------
-function parseIfcText(text) {
+function parseIfcText(text: string) {
   const out: Row = { 'Format': 'IFC (Industry Foundation Classes)' };
   const schema = (text.match(/FILE_SCHEMA\s*\(\s*\(\s*'([^']+)'/i) || [])[1];
   if (schema) out['Schema'] = schema;
   const nameM = text.match(/FILE_NAME\s*\(([\s\S]*?)\)\s*;/i);
   if (nameM) {
-    const parts = nameM[1].split(',').map((s) => s.trim().replace(/^'|'$/g, ''));
+    const parts = nameM[1].split(',').map((s: string) => s.trim().replace(/^'|'$/g, ''));
     if (parts[0]) out['File name'] = parts[0];
     if (parts[1]) out['Timestamp'] = parts[1];
     const app = (nameM[1].match(/'([^']*(?:Revit|ArchiCAD|Tekla|Allplan|Bentley|IfcOpenShell|BlenderBIM)[^']*)'/i) || [])[1];
     if (app) out['Application'] = app;
   }
-  const count = (e) => (text.match(new RegExp('=\\s*' + e + '\\(', 'gi')) || []).length;
+  const count = (e: string) => (text.match(new RegExp('=\\s*' + e + '\\(', 'gi')) || []).length;
   out['IfcWall'] = count('IFCWALL');
   out['IfcDoor'] = count('IFCDOOR');
   out['IfcWindow'] = count('IFCWINDOW');
@@ -1193,7 +1196,7 @@ async function parseCatiaV4(file: File, ext: string) {
 }
 
 // ---------- proprietary scanner point clouds (.cl3/.clr/.tzf) ----------
-function scanner(name, vendor) {
+function scanner(name: string, vendor: string) {
   return () => ({ 'Format': name, 'Note': vendor + ' - proprietary scan binary, identification only.' });
 }
 
@@ -1205,7 +1208,7 @@ function scanner(name, vendor) {
 // documented, so we identify the file and read the signature only. Shared by the
 // `.idea` extension and, via a magic sniff in app.js, profile exports saved as
 // a bare `.bin`.
-function parseIdeaMaker(c) {
+function parseIdeaMaker(c: ParseCtx) {
   const b = c.head;
   const sig = ascii(b, 0, 14);
   let format, app, signature;
@@ -1229,7 +1232,7 @@ function parseIdeaMaker(c) {
 }
 
 // ---------- identification-only (rare AND hard) ----------
-function ident(name, note) {
+function ident(name: string, note: string) {
   return () => ({ 'Format': name, 'Note': note });
 }
 async function parseAbc(file: File) {

@@ -13,6 +13,7 @@ import { g, immortal, saveHi, saveBestWave, maxStartWave } from './state.js';
 import { fitFont, wrap } from './geometry.js';
 import { isBossWave, spawnBoss, bossNodeVulnerable } from './boss.js';
 import { makeUfo, dismissAmbientUfos, updateUfos } from './ufos.js';
+import type { Ufo } from './ufos.js';
 import { addDrone } from './drones.js';
 import { clearEndPanel } from './leaderboard.js';
 import { clearMenus } from './menus.js';
@@ -89,7 +90,7 @@ export function spawnWave() {
       while (rewards < ufoCap && Math.random() < Math.min(0.6, g.wave * 0.05)) rewards++;
     }
     for (let k = 0; k < rewards; k++) {
-      if (ufos.filter((u) => u.kind === 'reward').length >= ufoCap) break;   // cap on-screen reward saucers
+      if (ufos.filter((u: Ufo) => u.kind === 'reward').length >= ufoCap) break;   // cap on-screen reward saucers
       ufos.push(makeUfo('reward'));
       if (Math.random() < 0.25) ufos.push(makeUfo('ambient'));
     }
@@ -210,7 +211,7 @@ export function restart() {
   clearEndPanel(); g.scoreDone = false;
   g.splash = false; g.menuOpen = false; clearMenus();   // leave the splash / pause overlays
   if (g.pauseBtn) { g.pauseBtn.style.display = ''; g.pauseBtn.textContent = '❚❚'; }
-  g.mobileControls.forEach((elm) => { elm.style.display = ''; });   // controls back for play
+  g.mobileControls.forEach((elm: HTMLElement) => { elm.style.display = ''; });   // controls back for play
   // Unlocked head-start: begin on the chosen wave (clamped to half your best ever). spawnWave bumps it.
   const startWave = g.bossEverBeaten ? Math.max(1, Math.min(g.startWavePref || 1, maxStartWave())) : 1;
   g.wave = startWave - 1;

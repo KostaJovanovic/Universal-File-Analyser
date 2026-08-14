@@ -14,7 +14,7 @@ const LIBRAW_URL      = new URL('../../vendor/libraw/index.js', import.meta.url)
 
 // Fetch with a 0..1 progress callback driven by Content-Length. Falls back to a
 // plain arrayBuffer read when the length/stream isn't available.
-async function fetchWithProgress(url, onProgress) {
+async function fetchWithProgress(url: URL|RequestInfo, onProgress: (p: number) => void) {
   const resp = await fetch(url);
   const total = parseInt(resp.headers.get('content-length') || '0', 10);
   if (!total || !resp.body) return new Uint8Array(await resp.arrayBuffer());
@@ -54,7 +54,7 @@ export async function extractX3fPreview(file: File) {
   const buf = new Uint8Array(await file.arrayBuffer());
   const dv = new DataView(buf.buffer);
   const len = buf.length;
-  const tag = (o) => (o + 4 <= len ? String.fromCharCode(buf[o], buf[o + 1], buf[o + 2], buf[o + 3]) : '');
+  const tag = (o: number) => (o + 4 <= len ? String.fromCharCode(buf[o], buf[o + 1], buf[o + 2], buf[o + 3]) : '');
   if (tag(0) !== 'FOVb') throw new Error('Not an X3F file');
   if (len < 12) throw new Error('X3F too small');
   const dirOff = dv.getUint32(len - 4, true);   // last 4 bytes point at the SECd directory
@@ -141,11 +141,11 @@ export async function extractRawJpegs(file: File, { max = 12 } : any = {}) {
   }
   if (base < 0 || base + 8 > len) return [];
   const le = dv.getUint16(base, false) === 0x4949;
-  const u16 = (o) => (o >= 0 && o + 2 <= len ? dv.getUint16(o, le) : -1);
-  const u32 = (o) => (o >= 0 && o + 4 <= len ? dv.getUint32(o, le) : -1);
+  const u16 = (o: number) => (o >= 0 && o + 2 <= len ? dv.getUint16(o, le) : -1);
+  const u32 = (o: number) => (o >= 0 && o + 4 <= len ? dv.getUint32(o, le) : -1);
   if (u16(base + 2) !== 42) return [];
-  const TS = { 1:1, 2:1, 3:2, 4:4, 5:8, 6:1, 7:1, 8:2, 9:4, 10:8, 11:4, 12:8 };
-  const visited = new Set(), queue = [base + u32(base + 4)], res = [];
+  const TS: Record<number, number> = { 1:1, 2:1, 3:2, 4:4, 5:8, 6:1, 7:1, 8:2, 9:4, 10:8, 11:4, 12:8 };
+  const visited = new Set(), queue: number[] = [base + u32(base + 4)], res: { offset: number; length: number; orientation: number }[] = [];
   // Orientation of the first IFD that declares one - IFD0, since that's what the
   // queue starts on. Used as the fallback for any IFD that points at a JPEG
   // without tagging its own rotation, which is the common case: most cameras
@@ -153,7 +153,7 @@ export async function extractRawJpegs(file: File, { max = 12 } : any = {}) {
   // and previews in that same physical orientation.
   let ifd0Ori = 0;
   while (queue.length && res.length < 64) {
-    const ifd = queue.shift();
+    const ifd = queue.shift()!;
     if (ifd <= 0 || ifd + 2 > len || visited.has(ifd)) continue;
     visited.add(ifd);
     const n = u16(ifd);
@@ -197,19 +197,19 @@ export async function extractRawJpegs(file: File, { max = 12 } : any = {}) {
     }));
 }
 
-let magickReady = null;
+let magickReady: any = null;
 
 // Full RAW -> JPEG decode via ImageMagick-WASM (~15 MB, loaded once). Renders an
 // ASCII progress bar into `container` while the wasm downloads/initialises.
-export async function convertWithImageMagick(file: File, container, label?) {
+export async function convertWithImageMagick(file: File, container: HTMLElement|null, label?: string|undefined) {
   const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const labelEl = el('div', { class: 'anr-progress-label' }, 'loading imagemagick (~15 mb)');
   const wrap = el('div', { class: 'anr-progress' }, [barEl, labelEl]);
   if (container) container.appendChild(wrap);
 
-  function setBar(frac) {
+  function setBar(frac: number) {
     const ch = parseFloat(getComputedStyle(barEl).fontSize) * 0.6 || 8;
-    const total = Math.max(10, Math.floor((barEl.parentElement.clientWidth - ch * 2) / ch));
+    const total = Math.max(10, Math.floor((barEl.parentElement!.clientWidth - ch * 2) / ch));
     const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
     barEl.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' + ' '.repeat(total - filled) + ']';
   }
@@ -217,7 +217,7 @@ export async function convertWithImageMagick(file: File, container, label?) {
   if (!magickReady) {
     setBar(0);
     const mod = await import(MAGICK_WASM_URL);
-    const wasmBytes = await fetchWithProgress(MAGICK_WASM_DIR + 'magick.wasm', (p) => setBar(p * 0.9));
+    const wasmBytes = await fetchWithProgress(MAGICK_WASM_DIR + 'magick.wasm', (p: number) => setBar(p * 0.9));
     setBar(0.95);
     labelEl.textContent = 'initialising';
     await mod.initializeImageMagick(wasmBytes);
@@ -228,11 +228,11 @@ export async function convertWithImageMagick(file: File, container, label?) {
 
   const { ImageMagick, MagickFormat } = magickReady;
   const data = new Uint8Array(await file.arrayBuffer());
-  return new Promise((resolve, reject) => {
+  return new Promise<File>((resolve, reject) => {
     try {
-      ImageMagick.read(data, (image) => {
+      ImageMagick.read(data, (image: any) => {
         image.quality = 92;
-        image.write(MagickFormat.Jpeg, (jpegData) => {
+        image.write(MagickFormat.Jpeg, (jpegData: BlobPart) => {
           wrap.remove();
           const blob = new Blob([jpegData], { type: 'image/jpeg' });
           resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
@@ -248,14 +248,14 @@ export async function convertWithImageMagick(file: File, container, label?) {
 // Decode EVERY frame/page of a multi-image file (multi-page TIFF, etc.) to PNG via
 // ImageMagick-WASM. Returns [{ width, height, blob /* image/png */ }, ...] in file
 // order, or [] on failure. Renders the same ASCII load bar into `container`.
-export async function readImagesAsPngs(file: File, container) {
+export async function readImagesAsPngs(file: File, container: HTMLElement) {
   const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const labelEl = el('div', { class: 'anr-progress-label' }, 'loading imagemagick');
   const wrap = el('div', { class: 'anr-progress' }, [barEl, labelEl]);
   if (container) container.appendChild(wrap);
-  function setBar(frac) {
+  function setBar(frac: number) {
     const ch = parseFloat(getComputedStyle(barEl).fontSize) * 0.6 || 8;
-    const total = Math.max(10, Math.floor((barEl.parentElement.clientWidth - ch * 2) / ch));
+    const total = Math.max(10, Math.floor((barEl.parentElement!.clientWidth - ch * 2) / ch));
     const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
     barEl.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' + ' '.repeat(total - filled) + ']';
   }
@@ -263,7 +263,7 @@ export async function readImagesAsPngs(file: File, container) {
     if (!magickReady) {
       setBar(0);
       const mod = await import(MAGICK_WASM_URL);
-      const wasmBytes = await fetchWithProgress(MAGICK_WASM_DIR + 'magick.wasm', (p) => setBar(p * 0.9));
+      const wasmBytes = await fetchWithProgress(MAGICK_WASM_DIR + 'magick.wasm', (p: number) => setBar(p * 0.9));
       setBar(0.95); labelEl.textContent = 'initialising';
       await mod.initializeImageMagick(wasmBytes);
       magickReady = mod;
@@ -271,13 +271,13 @@ export async function readImagesAsPngs(file: File, container) {
     setBar(1); labelEl.textContent = 'decoding pages';
     const { ImageMagick, MagickFormat } = magickReady;
     const data = new Uint8Array(await file.arrayBuffer());
-    const out = [];
+    const out: { width: number; height: number; blob: Blob }[] = [];
     // The collection and its images are only valid inside this callback, so encode
     // every page to PNG (copying the bytes out) before it returns.
-    ImageMagick.readCollection(data, (images) => {
+    ImageMagick.readCollection(data, (images: any[]) => {
       for (const image of images) {
         const width = image.width, height = image.height;
-        image.write(MagickFormat.Png, (png) => {
+        image.write(MagickFormat.Png, (png: string) => {
           out.push({ width, height, blob: new Blob([png.slice()], { type: 'image/png' }) });
         });
       }
@@ -290,7 +290,7 @@ export async function readImagesAsPngs(file: File, container) {
   }
 }
 
-let librawMod = null;
+let librawMod: any = null;
 
 // True RAW demosaic via libraw WASM (lazy-loaded, ~MBs). Unlike the embedded-JPEG
 // extractor and the ImageMagick path - both of which can only surface a preview
@@ -298,15 +298,15 @@ let librawMod = null;
 // libraw demosaics, white-balances and gamma-corrects it to an 8-bit (or 16-bit)
 // RGB buffer, which we paint to a canvas and hand back as a full-resolution JPEG.
 // Renders an ASCII progress bar into `container` while the decoder loads.
-export async function demosaicRaw(file: File, container) {
+export async function demosaicRaw(file: File, container: HTMLElement|null) {
   const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const labelEl = el('div', { class: 'anr-progress-label' }, 'loading raw decoder');
   const wrap = el('div', { class: 'anr-progress' }, [barEl, labelEl]);
   if (container) container.appendChild(wrap);
 
-  function setBar(frac) {
+  function setBar(frac: number) {
     const ch = parseFloat(getComputedStyle(barEl).fontSize) * 0.6 || 8;
-    const total = Math.max(10, Math.floor((barEl.parentElement.clientWidth - ch * 2) / ch));
+    const total = Math.max(10, Math.floor((barEl.parentElement!.clientWidth - ch * 2) / ch));
     const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
     barEl.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' + ' '.repeat(total - filled) + ']';
   }
@@ -332,7 +332,7 @@ export async function demosaicRaw(file: File, container) {
 
     const cv = document.createElement('canvas');
     cv.width = width; cv.height = height;
-    const ctx = cv.getContext('2d');
+    const ctx = cv.getContext('2d')!;
     const out = ctx.createImageData(width, height);
     const o = out.data;
     const px = width * height;
@@ -348,7 +348,7 @@ export async function demosaicRaw(file: File, container) {
     const blob = await new Promise<Blob | null>((res) => cv.toBlob(res, 'image/jpeg', 0.95));
     setBar(1);
     wrap.remove();
-    return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+    return new File([blob!], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
   } catch (e) {
     wrap.remove();
     throw e;
