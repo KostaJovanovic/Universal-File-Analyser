@@ -13,28 +13,28 @@ import { el, row, fmtBytes, errorCard } from '../core/util.js';
 
 // ---------- shared helpers ----------
 
-function tcToFrames(tc) {
+function tcToFrames(tc: string) {
   // HH:MM:SS:FF or HH:MM:SS;FF (drop-frame). Returns total frames given the fps
   // applied by the caller; here we return [h,m,s,f].
   const m = /^(\d{1,2}):(\d{2}):(\d{2})[:;](\d{2,3})$/.exec(tc.trim());
   if (!m) return null;
   return { h: +m[1], mm: +m[2], s: +m[3], f: +m[4] };
 }
-function tcToSeconds(tc, fps) {
+function tcToSeconds(tc: string, fps: number) {
   const p = tcToFrames(tc);
   if (!p) return null;
   return p.h * 3600 + p.mm * 60 + p.s + p.f / (fps || 25);
 }
-function secToTc(t, fps) {
+function secToTc(t: number, fps: number) {
   fps = Math.round(fps || 25);
   if (!isFinite(t) || t < 0) t = 0;
   const ts = Math.floor(t);
   const f = Math.min(fps - 1, Math.round((t - ts) * fps));
-  const pad = (n) => String(n).padStart(2, '0');
+  const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(Math.floor(ts / 3600))}:${pad(Math.floor((ts % 3600) / 60))}:${pad(ts % 60)}:${pad(f)}`;
 }
 // Parse OTIO / FCPXML rational time like "120/24s", "0s", or a plain number.
-function rationalSeconds(v) {
+function rationalSeconds(v: string|null) {
   if (v == null) return 0;
   if (typeof v === 'number') return v;
   const s = String(v).trim().replace(/s$/, '');
@@ -44,7 +44,7 @@ function rationalSeconds(v) {
 }
 
 // ---------- EDL (CMX3600) ----------
-function parseEdl(text, fpsHint?) {
+function parseEdl(text: string, fpsHint?: number|undefined) {
   const lines = text.split(/\r?\n/);
   let fps = fpsHint || 25;
   let title = '';
@@ -92,7 +92,7 @@ function parseEdl(text, fpsHint?) {
 }
 
 // ---------- OTIO (OpenTimelineIO JSON) ----------
-function parseOtio(json) {
+function parseOtio(json: any) {
   const tl = (json && json.OTIO_SCHEMA && /^Timeline/.test(json.OTIO_SCHEMA)) ? json : null;
   if (!tl || !tl.tracks) return null;
   const stack = tl.tracks;
@@ -121,7 +121,7 @@ function parseOtio(json) {
 }
 
 // ---------- FCPXML (Final Cut Pro X) ----------
-function parseFcpxml(text) {
+function parseFcpxml(text: string) {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.getElementsByTagName('parsererror').length) return null;
   // Frame rate from the first <format frameDuration="1/24s">.
@@ -131,7 +131,7 @@ function parseFcpxml(text) {
   const spine = doc.getElementsByTagName('spine')[0];
   if (!spine) return null;
   const seqEl = doc.getElementsByTagName('sequence')[0];
-  const name = (doc.getElementsByTagName('project')[0] || {}).getAttribute ? doc.getElementsByTagName('project')[0].getAttribute('name') : '';
+  const name = (doc.getElementsByTagName('project')[0] as any || {}).getAttribute ? doc.getElementsByTagName('project')[0].getAttribute('name') : '';
 
   // Clip-like elements carry offset + duration; lane groups them onto tracks
   // (lane 0 = primary storyline, +n above, -n below / audio).
@@ -174,14 +174,14 @@ function parseFcpxml(text) {
 
 // ---------- visual renderer ----------
 const TICK_TARGET = 8;   // aim for ~8 ruler ticks
-function niceStep(span) {
+function niceStep(span: number) {
   const raw = span / TICK_TARGET;
   const steps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
   for (const s of steps) if (s >= raw) return s;
   return 3600;
 }
 
-function buildTimelineCard(model) {
+function buildTimelineCard(model: any) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Timeline'));
 
@@ -215,11 +215,11 @@ function buildTimelineCard(model) {
   const scroll = el('div', { class: 'anr-tl-scroll' }, [ruler, rows]);
   card.appendChild(scroll);
   card.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:10px;' },
-    `${model.tracks.length} track${model.tracks.length === 1 ? '' : 's'} · ${model.tracks.reduce((n, t) => n + t.clips.length, 0)} clips · ${secToTc(dur, model.fps)} · hover a clip for its name and timecode`));
+    `${model.tracks.length} track${model.tracks.length === 1 ? '' : 's'} · ${model.tracks.reduce((n: number, t: any) => n + t.clips.length, 0)} clips · ${secToTc(dur, model.fps)} · hover a clip for its name and timecode`));
   return card;
 }
 
-function infoCard(file: File, model) {
+function infoCard(file: File, model: any) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Sequence'));
   const tbl = el('table', { class: 'anr-readout' });
@@ -228,7 +228,7 @@ function infoCard(file: File, model) {
   tbl.appendChild(row('Duration', secToTc(model.duration, model.fps) + `  (${model.duration.toFixed(2)} s)`));
   if (model.fps) tbl.appendChild(row('Frame rate', (model.dropFrame ? 'assumed ' : '') + model.fps + ' fps' + (model.dropFrame ? ' (drop-frame)' : '')));
   tbl.appendChild(row('Tracks', String(model.tracks.length)));
-  tbl.appendChild(row('Clips', String(model.tracks.reduce((n, t) => n + t.clips.length, 0))));
+  tbl.appendChild(row('Clips', String(model.tracks.reduce((n: number, t: any) => n + t.clips.length, 0))));
   tbl.appendChild(row('File', file.name));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
   card.appendChild(tbl);

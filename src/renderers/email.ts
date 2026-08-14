@@ -17,13 +17,13 @@ import { HASH_FILE_MAX } from '../core/limits.js';
 import { sanitizeHtml as sanitizeHtmlShared } from '../core/sanitize.js';
 
 // ---------- header parsing ----------
-function splitHeaderBody(text) {
+function splitHeaderBody(text: string) {
   const i = text.search(/\r?\n\r?\n/);
   if (i < 0) return { head: text, body: '' };
   const m = /\r?\n\r?\n/.exec(text.slice(i));
-  return { head: text.slice(0, i), body: text.slice(i + m[0].length) };
+  return { head: text.slice(0, i), body: text.slice(i + m![0].length) };
 }
-function parseHeaders(head) {
+function parseHeaders(head: string) {
   const map: any = {};      // lowercased name -> array of values
   const lines = head.replace(/\r\n/g, '\n').split('\n');
   let cur = null;
@@ -36,22 +36,22 @@ function parseHeaders(head) {
     (map[name] || (map[name] = [])).push(cur);
   }
   const out: any = {};
-  for (const k in map) out[k] = map[k].map((x) => x.v);
+  for (const k in map) out[k] = map[k].map((x: any) => x.v);
   return out;
 }
-const h1 = (hdrs, name) => (hdrs[name] && hdrs[name][0]) || '';
+const h1 = (hdrs: any, name: string) => (hdrs[name] && hdrs[name][0]) || '';
 
 // RFC 2047 encoded words: =?charset?B?....?= or =?charset?Q?....?=
-function decodeWords(s) {
+function decodeWords(s: string) {
   if (!s || s.indexOf('=?') < 0) return s || '';
-  return s.replace(/=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g, (m, cs, enc, data) => {
+  return s.replace(/=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g, (m, cs: string, enc: string, data: string) => {
     try {
       let bytes;
       if (enc.toUpperCase() === 'B') {
         const bin = atob(data.replace(/\s+/g, ''));
         bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
       } else {
-        const q = data.replace(/_/g, ' ').replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+        const q = data.replace(/_/g, ' ').replace(/=([0-9A-Fa-f]{2})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)));
         bytes = Uint8Array.from<string>(q, (ch) => ch.charCodeAt(0));
       }
       return new TextDecoder(/utf-?8/i.test(cs) ? 'utf-8' : 'iso-8859-1').decode(bytes);
@@ -59,19 +59,19 @@ function decodeWords(s) {
   }).replace(/\?=\s+=\?/g, '');
 }
 
-function paramOf(headerVal, key) {
+function paramOf(headerVal: string, key: string) {
   const re = new RegExp(key + '\\s*=\\s*"?([^";]+)"?', 'i');
   const m = re.exec(headerVal || '');
   return m ? m[1].trim() : '';
 }
-function decodeBody(body, encoding, charset) {
+function decodeBody(body: string, encoding: string, charset: string) {
   const enc = (encoding || '').toLowerCase();
-  let bytes;
+  let bytes: any;
   if (enc.includes('base64')) {
     try { const bin = atob(body.replace(/\s+/g, '')); bytes = Uint8Array.from<any>(bin, (c) => c.charCodeAt(0)); }
     catch (_) { return body; }
   } else if (enc.includes('quoted-printable')) {
-    const q = body.replace(/=\r?\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+    const q = body.replace(/=\r?\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)));
     bytes = Uint8Array.from<string>(q, (c) => c.charCodeAt(0));
   } else {
     return body;
@@ -81,7 +81,7 @@ function decodeBody(body, encoding, charset) {
 }
 
 // Walk the MIME tree. Returns { html, text, attachments:[{name,type,size}] }.
-function walkMime(head, body, acc, depth = 0) {
+function walkMime(head: string, body: string, acc: any, depth = 0) {
   // Cap nesting: a crafted message with deeply nested multipart/* parts would
   // otherwise recurse without bound (and re-split the whole body at each level).
   if (depth > 24) return;
@@ -117,14 +117,14 @@ function walkMime(head, body, acc, depth = 0) {
 
 // Sanitise an HTML body for inert display (no scripts/styles/network/handlers).
 // The rules live in core/sanitize.js, shared with the MHTML, EPUB and SVG viewers.
-function sanitizeHtml(html) {
+function sanitizeHtml(html: string) {
   return sanitizeHtmlShared(html, { className: 'anr-email-html' });
 }
 
-function authVerdict(hdrs) {
+function authVerdict(hdrs: any) {
   const blob = ((hdrs['authentication-results'] || []).join(' ') + ' ' +
     (hdrs['received-spf'] || []).join(' ')).toLowerCase();
-  const find = (re) => { const m = re.exec(blob); return m ? m[1] : null; };
+  const find = (re: RegExp) => { const m = re.exec(blob); return m ? m[1] : null; };
   return {
     spf: find(/spf=(\w+)/) || (blob.includes('received-spf') ? null : null),
     dkim: find(/dkim=(\w+)/),
@@ -134,10 +134,10 @@ function authVerdict(hdrs) {
 }
 
 // Build a card for one parsed message.
-function messageCard(text, title?) {
+function messageCard(text: string, title?: string|undefined) {
   const { head, body } = splitHeaderBody(text);
   const hdrs = parseHeaders(head);
-  const acc = { html: null, text: null, attachments: [] };
+  const acc: { html: string|null; text: string|null; attachments: { name: string; type: string; size: number }[] } = { html: null, text: null, attachments: [] };
   try { walkMime(head, body, acc); } catch (_) {}
   if (!acc.html && !acc.text) acc.text = body;   // not MIME / single part
 
@@ -183,7 +183,7 @@ function messageCard(text, title?) {
 }
 
 // ---------- entry points ----------
-export async function renderEml(file: File, container) {
+export async function renderEml(file: File, container: HTMLElement) {
   container.hidden = false;
   container.innerHTML = '';
   container.appendChild(el('div', { class: 'anr-info' }, 'Reading message...'));
@@ -208,7 +208,7 @@ export async function renderEml(file: File, container) {
   }
 }
 
-export async function renderMbox(file: File, container) {
+export async function renderMbox(file: File, container: HTMLElement) {
   container.hidden = false;
   container.innerHTML = '';
   container.appendChild(el('div', { class: 'anr-info' }, 'Reading mailbox...'));
@@ -236,7 +236,7 @@ export async function renderMbox(file: File, container) {
     const moreBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show more messages');
     btnRow.appendChild(moreBtn);
     container.appendChild(btnRow);
-    function reveal(upTo) {
+    function reveal(upTo: number) {
       for (; shown < upTo && shown < chunks.length; shown++) host.appendChild(messageCard(chunks[shown], 'Message ' + (shown + 1)));
       if (shown >= chunks.length) btnRow.hidden = true;
       else moreBtn.textContent = 'Show more messages (' + shown + '/' + chunks.length + ')';

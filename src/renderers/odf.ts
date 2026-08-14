@@ -7,14 +7,14 @@
    ODP like the PPTX viewer - all shown as paper page sheets.
    ============================================================================ */
 
-import { el, rowHelp, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, rowHelp, buildReadout, fmtBytes, integrityCard, errorCard, type ElChild } from '../core/util.js';
 import { HASH_FILE_MAX } from '../core/limits.js';
 import { openZip } from './zip.js';
 import { paginateFlow, pagedPreviewCard, pagedTextCard, makePage, pagePreviewSkeleton } from './paged.js';
 
 // Each key maps to the candidate namespace URIs: the OASIS ODF 1.x URI first,
 // then the older OpenOffice.org 1.x URI so StarOffice .sxw/.sxc/.sxd parse too.
-const NS = {
+const NS: Record<string, string[]> = {
   office: ['urn:oasis:names:tc:opendocument:xmlns:office:1.0', 'http://openoffice.org/2000/office'],
   text: ['urn:oasis:names:tc:opendocument:xmlns:text:1.0', 'http://openoffice.org/2000/text'],
   table: ['urn:oasis:names:tc:opendocument:xmlns:table:1.0', 'http://openoffice.org/2000/table'],
@@ -30,37 +30,37 @@ const NS = {
 
 // ---------- tiny DOM helpers (namespace-aware, tolerant of OASIS + OO1) ----------
 
-function attrNS(elem, nsKey, name) {
+function attrNS(elem: Element, nsKey: string, name: string) {
   if (!elem || !elem.getAttributeNS) return '';
   for (const uri of NS[nsKey]) { const v = elem.getAttributeNS(uri, name); if (v) return v; }
   return '';
 }
 
-function isEl(node, nsKey, local) {
+function isEl(node: any, nsKey: string, local: string) {
   return node && node.nodeType === 1 && node.localName === local && NS[nsKey].indexOf(node.namespaceURI) !== -1;
 }
 
-function childEls(parent, nsKey, local) {
-  const out = [];
+function childEls(parent: any, nsKey: string, local: string) {
+  const out: any[] = [];
   if (!parent) return out;
   for (const c of parent.children) if (isEl(c, nsKey, local)) out.push(c);
   return out;
 }
 
 // All descendants matching key:local across every candidate namespace.
-function elsNS(parent, nsKey, local) {
-  const out = [];
+function elsNS(parent: Document|Element, nsKey: string, local: string) {
+  const out: any[] = [];
   if (!parent || !parent.getElementsByTagNameNS) return out;
   for (const uri of NS[nsKey]) for (const e of parent.getElementsByTagNameNS(uri, local)) out.push(e);
   return out;
 }
 
-function firstNS(parent, nsKey, local) {
+function firstNS(parent: Document|Element, nsKey: string, local: string) {
   return elsNS(parent, nsKey, local)[0] || null;
 }
 
-function parseXml(text) {
-  const doc = new DOMParser().parseFromString(text, 'application/xml');
+function parseXml(text: string|null) {
+  const doc = new DOMParser().parseFromString(text!, 'application/xml');
   return doc.querySelector('parsererror') ? null : doc;
 }
 
@@ -68,7 +68,7 @@ function parseXml(text) {
 // Walk every <style:style> in a document's automatic-styles/styles blocks and
 // record the handful of text/paragraph properties we actually render.
 
-function collectStyles(doc, into) {
+function collectStyles(doc: Document|null, into: any) {
   if (!doc) return into;
   for (const s of elsNS(doc, 'style', 'style')) {
     const name = attrNS(s, 'style', 'name');
@@ -108,7 +108,7 @@ function revokeOdfImageUrls() {
   _odfImageUrls.clear();
 }
 
-async function buildImageMap(zip) {
+async function buildImageMap(zip: any) {
   const map: any = {};
   for (const e of zip.entries) {
     if (!/^Pictures\//i.test(e.name)) continue;
@@ -126,7 +126,7 @@ async function buildImageMap(zip) {
   return map;
 }
 
-function imageFor(frame, imageMap) {
+function imageFor(frame: Element, imageMap: any) {
   const image = firstNS(frame, 'draw', 'image');
   if (!image) return null;
   let href = attrNS(image, 'xlink', 'href');
@@ -148,7 +148,7 @@ function imageFor(frame, imageMap) {
 
 // ---------- inline run rendering (ODT text) ----------
 
-function renderInline(node, frag, styles, imageMap) {
+function renderInline(node: any, frag: HTMLSpanElement, styles: any, imageMap: any) {
   for (const child of node.childNodes) {
     if (child.nodeType === 3) { // text
       frag.appendChild(document.createTextNode(child.nodeValue));
@@ -190,7 +190,7 @@ function renderInline(node, frag, styles, imageMap) {
   }
 }
 
-function renderParagraph(p, styles, imageMap, tag?) {
+function renderParagraph(p: Element, styles: any, imageMap: any, tag?: string) {
   const elem = document.createElement(tag || 'p');
   const styleName = attrNS(p, 'text', 'style-name');
   const st = styles[styleName];
@@ -200,7 +200,7 @@ function renderParagraph(p, styles, imageMap, tag?) {
   return elem;
 }
 
-function renderList(list, styles, imageMap, level) {
+function renderList(list: any, styles: any, imageMap: any, level: number) {
   const ul = document.createElement('ul');
   ul.style.cssText = 'margin:4px 0;padding-left:' + (22 + (level || 0) * 6) + 'px;';
   for (const item of childEls(list, 'text', 'list-item')) {
@@ -214,7 +214,7 @@ function renderList(list, styles, imageMap, level) {
   return ul;
 }
 
-function renderTable(tbl, styles, imageMap) {
+function renderTable(tbl: any, styles: any, imageMap: any) {
   const table = document.createElement('table');
   table.style.cssText = 'border-collapse:collapse;width:100%;margin:12px 0;';
   for (const tr of childEls(tbl, 'table', 'table-row')) {
@@ -238,9 +238,9 @@ function renderTable(tbl, styles, imageMap) {
   return table;
 }
 
-function renderTextBody(textBody, styles, imageMap) {
+function renderTextBody(textBody: any, styles: any, imageMap: any) {
   const container = document.createElement('div');
-  const walk = (parent) => {
+  const walk = (parent: any) => {
     for (const c of parent.children) {
       if (isEl(c, 'text', 'h')) {
         const lvl = Math.min(6, Math.max(1, parseInt(attrNS(c, 'text', 'outline-level'), 10) || 1));
@@ -267,11 +267,11 @@ function renderTextBody(textBody, styles, imageMap) {
 
 // Pull document properties from a parsed meta source - meta.xml (zip ODF) or
 // the inline office:meta of a flat ODF document.
-function extractMeta(doc) {
+function extractMeta(doc: Document|null) {
   const fields: any = {};
   if (!doc) return fields;
-  const dc = (t) => { const n = elsNS(doc, 'dc', t)[0]; return n ? n.textContent.trim() : null; };
-  const mt = (t) => { const n = elsNS(doc, 'meta', t)[0]; return n ? n.textContent.trim() : null; };
+  const dc = (t: string) => { const n = elsNS(doc, 'dc', t)[0]; return n ? n.textContent.trim() : null; };
+  const mt = (t: string) => { const n = elsNS(doc, 'meta', t)[0]; return n ? n.textContent.trim() : null; };
   const title = dc('title'); if (title) fields['Title'] = title;
   const creator = dc('creator'); if (creator) fields['Author'] = creator;
   const subject = dc('subject'); if (subject) fields['Subject'] = subject;
@@ -288,7 +288,7 @@ function extractMeta(doc) {
 }
 
 // Common info card + text card builders shared by the three ODF kinds.
-function infoCard(file: File, kindLabel, meta) {
+function infoCard(file: File, kindLabel: ElChild | ElChild[], meta: any) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, kindLabel));
   card.appendChild(buildReadout([
@@ -306,7 +306,7 @@ function infoCard(file: File, kindLabel, meta) {
 
 // ---------- ODS: spreadsheet ----------
 
-function cellText(tc) {
+function cellText(tc: Element) {
   let out = '';
   for (const p of elsNS(tc, 'text', 'p')) {
     if (out) out += '\n';
@@ -315,7 +315,7 @@ function cellText(tc) {
   return out;
 }
 
-function renderSheetPage(tableEl) {
+function renderSheetPage(tableEl: Element) {
   const page = makePage('sheet');
   page.appendChild(el('div', { class: 'anr-sheet-name' }, attrNS(tableEl, 'table', 'name') || 'Sheet'));
 
@@ -336,7 +336,7 @@ function renderSheetPage(tableEl) {
     for (let r = 0; r < rowRep && grid.length < MAX_ROWS; r++) grid.push(cells.slice());
   }
   // Trim trailing all-empty rows.
-  while (grid.length && grid[grid.length - 1].every((c) => !c)) grid.pop();
+  while (grid.length && grid[grid.length - 1].every((c: any) => !c)) grid.pop();
   if (!grid.length) { page.appendChild(el('p', { style: 'color:#888;' }, '(empty sheet)')); return page; }
 
   const cols = grid.reduce((m, r) => Math.max(m, r.length), 0);
@@ -357,9 +357,9 @@ function renderSheetPage(tableEl) {
 // Materialise a table:table into a plain { headers, rows } grid for the
 // table-analysis workbench - the same repeat-expansion as renderSheetPage's
 // visual preview, but with much larger caps since the grid virtualises rows.
-function extractSheetGrid(tableEl) {
+function extractSheetGrid(tableEl: any) {
   const MAX_COLS = 2000, MAX_ROWS = 200000;
-  const grid = [];
+  const grid: any[] = [];
   for (const tr of childEls(tableEl, 'table', 'table-row')) {
     const rowRep = Math.min(parseInt(attrNS(tr, 'table', 'number-rows-repeated'), 10) || 1, MAX_ROWS);
     const cells = [];
@@ -371,10 +371,10 @@ function extractSheetGrid(tableEl) {
     while (cells.length && !cells[cells.length - 1]) cells.pop();
     for (let r = 0; r < rowRep && grid.length < MAX_ROWS; r++) grid.push(cells.slice());
   }
-  while (grid.length && grid[grid.length - 1].every((c) => !c)) grid.pop();
+  while (grid.length && grid[grid.length - 1].every((c: any) => !c)) grid.pop();
   if (!grid.length) return null;
   const cols = grid.reduce((m, r) => Math.max(m, r.length), 0);
-  const pad = (r) => Array.from({ length: cols }, (_, c) => r[c] || '');
+  const pad = (r: any[]) => Array.from({ length: cols }, (_, c) => r[c] || '');
   const headers = pad(grid[0]);
   const rows = grid.slice(1).map(pad);
   return { headers, rows, totalRows: rows.length };
@@ -382,7 +382,7 @@ function extractSheetGrid(tableEl) {
 
 // ---------- ODP: presentation ----------
 
-function renderSlidePage(drawPage, styles, imageMap, index) {
+function renderSlidePage(drawPage: any, styles: any, imageMap: any, index: number) {
   const page = makePage('slide');
   const frames = childEls(drawPage, 'draw', 'frame');
   let titleDone = false;
@@ -410,13 +410,13 @@ function renderSlidePage(drawPage, styles, imageMap, index) {
 
 // Workbench mounts (.ods only) from the previous render - torn down before the
 // container is cleared so their ResizeObservers/listeners don't leak.
-let _odfTkHandles = [];
+let _odfTkHandles: any[] = [];
 function destroyOdfTableKits() {
   for (const h of _odfTkHandles) { try { h.destroy(); } catch (_) { /* ignore */ } }
   _odfTkHandles = [];
 }
 
-export async function renderOdf(file: File, container, kind) {
+export async function renderOdf(file: File, container: HTMLElement, kind: string) {
   container.hidden = false;
   destroyOdfTableKits();
   container.innerHTML = '';
@@ -531,7 +531,7 @@ export async function renderOdf(file: File, container, kind) {
   }
 }
 
-export const renderOdt = (file: File, container) => renderOdf(file, container, 'odt');
-export const renderOds = (file: File, container) => renderOdf(file, container, 'ods');
-export const renderOdp = (file: File, container) => renderOdf(file, container, 'odp');
-export const renderOdg = (file: File, container) => renderOdf(file, container, 'odg');
+export const renderOdt = (file: File, container: HTMLElement) => renderOdf(file, container, 'odt');
+export const renderOds = (file: File, container: HTMLElement) => renderOdf(file, container, 'ods');
+export const renderOdp = (file: File, container: HTMLElement) => renderOdf(file, container, 'odp');
+export const renderOdg = (file: File, container: HTMLElement) => renderOdf(file, container, 'odg');

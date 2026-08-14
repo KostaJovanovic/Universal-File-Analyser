@@ -87,7 +87,7 @@ export async function resolveByContent(file: File) {
   let sniffedExt = null;
   try {
     const head = new Uint8Array(await file.slice(0, 128).arrayBuffer());
-    const a = (s: number|undefined, l: number) => Array.from(head.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
+    const a = (s: number, l: number) => Array.from(head.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
     const lowerExt = fileExt(file.name);
     const lowerName = (file.name || '').toLowerCase().replace(/^.*[\\/]/, '');
     if (a(0, 4) === '%PDF') kind = 'pdf';
@@ -141,7 +141,7 @@ export async function resolveByContent(file: File) {
 // or >85% printable bytes in the head. Used by the folder scan so an extensionless
 // LICENSE / README / Makefile passes while a binary that only opens as hex is
 // flagged. Shared via window._anrReadableText.
-export async function isReadableText(file) {
+export async function isReadableText(file: Blob) {
   try {
     const b = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
     if (!b.length) return true;   // empty file opens (nothing to show), not a hex dump

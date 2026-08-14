@@ -14,8 +14,8 @@ import { renderPhoto } from './photo.js';
 // embed arbitrary HTML through <foreignObject>, or phone home through external
 // references. We remove <script>/<foreignObject>, on* handlers, javascript:
 // links, and external/remote refs before anything is rendered.
-function sanitizeSvg(doc) {
-  const findings = [];
+function sanitizeSvg(doc: Document) {
+  const findings: string[] = [];
   const root = doc.querySelector('svg');
   if (!root) return { findings, safe: null };
 
@@ -96,7 +96,7 @@ function sanitizeSvg(doc) {
 // if there's no <svg> root / it won't parse). Shared entry point for other
 // renderers that inject parser-produced SVG (e.g. dwg.js) so they get the same
 // element/attribute allow-list as the SVG viewer instead of a bespoke regex.
-export function sanitizeSvgMarkup(markup) {
+export function sanitizeSvgMarkup(markup: string) {
   try {
     const doc = new DOMParser().parseFromString(String(markup || ''), 'image/svg+xml');
     if (doc.querySelector('parsererror')) return null;
@@ -109,7 +109,7 @@ export function sanitizeSvgMarkup(markup) {
 // attribute the exporter writes. Illustrator stamps "<!-- Generator: Adobe
 // Illustrator ... -->", Inkscape sets inkscape:version, Sketch/Figma leave their
 // own markers. Pure text matching so it works even when the XML won't parse.
-function detectSvgCreator(text) {
+function detectSvgCreator(text: string) {
   let m = text.match(/<!--\s*Generator:\s*([^]*?)\s*-->/i);
   if (m) return m[1].replace(/\s+/g, ' ').trim().slice(0, 120);
   m = text.match(/inkscape:version="([^"\s(]+)/i);
@@ -237,8 +237,8 @@ export async function renderSvg(file: File, resultsEl: HTMLElement) {
     let w = 0, h = 0;
     if (svgRoot) {
       const vb = (svgRoot.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
-      w = parseFloat(svgRoot.getAttribute('width')) || (vb.length === 4 ? vb[2] : 0);
-      h = parseFloat(svgRoot.getAttribute('height')) || (vb.length === 4 ? vb[3] : 0);
+      w = parseFloat(svgRoot.getAttribute('width')!) || (vb.length === 4 ? vb[2] : 0);
+      h = parseFloat(svgRoot.getAttribute('height')!) || (vb.length === 4 ? vb[3] : 0);
     }
     // Scale up so small icons still produce a usable raster, cap the long edge.
     const longest = Math.max(w, h) || 512;
@@ -248,7 +248,7 @@ export async function renderSvg(file: File, resultsEl: HTMLElement) {
     const canvas = document.createElement('canvas');
     canvas.width = cw;
     canvas.height = ch;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d')!;
     const blob = new Blob([safe || svgText], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const img = new Image();

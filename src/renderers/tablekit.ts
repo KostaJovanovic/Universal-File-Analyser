@@ -5,7 +5,7 @@
    pie/area/box/heatmap on one hand-drawn canvas, auto-suggested charts, and
    PNG/JSON/CSV export. No chart library - see drawChart(). */
 
-import { el, row, showCellPopup, downloadBlob, h3help, wireInfoToggle } from '../core/util.js';
+import { el, row, showCellPopup, downloadBlob, h3help, wireInfoToggle, type ElChild } from '../core/util.js';
 import { SAMPLE_CAP, inferColumnTypes, toNumber, columnValues, describe, percentile, pearson, groupBy, parseDateValue, looksMonthFirst } from '../lib/table-stats.js';
 
 const ROW_H = 28;
@@ -14,17 +14,17 @@ const MAX_POINTS = 4000;
 const PALETTE = ['#e0533a', '#3b82c4', '#3ba776', '#c47a0f', '#8859c4', '#c43b8e', '#4a4a4a', '#2ea7a1'];
 const CHART_TYPES = ['line', 'bar', 'scatter', 'histogram', 'pie', 'area', 'box', 'heatmap'];
 
-function fmtAxisNum(n) {
+function fmtAxisNum(n: number) {
   if (!isFinite(n)) return '-';
   const a = Math.abs(n);
   if (a >= 1e6) return (n / 1e6).toFixed(1) + 'M';
   if (a >= 1e3) return (n / 1e3).toFixed(1) + 'k';
   return Number(n.toFixed(2)).toString();
 }
-function fmtNumFull(n) { return isFinite(n) ? Number(n.toFixed(4)).toString() : '-'; }
-function truncateLbl(s, n = 10) { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
-function fmtRange(a, b) { return fmtAxisNum(a) + '–' + fmtAxisNum(b); }
-function csvQuote(v) { const s = String(v == null ? '' : v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+function fmtNumFull(n: number) { return isFinite(n) ? Number(n.toFixed(4)).toString() : '-'; }
+function truncateLbl(s: string|null, n = 10) { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+function fmtRange(a: number, b: number) { return fmtAxisNum(a) + '–' + fmtAxisNum(b); }
+function csvQuote(v: unknown) { const s = String(v == null ? '' : v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
 
 // The [?] help panel content: a plain-language tour of every workbench tool.
 // Rendered through h3help()/.anr-info-panel - one entry per line (each an
@@ -57,7 +57,7 @@ const GROUPBY_HELP_HTML =
 
 function theme() {
   const cs = getComputedStyle(document.documentElement);
-  const v = (name, fb) => (cs.getPropertyValue(name) || '').trim() || fb;
+  const v = (name: string, fb: string) => (cs.getPropertyValue(name) || '').trim() || fb;
   return {
     fg: v('--fg', '#0a0a0a'), muted: v('--muted', '#6b6b6b'), bg: v('--bg', '#fff'),
     accent: v('--accent', '#e60023'), hair: v('--hairline', '#e6e6e6'),
@@ -65,7 +65,7 @@ function theme() {
   };
 }
 
-function heatColor(t, valid) {
+function heatColor(t: number, valid: boolean) {
   if (!valid) return '#88888833';
   t = Math.max(0, Math.min(1, t));
   const r = t > 0.5 ? 255 : Math.round(255 * (t / 0.5));
@@ -77,13 +77,13 @@ function heatColor(t, valid) {
 // Decimate long series (line/scatter/area) to MAX_POINTS by stride, keeping
 // xLabels/xValues aligned. Bar/histogram/pie/box/heatmap are already
 // aggregate-sized so they pass through untouched.
-function decimateSpec(spec) {
+function decimateSpec(spec: any) {
   const n = (spec.xLabels || []).length;
   if (n <= MAX_POINTS || !['line', 'scatter', 'area'].includes(spec.type)) return spec;
   const stride = Math.ceil(n / MAX_POINTS);
-  const xLabels = [], xValues = spec.xValues ? [] : undefined;
+  const xLabels: any[] = [], xValues: any[]|undefined = spec.xValues ? [] : undefined;
   for (let i = 0; i < n; i += stride) { xLabels.push(spec.xLabels[i]); if (xValues) xValues.push(spec.xValues[i]); }
-  const series = spec.series.map((s) => {
+  const series = spec.series.map((s: any) => {
     const data = [];
     for (let i = 0; i < n; i += stride) data.push(s.data[i]);
     return { name: s.name, data };
@@ -92,20 +92,20 @@ function decimateSpec(spec) {
   return { ...spec, xLabels, xValues, series, meta: { ...spec.meta, sampledNote: note } };
 }
 
-function computeXAt(spec, plotX, plotW) {
+function computeXAt(spec: any, plotX: number, plotW: number) {
   const n = spec.xLabels.length;
   if (spec.xValues && spec.xValues.length === n) {
     const xs = spec.xValues.filter(isFinite);
     if (xs.length) {
       let xMin = Math.min(...xs), xMax = Math.max(...xs);
       if (xMin === xMax) xMax = xMin + 1;
-      return (i) => plotX + ((spec.xValues[i] - xMin) / (xMax - xMin)) * plotW;
+      return (i: string|number) => plotX + ((spec.xValues[i] - xMin) / (xMax - xMin)) * plotW;
     }
   }
-  return (i) => plotX + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+  return (i: number) => plotX + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
 }
 
-function drawXY(ctx, spec, W, H, top, th, hits) {
+function drawXY(ctx: CanvasRenderingContext2D, spec: any, W: number, H: number, top: number, th: any, hits: any[]) {
   const xTitle = spec.meta && spec.meta.xTitle, yTitle = spec.meta && spec.meta.yTitle;
   const PAD_L = yTitle ? 72 : 54, PAD_R = 16;
   const series = spec.series || [];
@@ -134,7 +134,7 @@ function drawXY(ctx, spec, W, H, top, th, hits) {
   const shownIdx = [];
   for (let i = 0; i < n; i += stepLbl) shownIdx.push(i);
   const slot = plotW / Math.max(1, shownIdx.length);
-  const rawLbl = (i) => String(spec.xLabels[i] == null ? '' : spec.xLabels[i]);
+  const rawLbl = (i: number) => String(spec.xLabels[i] == null ? '' : spec.xLabels[i]);
   const widestHoriz = shownIdx.reduce((m, i) => Math.max(m, ctx.measureText(truncateLbl(rawLbl(i))).width), 0);
   const rotateX = widestHoriz > slot - 6;
   let PAD_B = 34;
@@ -171,7 +171,7 @@ function drawXY(ctx, spec, W, H, top, th, hits) {
     for (const i of shownIdx) ctx.fillText(truncateLbl(rawLbl(i)), xAt(i), plotY + plotH + 14);
   }
 
-  const yOf = (v) => plotY + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+  const yOf = (v: number) => plotY + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
 
   if (spec.type === 'bar' || spec.type === 'histogram') {
     const groupW = plotW / Math.max(1, n);
@@ -180,7 +180,7 @@ function drawXY(ctx, spec, W, H, top, th, hits) {
       const bw = groupW - gap;
       for (let i = 0; i < n; i++) {
         let base = 0;
-        series.forEach((s, si) => {
+        series.forEach((s: any, si: number) => {
           const v = isFinite(s.data[i]) ? s.data[i] : 0;
           const y0 = yOf(base), y1 = yOf(base + v);
           const color = PALETTE[si % PALETTE.length];
@@ -193,7 +193,7 @@ function drawXY(ctx, spec, W, H, top, th, hits) {
       }
     } else {
       const bw = (groupW - gap) / series.length;
-      series.forEach((s, si) => {
+      series.forEach((s: any, si: number) => {
         for (let i = 0; i < n; i++) {
           const v = isFinite(s.data[i]) ? s.data[i] : 0;
           const y0 = yOf(0), y1 = yOf(v);
@@ -206,7 +206,7 @@ function drawXY(ctx, spec, W, H, top, th, hits) {
       });
     }
   } else if (spec.type === 'line' || spec.type === 'area') {
-    series.forEach((s, si) => {
+    series.forEach((s: any, si: number) => {
       const color = PALETTE[si % PALETTE.length];
       if (spec.type === 'area') {
         ctx.beginPath();
@@ -231,7 +231,7 @@ function drawXY(ctx, spec, W, H, top, th, hits) {
       ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke();
     });
   } else if (spec.type === 'scatter') {
-    series.forEach((s, si) => {
+    series.forEach((s: any, si: number) => {
       const color = PALETTE[si % PALETTE.length];
       ctx.fillStyle = color;
       for (let i = 0; i < n; i++) {
@@ -260,7 +260,7 @@ function drawXY(ctx, spec, W, H, top, th, hits) {
   if (series.length > 1) {
     let lx = plotX; const ly = Math.max(4, top - 2);
     ctx.textAlign = 'left'; ctx.font = '10px ' + th.fontMono;
-    series.forEach((s, si) => {
+    series.forEach((s: any, si: number) => {
       ctx.fillStyle = PALETTE[si % PALETTE.length];
       ctx.fillRect(lx, ly - 4, 8, 8);
       ctx.fillStyle = th.muted;
@@ -270,7 +270,7 @@ function drawXY(ctx, spec, W, H, top, th, hits) {
   }
 }
 
-function drawBox(ctx, spec, W, H, top, th, hits) {
+function drawBox(ctx: CanvasRenderingContext2D, spec: any, W: number, H: number, top: number, th: any, hits: any[]) {
   const boxes = (spec.meta && spec.meta.box) || [];
   const yTitle = spec.meta && spec.meta.yTitle;
   const PAD_L = yTitle ? 72 : 54, PAD_R = 16;
@@ -279,19 +279,19 @@ function drawBox(ctx, spec, W, H, top, th, hits) {
   // would overlap (see drawXY for the same treatment).
   ctx.font = '11px ' + th.fontMono;
   const boxSlot = plotW / Math.max(1, boxes.length);
-  const widestBoxLbl = boxes.reduce((m, b) => Math.max(m, ctx.measureText(truncateLbl(b.label)).width), 0);
+  const widestBoxLbl = boxes.reduce((m: number, b: any) => Math.max(m, ctx.measureText(truncateLbl(b.label)).width), 0);
   const rotateX = widestBoxLbl > boxSlot - 6;
   let PAD_B = 34;
   if (rotateX) {
-    const widestRot = boxes.reduce((m, b) => Math.max(m, ctx.measureText(truncateLbl(b.label, 16)).width), 0);
+    const widestRot = boxes.reduce((m: number, b: any) => Math.max(m, ctx.measureText(truncateLbl(b.label, 16)).width), 0);
     PAD_B = Math.min(84, Math.max(40, Math.round(widestRot * 0.72) + 16));
   }
   const plotH = H - plotY - PAD_B;
-  const all = [];
-  boxes.forEach((b) => { all.push(b.min, b.max); (b.outliers || []).forEach((v) => all.push(v)); });
+  const all: any[] = [];
+  boxes.forEach((b: any) => { all.push(b.min, b.max); (b.outliers || []).forEach((v: any) => all.push(v)); });
   let yMin = Math.min(0, ...all), yMax = Math.max(1, ...all);
   if (yMin === yMax) yMax = yMin + 1;
-  const yOf = (v) => plotY + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+  const yOf = (v: number) => plotY + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
 
   ctx.strokeStyle = th.hair; ctx.fillStyle = th.muted; ctx.textAlign = 'right'; ctx.font = '11px ' + th.fontMono;
   for (let i = 0; i <= 4; i++) {
@@ -304,7 +304,7 @@ function drawBox(ctx, spec, W, H, top, th, hits) {
 
   const n = boxes.length, slot = plotW / Math.max(1, n), bw = Math.min(40, slot * 0.5);
   ctx.textAlign = 'center';
-  boxes.forEach((b, i) => {
+  boxes.forEach((b: any, i: number) => {
     const cx = plotX + slot * (i + 0.5);
     ctx.strokeStyle = PALETTE[i % PALETTE.length]; ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -318,7 +318,7 @@ function drawBox(ctx, spec, W, H, top, th, hits) {
     ctx.strokeRect(cx - bw / 2, yOf(b.q3), bw, yOf(b.q1) - yOf(b.q3));
     ctx.beginPath(); ctx.moveTo(cx - bw / 2, yOf(b.median)); ctx.lineTo(cx + bw / 2, yOf(b.median)); ctx.stroke();
     ctx.fillStyle = PALETTE[i % PALETTE.length];
-    (b.outliers || []).forEach((v) => { ctx.beginPath(); ctx.arc(cx, yOf(v), 2, 0, Math.PI * 2); ctx.fill(); });
+    (b.outliers || []).forEach((v: number) => { ctx.beginPath(); ctx.arc(cx, yOf(v), 2, 0, Math.PI * 2); ctx.fill(); });
     ctx.fillStyle = th.muted;
     if (rotateX) {
       ctx.save();
@@ -347,11 +347,11 @@ function drawBox(ctx, spec, W, H, top, th, hits) {
   }
 }
 
-function drawHeatmap(ctx, spec, W, H, top, th, hits) {
+function drawHeatmap(ctx: CanvasRenderingContext2D, spec: any, W: number, H: number, top: number, th: any, hits: any[]) {
   const hm = spec.meta.heatmap;
   const labels = hm.labels, matrix = hm.matrix, n = labels.length;
   if (!n) return;
-  const padL = Math.min(120, 40 + Math.max(...labels.map((l) => l.length)) * 5.5);
+  const padL = Math.min(120, 40 + Math.max(...labels.map((l: string|any[]) => l.length)) * 5.5);
   const plotX = padL, plotY = top + 8;
   const size = Math.max(8, Math.min((W - padL - 60) / n, (H - plotY - padL) / n));
   ctx.font = '10px ' + th.fontMono;
@@ -389,13 +389,13 @@ function drawHeatmap(ctx, spec, W, H, top, th, hits) {
   }
 }
 
-function drawPie(ctx, spec, W, H, top, th, hits) {
+function drawPie(ctx: CanvasRenderingContext2D, spec: any, W: number, H: number, top: number, th: any, hits: any[]) {
   const labels = spec.xLabels || [], data = (spec.series[0] && spec.series[0].data) || [];
-  const total = data.reduce((s, v) => s + (isFinite(v) ? v : 0), 0) || 1;
+  const total = data.reduce((s: number, v: number) => s + (isFinite(v) ? v : 0), 0) || 1;
   const cx = W * 0.34, cy = top + (H - top) / 2, r = Math.max(20, Math.min(cx - 20, (H - top) / 2 - 20, 110));
   let a0 = -Math.PI / 2;
   const donut = !!(spec.meta && spec.meta.donut);
-  data.forEach((v, i) => {
+  data.forEach((v: number, i: number) => {
     const frac = (isFinite(v) ? v : 0) / total;
     const a1 = a0 + frac * Math.PI * 2;
     ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, a0, a1); ctx.closePath();
@@ -407,7 +407,7 @@ function drawPie(ctx, spec, W, H, top, th, hits) {
   let ly = top + 10;
   ctx.textAlign = 'left'; ctx.font = '10px ' + th.fontMono;
   const lx = cx + r + 24;
-  labels.forEach((lb, i) => {
+  labels.forEach((lb: string|null, i: number) => {
     if (ly > H - 14 || lx > W - 40) return;
     ctx.fillStyle = PALETTE[i % PALETTE.length];
     ctx.fillRect(lx, ly - 4, 8, 8);
@@ -421,7 +421,7 @@ function drawPie(ctx, spec, W, H, top, th, hits) {
 // Single hand-drawn canvas function for every chart type. Theme-aware (reads
 // CSS custom properties each draw), DPR-scaled, decimates long line/scatter/
 // area series to MAX_POINTS.
-function drawChart(canvas, spec) {
+function drawChart(canvas: HTMLCanvasElement, spec: any) {
   if (!spec) return;
   spec = decimateSpec(spec);
   const th = theme();
@@ -430,7 +430,7 @@ function drawChart(canvas, spec) {
   const W = Math.max(240, rect.width || 240), H = Math.max(160, rect.height || 320);
   canvas.width = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d')!;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = th.bg; ctx.fillRect(0, 0, W, H);
@@ -443,7 +443,7 @@ function drawChart(canvas, spec) {
     top += 22;
   }
 
-  const hits = [];
+  const hits: any[] = [];
   if (spec.type === 'pie') drawPie(ctx, spec, W, H, top, th, hits);
   else if (spec.type === 'box') drawBox(ctx, spec, W, H, top, th, hits);
   else if (spec.type === 'heatmap') drawHeatmap(ctx, spec, W, H, top, th, hits);
@@ -456,7 +456,7 @@ function drawChart(canvas, spec) {
 
 // Find the topmost hit region under a point (CSS px, same coords the chart was
 // drawn in). Circles/wedges get a few px of slack so small marks stay grabbable.
-function hitTest(hits, mx, my) {
+function hitTest(hits: string|any[], mx: number, my: number) {
   for (let i = hits.length - 1; i >= 0; i--) {
     const h = hits[i];
     if (h.type === 'rect') {
@@ -478,7 +478,7 @@ function hitTest(hits, mx, my) {
 
 // Outline the hovered element in the foreground colour (a filled dot for line/
 // scatter points so the mark is obvious).
-function drawHitHighlight(ctx, hit, th) {
+function drawHitHighlight(ctx: CanvasRenderingContext2D, hit: any, th: any) {
   ctx.save();
   ctx.lineWidth = 2; ctx.strokeStyle = th.fg;
   if (hit.type === 'rect') {
@@ -495,7 +495,7 @@ function drawHitHighlight(ctx, hit, th) {
 // Dark-translucent tooltip near the cursor (fixed dark treatment so it stays
 // legible over any chart colour in either theme - the site's canvas-overlay
 // idiom). Flips to stay inside the canvas.
-function drawTooltip(ctx, lines, mx, my, W, H, th) {
+function drawTooltip(ctx: CanvasRenderingContext2D, lines: any[], mx: number, my: number, W: number, H: number, th: any) {
   ctx.save();
   ctx.font = '11px ' + th.fontMono; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   const padX = 8, padY = 6, lh = 14;
@@ -509,7 +509,7 @@ function drawTooltip(ctx, lines, mx, my, W, H, th) {
   ctx.fillRect(x, y, tw, thh);
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)'; ctx.lineWidth = 1;
   ctx.strokeRect(x + 0.5, y + 0.5, tw, thh);
-  lines.forEach((l, i) => {
+  lines.forEach((l, i: number) => {
     ctx.fillStyle = i === 0 ? '#fff' : 'rgba(255, 255, 255, 0.75)';
     ctx.fillText(l, x + padX, y + padY + lh / 2 + i * lh);
   });
@@ -519,7 +519,7 @@ function drawTooltip(ctx, lines, mx, my, W, H, th) {
 // host: a fresh <div> the caller appends below its existing cards.
 // model: { headers: string[], rows: string[][], totalRows: number } - cells are
 // raw strings; tablekit infers types via inferColumnTypes.
-export function mountTableKit(host, model, opts: any = {}) {
+export function mountTableKit(host: HTMLElement, model: any, opts: any = {}) {
   const rows = model.rows || [];
   const colCount = (model.headers || []).length || (rows[0] ? rows[0].length : 0);
   const headers = Array.from({ length: colCount }, (_, i) => (model.headers && model.headers[i]) || ('Col ' + (i + 1)));
@@ -527,17 +527,17 @@ export function mountTableKit(host, model, opts: any = {}) {
   const colTypes = inferColumnTypes(initialSample, colCount);
 
   const view = {
-    rowIndex: rows.map((_, i) => i),
+    rowIndex: rows.map((_: any, i: number) => i),
     colOrder: headers.map((_, i) => i),
     hidden: new Set(),
     sort: { col: -1, dir: 0 },
     globalSearch: '',
     // col index -> either a substring match or a numeric range.
-    colFilters: {} as Record<string, { text?: string; min?: number; max?: number }>,
+    colFilters: {} as Record<string, { text?: string; min?: number|null; max?: number|null }>,
   };
-  let activeTarget = null;
-  let currentSpec = null;
-  let lastGroupByResult = null;
+  let activeTarget: any = null;
+  let currentSpec: any = null;
+  let lastGroupByResult: any = null;
   let activeChartType = 'line';
   let stackedOn = false;
   // Ambiguous D/M/Y dates (31/12/2024, 31.12.2024, ...) read day-first by
@@ -548,17 +548,17 @@ export function mountTableKit(host, model, opts: any = {}) {
   // like 8/25/2024, where 25 can only be a day) opens already reading it
   // correctly, rather than making every American file click the toggle first.
   let monthFirst = looksMonthFirst(initialSample, colCount, colTypes);
-  let lastHits = [];
-  let hoverHit = null;
-  let disposers = [];
-  const onDispose = (fn) => disposers.push(fn);
+  let lastHits: string|any[] = [];
+  let hoverHit: any = null;
+  let disposers: any[] = [];
+  const onDispose = (fn: () => void) => disposers.push(fn);
   const visCols = () => view.colOrder.filter((c) => !view.hidden.has(c));
 
   function sampleViewRows() {
     const capped = view.rowIndex.length > SAMPLE_CAP ? view.rowIndex.slice(0, SAMPLE_CAP) : view.rowIndex;
     return { indices: capped, sampled: capped.length < view.rowIndex.length };
   }
-  function sampleRowsArr() { return sampleViewRows().indices.map((i) => rows[i]); }
+  function sampleRowsArr() { return sampleViewRows().indices.map((i: string|number) => rows[i]); }
   function sampleNote() { const { sampled } = sampleViewRows(); return sampled ? 'sampled ' + SAMPLE_CAP.toLocaleString() + ' of ' + view.rowIndex.length.toLocaleString() : ''; }
   function baseFileName() { return (opts.sheetName || 'table').replace(/[^\w.-]+/g, '_') || 'table'; }
 
@@ -620,7 +620,7 @@ export function mountTableKit(host, model, opts: any = {}) {
   const toolbar = el('div', { class: 'anr-tk-toolbar' }, [searchInput, colsDetails, splitDetails, dateFmtBtn, statusEl]);
   card.appendChild(toolbar);
 
-  let searchTimer = null;
+  let searchTimer: number|undefined;
   searchInput.addEventListener('input', () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => { view.globalSearch = searchInput.value; applyView(); }, 200);
@@ -652,21 +652,21 @@ export function mountTableKit(host, model, opts: any = {}) {
   renderColsList();
 
   // ---------------- split column into several ----------------
-  const DELIMS = {
+  const DELIMS: Record<string, { re: RegExp; label: string }> = {
     ws: { re: /\s+/, label: 'whitespace' },
     comma: { re: /\s*,\s*/, label: 'comma' },
     semi: { re: /\s*;\s*/, label: 'semicolon' },
     tab: { re: /\t/, label: 'tab' },
     pipe: { re: /\s*\|\s*/, label: 'pipe' },
   };
-  let splitBackup = null; // { headers, rows } snapshot taken before the first split
+  let splitBackup: any = null; // { headers, rows } snapshot taken before the first split
 
   // Guess the delimiter of a column: whichever candidate splits the most cells
   // into a consistent field count > 1 (mode count × how often it recurs).
-  function detectDelimiter(colIdx) {
-    const vals = [];
+  function detectDelimiter(colIdx: number) {
+    const vals: string[] = [];
     for (let i = 0; i < rows.length && vals.length < 200; i++) { const v = rows[i][colIdx]; if (v && v.trim()) vals.push(v.trim()); }
-    let best = null;
+    let best: any = null;
     for (const id in DELIMS) {
       const counts = vals.map((v) => v.split(DELIMS[id].re).length);
       const freq: any = {};
@@ -702,16 +702,16 @@ export function mountTableKit(host, model, opts: any = {}) {
 
   // Split visible column `colIdx` on `delimChoice` ('auto' detects). Returns
   // { added, label } or null when no delimiter is present.
-  function applySplit(colIdx, delimChoice) {
+  function applySplit(colIdx: number, delimChoice: string) {
     const cand = delimChoice === 'auto' ? detectDelimiter(colIdx) : DELIMS[delimChoice];
     if (!cand) return null;
     const re = cand.re;
-    const cut = (v) => (v == null ? '' : String(v)).trim().split(re);
+    const cut = (v: unknown) => (v == null ? '' : String(v)).trim().split(re);
     let maxParts = 1;
     for (let i = 0; i < rows.length; i++) { const p = cut(rows[i][colIdx]).length; if (p > maxParts) maxParts = p; }
     maxParts = Math.min(maxParts, 50);
     if (maxParts < 2) return null;
-    if (!splitBackup) splitBackup = { headers: headers.slice(), rows: rows.map((r) => r.slice()) };
+    if (!splitBackup) splitBackup = { headers: headers.slice(), rows: rows.map((r: string|any[]) => r.slice()) };
     // Header names: split the header cell on the same delimiter and use each
     // part; number off the original name for any part the header didn't cover.
     const hp = cut(headers[colIdx]);
@@ -724,15 +724,15 @@ export function mountTableKit(host, model, opts: any = {}) {
       for (let k = 0; k < maxParts; k++) filled.push(parts[k] != null ? parts[k] : '');
       rows[i] = rows[i].slice(0, colIdx).concat(filled, rows[i].slice(colIdx + 1));
     }
-    headers.length = 0; rebuiltHeaders.forEach((h) => headers.push(h));
+    headers.length = 0; rebuiltHeaders.forEach((h: string) => headers.push(h));
     reinferAndReset();
     return { added: maxParts, label: cand.label };
   }
 
   function resetSplit() {
     if (!splitBackup) return;
-    headers.length = 0; splitBackup.headers.forEach((h) => headers.push(h));
-    rows.length = 0; splitBackup.rows.forEach((r) => rows.push(r.slice()));
+    headers.length = 0; splitBackup.headers.forEach((h: string) => headers.push(h));
+    rows.length = 0; splitBackup.rows.forEach((r: string|any[]) => rows.push(r.slice()));
     splitBackup = null;
     reinferAndReset();
   }
@@ -791,7 +791,7 @@ export function mountTableKit(host, model, opts: any = {}) {
       table.style.width = (ROWNUM_W + COL_W * n) + 'px';
     }
 
-    let scrollRaf = null;
+    let scrollRaf: number|null = null;
     const onScroll = () => { if (scrollRaf) return; scrollRaf = requestAnimationFrame(() => { scrollRaf = null; renderBody(); }); };
     scrollWrap.addEventListener('scroll', onScroll);
     onDispose(() => scrollWrap.removeEventListener('scroll', onScroll));
@@ -800,7 +800,7 @@ export function mountTableKit(host, model, opts: any = {}) {
     ro.observe(scrollWrap);
     onDispose(() => ro.disconnect());
 
-    function onHeaderClick(c) {
+    function onHeaderClick(c: number) {
       if (view.sort.col !== c) { view.sort.col = c; view.sort.dir = 1; }
       else if (view.sort.dir === 1) view.sort.dir = -1;
       else { view.sort.col = -1; view.sort.dir = 0; }
@@ -813,10 +813,10 @@ export function mountTableKit(host, model, opts: any = {}) {
       applyView();
     }
 
-    function buildFilterPopover(c) {
+    function buildFilterPopover(c: number) {
       const type = colTypes[c];
       const pop = el('div', { class: 'anr-tk-filterpop is-hidden' });
-      let input1, input2 = null;
+      let input1: any, input2: any = null;
       if (type === 'number') {
         input1 = el('input', { type: 'number', placeholder: 'Min', class: 'anr-tk-filterinput' });
         input2 = el('input', { type: 'number', placeholder: 'Max', class: 'anr-tk-filterinput' });
@@ -867,16 +867,16 @@ export function mountTableKit(host, model, opts: any = {}) {
       thead.appendChild(htr);
     }
 
-    let dragging = false, dragStart = null, dragCur = null, justDragged = false;
+    let dragging = false, dragStart: any = null, dragCur: any = null, justDragged = false;
     // The current selection rectangle, in view-position (r) / visible-column
     // position (c) coordinates. Set by dragging, by a column-header click (whole
     // column) or a row-number click (whole row); consumed by the highlighter.
-    let selRect = null;
-    function cellFromEvent(e) {
+    let selRect: any = null;
+    function cellFromEvent(e: { clientX: number; clientY: number }) {
       const target = document.elementFromPoint(e.clientX, e.clientY);
       const td = target && target.closest && target.closest<HTMLElement>('td.anr-tk-cell');
       if (!td || !tbody.contains(td)) return null;
-      return { r: +td.dataset.r, c: +td.dataset.c };
+      return { r: +td.dataset.r!, c: +td.dataset.c! };
     }
     function currentSelectionRect() {
       if (!dragStart || !dragCur) return null;
@@ -888,11 +888,11 @@ export function mountTableKit(host, model, opts: any = {}) {
       const rect = selRect;
       if (!rect) return;
       tbody.querySelectorAll<HTMLElement>('td.anr-tk-cell').forEach((td) => {
-        const r = +td.dataset.r, c = +td.dataset.c;
+        const r = +td.dataset.r!, c = +td.dataset.c!;
         if (r >= rect.r0 && r <= rect.r1 && c >= rect.c0 && c <= rect.c1) td.classList.add('is-selected');
       });
       tbody.querySelectorAll<HTMLElement>('th.anr-tk-rownum').forEach((th) => {
-        const r = +th.dataset.r;
+        const r = +th.dataset.r!;
         if (r >= rect.r0 && r <= rect.r1) th.classList.add('is-selected');
       });
       thead.querySelectorAll('th.anr-tk-th').forEach((th, cp) => {
@@ -900,7 +900,7 @@ export function mountTableKit(host, model, opts: any = {}) {
       });
     }
     // Whole-row selection from a row-number click (a plottable range).
-    function selectRow(rp) {
+    function selectRow(rp: number) {
       const cn = visCols().length;
       selRect = { r0: rp, r1: rp, c0: 0, c1: Math.max(0, cn - 1) };
       activeTarget = { kind: 'range', r0: rp, r1: rp, c0: 0, c1: cn - 1 };
@@ -908,7 +908,7 @@ export function mountTableKit(host, model, opts: any = {}) {
       updateStatsBar();
       showChartSelBtn(true);
     }
-    function onWinMove(e) { if (!dragging) return; const cell = cellFromEvent(e); if (cell) { dragCur = cell; selRect = currentSelectionRect(); applySelectionHighlight(); activeTarget = { kind: 'range', ...selRect }; updateStatsBar(); } }
+    function onWinMove(e: PointerEvent) { if (!dragging) return; const cell = cellFromEvent(e); if (cell) { dragCur = cell; selRect = currentSelectionRect(); applySelectionHighlight(); activeTarget = { kind: 'range', ...selRect }; updateStatsBar(); } }
     function onWinUp() {
       if (!dragging) return;
       dragging = false;
@@ -919,7 +919,7 @@ export function mountTableKit(host, model, opts: any = {}) {
       selRect = rect;
       if (rect) { activeTarget = { kind: 'range', ...rect }; updateStatsBar(); showChartSelBtn(true); }
     }
-    function onPointerDown(e) {
+    function onPointerDown(e: PointerEvent) {
       // Touch: don't hijack the gesture for drag-select - preventDefault would
       // block scrolling the grid. Taps (cell/header/row-number) still fire as
       // clicks, so touch users keep every selection except click-drag ranges.
@@ -998,15 +998,15 @@ export function mountTableKit(host, model, opts: any = {}) {
     return { el: scrollWrap, renderHeader, renderBody };
   }
 
-  let chartSelBtn = null;
-  function showChartSelBtn(show) { if (chartSelBtn) chartSelBtn.hidden = !show; }
+  let chartSelBtn: HTMLButtonElement|null = null;
+  function showChartSelBtn(show: boolean) { if (chartSelBtn) chartSelBtn.hidden = !show; }
 
   const statsBarEl = el('div', { class: 'anr-tk-statsbar' });
   function buildStatsBar() {
     statsBarEl.appendChild(el('span', { class: 'anr-hint' }, 'Click a column header or drag a cell range to see stats.'));
     return statsBarEl;
   }
-  function statLine(label, text) { return el('div', { class: 'anr-tk-statline' }, [el('strong', {}, label + ': '), text]); }
+  function statLine(label: string, text: ElChild) { return el('div', { class: 'anr-tk-statline' }, [el('strong', {}, label + ': '), text]); }
   function updateStatsBar() {
     statsBarEl.innerHTML = '';
     if (!activeTarget) { statsBarEl.appendChild(el('span', { class: 'anr-hint' }, 'Click a column header or drag a cell range to see stats.')); return; }
@@ -1070,13 +1070,13 @@ export function mountTableKit(host, model, opts: any = {}) {
       const valCol = gbValSelect.value === '' ? -1 : +gbValSelect.value;
       if (isNaN(keyCol)) return;
       if (agg !== 'count' && valCol < 0) {
-        gbResult.appendChild(el('p', { class: 'anr-hint' }, 'This table has no number column to ' + AGG_LABELS.find(([v]) => v === agg)[1] + '. Pick "count", or add a numeric column.'));
+        gbResult.appendChild(el('p', { class: 'anr-hint' }, 'This table has no number column to ' + AGG_LABELS.find(([v]) => v === agg)![1] + '. Pick "count", or add a numeric column.'));
         return;
       }
       const sample = sampleRowsArr();
       const result = groupBy(sample, keyCol, agg === 'count' ? keyCol : valCol, agg);
       lastGroupByResult = { keyCol, valCol, agg, result };
-      const aggLabel = AGG_LABELS.find(([v]) => v === agg)[1];
+      const aggLabel = AGG_LABELS.find(([v]) => v === agg)![1];
       const valName = agg === 'count' ? 'rows' : headers[valCol];
       const thead = el('thead', {}, el('tr', {}, [el('th', {}, headers[keyCol]), el('th', {}, aggLabel + ' of ' + valName)]));
       const tbody = el('tbody');
@@ -1124,7 +1124,7 @@ export function mountTableKit(host, model, opts: any = {}) {
 
   // A labelled control: a caption over its input, so each picker says what it
   // drives without a legend.
-  const field = (label, ctrl) => el('div', { class: 'anr-tk-field' }, [
+  const field = (label: ElChild | ElChild[], ctrl: ElChild) => el('div', { class: 'anr-tk-field' }, [
     el('span', { class: 'anr-tk-fieldlabel' }, label), ctrl,
   ]);
 
@@ -1148,7 +1148,7 @@ export function mountTableKit(host, model, opts: any = {}) {
 
   // Draw a spec and cache its hit regions for hover. Every path that renders
   // the chart goes through here so hover always matches what's on screen.
-  function renderChart(spec) {
+  function renderChart(spec: any) {
     lastHits = drawChart(chartCanvas, spec) || [];
     hoverHit = null;
   }
@@ -1162,14 +1162,14 @@ export function mountTableKit(host, model, opts: any = {}) {
     currentSpec = spec;
     if (spec) { renderChart(spec); captionEl.textContent = spec.meta && spec.meta.sampledNote ? '(' + spec.meta.sampledNote + ')' : ''; return; }
     lastHits = [];
-    const ctx = chartCanvas.getContext('2d');
+    const ctx = chartCanvas.getContext('2d')!;
     if (ctx) ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
     captionEl.textContent = activeChartType === 'heatmap' ? 'Needs at least two numeric columns.' : 'Tick at least one value column to chart.';
   }
 
   // Draw a ready-made spec (from a suggestion or group-by "Plot as bar") and
   // sync the type buttons/fields to match it.
-  function loadSpecIntoBuilder(spec) {
+  function loadSpecIntoBuilder(spec: any) {
     currentSpec = spec;
     activeChartType = spec.type;
     setActiveType();
@@ -1182,7 +1182,7 @@ export function mountTableKit(host, model, opts: any = {}) {
   // Hover: highlight the element under the cursor and float a tooltip. The base
   // chart is re-drawn each move (cheap for these small charts) but lastHits is
   // left untouched, so the cached hit's geometry stays valid to draw over.
-  function onChartMove(e) {
+  function onChartMove(e: PointerEvent) {
     if (!currentSpec || !lastHits.length) { chartCanvas.style.cursor = 'default'; return; }
     const r = chartCanvas.getBoundingClientRect();
     const mx = e.clientX - r.left, my = e.clientY - r.top;
@@ -1192,7 +1192,7 @@ export function mountTableKit(host, model, opts: any = {}) {
     hoverHit = hit;
     drawChart(chartCanvas, currentSpec);
     if (hit) {
-      const ctx = chartCanvas.getContext('2d'), th = theme();
+      const ctx = chartCanvas.getContext('2d')!, th = theme();
       drawHitHighlight(ctx, hit, th);
       drawTooltip(ctx, hit.tip, mx, my, r.width, r.height, th);
     }
@@ -1274,30 +1274,30 @@ export function mountTableKit(host, model, opts: any = {}) {
   // An ordered XY spec: points are sorted by the X column (numbers/dates
   // numerically, text alphabetically) and, for numbers/dates, positioned by
   // real value - so the X axis genuinely drives the plot.
-  function xySpec(type, xCol, yCols, extraMeta) {
+  function xySpec(type: string, xCol: number, yCols: any[], extraMeta?: any) {
     const sample = sampleRowsArr();
     const xType = colTypes[xCol];
     const xIsNumeric = xType === 'number' || xType === 'date';
-    const xKey = (r) => {
+    const xKey = (r: any[]) => {
       const raw = r[xCol];
       if (xType === 'number') { const n = toNumber(raw); return isNaN(n) ? null : n; }
       if (xType === 'date') { const t = parseDateValue(raw, monthFirst); return isNaN(t) ? null : t; }
       return raw == null ? '' : String(raw);
     };
-    const ordered = sample.slice().sort((a, b) => {
+    const ordered = sample.slice().sort((a: any[], b: any[]) => {
       const ka = xKey(a), kb = xKey(b);
       if (ka == null && kb == null) return 0;
       if (ka == null) return 1;
       if (kb == null) return -1;
       return typeof ka === 'string' ? ka.localeCompare(kb as string) : (ka as number) - (kb as number);
     });
-    const xLabels = ordered.map((r) => r[xCol]);
-    const xValues = xIsNumeric ? ordered.map((r) => xKey(r)) : undefined;
-    const series = yCols.map((c) => ({ name: headers[c], data: ordered.map((r) => toNumber(r[c])) }));
+    const xLabels = ordered.map((r: any[]) => r[xCol]);
+    const xValues = xIsNumeric ? ordered.map((r: any[]) => xKey(r)) : undefined;
+    const series = yCols.map((c: number) => ({ name: headers[c], data: ordered.map((r: any[]) => toNumber(r[c])) }));
     return { type, xLabels, xValues, series, meta: Object.assign({ sampledNote: sampleNote() }, extraMeta || {}) };
   }
 
-  function histogramSpec(col, binsWanted?) {
+  function histogramSpec(col: number, binsWanted?: number|undefined) {
     const vals = columnValues(sampleRowsArr(), col, 'number');
     if (!vals.length) return null;
     const min = Math.min(...vals), max = Math.max(...vals);
@@ -1310,9 +1310,9 @@ export function mountTableKit(host, model, opts: any = {}) {
     return { type: 'histogram', xLabels, series: [{ name: headers[col], data: counts }], meta: { xTitle: headers[col], yTitle: 'Count', sampledNote: sampleNote() } };
   }
 
-  function boxSpec(colsArr) {
+  function boxSpec(colsArr: any[]) {
     const sample = sampleRowsArr();
-    const boxes = colsArr.map((c) => {
+    const boxes = colsArr.map((c: number) => {
       const vals = columnValues(sample, c, 'number').slice().sort((a, b) => a - b);
       if (!vals.length) return null;
       const q1 = percentile(vals, 0.25), q3 = percentile(vals, 0.75), iqr = q3 - q1;
@@ -1322,19 +1322,19 @@ export function mountTableKit(host, model, opts: any = {}) {
       return { label: headers[c], min: inliers.length ? inliers[0] : vals[0], max: inliers.length ? inliers[inliers.length - 1] : vals[vals.length - 1], q1, median: percentile(vals, 0.5), q3, outliers };
     }).filter(Boolean);
     if (!boxes.length) return null;
-    return { type: 'box', xLabels: boxes.map((b) => b.label), series: [], meta: { box: boxes, yTitle: 'Value', sampledNote: sampleNote() } };
+    return { type: 'box', xLabels: boxes.map((b: any) => b.label), series: [], meta: { box: boxes, yTitle: 'Value', sampledNote: sampleNote() } };
   }
 
   function buildSpecFromPickers() {
     const type = activeChartType;
     const xRadio = xList.querySelector<HTMLElement>('input[type=radio]:checked');
-    const xCol = xRadio ? +xRadio.dataset.col : -1;
-    const yCols = [...yList.querySelectorAll<HTMLElement>('input[type=checkbox]:checked')].map((cb) => +cb.dataset.col);
+    const xCol = xRadio ? +xRadio.dataset.col! : -1;
+    const yCols = [...yList.querySelectorAll<HTMLElement>('input[type=checkbox]:checked')].map((cb) => +cb.dataset.col!);
     const sample = sampleRowsArr();
     if (type === 'heatmap') {
       const numCols = headers.map((_, i) => i).filter((i) => colTypes[i] === 'number');
       if (numCols.length < 2) return null;
-      const paired = numCols.map((c) => sample.map((r) => toNumber(r[c])));
+      const paired = numCols.map((c) => sample.map((r: any[]) => toNumber(r[c])));
       const matrix = numCols.map((_, i) => numCols.map((_, j) => (i === j ? 1 : pearson(paired[i], paired[j]))));
       return { type: 'heatmap', xLabels: numCols.map((c) => headers[c]), series: [], meta: { heatmap: { labels: numCols.map((c) => headers[c]), matrix }, sampledNote: sampleNote() } };
     }
@@ -1363,7 +1363,7 @@ export function mountTableKit(host, model, opts: any = {}) {
     const cols = visCols();
     const rowsSel = [];
     for (let rp = r0; rp <= r1 && rp < view.rowIndex.length; rp++) rowsSel.push(rows[view.rowIndex[rp]]);
-    const colsSel = [];
+    const colsSel: number[] = [];
     for (let cp = c0; cp <= c1 && cp < cols.length; cp++) colsSel.push(cols[cp]);
     if (!rowsSel.length || !colsSel.length) return null;
     const firstRow = rowsSel[0];
@@ -1422,16 +1422,16 @@ export function mountTableKit(host, model, opts: any = {}) {
     const numCols = cols.filter((c) => colTypes[c] === 'number');
     const textCols = cols.filter((c) => colTypes[c] === 'text');
 
-    const distinctOf = (c) => new Set(columnValues(sample, c, colTypes[c])).size;
+    const distinctOf = (c: number) => new Set(columnValues(sample, c, colTypes[c])).size;
     // Numeric columns, richest (most spread) first - so we favour columns that
     // actually vary over near-constant ones.
     const desc = new Map(numCols.map((c) => [c, describe(columnValues(sample, c, 'number'))]));
-    const numBySpread = numCols.slice().sort((a, b) => (desc.get(b).stddev || 0) - (desc.get(a).stddev || 0));
+    const numBySpread = numCols.slice().sort((a, b) => (desc.get(b)!.stddev || 0) - (desc.get(a)!.stddev || 0));
     // Text columns worth grouping on: repeated values, but not unique-per-row.
     const catCols = textCols.filter((c) => { const k = distinctOf(c); return k >= 2 && k <= 30; }).sort((a, b) => distinctOf(a) - distinctOf(b));
 
-    const cand = [];
-    const add = (score, label, build) => cand.push({ score, label, build });
+    const cand: { score: number; label: string; build: () => any }[] = [];
+    const add = (score: number, label: string, build: () => any) => cand.push({ score, label, build });
 
     // Time series: a numeric column over a date column (up to two numerics).
     if (dateCols.length && numCols.length) {
@@ -1458,7 +1458,7 @@ export function mountTableKit(host, model, opts: any = {}) {
     // Strongest numeric relationships - scatter, ranked by |correlation|.
     if (numCols.length >= 2) {
       const pool = numBySpread.slice(0, 6);
-      const arrs = new Map(pool.map((c) => [c, sample.map((r) => toNumber(r[c]))]));
+      const arrs = new Map(pool.map((c) => [c, sample.map((r: any[]) => toNumber(r[c]))]));
       const pairs = [];
       for (let i = 0; i < pool.length; i++) for (let j = i + 1; j < pool.length; j++) {
         const r = pearson(arrs.get(pool[i]), arrs.get(pool[j]));
@@ -1472,11 +1472,11 @@ export function mountTableKit(host, model, opts: any = {}) {
 
     // Correlation heatmap across all numeric columns.
     if (numCols.length >= 3) {
-      add(60, 'Correlation heatmap (' + numCols.length + ' numeric columns)', () => { const paired = numCols.map((c) => sample.map((r) => toNumber(r[c]))); const matrix = numCols.map((_, i) => numCols.map((_, j) => (i === j ? 1 : pearson(paired[i], paired[j])))); return { type: 'heatmap', xLabels: numCols.map((c) => headers[c]), series: [], meta: { heatmap: { labels: numCols.map((c) => headers[c]), matrix }, sampledNote: sampleNote() } }; });
+      add(60, 'Correlation heatmap (' + numCols.length + ' numeric columns)', () => { const paired = numCols.map((c) => sample.map((r: any[]) => toNumber(r[c]))); const matrix = numCols.map((_, i) => numCols.map((_, j) => (i === j ? 1 : pearson(paired[i], paired[j])))); return { type: 'heatmap', xLabels: numCols.map((c) => headers[c]), series: [], meta: { heatmap: { labels: numCols.map((c) => headers[c]), matrix }, sampledNote: sampleNote() } }; });
     }
 
     // Distribution of the most spread-out numeric columns.
-    numBySpread.filter((c) => desc.get(c).distinct > 5).slice(0, 2).forEach((c, i) => {
+    numBySpread.filter((c) => desc.get(c)!.distinct > 5).slice(0, 2).forEach((c, i) => {
       add(46 - i, 'Histogram: ' + headers[c], () => histogramSpec(c));
     });
 
@@ -1507,7 +1507,7 @@ export function mountTableKit(host, model, opts: any = {}) {
     suggRow.hidden = shown.length === 0;
   }
 
-  let gridApi = null;
+  let gridApi: any = null;
   function applyView() { computeRowIndex(); structuralRefresh(); updateStatsBar(); redraw(); }
   function structuralRefresh() { if (gridApi) { gridApi.renderHeader(); gridApi.renderBody(); } }
   function computeRowIndex() {
@@ -1538,7 +1538,7 @@ export function mountTableKit(host, model, opts: any = {}) {
     }
     if (view.sort.dir !== 0 && view.sort.col >= 0) {
       const c = view.sort.col, type = colTypes[c], dir = view.sort.dir;
-      const key = (i) => {
+      const key = (i: number) => {
         const raw = (rows[i][c] || '').trim();
         if (raw === '') return null;
         if (type === 'number') { const n = toNumber(raw); return isNaN(n) ? null : n; }

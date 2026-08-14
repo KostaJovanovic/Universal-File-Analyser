@@ -7,7 +7,7 @@ import {
   computeStftComplex, combineStftToDb,
   frequencyTicks, timeTicks, formatHz, formatTime
 } from './spectrogram.js';
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, errorCard, integrityCard, downloadBlob, inlineLoader, asciiBar, yieldToMain, afterPaint } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, errorCard, integrityCard, downloadBlob, inlineLoader, asciiBar, yieldToMain, afterPaint, type ElChild } from '../core/util.js';
 import { computeStats, computeStereoStats } from './audio-analysis.js';
 import { peekContainer, adtsToM4a, readTagBPM, extractCoverArt, readAudioTags } from './audio-codec.js';
 // Only the cheap read-the-spectrum verdicts are called from here now; the nine
@@ -27,7 +27,7 @@ import { DFN_MODEL } from '../lib/dfn-model.js';
 // transport from this module.
 export { makePlayer };
 
-let audioCtx = null;
+let audioCtx: AudioContext|null = null;
 function ctx() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   return audioCtx;
@@ -45,11 +45,11 @@ function ctx() {
 // A task tagged with an already-aborted signal is skipped without running at all, so a
 // superseded run's still-queued work evaporates instead of piling on behind the new
 // run. The chain is kept alive past a failed/aborted task so later tasks still run.
-const aborted = (signal) => signal && signal.aborted;
+const aborted = (signal: AbortSignal) => signal && signal.aborted;
 function AbortErr() { return new DOMException('aborted', 'AbortError'); }
 const runAudioTask = (() => {
   let tail = Promise.resolve();
-  return (task, signal) => {
+  return <T,>(task: () => T | Promise<T>, signal: AbortSignal): Promise<T> => {
     const result = tail.then(() => { if (aborted(signal)) throw AbortErr(); return task(); });
     tail = result.then(() => {}, () => {});
     return result;
@@ -60,7 +60,7 @@ const runAudioTask = (() => {
 // after ~sliceMs of work, and BAILS (throws AbortError) the instant its signal is
 // aborted - so a pass belonging to a replaced analysis stops at once rather than
 // draining alongside the new one. This is what stops the "still runs in parallel".
-async function coopLoop(len, body, signal, sliceMs = 24) {
+async function coopLoop(len: number, body: (s: number, e: number) => void, signal: AbortSignal, sliceMs = 24) {
   const STEP = 1 << 18;   // 262k items per micro-step between time checks
   let t = performance.now();
   for (let s = 0; s < len; s += STEP) {
@@ -74,10 +74,10 @@ async function coopLoop(len, body, signal, sliceMs = 24) {
 }
 
 // Merge all channels to mono (accumulate then scale), in yielding, cancellable chunks.
-async function getMonoCoop(audioBuffer, signal) {
+async function getMonoCoop(audioBuffer: AudioBuffer, signal: AbortSignal) {
   const n = audioBuffer.length, nc = audioBuffer.numberOfChannels;
   const out = new Float32Array(n);
-  const chans = [];
+  const chans: any[] = [];
   for (let c = 0; c < nc; c++) chans.push(audioBuffer.getChannelData(c));
   const k = 1 / nc;
   await coopLoop(n, (s, e) => {
@@ -92,7 +92,7 @@ async function getMonoCoop(audioBuffer, signal) {
 
 // Cooperative computeStats: same numbers as computeStats() in audio-analysis.js, in
 // yielding, cancellable chunks. (The sync export is still used by compare and others.)
-async function computeStatsCoop(samples, signal) {
+async function computeStatsCoop(samples: Float32Array, signal: AbortSignal) {
   let peak = 0, sumSq = 0, clipped = 0;
   await coopLoop(samples.length, (s, e) => {
     for (let i = s; i < e; i++) {
@@ -108,7 +108,7 @@ async function computeStatsCoop(samples, signal) {
 
 // Cooperative loudestMoment: same result as loudestMoment(), yielding periodically and
 // bailing on abort. Block-aligned so no 50 ms block is split across a chunk edge.
-async function loudestMomentCoop(samples, sampleRate, signal) {
+async function loudestMomentCoop(samples: Float32Array, sampleRate: number, signal: AbortSignal) {
   if (!samples || !samples.length || !sampleRate) return null;
   const block = Math.max(1, Math.round(sampleRate * 0.05));
   let bestMeanSq = -1, bestStart = 0, bc = 0, t = performance.now();
@@ -128,12 +128,12 @@ async function loudestMomentCoop(samples, sampleRate, signal) {
 }
 
 // Human-readable speaker layout for a given channel count.
-function describeChannels(n) {
+function describeChannels(n: number) {
   const map = {
     1: '  (Mono)', 2: '  (Stereo)', 3: '  (2.1)', 4: '  (Quad / 4.0)',
     6: '  (5.1 surround)', 7: '  (6.1 surround)', 8: '  (7.1 surround)',
     10: '  (7.1.2 Atmos)', 12: '  (7.1.4 Atmos)', 16: '  (9.1.6 Atmos)'
-  };
+  } as Record<number, string>;
   return map[n] || (n > 2 ? '  (' + n + '-channel surround)' : '');
 }
 
@@ -141,7 +141,7 @@ function describeChannels(n) {
 // the Web Audio decoder exposes for that count. Returns { short, full } per index;
 // unknown layouts fall back to plain "Ch N". Order follows the file's declared
 // layout, so it's a best-effort label rather than a guarantee.
-function channelLabels(n) {
+function channelLabels(n: number) {
   const layouts = {
     1: [['M', 'Mono']],
     2: [['L', 'Left'], ['R', 'Right']],
@@ -150,16 +150,16 @@ function channelLabels(n) {
     6: [['L', 'Left'], ['R', 'Right'], ['C', 'Centre'], ['LFE', 'LFE (sub-bass)'], ['SL', 'Surround left'], ['SR', 'Surround right']],
     8: [['L', 'Left'], ['R', 'Right'], ['C', 'Centre'], ['LFE', 'LFE (sub-bass)'], ['SL', 'Surround left'], ['SR', 'Surround right'], ['RL', 'Rear left'], ['RR', 'Rear right']]
   };
-  const known = layouts[n];
+  const known = (layouts as Record<number, string[][]>)[n];
   if (known) return known.map(([short, full]) => ({ short, full }));
-  const out = [];
+  const out: { short: string; full: string }[] = [];
   for (let i = 0; i < n; i++) out.push({ short: 'Ch ' + (i + 1), full: 'Channel ' + (i + 1) });
   return out;
 }
 
 // Build the switchable-signal list for a decoded buffer: a "Mix" downmix first (the
 // default), then one entry per discrete channel. Each is { short, full, data }.
-function channelOptions(audioBuffer, mono) {
+function channelOptions(audioBuffer: AudioBuffer, mono: Float32Array<ArrayBuffer>) {
   const n = audioBuffer.numberOfChannels;
   if (n < 2) return [{ short: 'Mix', full: 'Mono', data: mono }];
   const labels = channelLabels(n);
@@ -174,10 +174,10 @@ function channelOptions(audioBuffer, mono) {
 // maps a pointer x to a seek (and repositions the line). Works for mouse + touch.
 // Window listeners are attached only for the duration of a drag and removed on
 // release, so they don't accumulate as new files are analysed.
-function attachScrub(lineEl, seekFromClientX) {
+function attachScrub(lineEl: HTMLDivElement, seekFromClientX: (x: number) => void) {
   lineEl.classList.add('is-grabbable');
 
-  function onMouseMove(e) { seekFromClientX(e.clientX); }
+  function onMouseMove(e: MouseEvent) { seekFromClientX(e.clientX); }
   function onMouseUp() {
     window.removeEventListener('mousemove', onMouseMove);
     window.removeEventListener('mouseup', onMouseUp);
@@ -189,7 +189,7 @@ function attachScrub(lineEl, seekFromClientX) {
     window.addEventListener('mouseup', onMouseUp);
   });
 
-  function onTouchMove(e) {
+  function onTouchMove(e: TouchEvent) {
     if (e.touches[0]) { e.preventDefault(); seekFromClientX(e.touches[0].clientX); }
   }
   function onTouchEnd() {
@@ -204,9 +204,9 @@ function attachScrub(lineEl, seekFromClientX) {
   }, { passive: false });
 }
 
-function renderVectorscope(canvas, left, right) {
+function renderVectorscope(canvas: HTMLCanvasElement, left: string|any[], right: string|any[]) {
   const size = canvas.width;
-  const ctxC = canvas.getContext('2d');
+  const ctxC = canvas.getContext('2d')!;
   ctxC.fillStyle = '#1a1a1a';
   ctxC.fillRect(0, 0, size, size);
 
@@ -268,7 +268,7 @@ function renderVectorscope(canvas, left, right) {
 // O(samples.length) sweep here is the waveform's whole cost; split out from the draw
 // so it can run either synchronously (zoom redraws over a smaller window) or in
 // cooperative chunks (the initial full-length pass over a multi-hour buffer).
-function reduceWave(samples, w, mins, maxs, clips, x0, x1) {
+function reduceWave(samples: Float32Array, w: number, mins: Float32Array, maxs: Float32Array, clips: Uint8Array, x0: number, x1: number) {
   const spp = samples.length / w;
   for (let x = x0; x < x1; x++) {
     const start = Math.floor(x * spp);
@@ -286,7 +286,7 @@ function reduceWave(samples, w, mins, maxs, clips, x0, x1) {
 
 // Cooperative version of the reduction: yields every ~24 ms and bails on abort so a
 // whole-file waveform doesn't freeze the page, nor keep running for a replaced file.
-async function reduceWaveCoop(samples, w, signal) {
+async function reduceWaveCoop(samples: Float32Array, w: number, signal: AbortSignal) {
   const mins = new Float32Array(w), maxs = new Float32Array(w), clips = new Uint8Array(w);
   let t = performance.now();
   for (let x = 0; x < w; x++) {
@@ -299,7 +299,7 @@ async function reduceWaveCoop(samples, w, signal) {
   return { mins, maxs, clips };
 }
 
-function drawWaveBg(ctxC, w, h) {
+function drawWaveBg(ctxC: CanvasRenderingContext2D, w: number, h: number) {
   ctxC.fillStyle = '#1a1a1a';
   ctxC.fillRect(0, 0, w, h);
   ctxC.strokeStyle = '#445f74';
@@ -311,8 +311,8 @@ function drawWaveBg(ctxC, w, h) {
 }
 
 // Draw the bars + clip hatching from precomputed per-column peaks.
-function drawWavePeaks(canvas, mins, maxs, clips) {
-  const ctxC = canvas.getContext('2d');
+function drawWavePeaks(canvas: HTMLCanvasElement, mins: Float32Array, maxs: Float32Array, clips: Uint8Array) {
+  const ctxC = canvas.getContext('2d')!;
   const w = canvas.width, h = canvas.height;
   drawWaveBg(ctxC, w, h);
   const clipRegions = [];
@@ -351,15 +351,15 @@ function drawWavePeaks(canvas, mins, maxs, clips) {
 // Synchronous whole-in-one render, used by zoom/selection redraws (which operate on
 // the smaller visible window). The initial full-length render uses the cooperative
 // path in buildWaveformCard instead.
-function renderWaveform(canvas, samples) {
+function renderWaveform(canvas: HTMLCanvasElement, samples: Float32Array) {
   const w = canvas.width, h = canvas.height;
-  if (!samples.length) { drawWaveBg(canvas.getContext('2d'), w, h); return; }
+  if (!samples.length) { drawWaveBg(canvas.getContext('2d')!, w, h); return; }
   const mins = new Float32Array(w), maxs = new Float32Array(w), clips = new Uint8Array(w);
   reduceWave(samples, w, mins, maxs, clips, 0, w);
   drawWavePeaks(canvas, mins, maxs, clips);
 }
 
-function buildFreqAxis(axisEl, sampleRate, scale) {
+function buildFreqAxis(axisEl: HTMLDivElement, sampleRate: number, scale: string) {
   axisEl.innerHTML = '';
   const minHz = scale === 'log' ? 10 : 0;
   const maxHz = sampleRate / 2;
@@ -386,7 +386,7 @@ function buildFreqAxis(axisEl, sampleRate, scale) {
   }
 }
 
-function buildTimeAxis(axisEl, durationSec) {
+function buildTimeAxis(axisEl: HTMLDivElement, durationSec: number) {
   axisEl.innerHTML = '';
   const ticks = timeTicks(durationSec);
   for (const t of ticks) {
@@ -402,7 +402,7 @@ function buildTimeAxis(axisEl, durationSec) {
 // the "when is it loudest, and how loud" figure shown as the Peak stat - independent of FFT
 // settings, so it's computed once per clip. Block RMS (not a single sample peak)
 // so a lone click doesn't outrank a sustained loud passage.
-function loudestMoment(samples, sampleRate) {
+function loudestMoment(samples: Float32Array, sampleRate: number) {
   if (!samples || !samples.length || !sampleRate) return null;
   const block = Math.max(1, Math.round(sampleRate * 0.05));
   let bestMeanSq = -1, bestStart = 0;
@@ -430,7 +430,7 @@ function loudestMoment(samples, sampleRate) {
 //              would just report the -240 dB epsilon floor of empty bins (~190 dB).
 // O(frames*bins), same order as the render pass.
 const SIGNAL_DB = 60;
-function specStats(spec) {
+function specStats(spec: any) {
   const { frames, bins, sampleRate, data } = spec;
   if (!frames || !bins) return { peakHz: null, lowHz: null, highHz: null, dynRange: null };
   const nyq = sampleRate / 2;
@@ -462,7 +462,7 @@ function specStats(spec) {
 }
 
 // m:ss.d clock for a time in seconds.
-function fmtClock(s) {
+function fmtClock(s: number|null) {
   if (s == null || !isFinite(s)) return '-';
   const m = Math.floor(s / 60);
   const sec = s - m * 60;
@@ -489,7 +489,7 @@ function specStatsHead() {
   ]);
 }
 
-function buildSpecStats(statsEl, st, fftSize, sampleRate, loud) {
+function buildSpecStats(statsEl: HTMLDivElement, st: any, fftSize: number, sampleRate: number, loud: any) {
   const hzBin = sampleRate / fftSize;
   const msHop = Math.floor(fftSize / 4) / sampleRate * 1000;
   // Rendered as the site's standard label|value findings table (.anr-readout),
@@ -516,16 +516,16 @@ function buildSpecStats(statsEl, st, fftSize, sampleRate, loud) {
 // Shared spectrogram-control builders, used by both the file panel and the live
 // card (previously duplicated verbatim in each). An inline-flex SVG icon span, a
 // labelled control cell, and a captioned segmented group.
-const specIco = (svg) => el('span', { html: svg, style: 'display:inline-flex;align-items:center;vertical-align:middle;margin-right:6px;' });
-const specCtl = (label, ...nodes) => el('div', { class: 'anr-control' }, label ? [el('label', {}, label), ...nodes] : nodes);
-const specGroup = (title, items) => el('div', { class: 'anr-control-group' }, [
+const specIco = (svg: string) => el('span', { html: svg, style: 'display:inline-flex;align-items:center;vertical-align:middle;margin-right:6px;' });
+const specCtl = (label: ElChild | ElChild[], ...nodes: any[]) => el('div', { class: 'anr-control' }, label ? [el('label', {}, label), ...nodes] : nodes);
+const specGroup = (title: ElChild | ElChild[], items: ElChild | ElChild[]) => el('div', { class: 'anr-control-group' }, [
   el('span', { class: 'anr-control-group-label' }, title),
   el('div', { class: 'anr-control-group-items' }, items),
 ]);
 // Collapsible "Advanced" disclosure for the analysis params (Mode / FFT /
 // Window). Spans the full controls-row width so it opens onto its own line
 // under the View controls, using the site's standard <details> +/- pattern.
-const specAdvanced = (items) => el('details', { class: 'anr-spec-advanced' }, [
+const specAdvanced = (items: ElChild | ElChild[]) => el('details', { class: 'anr-spec-advanced' }, [
   el('summary', {}, 'Advanced'),
   el('div', { class: 'anr-control-group-items' }, items),
 ]);
@@ -535,7 +535,7 @@ const specAdvanced = (items) => el('details', { class: 'anr-spec-advanced' }, [
 // native scroll, so wheel/trackpad/playhead-follow scrolling all stay in sync.
 // A leading spacer matches the y-axis column so the track aligns under the
 // canvas, not the axis labels. Returns { el, update }.
-function makeSpecScrollbar(scrollEl) {
+function makeSpecScrollbar(scrollEl: HTMLDivElement) {
   const thumb = el('div', { class: 'anr-spec-sb-thumb' });
   const track = el('div', { class: 'anr-spec-sb-track' }, [thumb]);
   const root = el('div', { class: 'anr-spec-sb is-hidden' }, [
@@ -583,7 +583,7 @@ function makeSpecScrollbar(scrollEl) {
     const pos = Math.max(0, Math.min(maxThumb, startPos + (e.clientX - dragStartX)));
     scrollEl.scrollLeft = (pos / maxThumb) * maxScroll;
   });
-  const endDrag = (e) => {
+  const endDrag = (e: PointerEvent) => {
     if (!dragging) return;
     dragging = false;
     track.classList.remove('is-dragging');
@@ -603,8 +603,8 @@ function makeSpecScrollbar(scrollEl) {
   return { el: root, update };
 }
 // Save the canvas as a PNG download (shared by both spectrogram panels).
-function specSavePng(canvas, basename) {
-  canvas.toBlob((blob) => {
+function specSavePng(canvas: HTMLCanvasElement, basename: string) {
+  canvas.toBlob((blob: Blob|null) => {
     if (!blob) return;
     downloadBlob((basename || 'spectrogram') + '.png', blob);
   }, 'image/png');
@@ -613,10 +613,10 @@ function specSavePng(canvas, basename) {
 // Modal: before saving the PNG, prompt for the export Height + Zoom rather than
 // locking the download to whatever the panel currently shows. Pre-filled from the
 // live values; calls onConfirm(heightStr, zoomStr) with the chosen options.
-function openSpecSaveModal(heightOpts, zoomOpts, curHeight, curZoom, onConfirm) {
-  const hSel = el('select', { class: 'anr-spec-save-select' }, heightOpts.map((v) => el('option', { value: v }, v + 'px')));
+function openSpecSaveModal(heightOpts: any[], zoomOpts: any[], curHeight: string, curZoom: string, onConfirm: (h: string, z: string) => void) {
+  const hSel = el('select', { class: 'anr-spec-save-select' }, heightOpts.map((v: string) => el('option', { value: v }, v + 'px')));
   hSel.value = heightOpts.indexOf(curHeight) >= 0 ? curHeight : '720';
-  const zSel = el('select', { class: 'anr-spec-save-select' }, zoomOpts.map((v) => el('option', { value: v }, v + 'x')));
+  const zSel = el('select', { class: 'anr-spec-save-select' }, zoomOpts.map((v: string) => el('option', { value: v }, v + 'x')));
   zSel.value = zoomOpts.indexOf(curZoom) >= 0 ? curZoom : '1';
 
   const fields = el('div', { class: 'anr-spec-save-fields' }, [
@@ -642,7 +642,7 @@ function openSpecSaveModal(heightOpts, zoomOpts, curHeight, curZoom, onConfirm) 
     setTimeout(() => overlay.remove(), 200);
     document.removeEventListener('keydown', onKey);
   };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
   cancelBtn.addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey);
@@ -653,13 +653,13 @@ function openSpecSaveModal(heightOpts, zoomOpts, curHeight, curZoom, onConfirm) 
 // Wire fullscreen for a spectrogram card: the toggle button, a floating ✕ exit
 // button (shown only in fullscreen via CSS), and the fullscreenchange handlers.
 // `onChange(isFullscreen)` lets each panel do its own resize. Shared by both panels.
-function attachFullscreen(card, fsBtn, allowFs, sig, onChange) {
+function attachFullscreen(card: HTMLElement, fsBtn: HTMLButtonElement|null, allowFs: boolean, sig: AbortSignal|null|undefined, onChange: (fs: boolean) => void) {
   if (!allowFs || !fsBtn) return () => {};
   const isFs = () => document.fullscreenElement === card;
   const exitFs = () => { if (document.fullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document); };
   fsBtn.addEventListener('click', () => {
     if (document.fullscreenElement) exitFs();
-    else (card.requestFullscreen || card.webkitRequestFullscreen).call(card);
+    else (card.requestFullscreen || (card as any).webkitRequestFullscreen).call(card);
   });
   const fsClose = el('button', { type: 'button', class: 'anr-spec-fs-close', title: 'Exit fullscreen (Esc)', 'aria-label': 'Exit fullscreen' }, '✕');
   fsClose.addEventListener('click', exitFs);
@@ -681,7 +681,7 @@ function attachFullscreen(card, fsBtn, allowFs, sig, onChange) {
 
 // --- Custom player (replaces native <audio>/<video> controls) ---
 // --- Spectrogram UI panel (shared for file + recording) ---
-export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
+export function makeSpectrogramPanel(samples: Float32Array<ArrayBuffer>, sampleRate: number, opts: any = {}) {
   // firstPaint rides on the card so callers can await the deferred compute.
   const card = el('div', { class: 'anr-card anr-spec-card anr-spec-fillable' }) as
     HTMLDivElement & { firstPaint?: Promise<void> };
@@ -696,7 +696,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
   // isolate-band overlays all key off this so they can't drift. Linear scale floors
   // at 0. Kept in sync with buildFreqAxis's own literal.
   const SPEC_LOG_MIN = 10;
-  const isoBands = [];   // { lo, hi, el, row, fromIn, toIn }
+  const isoBands: any[] = [];   // { lo, hi, el, row, fromIn, toIn }
   let isoActive = false;
   // 'bands' = the frequency band-stop tool (manual bands + solo presets, which are
   // just complement cuts). 'karaoke' = centre-cancel vocal removal (stereo L-R).
@@ -704,7 +704,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
   // The karaoke "deadzone" overlay (assigned when the interactive tool wires up).
   // Karaoke cancels centre content across the whole spectrum, but the removed
   // energy that matters is the vocal, so we draw it over the vocal band.
-  let karaokeOverlay = null;
+  let karaokeOverlay: HTMLDivElement|null = null;
   const KARAOKE_LO = 300, KARAOKE_HI = 3400;
 
   const [specH, specHelp] = h3help('Spectrogram',
@@ -770,15 +770,15 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     revBtn.addEventListener('click', () => {
       revBtn.disabled = true;
       // Only the trailing text node - keep the icon in place.
-      revBtn.lastChild.nodeValue = 'Reversing…';
+      revBtn.lastChild!.nodeValue = 'Reversing…';
       // Defer a frame so that label repaints before the synchronous reverse.
       setTimeout(() => {
         let blob;
         try { blob = reverseAudioBufferToWav(opts.audioBuffer); }
-        catch (_) { revBtn.disabled = false; revBtn.lastChild.nodeValue = 'Reverse failed'; return; }
+        catch (_) { revBtn.disabled = false; revBtn.lastChild!.nodeValue = 'Reverse failed'; return; }
         const f = new File([blob], (opts.basename || 'audio') + '_reversed.wav', { type: 'audio/wav' });
         if (window._anrHandleFile) window._anrHandleFile(f);
-        else { revBtn.disabled = false; revBtn.lastChild.nodeValue = 'Reverse'; }
+        else { revBtn.disabled = false; revBtn.lastChild!.nodeValue = 'Reverse'; }
       }, 0);
     });
   }
@@ -842,20 +842,20 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
   // playhead and capture time-axis clicks while its audio plays. Declared HERE,
   // above the playhead block below, because that block assigns driveSpecLine
   // synchronously - a later `let` would be a temporal-dead-zone ReferenceError.
-  let blendSpec = null;         // recombined spec while the blend owns the canvas, else null
-  let driveSpecLine = null;     // (frac, playing, animate) => moves the main playhead
+  let blendSpec: any = null;         // recombined spec while the blend owns the canvas, else null
+  let driveSpecLine: ((frac: number, playing: boolean, animate: boolean) => void)|null = null;     // (frac, playing, animate) => moves the main playhead
   let blendActive = false;      // true while the blend owns the spectrogram (analysed -> cleanup)
-  let blendSeek = null;         // (frac) => seek the blend; while active, canvas/playhead seeks route here
-  let blendPause = null;        // () => pause the blend (mutual exclusion with the file transport)
+  let blendSeek: ((frac: number) => void)|null = null;         // (frac) => seek the blend; while active, canvas/playhead seeks route here
+  let blendPause: (() => void)|null = null;        // () => pause the blend (mutual exclusion with the file transport)
   // Tears the blend view down (stops playback, frees the stems, hands the canvas
   // back). Assigned by the AI-separation block far below, but declared HERE: the
   // abort handler at the end of this function calls it too, and while it lived in
   // the inner block that call was an out-of-scope ReferenceError that killed the
   // rest of the abort path (the media stopper was never unregistered).
-  let blendCleanup = null;
-  let specTransport = null;     // the under-spectrogram makePlayer; the blend delegates to it while active
-  let blendApplyIso = null;     // set while blend owns audio: re-route its stems through the isolate band-stop
-  let blendReanalyse = null;    // set while blend owns the canvas: re-run the stem STFTs for new fft/window/mode
+  let blendCleanup: (() => void)|null = null;
+  let specTransport: HTMLDivElement|null = null;     // the under-spectrogram makePlayer; the blend delegates to it while active
+  let blendApplyIso: (() => void)|null = null;     // set while blend owns audio: re-route its stems through the isolate band-stop
+  let blendReanalyse: (() => void)|null = null;    // set while blend owns the canvas: re-run the stem STFTs for new fft/window/mode
 
   // The blend plays through raw Web Audio buffer sources (not a media element), so
   // clearResultsUI's element pause doesn't reach it - register a stopper it calls
@@ -867,7 +867,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     const specLine = el('div', { class: 'anr-playhead' });
     canvasWrap.appendChild(specLine);
     const audioDur = () => opts.audioEl.duration || (samples.length / sampleRate);
-    function scrollToLine(park) {
+    function scrollToLine(park: boolean) {
       if (canvas.clientWidth <= scrollEl.clientWidth) return;
       const linePos = canvas.clientWidth * parseFloat(specLine.style.left || '0') / 100;
       const maxScroll = scrollEl.scrollWidth - scrollEl.clientWidth;
@@ -888,14 +888,14 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     // Move the playhead to a playback fraction. `animate` lets the line ease into
     // place for discrete seeks while paused; during live playback it tracks
     // frame-by-frame with no transition so it can't lag behind the audio.
-    function moveLine(frac, playing, animate) {
+    function moveLine(frac: number, playing: boolean, animate: boolean) {
       specLine.style.transition = animate ? '' : 'none';
       specLine.style.left = (frac * 100) + '%';
       scrollToLine(playing);
     }
     // The blend player (renderBlend) drives the SAME line while its stems play.
     driveSpecLine = moveLine;
-    function updateLine(animate) {
+    function updateLine(animate: boolean) {
       const d = audioDur();
       moveLine(d > 0 ? opts.audioEl.currentTime / d : 0, !opts.audioEl.paused, animate);
     }
@@ -915,7 +915,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       opts.audioEl.currentTime = frac * audioDur();
     });
     // Grab the playhead line and drag to scrub (snappy - no easing while dragging).
-    attachScrub(specLine, (clientX) => {
+    attachScrub(specLine, (clientX: number) => {
       const rect = canvas.getBoundingClientRect();
       const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
       if (blendActive && blendSeek) { blendSeek(frac); return; }   // blend drives the line back itself
@@ -932,7 +932,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
   // plain click seeking. Pointer-down on the playhead is left to its own scrub handler,
   // and touch keeps the browser's native horizontal scroll.
   {
-    let pid = null, startX = 0, startScroll = 0;
+    let pid: number|null = null, startX = 0, startScroll = 0;
     const THRESH = 4;
     scrollEl.addEventListener('pointerdown', (e) => {
       if (isoActive) return;                         // isolate mode captures the drag itself
@@ -955,7 +955,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       scrollEl.scrollLeft = Math.max(0, Math.min(maxScroll, startScroll - dx));
       e.preventDefault();
     });
-    const endPan = (e) => {
+    const endPan = (e: PointerEvent) => {
       if (pid === null || (e && e.pointerId !== pid)) return;
       try { scrollEl.releasePointerCapture(pid); } catch (_) {}
       pid = null;
@@ -1006,7 +1006,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     mode: 'stft', scale: 'log', cmap: 'magma', fftSize: 2048, winName: 'hann',
     zoom: 1, height: 320 as number | 'fill', dbFloor: -90
   };
-  let cached = null;
+  let cached: any = null;
   // Loudest-moment figure for the Peak stat - signal-only, so compute it once. The
   // initial render passes it in precomputed (cooperatively, off the critical path);
   // channel switches, a deliberate action on a loaded file, compute it inline.
@@ -1015,8 +1015,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
   // Resolves after the first recompute() paints. renderAudio awaits this so the
   // bottom "Reading…" loader stays up until the spectrogram is actually on screen
   // (the panel computes on a deferred setTimeout, after renderAudio returns).
-  let _resolveFirstPaint;
-  card.firstPaint = new Promise((res) => { _resolveFirstPaint = res; });
+  let _resolveFirstPaint: ((v?: any) => void)|null;
+  card.firstPaint = new Promise<void>((res) => { _resolveFirstPaint = res; });
   function markFirstPaint() {
     if (_resolveFirstPaint) { const r = _resolveFirstPaint; _resolveFirstPaint = null; r(); }
   }
@@ -1084,7 +1084,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     const w = Math.max(canvas.width || 0, SPEC_FRAME_FLOOR);
     return Math.min(16384, 2 ** Math.ceil(Math.log2(w)));
   }
-  function hopFor(fftSize) {
+  function hopFor(fftSize: number) {
     const natural = Math.floor(fftSize / 4);
     const spread = Math.ceil((samples.length - fftSize) / Math.max(1, targetFrames() - 1));
     return Math.max(natural, spread);
@@ -1195,8 +1195,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
   // immediately so the thumb tracks the pointer, and coalesce the redraw to at
   // most one per animation frame.
   let sensRaf = 0, sensManual = false;
-  function applySensitivity(v) {
-    v = Math.max(0, Math.min(300, Math.round(v)));
+  function applySensitivity(raw: number) {
+    const v = Math.max(0, Math.min(300, Math.round(raw)));
     sensIn.value = String(v);
     state.dbFloor = -60 - (v / 100) * 30;   // 0% -> -60 dB, 100% -> -90 dB, 300% -> -150 dB
     sensOut.textContent = v + '%';
@@ -1227,9 +1227,9 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
   // 100% leaves sensitivity at its 100% floor). Skipped when this panel isn't
   // driving live audio (no volume control to follow).
   if (opts.audioEl) {
-    const mirror = (level) => { if (!sensManual) applySensitivity(Math.max(100, Math.min(225, Math.round(level * 100)))); };
+    const mirror = (level: number) => { if (!sensManual) applySensitivity(Math.max(100, Math.min(225, Math.round(level * 100)))); };
     mirror(sharedVolume());                 // adopt an already-boosted level on mount
-    const unsub = onSharedVolume((level) => {
+    const unsub = onSharedVolume((level: number) => {
       if (!sensIn.isConnected) { unsub(); return; }   // panel gone - drop the subscription
       mirror(level);
     });
@@ -1240,7 +1240,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     const zoomOpts = ['1', '1.5', '2', '3', '4', '6', '8', '12', '16', '24', '32', '48'];
     const curH = (state.height === 'fill' || !state.height) ? '720' : String(state.height);
     const curZ = String(state.zoom);
-    openSpecSaveModal(heightOpts, zoomOpts, curH, curZ, (hVal, zVal) => {
+    openSpecSaveModal(heightOpts, zoomOpts, curH, curZ, (hVal: string, zVal: string) => {
       // Render the chosen size off-screen from the cached spectrum so the export
       // honours the picked Height/Zoom without disturbing the on-screen panel.
       if (!cached || !cached.spec) { specSavePng(canvas, opts.basename); return; }
@@ -1257,7 +1257,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
   // Frequency <-> vertical-fraction mapping, mirroring renderSpectrogram's y-axis
   // (SPEC_LOG_MIN 10 Hz floor .. Nyquist, log or linear). frac is 0 at the bottom,
   // 1 at the top.
-  function freqToFrac(hz) {
+  function freqToFrac(hz: number) {
     hz = Math.max(1, Math.min(NYQ, hz));
     if (state.scale === 'log') {
       const lo = Math.log10(SPEC_LOG_MIN), hi = Math.log10(Math.max(SPEC_LOG_MIN + 1, NYQ));
@@ -1265,7 +1265,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     }
     return Math.max(0, Math.min(1, hz / NYQ));
   }
-  function fracToFreq(frac) {
+  function fracToFreq(frac: number) {
     frac = Math.max(0, Math.min(1, frac));
     if (state.scale === 'log') {
       const lo = Math.log10(SPEC_LOG_MIN), hi = Math.log10(Math.max(SPEC_LOG_MIN + 1, NYQ));
@@ -1294,7 +1294,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
   // is driving a file (opts.audioEl). Without one, the helpers above stay harmless
   // no-ops (isoBands never gets entries).
   if (opts.audioEl && isoBtn) {
-    const clampHz = (v) => Math.max(1, Math.min(Math.round(NYQ), Math.round(+v || 0)));
+    const clampHz = (v: string|number) => Math.max(1, Math.min(Math.round(NYQ), Math.round(+v || 0)));
 
     // Overlay layer over the canvas (pointer-events off - the drag handler lives on
     // canvasWrap). Hidden until isolate is switched on.
@@ -1317,7 +1317,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     // it can be a child of the panel before the band helpers exist).
     const presetBar = el('div', { class: 'anr-iso-presets' });
     const presetBtns: any = {};
-    let activePreset = null, applyingPreset = false;
+    let activePreset: string|null = null, applyingPreset = false;
     // AI stem separation: a real model, unlike the EQ presets. Wired in the block
     // further down; the elements live here so they can sit inside the panel.
     // Lives in the Actions row under the spectrogram, beside Isolate - so it takes
@@ -1399,7 +1399,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     ]);
     // Standard / Lite / denoise act as one visual radio group: clicking any of them
     // highlights it (black) and drops whichever was selected before.
-    function setAiSelection(sel) {
+    function setAiSelection(sel: HTMLButtonElement) {
       for (const x of Object.values(aiModelBtns)) x.classList.toggle('is-active', x === sel);
       denoiseBtn.classList.toggle('is-active', sel === denoiseBtn);
     }
@@ -1449,7 +1449,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     // one. audioNode.boostGain is our input tap - we own its OUTPUT (the connection
     // to the filters/destination) but never touch source -> boostGain, so the volume
     // boost keeps working while isolation is active.
-    let audioNode = null, filterNodes = [];
+    let audioNode: any = null, filterNodes: any[] = [];
     // Channel-solo selection for PLAYBACK (from the Channel picker): null = normal
     // stereo (Mix), else the source channel index to solo. The panel is rebuilt per
     // channel switch, so this is fixed for the panel's life.
@@ -1483,12 +1483,12 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     // -3 dB right at the cutoff) so the reject is deep and near-rectangular - a
     // shallower 24 dB/oct slope left an audible/visible transition band that made a
     // solo look like the whole spectrum survived.
-    function buildStops(c, input, merged, track?) {
+    function buildStops(c: BaseAudioContext, input: AudioNode, merged: number[][], track?: any[]|undefined) {
       // Pole Qs for a maximally-flat 8th-order Butterworth, as four cascaded
       // 2nd-order sections: Q_k = 1 / (2 cos((2k+1)pi/16)).
       const BUTTER8_Q = [0.50979558, 0.60134489, 0.89997622, 2.56291540];
-      const cascade = (type, freq) => {
-        let first = null, prev = null;
+      const cascade = (type: BiquadFilterType, freq: number) => {
+        let first: BiquadFilterNode|null = null, prev: BiquadFilterNode|null = null;
         for (const q of BUTTER8_Q) {
           const f = c.createBiquadFilter();
           f.type = type; f.frequency.value = freq; f.Q.value = q;
@@ -1503,16 +1503,16 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
         const sum = c.createGain();
         if (track) track.push(sum);
         const lp = cascade('lowpass', lo);
-        prev.connect(lp.first); lp.last.connect(sum);
+        prev.connect(lp.first!); lp.last!.connect(sum);
         const hp = cascade('highpass', hi);
-        prev.connect(hp.first); hp.last.connect(sum);
+        prev.connect(hp.first!); hp.last!.connect(sum);
         prev = sum;
       }
       return prev;
     }
     // Karaoke centre-cancel: mono L-R, which drops anything panned dead-centre -
     // typically the lead vocal. Needs a stereo input; the output is mono.
-    function buildKaraoke(c, input, track?) {
+    function buildKaraoke(c: BaseAudioContext, input: AudioNode, track?: any[]|undefined) {
       const splitter = c.createChannelSplitter(2);
       const inv = c.createGain(); inv.gain.value = -1;
       const sum = c.createGain();
@@ -1526,7 +1526,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     // Solo one source channel (0 = L, 1 = R, 2 = C, ...): route only that channel to
     // BOTH outputs so you actually hear it, centred. Drives the Channel picker's
     // L/R/etc. buttons - selecting a single channel now plays just that channel.
-    function buildChannelSolo(c, input, channel, track) {
+    function buildChannelSolo(c: BaseAudioContext, input: AudioNode, channel: number, track: any[]) {
       const nch = (opts.audioBuffer && opts.audioBuffer.numberOfChannels) || 2;
       const ch = Math.max(0, Math.min(nch - 1, channel));
       const splitter = c.createChannelSplitter(nch);
@@ -1553,7 +1553,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       for (const n of filterNodes) { try { n.disconnect(); } catch (_) {} }
       filterNodes = [];
       // Vocal-band deadzone indicator for karaoke mode; positionBands() places it.
-      karaokeOverlay.style.display = (isoActive && isoMode === 'karaoke') ? '' : 'none';
+      karaokeOverlay!.style.display = (isoActive && isoMode === 'karaoke') ? '' : 'none';
       if (isoActive && isoMode === 'karaoke') positionBands();
       // Channel solo first, so any frequency isolation below runs on the soloed
       // channel. When no channel is soloed this is a no-op (stage stays the tap).
@@ -1581,7 +1581,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       for (const k in presetBtns) presetBtns[k].classList.remove('is-active');
       activePreset = null;
     }
-    function removeBand(b) {
+    function removeBand(b: any) {
       const i = isoBands.indexOf(b);
       if (i < 0) return;
       isoBands.splice(i, 1);
@@ -1590,8 +1590,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       if (!applyingPreset) clearPresetHighlight();
       rebuildGraph();
     }
-    function addBandRow(b) {
-      const mk = (val) => el('input', { type: 'number', class: 'anr-iso-num', min: '1', max: String(Math.round(NYQ)), step: '1', value: String(Math.round(val)) });
+    function addBandRow(b: any) {
+      const mk = (val: number) => el('input', { type: 'number', class: 'anr-iso-num', min: '1', max: String(Math.round(NYQ)), step: '1', value: String(Math.round(val)) });
       const fromIn = mk(b.lo), toIn = mk(b.hi);
       const rm = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Remove band' }, '×');
       const onEdit = () => { b.lo = clampHz(fromIn.value); b.hi = clampHz(toIn.value); positionBands(); clearPresetHighlight(); rebuildGraph(); };
@@ -1605,7 +1605,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       ]);
       bandList.appendChild(b.row);
     }
-    function addBand(lo, hi) {
+    function addBand(lo: number, hi: number) {
       lo = clampHz(lo); hi = clampHz(hi);
       if (Math.abs(hi - lo) < 1) return;
       // Editing bands is a band-stop operation, so any manual add leaves karaoke mode.
@@ -1620,13 +1620,13 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     addBtn.addEventListener('click', () => { addBand(Math.round(fracToFreq(0.42)), Math.round(fracToFreq(0.6))); clearPresetHighlight(); });
 
     // --- drag-to-select a band on the spectrogram (isolate mode only) ---
-    const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
-    let selEl = null, selPid = null, selStart = 0;
-    const fracAt = (clientY) => {
+    const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+    let selEl: HTMLDivElement|null = null, selPid: number|null = null, selStart = 0;
+    const fracAt = (clientY: number) => {
       const r = canvasWrap.getBoundingClientRect();
       return clamp01(1 - (clientY - r.top) / r.height);
     };
-    const drawSel = (f0, f1) => {
+    const drawSel = (f0: number, f1: number) => {
       if (!selEl) return;
       const hi = Math.max(f0, f1), lo = Math.min(f0, f1);
       selEl.style.top = ((1 - hi) * 100) + '%';
@@ -1649,7 +1649,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       drawSel(selStart, fracAt(e.clientY));
       e.preventDefault();
     });
-    const endSel = (e) => {
+    const endSel = (e: PointerEvent) => {
       if (selPid === null || (e && e.pointerId !== selPid)) return;
       const end = fracAt(e.clientY);
       try { canvasWrap.releasePointerCapture(selPid); } catch (_) {}
@@ -1670,14 +1670,14 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     canvasWrap.addEventListener('pointercancel', endSel);
 
     // --- toggle ---
-    function setIsoActive(on) {
+    function setIsoActive(on: boolean) {
       isoActive = on;
       // Isolate and AI separation are alternatives, not layers - both take over the
       // picture and the sound - so opening one closes the other. closeAiPanel is a
       // function declaration in the AI block below, hoisted to the top of this same
       // block, so it is callable from here.
       if (isoActive) closeAiPanel();
-      isoBtn.classList.toggle('is-active', isoActive);
+      isoBtn!.classList.toggle('is-active', isoActive);
       isoPanel.classList.toggle('is-hidden', !isoActive);
       bandLayer.style.display = isoActive ? '' : 'none';
       canvasWrap.classList.toggle('anr-spec-isolating', isoActive);
@@ -1693,7 +1693,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     // "Remove vocals" is the karaoke centre-cancel and needs a stereo source.
     const NYQi = Math.round(NYQ);
     const stereo = !!(opts.audioBuffer && opts.audioBuffer.numberOfChannels >= 2);
-    function soloRange(lo, hi) {
+    function soloRange(lo: number, hi: number) {
       applyingPreset = true;
       isoMode = 'bands';
       for (const b of isoBands.slice()) removeBand(b);
@@ -1703,7 +1703,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     }
     // Cut a single mid band (keeping the lows AND highs) - the inverse of soloRange,
     // for the scooped "Hollow" preset.
-    function cutRange(lo, hi) {
+    function cutRange(lo: number, hi: number) {
       applyingPreset = true;
       isoMode = 'bands';
       for (const b of isoBands.slice()) removeBand(b);
@@ -1771,7 +1771,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       const off = new OAC(karaoke ? 1 : buffer.numberOfChannels, buffer.length, buffer.sampleRate);
       const srcNode = off.createBufferSource();
       srcNode.buffer = buffer;
-      let out = srcNode;
+      let out: AudioNode = srcNode;
       if (karaoke) out = buildKaraoke(off, srcNode);
       else if (isoActive && isoMode === 'bands') {
         const merged = computeMerged();
@@ -1802,13 +1802,13 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     // Unlike the EQ presets, this runs a real source-separation model in a worker
     // and produces two playable/downloadable stems. Everything heavy (runtime +
     // model) is lazy-loaded on first click and cached for offline use.
-    let aiRunning = false, aiUrls = [], aiResourceCleanups = [];
+    let aiRunning = false, aiUrls: string[] = [], aiResourceCleanups: (() => void)[] = [];
     // Display config per AI job. Both jobs produce two stems shown in the same
     // blend view; only the labels/keys differ. The result object always carries the
     // left stem as result.vocals and the right as result.instrumental (denoise maps
     // clean -> vocals, noise -> instrumental when it runs), so the rendering code is
     // shared and only these strings change.
-    const STEM_CFGS = {
+    const STEM_CFGS: Record<string, any> = {
       separate: { leftKey: 'vocals', leftLabel: 'Vocals', rightKey: 'instrumental', rightLabel: 'Instrumental', toward: ['vocals', 'instrumental'], aria: 'Blend vocals to instrumental' },
       denoise: { leftKey: 'clean', leftLabel: 'Clean', rightKey: 'noise', rightLabel: 'Noise', toward: ['clean', 'noise'], aria: 'Blend clean to noise' },
     };
@@ -1818,11 +1818,11 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     // aiOn tracks whether results are showing. aiConfirming marks the prompt open;
     // aiConfirmRender re-renders it for the current model (called by the picker so
     // switching Standard/Lite updates the prompt in real time).
-    let aiOn = false, aiConfirming = false, aiConfirmRender = null;
+    let aiOn = false, aiConfirming = false, aiConfirmRender: (() => void)|null = null;
     // Dismiss an open confirm prompt from outside (e.g. the AI separation button
     // closing the panel). Resolves the pending confirmDownload() as cancelled so
     // startStems returns cleanly instead of leaving its await hanging.
-    let aiConfirmCancel = null;
+    let aiConfirmCancel: (() => void)|null = null;
     // Which AI job is currently showing: null | 'separate' | 'denoise'. Only one
     // blend can own the spectrogram at a time, so starting one clears the other.
     let activeKind = null;
@@ -1835,7 +1835,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     // prompt was open, so its confirm box never appeared. With no prompt open it
     // just starts the job.
     let pendingKind = 'separate';
-    function pickAction(kind, btn) {
+    function pickAction(kind: string, btn: HTMLButtonElement) {
       if (aiRunning) return;
       pendingKind = kind;
       setAiSelection(btn);
@@ -1848,7 +1848,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       aiUrls = [];
     }
 
-    function stemBuffer(channels, sr) {
+    function stemBuffer(channels: string|any[], sr: number) {
       const c = ctx();
       const b = c.createBuffer(channels.length, channels[0].length, sr);
       for (let i = 0; i < channels.length; i++) {
@@ -1856,15 +1856,15 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       }
       return b;
     }
-    function stemMonoAccessor(channels) {
+    function stemMonoAccessor(channels: string|any[]) {
       const left = channels[0], right = channels[1];
-      if (!right) return (i) => left[i];
+      if (!right) return (i: string|number) => left[i];
       if (channels.length === 2) {
         // Match the old Float32Array accumulator's rounding exactly.
-        return (i) => Math.fround(Math.fround(left[i] * 0.5) + right[i] * 0.5);
+        return (i: string|number) => Math.fround(Math.fround(left[i] * 0.5) + right[i] * 0.5);
       }
       const k = 1 / channels.length;
-      return (i) => {
+      return (i: string|number) => {
         let sum = 0;
         for (const channel of channels) sum = Math.fround(sum + channel[i] * k);
         return sum;
@@ -1875,8 +1875,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     // (see computeStftComplex / combineStftToDb) is to analyse both stems once
     // and only RECOMBINE precomputed complex bins per slider move - no re-FFT -
     // so it stays truthful (exact magnitude of the blended audio) yet cheap.
-    function gainsFor(s) { return { a: 1 - Math.max(0, s), b: 1 + Math.min(0, s) }; }
-    function renderBlend(result, resume, cfg) {
+    function gainsFor(s: number) { return { a: 1 - Math.max(0, s), b: 1 + Math.min(0, s) }; }
+    function renderBlend(result: any, resume: any, cfg: any) {
       cfg = cfg || STEM_CFGS.separate;
       const sr = result.sampleRate;
       const L = result.vocals[0].length;
@@ -1967,19 +1967,19 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       const ac = ctx();
       // The playback AudioBuffers are large; only build them if the user presses
       // Play (dragging the slider / morphing the spectrogram needs none of this).
-      let vBuf = null, iBuf = null;
+      let vBuf: AudioBuffer|null = null, iBuf: AudioBuffer|null = null;
       function ensureBufs() { if (!vBuf) { vBuf = stemBuffer(result.vocals, sr); iBuf = stemBuffer(result.instrumental, sr); } }
       const master = ac.createGain(); master.gain.value = sharedVolume();
       const gV = ac.createGain(), gI = ac.createGain();
       gV.connect(master); gI.connect(master);
-      const unsubVol = onSharedVolume((level) => { master.gain.value = level; });
+      const unsubVol = onSharedVolume((level: number) => { master.gain.value = level; });
 
       // Route master -> [isolate band-stop / karaoke / straight] -> destination on
       // the blend's OWN context, rebuilt from the same isoBands/isoMode the file
       // player uses. Nodes can't be shared across contexts (the file graph lives on
       // audio-player's shared context), so the band-stop is rebuilt here in parallel
       // - without it the separated stems bypassed the Isolate cuts entirely.
-      let blendFilters = [];
+      let blendFilters: any[] = [];
       function applyBlendIso() {
         try { master.disconnect(); } catch (_) {}
         for (const n of blendFilters) { try { n.disconnect(); } catch (_) {} }
@@ -1992,9 +1992,9 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       }
       blendApplyIso = applyBlendIso;
       applyBlendIso();   // wire it up now (straight through unless isolate is already on)
-      let vSrc = null, iSrc = null, playing = false, startCtx = 0, offset = 0, raf = 0, armed = false;
+      let vSrc: AudioBufferSourceNode|null = null, iSrc: AudioBufferSourceNode|null = null, playing = false, startCtx = 0, offset = 0, raf = 0, armed = false;
 
-      function applyGains(ramp) {
+      function applyGains(ramp: boolean) {
         const { a, b } = gainsFor(sliderS()); const t = ac.currentTime;
         if (ramp) { gV.gain.setTargetAtTime(a, t, 0.02); gI.gain.setTargetAtTime(b, t, 0.02); }
         else { gV.gain.value = a; gI.gain.value = b; }
@@ -2003,7 +2003,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
         for (const s of [vSrc, iSrc]) { if (s) { try { s.onended = null; s.stop(); } catch (_) {} } }
         vSrc = iSrc = null;
       }
-      function startAt(sec) {
+      function startAt(sec: number) {
         ensureBufs();
         stopSources();
         vSrc = ac.createBufferSource(); vSrc.buffer = vBuf; vSrc.connect(gV);
@@ -2017,7 +2017,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       // Drive the MAIN spectrogram's playhead, this row's readout, AND the
       // under-spectrogram transport (via the controller it's delegated to) from the
       // single blend clock - so every scrubber moves together.
-      function moveHead(animate?) {
+      function moveHead(animate?: boolean|null|undefined) {
         const frac = dur ? pos() / dur : 0;
         // Snap (no ease) while playing OR actively scrubbing, so the line tracks the
         // pointer with no lag; only settle with a transition on a discrete seek.
@@ -2043,7 +2043,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
         if (raf) { cancelAnimationFrame(raf); raf = 0; }
         moveHead();
       }
-      function seekFrac(frac) {
+      function seekFrac(frac: number) {
         offset = Math.max(0, Math.min(dur, frac * dur));
         if (playing) startAt(Math.min(offset, dur - 0.02));
         moveHead(false);   // snap to the pointer, no trailing ease
@@ -2055,12 +2055,12 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       // --- spectrogram: once analysed, the blend OWNS the main canvas - it stays
       // the file's own spectrogram until separation finishes, then this replaces
       // it and every slider move recombines both stems into it (rAF-throttled). ---
-      let A = null, B = null, out = null;
+      let A: any = null, B: any = null, out: Float32Array|null = null;
       // Fast path (used while dragging): recombine the precomputed complex bins.
       function paintDrag() {
         if (!A) return;
         const { a, b } = gainsFor(sliderS());
-        blendSpec = combineStftToDb(A, B, a, b, out);
+        blendSpec = combineStftToDb(A, B, a, b, out!);
         renderOnly();
       }
 
@@ -2127,7 +2127,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
           hopSize,
           window: state.winName,
           // Match the former Float32Array mix's single write-rounding.
-          sampleAt: (i) => Math.fround(0.5 * (
+          sampleAt: (i: string|number) => Math.fround(0.5 * (
             a * (blendVL[i] + blendVR[i]) + b * (blendIL[i] + blendIR[i])
           )),
         };
@@ -2163,8 +2163,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       // WebKit can still hand a custom-appearance range drag to page scrolling even
       // with a larger thumb. Capture touch/pen pointers and map horizontal movement
       // explicitly; mouse and keyboard keep the native range behaviour.
-      let sliderPointer = null;
-      const setSliderFromPointer = (e) => {
+      let sliderPointer: number|null = null;
+      const setSliderFromPointer = (e: { clientX: number }) => {
         const r = slider.getBoundingClientRect();
         if (!r.width) return;
         const next = Math.round(-100 + Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * 200);
@@ -2185,7 +2185,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
         setSliderFromPointer(e);
         e.preventDefault();
       });
-      const finishSliderPointer = (e) => {
+      const finishSliderPointer = (e: PointerEvent) => {
         if (e.pointerId !== sliderPointer) return;
         setSliderFromPointer(e);
         sliderPointer = null;
@@ -2202,7 +2202,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       // touchstart. A direct touch fallback keeps horizontal movement mapped to the
       // range while still allowing the page's vertical pan gesture.
       let sliderTouch = false;
-      const touchPoint = (e) => e.touches[0] || e.changedTouches[0];
+      const touchPoint = (e: TouchEvent) => e.touches[0] || e.changedTouches[0];
       sliderWrap.addEventListener('touchstart', (e) => {
         const point = touchPoint(e);
         if (!point) return;
@@ -2216,7 +2216,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
         setSliderFromPointer(point);
         e.preventDefault();
       }, { passive: false, capture: true });
-      const finishSliderTouch = (e) => {
+      const finishSliderTouch = (e: TouchEvent) => {
         if (!sliderTouch) return;
         const point = touchPoint(e);
         if (point) setSliderFromPointer(point);
@@ -2288,7 +2288,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       return block;
     }
 
-    function renderStems(result, cfg) {
+    function renderStems(result: any, cfg: any) {
       cfg = cfg || STEM_CFGS.separate;
       revokeAiUrls();
       // If the track was playing while the model ran, note where the playhead was so
@@ -2329,7 +2329,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
         // a stem after a separation. Space stays on the main track; stems have their
         // own play buttons.
         const audioEl = el('audio', { preload: 'metadata', style: 'display:none;', 'data-anr-stem': '1' });
-        let blob = null, url = null, downloadUrl = null;
+        let blob: Blob|null = null, url: string|null = null, downloadUrl: string|null = null;
         let stemDisposed = false, specRaf1 = 0, specRaf2 = 0;
         function ensureStemWav() {
           if (blob) return blob;
@@ -2359,7 +2359,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
           if (!appleTouch) return url;
           // WebKit's download path is more reliable for attachment data than a
           // previewable audio Blob. This wrapper shares the WAV's backing bytes.
-          downloadUrl = URL.createObjectURL(new Blob([blob], { type: 'application/octet-stream' }));
+          downloadUrl = URL.createObjectURL(new Blob([blob!], { type: 'application/octet-stream' }));
           aiUrls.push(downloadUrl);
           return downloadUrl;
         }
@@ -2370,7 +2370,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
         // A nested synthetic anchor click is unreliable in Mobile Safari.
         const dl = el('a', { class: 'anr-btn anr-btn-sm', href: '#', download: filename }, 'Download WAV');
         dl.addEventListener('click', (e) => {
-          try { dl.href = ensureStemDownloadUrl(); }
+          try { dl.href = ensureStemDownloadUrl()!; }
           catch (_) { e.preventDefault(); }
         });
         // Lazy spectrogram of this stem, drawn with the main panel's current
@@ -2423,12 +2423,12 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     }
     // Reuse the app's standard ASCII progress bar (asciiBar) rather than a bespoke one.
     const aiBar = asciiBar({ fit: true });
-    function setAiStatus(text, frac?) {
+    function setAiStatus(text: ElChild | ElChild[], frac?: number|undefined) {
       aiStatus.hidden = false; aiStatus.textContent = '';
       aiStatus.appendChild(el('span', { class: 'anr-iso-aimsg' }, text));
       if (typeof frac === 'number') { aiStatus.appendChild(aiBar); aiBar.set(frac); }
     }
-    function setAiProgress(kind, phase, frac) {
+    function setAiProgress(kind: string, phase: string, frac?: number) {
       if (phase === 'infer-start') {
         setAiStatus(kind === 'denoise' ? 'Starting first AI pass…' : 'Starting first separation pass…');
         return;
@@ -2471,7 +2471,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
         const yes = el('button', { type: 'button', class: 'anr-btn anr-btn-sm anr-iso-confirm-yes' }, '');
         const no = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Cancel');
         let renderSeq = 0;
-        const done = (v) => { renderSeq++; aiConfirming = false; aiConfirmRender = null; aiConfirmCancel = null; aiStatus.textContent = ''; aiStatus.hidden = true; aiHelpBtn.hidden = false; resolve(v); };
+        const done = (v: boolean) => { renderSeq++; aiConfirming = false; aiConfirmRender = null; aiConfirmCancel = null; aiStatus.textContent = ''; aiStatus.hidden = true; aiHelpBtn.hidden = false; resolve(v); };
         yes.addEventListener('click', () => done(true));
         no.addEventListener('click', () => done(false));
         // Rebuild the box for the current selection (pendingKind). Called again by
@@ -2494,7 +2494,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
             box.appendChild(el('div', { class: 'anr-iso-confirm-title' }, needsDownload ? 'Download denoise model' : 'Denoise'));
             box.appendChild(body);
           } else {
-            const model = MDX_MODELS[aiModelId] || MDX_MODELS.standard;
+            const model = (MDX_MODELS as Record<string, any>)[aiModelId] || MDX_MODELS.standard;
             const tier = model.label || 'Standard';
             const blurb = model.blurb || '';
             const needsDownload = !(await modelReady(model));
@@ -2530,7 +2530,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     }
     // The cache is authoritative. A permanent localStorage flag used to outlive
     // evicted model data and incorrectly suppress the download warning.
-    async function modelReady(model) {
+    async function modelReady(model: any) {
       try { return !!(await caches.match(model.url)); } catch (_) { return false; }
     }
     // Shared runner for both AI jobs. It confirms first, then replaces any completed
@@ -2567,7 +2567,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
           btn.textContent = 'Denoising…';
           const { enhanceAudio } = await import('../lib/dfn-client.js');
           const r = await enhanceAudio(sourceBuffer(), {
-            onProgress: (phase, frac) => setAiProgress(kind, phase, frac),
+            onProgress: (phase: string, frac) => setAiProgress(kind, phase, frac),
             signal: opts.signal,
           });
           // Feed the shared blend/stem renderer: left stem = Clean, right = Noise.
@@ -2577,7 +2577,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
           const { separateStems } = await import('../lib/mdx-client.js');
           result = await separateStems(sourceBuffer(), {
             modelId: aiModelId,
-            onProgress: (phase, frac) => setAiProgress(kind, phase, frac),
+            onProgress: (phase: string, frac) => setAiProgress(kind, phase, frac),
             signal: opts.signal,
           });
         }
@@ -2665,7 +2665,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
   // mic/live spectrogram further down still uses attachFullscreen(), and because
   // restoring the button here is a one-line change if it is ever wanted back.
 
-  let resizeRaf;
+  let resizeRaf: number;
   window.addEventListener('resize', () => {
     cancelAnimationFrame(resizeRaf);
     resizeRaf = requestAnimationFrame(() => {
@@ -2709,7 +2709,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
  *  handed without a separate wrapper. */
 interface PendingRow extends HTMLTableRowElement {
   progress: (step: number) => void;
-  fill: (value: string, extra?: Node) => void;
+  fill: (value: string, extra?: Node|null) => void;
   drop: () => void;
   done?: boolean;
 }
@@ -2724,14 +2724,14 @@ interface PendingRow extends HTMLTableRowElement {
 // whole run; one waiting on the second pass is full almost immediately. Call fill()
 // with the value once it lands, or drop() if there turned out to be nothing to
 // report.
-function pendingRow(label, help, atStep): PendingRow {
+function pendingRow(label: string, help: string, atStep: number): PendingRow {
   const tr = rowHelp(label, '', help) as PendingRow;
-  const td = tr.querySelector('td');
+  const td = tr.querySelector('td')!;
   td.textContent = '';
   const bar = asciiBar();
   td.appendChild(bar);
-  tr.progress = (step) => { if (!tr.done) bar.set(Math.min(1, step / atStep)); };
-  tr.fill = (value, extra) => {
+  tr.progress = (step: number) => { if (!tr.done) bar.set(Math.min(1, step / atStep)); };
+  tr.fill = (value: string, extra?: Node|null) => {
     tr.done = true;
     try { bar.stop(); } catch (_) {}
     td.textContent = value;
@@ -2743,14 +2743,14 @@ function pendingRow(label, help, atStep): PendingRow {
 
 // Known music-tag fields that earn an inline [?] explanation; everything else
 // renders as a plain row. Keyed by the display label set in audio-codec.js.
-const TAG_HELP = {
+const TAG_HELP: Record<string, string> = {
   ISRC: "A unique ID for one specific audio recording (not the song or the album). The International Standard Recording Code reads as CC-XXX-YY-NNNNN: country, registrant, year, and a per-recording number. Labels and stores use it to track royalties and to match the same recording across services.",
 };
-function tagRow(name, value) {
+function tagRow(name: string, value: string) {
   return TAG_HELP[name] ? rowHelp(name, value, TAG_HELP[name]) : row(name, value);
 }
 
-function buildCoverArtCard(art, file: File, resultsEl?: HTMLElement) {
+function buildCoverArtCard(art: any, file: File, resultsEl?: HTMLElement) {
   // Embedded cover art is promoted to the dedicated Photo section and given the
   // full photo analysis there (preview, histogram, EXIF, OCR) - the Photo tab is
   // re-enabled for it. A slim pointer card stays here to say where it went.
@@ -2791,7 +2791,7 @@ function buildCoverArtCard(art, file: File, resultsEl?: HTMLElement) {
   return labelCard;
 }
 
-export function buildWaveformCard(file: File, mono, audioBuffer, audioEl, signal) {
+export function buildWaveformCard(file: File, mono: Float32Array, audioBuffer: AudioBuffer, audioEl: HTMLAudioElement, signal: AbortSignal) {
   const sr = audioBuffer.sampleRate;
   // renderWave rides on the card: the resize/zoom paths call it by name.
   const waveCard = el('div', { class: 'anr-card' }) as
@@ -2806,7 +2806,7 @@ export function buildWaveformCard(file: File, mono, audioBuffer, audioEl, signal
   // spectrogram FFT), expose it as a task the caller runs IN SEQUENCE, after the
   // spectrogram, so only one whole-file pass touches the thread at a time. Zoom
   // redraws below stay synchronous (they work on the smaller visible window).
-  drawWaveBg(waveCanvas.getContext('2d'), waveCanvas.width, waveCanvas.height);
+  drawWaveBg(waveCanvas.getContext('2d')!, waveCanvas.width, waveCanvas.height);
   waveCard.renderWave = () => runAudioTask(async () => {
     const pk = await reduceWaveCoop(mono, waveCanvas.width, signal);
     drawWavePeaks(waveCanvas, pk.mins, pk.maxs, pk.clips);
@@ -2814,7 +2814,7 @@ export function buildWaveformCard(file: File, mono, audioBuffer, audioEl, signal
 
 
   // --- Interactive waveform: region selection, zoom, WAV export ---
-  let selStart = null, selEnd = null;   // sample indices (unordered mid-drag)
+  let selStart: number|null = null, selEnd: number|null = null;   // sample indices (unordered mid-drag)
   let zoomStart = 0, zoomEnd = mono.length;
 
   // Overlay canvas for selection highlight
@@ -2834,7 +2834,7 @@ export function buildWaveformCard(file: File, mono, audioBuffer, audioEl, signal
   // live playback (and scrubbing) it tracks frame-by-frame with transition:none so
   // it can't lag behind - the 0.28s CSS ease on .anr-playhead would otherwise make
   // every RAF update visibly trail the audio.
-  function tickWaveLine(animate?) {
+  function tickWaveLine(animate?: boolean|undefined) {
     const d = audioBuffer.duration;
     const currentSample = (audioEl.currentTime / d) * mono.length;
     const visLen = zoomEnd - zoomStart;
@@ -2862,7 +2862,7 @@ export function buildWaveformCard(file: File, mono, audioBuffer, audioEl, signal
   audioEl.addEventListener('seeked', () => tickWaveLine(false), waveListenerOpts);
 
   // Grab the playhead line and drag to scrub (respects the current zoom window).
-  attachScrub(waveLine, (clientX) => {
+  attachScrub(waveLine, (clientX: number) => {
     const rect = waveCanvas.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const sample = zoomStart + frac * (zoomEnd - zoomStart);
@@ -2901,7 +2901,7 @@ export function buildWaveformCard(file: File, mono, audioBuffer, audioEl, signal
   waveCard.appendChild(zoomBar);
 
   function drawOverlay() {
-    const octx = overlayCanvas.getContext('2d');
+    const octx = overlayCanvas.getContext('2d')!;
     octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     if (selStart == null || selEnd == null) return;
     const visLen = zoomEnd - zoomStart;
@@ -2915,13 +2915,13 @@ export function buildWaveformCard(file: File, mono, audioBuffer, audioEl, signal
   }
 
   // m:ss.mmm for the time fields; parse accepts that, plain seconds, or ss.mmm.
-  function fmtSelTime(sec) {
+  function fmtSelTime(sec: number) {
     if (!isFinite(sec) || sec < 0) sec = 0;
     const m = Math.floor(sec / 60);
     const s = sec - m * 60;
     return m + ':' + (s < 10 ? '0' : '') + s.toFixed(3);
   }
-  function parseSelTime(str) {
+  function parseSelTime(str: string) {
     str = String(str).trim();
     if (!str) return null;
     let sec;
@@ -2978,12 +2978,12 @@ export function buildWaveformCard(file: File, mono, audioBuffer, audioEl, signal
     if (ev.key === 'Enter') { commitTimeInputs(); inp.blur(); }
   }));
 
-  function xToSample(x) {
+  function xToSample(x: number) {
     const rect = waveCanvas.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
     return Math.round(zoomStart + frac * (zoomEnd - zoomStart));
   }
-  function sampleToX(smp) {
+  function sampleToX(smp: number) {
     const rect = waveCanvas.getBoundingClientRect();
     return ((smp - zoomStart) / (zoomEnd - zoomStart)) * rect.width;
   }
@@ -2991,7 +2991,7 @@ export function buildWaveformCard(file: File, mono, audioBuffer, audioEl, signal
   // Which part of an existing selection a press at clientX lands on: an edge (to
   // resize), the interior (to move the whole region), or neither (start a new one).
   const EDGE_PX = 6;
-  function hitMode(clientX) {
+  function hitMode(clientX: number) {
     if (selStart == null || selEnd == null || selStart === selEnd) return 'new';
     const rect = waveCanvas.getBoundingClientRect();
     const px = clientX - rect.left;
@@ -3003,16 +3003,16 @@ export function buildWaveformCard(file: File, mono, audioBuffer, audioEl, signal
     return 'new';
   }
 
-  let dragMode = null, moveAnchor = 0, moveWidth = 0;
+  let dragMode: string|null = null, moveAnchor = 0, moveWidth = 0;
   // Selection drag. Move/up listeners live on WINDOW (not the canvas) so a fast drag
   // that races off the edges keeps updating and finishes cleanly - the old
   // canvas-only mousemove dropped events the moment the pointer left the canvas.
-  function onSelMove(e) {
+  function onSelMove(e: MouseEvent) {
     if (!dragMode) return;
     const smp = xToSample(e.clientX);
     if (dragMode === 'new') selEnd = smp;
-    else if (dragMode === 'left') selStart = Math.min(smp, selEnd - 1);
-    else if (dragMode === 'right') selEnd = Math.max(smp, selStart + 1);
+    else if (dragMode === 'left') selStart = Math.min(smp, selEnd! - 1);
+    else if (dragMode === 'right') selEnd = Math.max(smp, selStart! + 1);
     else if (dragMode === 'move') {
       let ns = Math.max(0, Math.min(mono.length - moveWidth, smp - moveAnchor));
       selStart = ns; selEnd = ns + moveWidth;
@@ -3039,7 +3039,7 @@ export function buildWaveformCard(file: File, mono, audioBuffer, audioEl, signal
       selStart = smp; selEnd = smp;
     } else {
       // Normalize the existing selection so the grabbed edge/body drags predictably.
-      const s = Math.min(selStart, selEnd), en = Math.max(selStart, selEnd);
+      const s = Math.min(selStart!, selEnd!), en = Math.max(selStart!, selEnd!);
       selStart = s; selEnd = en;
       if (mode === 'move') { moveAnchor = smp - s; moveWidth = en - s; }
     }
@@ -3107,7 +3107,7 @@ export function buildWaveformCard(file: File, mono, audioBuffer, audioEl, signal
 
     // RIFF header
     let offset = 0;
-    const writeStr = (s) => { for (let i = 0; i < s.length; i++) view.setUint8(offset++, s.charCodeAt(i)); };
+    const writeStr = (s: string) => { for (let i = 0; i < s.length; i++) view.setUint8(offset++, s.charCodeAt(i)); };
     writeStr('RIFF');
     view.setUint32(offset, 36 + dataSize, true); offset += 4;
     writeStr('WAVE');
@@ -3143,7 +3143,7 @@ export function buildWaveformCard(file: File, mono, audioBuffer, audioEl, signal
 
 // Tears down the previous render's persistent spectrogram listeners when a new
 // audio file is analysed.
-let audioRenderAbort = null;
+let audioRenderAbort: AbortController|null = null;
 
 // Fallback when the browser can't decode the audio (e.g. WMA, AC3, DTS, AMR,
 // undecodable MKA). There's no waveform/spectrogram, but the container info, tags,
@@ -3158,7 +3158,7 @@ const DECODE_DEFER_BYTES = 256 * MB;
 
 // Estimate the size of the decoded Float32 PCM (all channels) from what the header
 // gave, WITHOUT decoding. Returns bytes, or null when we can't estimate reliably.
-function estimateDecodedBytes(file: File, header) {
+function estimateDecodedBytes(file: File, header: any) {
   const ch = header.channels || 2;
   if (header.sampleRate && header.durationEst)
     return header.sampleRate * ch * header.durationEst * 4;
@@ -3171,7 +3171,7 @@ function estimateDecodedBytes(file: File, header) {
   return null;
 }
 
-function shouldDeferDecode(file: File, header) {
+function shouldDeferDecode(file: File, header: any) {
   const est = estimateDecodedBytes(file, header);
   if (est != null) return est > DECODE_DEFER_BYTES;
   // No reliable estimate - fall back to a raw-size guard so a very large unknown
@@ -3182,7 +3182,7 @@ function shouldDeferDecode(file: File, header) {
 // Read a file into one ArrayBuffer in chunks, reporting progress and handing the
 // thread back between chunks - so a large read fuels a real progress bar and doesn't
 // block the page the way a single file.arrayBuffer() of a big file does.
-async function readArrayBufferProgress(file: File, onProgress) {
+async function readArrayBufferProgress(file: File, onProgress?: ((p: number) => void)|null) {
   const size = file.size;
   if (!size) return await file.arrayBuffer();
   const CHUNK = 8 * MB;
@@ -3205,9 +3205,9 @@ async function readArrayBufferProgress(file: File, onProgress) {
 // spans read (0..0.45) and repack (..0.55); the opaque decodeAudioData tail has no
 // progress of its own, so the caller eases the bar across it. Returns
 // { audioBuffer, playbackFile, usedFfmpeg }; throws if nothing could decode it.
-async function decodeAudioStrategy(file: File, header, { onProgress, noteMount } : any = {}) {
-  const rp = (f) => { if (onProgress) onProgress(f); };
-  const buf = await readArrayBufferProgress(file, (f) => rp(f * 0.45));
+async function decodeAudioStrategy(file: File, header: any, { onProgress, noteMount } : any = {}) {
+  const rp = (f: number) => { if (onProgress) onProgress(f); };
+  const buf = await readArrayBufferProgress(file, (f: number) => rp(f * 0.45));
   let audioBuffer = null, playbackFile = file, usedFfmpeg = false;
   if (header.container === 'AAC') {
     try {
@@ -3241,7 +3241,7 @@ async function decodeAudioStrategy(file: File, header, { onProgress, noteMount }
 // it at once, offer immediate native playback, and put the heavy decode behind a
 // button. The decode runs in place (the pulled cards stay on screen, a fill-up bar
 // tracks it) and, when done, hands the decoded buffer to renderAudio for the full view.
-async function renderDeferredAudio(file: File, header, resultsEl: HTMLElement, opts) {
+async function renderDeferredAudio(file: File, header: any, resultsEl: HTMLElement, opts: any) {
   const estBytes = estimateDecodedBytes(file, header);
 
   // ---- Full analysis (the decode button) - FIRST, at the top of the section ----
@@ -3289,7 +3289,7 @@ async function renderDeferredAudio(file: File, header, resultsEl: HTMLElement, o
     try {
       dec = await decodeAudioStrategy(file, header, {
         noteMount: errBox,
-        onProgress: (f) => { target = Math.max(target, f); barLabel.textContent = f < 0.46 ? 'Reading…' : 'Decoding…'; },
+        onProgress: (f: number) => { target = Math.max(target, f); barLabel.textContent = f < 0.46 ? 'Reading…' : 'Decoding…'; },
       });
     } catch (_) { dec = null; }
 
@@ -3376,7 +3376,7 @@ async function renderDeferredAudio(file: File, header, resultsEl: HTMLElement, o
   resultsEl.appendChild(integrityCard(file));
 }
 
-async function renderUndecodableAudio(file: File, header, resultsEl: HTMLElement, playable) {
+async function renderUndecodableAudio(file: File, header: any, resultsEl: HTMLElement, playable: File) {
   const infoCard = el('div', { class: 'anr-card' });
   const [infoH, infoHelp] = h3help('Audio file', 'The container details, tags, lyrics, and cover art below were still read straight from the file.');
   infoCard.appendChild(infoH);
@@ -3474,14 +3474,14 @@ async function ffmpegDecodeAudio(file: File, resultsEl: HTMLElement) {
 
 // Loudness-over-time plot for the EBU R128 meter (momentary LUFS series). Clamped
 // to a readable -40..0 LUFS window with a -14 LUFS streaming-target reference line.
-function drawLoudnessGraph(series, duration, audioEl) {
+function drawLoudnessGraph(series: any[], duration: number, audioEl: HTMLAudioElement) {
   // Styled as the Waveform card is: the same .anr-waveform canvas (fixed dark
   // --media-bg, hairline border, 96px tall, full width), the same .anr-wave-wrap
   // and white .anr-playhead over it, and the same transport below. The bitmap is
   // 1024 wide to match the waveform's, so the curve stays crisp at card width.
   const W = 1024, H = 120, pad = 6;
   const cv = el('canvas', { class: 'anr-waveform', width: String(W), height: String(H) });
-  const ctx = cv.getContext('2d');
+  const ctx = cv.getContext('2d')!;
   if (!ctx) { cv.style.marginTop = '12px'; return cv; }
   const cs = getComputedStyle(document.body);
   const accent = (cs.getPropertyValue('--accent') || '').trim() || '#e60023';
@@ -3490,8 +3490,8 @@ function drawLoudnessGraph(series, duration, audioEl) {
   // would be near-black - and so invisible here - in light mode.
   const grid = 'rgba(255,255,255,0.45)';
   const LO = -40, HI = 0;
-  const yOf = (l) => pad + (HI - Math.max(LO, Math.min(HI, l))) / (HI - LO) * (H - pad * 2);
-  const xOf = (t) => pad + (duration > 0 ? t / duration : 0) * (W - pad * 2);
+  const yOf = (l: number) => pad + (HI - Math.max(LO, Math.min(HI, l))) / (HI - LO) * (H - pad * 2);
+  const xOf = (t: number) => pad + (duration > 0 ? t / duration : 0) * (W - pad * 2);
   // -14 LUFS reference (common streaming target).
   ctx.strokeStyle = grid; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(pad, yOf(-14)); ctx.lineTo(W - pad, yOf(-14)); ctx.stroke();
@@ -3529,7 +3529,7 @@ function drawLoudnessGraph(series, duration, audioEl) {
   const durOf = () => (duration > 0 ? duration : (audioEl.duration || 0));
   // `animate` eases the line into place for discrete seeks while paused; live
   // playback and scrubbing pass false so it tracks frame-by-frame without lag.
-  function tick(animate) {
+  function tick(animate: boolean) {
     const d = durOf();
     const pct = d > 0 ? (audioEl.currentTime / d) * 100 : 0;
     if (pct >= 0 && pct <= 100) {
@@ -3543,7 +3543,7 @@ function drawLoudnessGraph(series, duration, audioEl) {
   audioEl.addEventListener('pause', () => tick(true));
   audioEl.addEventListener('seeked', () => tick(false));
 
-  function seekFromClientX(clientX) {
+  function seekFromClientX(clientX: number) {
     const rect = cv.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     audioEl.currentTime = frac * durOf();
@@ -3572,7 +3572,7 @@ function drawLoudnessGraph(series, duration, audioEl) {
 // only restated what the rows say. `title` is kept as the group's aria-label so
 // the structure is still announced, and `helpHtml` - which duplicated the row
 // help - is dropped rather than left with nothing to hang off.
-function aAdvPanel(title, _helpHtml?, _open?) {
+function aAdvPanel(title: string, _helpHtml?: string|undefined, _open?: boolean|undefined) {
   const det = el('div', { class: 'anr-adv-part', role: 'group', 'aria-label': title });
   const body = el('div');
   det.appendChild(body);
@@ -3583,7 +3583,7 @@ function aAdvPanel(title, _helpHtml?, _open?) {
 // divider above it, for the one group in this card that is not label/value rows -
 // the decoded touch-tones, a keypad grid that would read as noise if it were
 // dropped into the continuous readout unannounced. Same { det, body } contract.
-function aAdvSection(title, helpHtml) {
+function aAdvSection(title: string, helpHtml: string) {
   const det = el('div', { class: 'anr-adv-part anr-adv-part--titled' });
   const head = el('div', { class: 'anr-adv-parthead' }, title + (helpHtml ? ' ' : ''));
   const body = el('div');
@@ -3691,7 +3691,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
   // Through the serial queue, one at a time: merge to mono, then stats. Each yields
   // while it runs and bails if this analysis is superseded (renderSignal aborts), so a
   // replaced file's passes stop instead of running beside the new file's.
-  let mono, stats;
+  let mono: Float32Array<ArrayBuffer>, stats;
   try {
     mono = await runAudioTask(() => getMonoCoop(audioBuffer, renderSignal), renderSignal);
     stats = await runAudioTask(() => computeStatsCoop(mono, renderSignal), renderSignal);
@@ -3699,10 +3699,10 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
 
   // ---- Forensic DSP (all pure, computed once and reused across cards) ----
   const sampleRate = audioBuffer.sampleRate;
-  const channelData = [];
+  const channelData: any[] = [];
   for (let c = 0; c < audioBuffer.numberOfChannels; c++) channelData.push(audioBuffer.getChannelData(c));
   const LOSSLESS_EXTS = new Set(['flac', 'wav', 'wave', 'alac', 'aif', 'aiff', 'aifc', 'ape', 'wv', 'tta', 'tak', 'pcm', 'caf', 'w64']);
-  const audioExt = (file.name || '').toLowerCase().split('.').pop();
+  const audioExt = (file.name || '').toLowerCase().split('.').pop()!;
   // opts.declaredLossless lets a pre-decoded caller override the file-name/header
   // guess. The video module hands us PCM wrapped in a WAV, whose .wav extension
   // would otherwise read as a genuine lossless-file claim and frame the lossy-source
@@ -3715,7 +3715,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
   // which is why nothing appeared for seconds. They now run after File info is on
   // screen (see "Forensic DSP" below); the rows that need them start as pending
   // placeholders and fill in as each pass lands.
-  let spec = null, health = null, keyResult = null, r128 = null, tpDb = null, dtmf = null;
+  let spec: any = null, health: any = null, keyResult: any = null, r128: any = null, tpDb: any = null, dtmf: any = null;
 
   // ---- File info card ----
   const infoCard = el('div', { class: 'anr-card' });
@@ -3856,7 +3856,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
   const basename = (file.name || 'spectrogram').replace(/\.[^/.]+$/, '');
   const chans = channelOptions(audioBuffer, mono);
   const waveSlot = el('div');
-  let curSpecPanel = null;
+  let curSpecPanel: any = null;
   // Resolves once the waveform's reduction has finished - chained AFTER the
   // spectrogram's firstPaint so the two whole-file passes run one after another, not
   // together. renderAudio awaits this before starting the DSP queue.
@@ -3864,11 +3864,11 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
   // Filled in below when the Stereo analysis card is built (stereo files only). The
   // AI-separation blend, which lives inside the spectrogram panel, pushes its live
   // mix here so the stereo readout tracks the blend; reset() reverts to the file.
-  const stereoSink = { update: null, reset: null };
-  let signalViewAbort = null;
-  let unlinkViewParent = null;
+  const stereoSink: { update: ((stats: any, left: any, right: any) => void)|null; reset: (() => void)|null } = { update: null, reset: null };
+  let signalViewAbort: AbortController|null = null;
+  let unlinkViewParent: (() => void)|null = null;
 
-  function renderSignalViews(idx, showLoader, loud?) {
+  function renderSignalViews(idx: number, showLoader: boolean, loud?: any) {
     // A user channel switch (showLoader) rebuilds the spectrogram + waveform and
     // their transports; stop playback first so it doesn't carry on under the new
     // views (and the fresh transports show a clean paused state). showLoader is
@@ -3887,7 +3887,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
     signalViewAbort = new AbortController();
     if (renderSignal.aborted) signalViewAbort.abort();
     else {
-      const abortView = () => signalViewAbort.abort();
+      const abortView = () => signalViewAbort!.abort();
       renderSignal.addEventListener('abort', abortView, { once: true });
       unlinkViewParent = () => renderSignal.removeEventListener('abort', abortView);
     }
@@ -3919,14 +3919,14 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
   // The Mix/L/R channel selector that drives the spectrogram + waveform. It used to
   // live in its own card above the spectrogram; it now folds into the Stereo analysis
   // card at the bottom (built below), so keep references to drop it in there.
-  let chanHead = null, chanHelpPanel = null, chanSeg = null, chanStat = null;
+  let chanHead: any = null, chanHelpPanel: any = null, chanSeg: any = null, chanStat: any = null;
   if (chans.length > 1) {
     const [chanH, chanHelp] = h3help('Channel',
       'This file has ' + audioBuffer.numberOfChannels + ' separate channels. Choose which one feeds the spectrogram and waveform below - <strong>Mix</strong> blends every channel together, or pick a single speaker (Left, Right, Centre, LFE, surrounds) to inspect on its own. The per-channel peak and RMS update with your choice. Speaker names follow the layout the file declares, so treat them as a best guess.');
     const stat = el('span', { class: 'anr-chan-readout' });
     const seg = el('div', { class: 'anr-btn-row anr-chan-seg' });
-    const btns = [];
-    const setActive = (i) => {
+    const btns: HTMLButtonElement[] = [];
+    const setActive = (i: number) => {
       btns.forEach((b, j) => b.classList.toggle('is-active', j === i));
       // The Mix (i=0) IS the mono we already measured - reuse it rather than run a
       // second full-file pass on load. Other channels compute on demand (a click).
@@ -3979,7 +3979,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
   // it in a finally, with a 6 s safety net), so this cannot wedge the render.
   // Precompute the loudest-moment stat through the queue (a whole-file pass) so the
   // panel doesn't run it synchronously in its constructor and stall the first paint.
-  let loud0 = null;
+  let loud0: any = null;
   try { loud0 = await runAudioTask(() => loudestMomentCoop(chans[0].data, sampleRate, renderSignal), renderSignal); }
   catch (e) { if (renderSignal.aborted) return; }
   renderSignalViews(0, true, loud0);
@@ -4032,7 +4032,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
 
   // One handler for every pass, called in order by whichever driver runs below,
   // so the worker path and the inline fallback fill the readout identically.
-  function applyPass(name, value) {
+  function applyPass(name: any, value: any) {
     advance();
     switch (name) {
       case 'spec': spec = value; break;
@@ -4193,7 +4193,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
         'The complete broadcast and streaming loudness set. Integrated loudness is the overall figure with silence ignored (gated, per ITU-R BS.1770); momentary (400 ms) and short-term (3 s) are the loudest brief windows; Loudness Range (LRA) is the spread between the quiet and loud passages; True peak is the real peak that falls between samples, found by oversampling 4x, which ordinary peak meters miss. All measured on the channel-merged signal.',
         true);   // headline panel, open on top (photo/video parity); the rest start closed
       const lt = el('table', { class: 'anr-readout' });
-      const lufs = (v) => isFinite(v) ? v.toFixed(1) + ' LUFS' : '-';
+      const lufs = (v: number) => isFinite(v) ? v.toFixed(1) + ' LUFS' : '-';
       lt.appendChild(rowHelp('Integrated (gated)', lufs(r128.integrated),
         'The overall loudness of the whole file with silent gaps left out. Streaming targets: Spotify/YouTube −14, Apple −16, broadcast (EBU R128) −23 LUFS.'));
       lt.appendChild(rowHelp('Momentary max', lufs(r128.momentaryMax),
@@ -4206,7 +4206,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
         const over = tpDb > 0;
         const tpRow = rowHelp('True peak', tpDb.toFixed(1) + ' dBTP' + (over ? '  (over 0 - inter-sample clipping)' : ''),
           'The real loudest point, including peaks that fall between samples (found by oversampling 4x). Anything above 0 dBTP can distort on playback even when no single sample looks clipped; delivery specs usually cap this at −1 dBTP.');
-        if (over) tpRow.querySelector('td').style.color = 'var(--accent)';
+        if (over) (tpRow.querySelector('td') as HTMLElement).style.color = 'var(--accent)';
         lt.appendChild(tpRow);
       }
       body.appendChild(lt);
@@ -4248,11 +4248,11 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
           usTbl.appendChild(rowHelp('Above 18 kHz', 'N/A at ' + (spec.sampleRate / 1000).toFixed(1) + ' kHz sample rate',
             'The sample rate is too low to carry any meaningful ultrasonic content - it cannot represent frequencies that high (its Nyquist limit is below about 18.5 kHz).'));
         } else {
-          usTbl.appendChild(rowHelp('Energy above ' + (us.startHz / 1000) + ' kHz',
-            us.ratioDb.toFixed(0) + ' dB below full band' + (us.present ? '  (present)' : '  (negligible)'),
+          usTbl.appendChild(rowHelp('Energy above ' + (us.startHz! / 1000) + ' kHz',
+            us.ratioDb!.toFixed(0) + ' dB below full band' + (us.present ? '  (present)' : '  (negligible)'),
             'How much energy sits in the near-ultrasonic band compared with the whole signal. Steady content this high - inaudible to people - can be tracking beacons, device-pairing tones, or hidden watermarks.'));
-          if (us.peaks.length) usTbl.appendChild(rowHelp('Ultrasonic tones',
-            us.peaks.map((p) => Math.round(p.hz).toLocaleString() + ' Hz').join(', '),
+          if (us.peaks!.length) usTbl.appendChild(rowHelp('Ultrasonic tones',
+            us.peaks!.map((p: { hz: number }) => Math.round(p.hz).toLocaleString() + ' Hz').join(', '),
             'Individual steady tones found in the near-ultrasonic band, listed by frequency. Too high for people to hear, they can be device-pairing tones, tracking beacons or hidden watermarks.'));
         }
         body.appendChild(usTbl);
@@ -4391,7 +4391,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
     const stereoTbl = el('table', { class: 'anr-readout' });
     stereoTbl.append(corrRow, widthRow, midRow, sideRow, ratioRow);
     stereoCard.appendChild(stereoTbl);
-    const cell = (tr) => tr.lastElementChild;
+    const cell = (tr: HTMLTableRowElement) => tr.lastElementChild!;
 
     // Vectorscope canvas
     const vsCanvas = el('canvas', { width: '200', height: '200', style: 'display:block; margin:8px auto 0;' });
@@ -4399,7 +4399,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
 
     // Paint the readout + scope from a stats object and an L/R pair (which may be a
     // subsampled blend). `note` (non-empty) flags a blend source line.
-    function paintStereo(stats, left, right, note) {
+    function paintStereo(stats: any, left: any, right: any, note: string|null) {
       const corrPct  = (stats.correlation * 100).toFixed(1);
       const corrHint = stats.correlation > 0.8 ? 'mono-like'
                      : stats.correlation < -0.2 ? 'out of phase'
@@ -4417,7 +4417,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
     paintStereo(computeStereoStats(origLeft, origRight), origLeft, origRight, null);
     // Wire the sink the separation blend pushes to. update() takes a precomputed
     // stats object + a (subsampled) L/R for the scope; reset() restores the file.
-    stereoSink.update = (stats, left, right) => paintStereo(stats, left, right, 'Reflecting the current vocal-instrumental blend');
+    stereoSink.update = (stats: any, left: any, right: any) => paintStereo(stats, left, right, 'Reflecting the current vocal-instrumental blend');
     stereoSink.reset = () => paintStereo(computeStereoStats(origLeft, origRight), origLeft, origRight, null);
 
     advCard.appendChild(stDet); advCount++;
@@ -4436,7 +4436,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
 // `source` (a MediaStreamAudioSourceNode on audio context `ac`). Returns a
 // stop() that ends the draw loop and disconnects the analyser. Mirrors the
 // rendering in startLive() but stripped of controls - just the live visual.
-function streamSpectrogram(ac, source, mountEl) {
+function streamSpectrogram(ac: AudioContext, source: MediaStreamAudioSourceNode, mountEl: HTMLDivElement) {
   const analyser = ac.createAnalyser();
   analyser.fftSize = 2048;
   analyser.smoothingTimeConstant = 0;
@@ -4453,7 +4453,7 @@ function streamSpectrogram(ac, source, mountEl) {
   mountEl.appendChild(wrap);
 
   const height = 240;
-  const ctxC = canvas.getContext('2d');
+  const ctxC = canvas.getContext('2d')!;
   function sizeCanvas() {
     const newW = Math.max(200, (wrap.clientWidth || 600) - 48);
     if (newW === canvas.width && height === canvas.height) return;
@@ -4464,7 +4464,7 @@ function streamSpectrogram(ac, source, mountEl) {
   sizeCanvas();
   buildFreqAxis(axisY, ac.sampleRate, 'log');
 
-  let raf, stopped = false;
+  let raf: number, stopped = false;
   function onResize() { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { sizeCanvas(); }); }
   window.addEventListener('resize', onResize);
 
@@ -4515,8 +4515,8 @@ function streamSpectrogram(ac, source, mountEl) {
 }
 
 // --- Recording UI ---
-async function startRecording(resultsEl: HTMLElement, recordBtn) {
-  let stream;
+async function startRecording(resultsEl: HTMLElement, recordBtn: HTMLButtonElement & { _stopRec?: (() => void)|null }) {
+  let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
@@ -4529,7 +4529,7 @@ async function startRecording(resultsEl: HTMLElement, recordBtn) {
   const mime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/webm']
     .find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
   const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-  const chunks = [];
+  const chunks: BlobPart[]|undefined = [];
   rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
 
   resultsEl.hidden = false;
@@ -4542,7 +4542,7 @@ async function startRecording(resultsEl: HTMLElement, recordBtn) {
 
   // Live spectrogram of the mic while recording. Feeds off the same stream; a
   // failure here must not abort the take, so it is best-effort.
-  let stopSpec = null;
+  let stopSpec: (() => void)|null = null;
   try {
     const ac = ctx();
     await ac.resume();
@@ -4586,8 +4586,8 @@ async function startRecording(resultsEl: HTMLElement, recordBtn) {
 }
 
 // --- Live spectrogram (no recording, just visualise the mic) ---
-async function startLive(resultsEl: HTMLElement, liveBtn) {
-  let stream;
+async function startLive(resultsEl: HTMLElement, liveBtn: HTMLButtonElement) {
+  let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
@@ -4709,7 +4709,7 @@ async function startLive(resultsEl: HTMLElement, liveBtn) {
   function availableWidth()  { return Math.max(200, (wrap.clientWidth || 600) - 48); }
   function availableHeight() { return Math.max(160, (wrap.clientHeight || state.height) - 2); }
 
-  const ctxC = canvas.getContext('2d');
+  const ctxC = canvas.getContext('2d')!;
 
   // Resizing the canvas wipes its bitmap, which would lose the streaming
   // history in live mode. `preserve` snapshots the old contents into a temp
@@ -4726,7 +4726,7 @@ async function startLive(resultsEl: HTMLElement, liveBtn) {
       const tmp = document.createElement('canvas');
       tmp.width  = canvas.width;
       tmp.height = canvas.height;
-      tmp.getContext('2d').drawImage(canvas, 0, 0);
+      tmp.getContext('2d')!.drawImage(canvas, 0, 0);
       canvas.width  = newW;
       canvas.height = newH;
       canvas.style.width  = newW + 'px';
@@ -4762,7 +4762,7 @@ async function startLive(resultsEl: HTMLElement, liveBtn) {
 
   const detachFs = attachFullscreen(card, fsBtn, allowFs, null, () => { requestAnimationFrame(() => sizeCanvas()); });
 
-  let liveRaf;
+  let liveRaf: number;
   function onWinResize() {
     cancelAnimationFrame(liveRaf);
     liveRaf = requestAnimationFrame(() => sizeCanvas());
@@ -4850,7 +4850,7 @@ async function startLive(resultsEl: HTMLElement, liveBtn) {
   }
   pauseBtn.addEventListener('click', () => { paused = !paused; applyPause(); });
 
-  let liveRec = null;
+  let liveRec: MediaRecorder|null = null;
   recBtn.addEventListener('click', () => {
     if (liveRec) {
       liveRec.stop();
@@ -4859,7 +4859,7 @@ async function startLive(resultsEl: HTMLElement, liveBtn) {
     const mime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/webm']
       .find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
     liveRec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-    const chunks = [];
+    const chunks: BlobPart[]|undefined = [];
     liveRec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     liveRec.onstop = async () => {
       recBtn.classList.remove('is-recording');
@@ -4933,8 +4933,9 @@ export function initAudio({ dropEl, inputEl, recordBtn, liveBtn, resultsEl, onFi
 }) {
   const handle = onFile || ((file: File) => renderAudio(file, resultsEl));
 
-  if (inputEl) inputEl.addEventListener('change', (e) => {
-    const file = e.target.files && e.target.files[0];
+  if (inputEl) inputEl.addEventListener('change', (e: Event) => {
+    const t = e.target as HTMLInputElement;
+    const file = t.files && t.files[0];
     if (file) handle(file);
     inputEl.value = '';
   });

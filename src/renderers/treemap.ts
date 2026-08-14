@@ -5,13 +5,46 @@
 
 import { el, fmtBytes } from '../core/util.js';
 
+/** A rectangle in canvas pixels. The whole layout pass is expressed in these. */
+interface Rect { x: number; y: number; w: number; h: number }
+
+/** One folder in the hierarchy buildHierarchy() folds the flat file list into.
+    `children` is keyed by folder name; `catBytes` is bytes-per-category, which is
+    what decides a collapsed folder's colour. */
+interface HNode {
+  name: string;
+  parent?: HNode;
+  children: Record<string, HNode>;
+  files: any[];
+  totalSize: number;
+  fileCount: number;
+  catBytes: Record<string, number>;
+}
+
+/** One thing competing for area inside a rect: a subfolder, a file, or the pooled
+    "N tiny files" aggregate. Exactly one of the three fields is ever set - which
+    one is what the placement loop switches on. */
+interface Entry { size: number; dir?: any; file?: any; aggregate?: any }
+
+/** An Entry with the rectangle squarify() awarded it. */
+interface Placed extends Rect { item: Entry }
+
+/** Everything layoutNode() collects, split by what each rect represents. The four
+    lists become the canvas's hit-test tables (`_fileRects` and friends). */
+interface Layout {
+  dirs: (Rect & { node: any; depth: number; headerH: number })[];
+  files: (Rect & { item: any })[];
+  collapsed: (Rect & { node: any })[];
+  aggregates: (Rect & { agg: any })[];
+}
+
 function isDark() {
   return document.documentElement.getAttribute('data-theme') === 'dark';
 }
 
 // ---------- squarified layout (one level) ----------
 
-function aspectRatio(row, sideLen, totalArea) {
+function aspectRatio(row: any[], sideLen: number, totalArea: number) {
   if (!row.length || !sideLen || !totalArea) return Infinity;
   const rowArea = row.reduce((s, r) => s + r.size, 0);
   const thickness = (rowArea / totalArea) * (totalArea / sideLen);
@@ -25,10 +58,10 @@ function aspectRatio(row, sideLen, totalArea) {
   return worst;
 }
 
-function layoutRow(row, rect, totalSize, vertical) {
+function layoutRow(row: Entry[], rect: Rect, totalSize: number, vertical: boolean) {
   const rowSize = row.reduce((s, r) => s + r.size, 0);
   const fraction = totalSize > 0 ? rowSize / totalSize : 0;
-  const rects = [];
+  const rects: Placed[] = [];
   let offset = 0;
 
   if (vertical) {
@@ -50,7 +83,7 @@ function layoutRow(row, rect, totalSize, vertical) {
   }
 }
 
-function squarify(children, rect) {
+function squarify(children: Entry[], rect: Rect): Placed[] {
   if (!children.length) return [];
   const sorted = [...children].sort((a, b) => b.size - a.size);
   if (sorted.reduce((s, c) => s + c.size, 0) <= 0) return [];
@@ -61,7 +94,7 @@ function squarify(children, rect) {
   suffix[n] = 0;
   for (let k = n - 1; k >= 0; k--) suffix[k] = suffix[k + 1] + sorted[k].size;
 
-  const results = [];
+  const results: Placed[] = [];
   let i = 0;
   let curRect = { ...rect };
 
@@ -94,8 +127,8 @@ function squarify(children, rect) {
 
 // ---------- hierarchy ----------
 
-function buildHierarchy(items) {
-  const root = { name: '', children: {}, files: [], totalSize: 0, fileCount: 0, catBytes: {} };
+function buildHierarchy(items: any[]) {
+  const root: HNode = { name: '', children: {}, files: [], totalSize: 0, fileCount: 0, catBytes: {} };
   for (const item of items) {
     const parts = item.path.replace(/\\/g, '/').split('/').filter(Boolean);
     let node = root;
@@ -120,7 +153,7 @@ function buildHierarchy(items) {
 
 // Category whose files take up the most bytes in this folder - used to colour a
 // collapsed (too-dense-to-draw) folder block.
-function dominantCategory(node) {
+function dominantCategory(node: HNode) {
   let best = 'other', bestV = -1;
   const cb = node.catBytes || {};
   for (const k in cb) { if (cb[k] > bestV) { bestV = cb[k]; best = k; } }
@@ -148,10 +181,10 @@ const COLLAPSE_MIN_FILES = 4;   // never collapse trivially small folders
 const MIN_FILE_AREA = 160;
 const AGG_MIN_FILES = 8;        // only pool when the tail is actually a wall
 
-function layoutNode(node, rect, depth, out) {
+function layoutNode(node: any, rect: Rect, depth: number, out: Layout) {
   if (depth > MAX_DEPTH || rect.w < 2 || rect.h < 2) return;
 
-  const entries = [];
+  const entries: Entry[] = [];
   for (const child of Object.values<any>(node.children)) {
     if (child.totalSize > 0) entries.push({ size: child.totalSize, dir: child });
   }
@@ -167,7 +200,7 @@ function layoutNode(node, rect, depth, out) {
   // only pool once enough of them stack up to actually be a problem.
   const rectArea = rect.w * rect.h;
   const totalEntrySize = entries.reduce((s, e) => s + e.size, 0) || 1;
-  const dirEntries = [], keptFiles = [], tiny = [];
+  const dirEntries: Entry[] = [], keptFiles: Entry[] = [], tiny: Entry[] = [];
   for (const e of entries) {
     if (e.dir) { dirEntries.push(e); continue; }
     const projArea = (e.size / totalEntrySize) * rectArea;
@@ -218,7 +251,7 @@ function layoutNode(node, rect, depth, out) {
 const LABEL_MIN_W = 50;
 const LABEL_MIN_H = 16;
 
-function contrastText(hex) {
+function contrastText(hex: string) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
@@ -226,8 +259,8 @@ function contrastText(hex) {
   return lum > 0.55 ? '#000000' : '#ffffff';
 }
 
-export function renderTreemap(canvas, items, opts) {
-  const ctx = canvas.getContext('2d');
+export function renderTreemap(canvas: HTMLCanvasElement, items: any[], opts: any) {
+  const ctx = canvas.getContext('2d')!;
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.width / dpr;
   const h = canvas.height / dpr;
@@ -237,7 +270,7 @@ export function renderTreemap(canvas, items, opts) {
   if (!canvas._hierarchy) canvas._hierarchy = buildHierarchy(items);
   const view = canvas._viewNode || canvas._hierarchy;
 
-  const out = { dirs: [], files: [], collapsed: [], aggregates: [] };
+  const out: Layout = { dirs: [], files: [], collapsed: [], aggregates: [] };
   layoutNode(view, { x: 0, y: 0, w, h }, 0, out);
 
   if (!out.files.length && !out.collapsed.length && !out.aggregates.length) {
@@ -428,12 +461,12 @@ export function renderTreemap(canvas, items, opts) {
 
 // ---------- interaction ----------
 
-function canvasXY(canvas, clientX, clientY) {
+function canvasXY(canvas: HTMLCanvasElement, clientX: number, clientY: number) {
   const rect = canvas.getBoundingClientRect();
   return { x: clientX - rect.left, y: clientY - rect.top };
 }
 
-function hitRects(rects, x, y) {
+function hitRects(rects: any[]|null|undefined, x: number, y: number) {
   if (!rects) return null;
   for (const r of rects) {
     if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return r;
@@ -443,7 +476,7 @@ function hitRects(rects, x, y) {
 
 // ---------- cursor confirm popup ----------
 
-let _tmMenu = null;
+let _tmMenu: HTMLDivElement|null = null;
 function closeFileMenu() {
   if (!_tmMenu) return;
   _tmMenu.remove();
@@ -452,10 +485,10 @@ function closeFileMenu() {
   document.removeEventListener('keydown', onEsc, true);
   window.removeEventListener('scroll', closeFileMenu, true);
 }
-function onOutside(e) { if (_tmMenu && !_tmMenu.contains(e.target)) closeFileMenu(); }
-function onEsc(e) { if (e.key === 'Escape') closeFileMenu(); }
+function onOutside(e: Event) { if (_tmMenu && !_tmMenu.contains(e.target as Node)) closeFileMenu(); }
+function onEsc(e: KeyboardEvent) { if (e.key === 'Escape') closeFileMenu(); }
 
-function showFileMenu(clientX, clientY, item, onConfirm) {
+function showFileMenu(clientX: number, clientY: number, item: any, onConfirm: () => void) {
   closeFileMenu();
   const name = item.path.split('/').pop() || item.path;
   const cancelBtn = el('button', { class: 'anr-tm-btn' }, 'Cancel');
@@ -510,7 +543,7 @@ function showFileMenu(clientX, clientY, item, onConfirm) {
 // what makes a dense folder navigable - thousands of slivers become a list you
 // can filter by name instead of a wall you can't click.
 
-let _tmList = null;
+let _tmList: HTMLDivElement|null = null;
 function closeFileList() {
   if (!_tmList) return;
   _tmList.remove();
@@ -519,16 +552,16 @@ function closeFileList() {
   document.removeEventListener('keydown', onListEsc, true);
   window.removeEventListener('scroll', onListScroll, true);
 }
-function onListOutside(e) { if (_tmList && !_tmList.contains(e.target)) closeFileList(); }
-function onListEsc(e) { if (e.key === 'Escape') closeFileList(); }
+function onListOutside(e: Event) { if (_tmList && !_tmList.contains(e.target as Node)) closeFileList(); }
+function onListEsc(e: KeyboardEvent) { if (e.key === 'Escape') closeFileList(); }
 // Dismiss when the page/treemap behind the popup scrolls, but NOT when the user
 // scrolls the popup's own file list (a captured scroll fires for inner elements
 // too, which would otherwise close the menu the moment you try to scroll it).
-function onListScroll(e) { if (_tmList && _tmList.contains(e.target)) return; closeFileList(); }
+function onListScroll(e: Event) { if (_tmList && _tmList.contains(e.target as Node)) return; closeFileList(); }
 
 const LIST_CAP = 300;   // rows rendered at once; refine via the filter box
 
-function showFileListMenu(clientX, clientY, files, opts) {
+function showFileListMenu(clientX: number, clientY: number, files: any[], opts: any) {
   closeFileList();
   const sorted = [...files].sort((a, b) => b.size - a.size);
   const total = sorted.reduce((s, f) => s + f.size, 0);
@@ -539,7 +572,7 @@ function showFileListMenu(clientX, clientY, files, opts) {
   const search = el('input', { type: 'text', class: 'anr-tml-search', placeholder: 'Filter by name…' });
   const listEl = el('div', { class: 'anr-tml-list' });
 
-  function render(filter) {
+  function render(filter: string) {
     listEl.innerHTML = '';
     const q = (filter || '').trim().toLowerCase();
     let shown = 0, matched = 0;
@@ -591,7 +624,7 @@ function showFileListMenu(clientX, clientY, files, opts) {
   }, 0);
 }
 
-export function attachTreemapEvents(canvas, wrap, items, opts) {
+export function attachTreemapEvents(canvas: HTMLCanvasElement, wrap: HTMLDivElement, items: any[], opts: any) {
   const tooltip = el('div', { class: 'anr-treemap-tooltip' });
   wrap.appendChild(tooltip);
 
@@ -604,7 +637,7 @@ export function attachTreemapEvents(canvas, wrap, items, opts) {
   const status = el('div', { class: 'anr-treemap-status' }, 'Click a folder to zoom in · click a file to analyse it');
   wrap.appendChild(status);
 
-  const zoomStack = []; // array of folder nodes
+  const zoomStack: any[] = []; // array of folder nodes
 
   function viewNode() {
     return zoomStack.length ? zoomStack[zoomStack.length - 1] : canvas._hierarchy;
@@ -616,13 +649,13 @@ export function attachTreemapEvents(canvas, wrap, items, opts) {
     updateBreadcrumb();
   }
 
-  function zoomTo(node) {
+  function zoomTo(node: HNode) {
     // A nested folder header can be clicked directly from a higher view (headers
     // render down to depth 2), so rebuild the whole ancestor chain from root to
     // the clicked node - pushing only `node` would skip the folders in between
     // and show a wrong path in the breadcrumb.
     const chain = [];
-    for (let n = node; n && n !== canvas._hierarchy; n = n.parent) chain.unshift(n);
+    for (let n: HNode|undefined = node; n && n !== canvas._hierarchy; n = n.parent) chain.unshift(n);
     zoomStack.length = 0;
     zoomStack.push(...chain);
     status.textContent = '';
@@ -690,7 +723,7 @@ export function attachTreemapEvents(canvas, wrap, items, opts) {
     }
   });
 
-  function positionTooltip(e) {
+  function positionTooltip(e: MouseEvent) {
     const wrapRect = wrap.getBoundingClientRect();
     let tx = e.clientX - wrapRect.left + 12;
     let ty = e.clientY - wrapRect.top + 12;

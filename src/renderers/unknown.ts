@@ -9,10 +9,10 @@ import { buildOsintCard } from '../core/osint.js';
 import { carveImages, repairJpeg, ensureJpegHuffman } from './photo-recover.js';
 import { createCarveGallery } from './carve-gallery.js';
 
-function esc(s) {
+function esc(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-function escAttr(s) {
+function escAttr(s: string) {
   return esc(s).replace(/"/g, '&quot;');
 }
 
@@ -29,7 +29,7 @@ function escAttr(s) {
  */
 export function guessFormat(b: Uint8Array) {
   if (!b || b.length < 4) return 'unknown';
-  const a = (s, l) => Array.from(b.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
+  const a = (s: number, l: number) => Array.from(b.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
 
   if (a(0, 4) === '%PDF')                                return 'PDF document';
   if (b[0] === 0x89 && a(1, 3) === 'PNG')                return 'PNG image';
@@ -71,7 +71,7 @@ export function guessFormat(b: Uint8Array) {
 }
 
 // Distinguish UTF-16 LE/BE text from binary. Returns 'le', 'be', or null.
-function utf16Kind(b) {
+function utf16Kind(b: string|any[]|Uint8Array) {
   if (b.length >= 2) {
     if (b[0] === 0xFF && b[1] === 0xFE) return 'le';   // BOM
     if (b[0] === 0xFE && b[1] === 0xFF) return 'be';   // BOM
@@ -96,8 +96,8 @@ function utf16Kind(b) {
   return null;
 }
 
-function jsonStats(val, depth) {
-  let keys = 0, maxD = depth, arrays = [];
+function jsonStats(val: string|any[], depth: number) {
+  let keys = 0, maxD = depth, arrays: any[] = [];
   if (val && typeof val === 'object' && !Array.isArray(val)) {
     const ks = Object.keys(val);
     keys += ks.length;
@@ -117,7 +117,7 @@ function jsonStats(val, depth) {
   return { keys, maxDepth: maxD, arrays };
 }
 
-function highlightJson(val, indent) {
+function highlightJson(val: string|any[]|null, indent: number) {
   const sp = '  '.repeat(indent);
   if (val === null) return '<span class="anr-syn-kw">null</span>';
   if (typeof val === 'boolean') return '<span class="anr-syn-kw">' + val + '</span>';
@@ -152,7 +152,7 @@ function highlightJson(val, indent) {
   return String(val);
 }
 
-function xmlStats(node, depth) {
+function xmlStats(node: Node, depth: number) {
   let count = 0, maxD = depth;
   if (node.nodeType === Node.ELEMENT_NODE) {
     count = 1;
@@ -165,29 +165,29 @@ function xmlStats(node, depth) {
   return { count, maxDepth: maxD };
 }
 
-function formatXml(node, indent) {
+function formatXml(node: Node, indent: number) {
   const sp = '  '.repeat(indent);
   if (node.nodeType === Node.TEXT_NODE) {
-    const t = node.textContent.trim();
+    const t = node.textContent!.trim();
     if (!t) return '';
     return sp + esc(t) + '\n';
   }
   if (node.nodeType === Node.COMMENT_NODE) {
-    return sp + '<span class="anr-syn-comment">&lt;!-- ' + esc(node.textContent) + ' --&gt;</span>\n';
+    return sp + '<span class="anr-syn-comment">&lt;!-- ' + esc(node.textContent!) + ' --&gt;</span>\n';
   }
   if (node.nodeType === Node.PROCESSING_INSTRUCTION_NODE) {
-    return sp + '<span class="anr-syn-comment">&lt;?' + node.nodeName + ' ' + esc(node.textContent) + '?&gt;</span>\n';
+    return sp + '<span class="anr-syn-comment">&lt;?' + node.nodeName + ' ' + esc(node.textContent!) + '?&gt;</span>\n';
   }
   if (node.nodeType !== Node.ELEMENT_NODE) return '';
   const tagName = esc(node.nodeName);
   let attrs = '';
-  for (const aNode of node.attributes) {
+  for (const aNode of (node as Element).attributes) {
     attrs += ' <span class="anr-syn-attr">' + esc(aNode.name) + '</span>=<span class="anr-syn-str">"' + escAttr(aNode.value) + '"</span>';
   }
   const children = Array.from<Node>(node.childNodes);
   const meaningful = children.filter(c =>
     c.nodeType === Node.ELEMENT_NODE ||
-    (c.nodeType === Node.TEXT_NODE && c.textContent.trim()) ||
+    (c.nodeType === Node.TEXT_NODE && c.textContent!.trim()) ||
     c.nodeType === Node.COMMENT_NODE
   );
   if (meaningful.length === 0) {
@@ -195,7 +195,7 @@ function formatXml(node, indent) {
   }
   // Single text child: inline
   if (meaningful.length === 1 && meaningful[0].nodeType === Node.TEXT_NODE) {
-    const txt = esc(meaningful[0].textContent.trim());
+    const txt = esc(meaningful[0].textContent!.trim());
     return sp + '&lt;<span class="anr-syn-tag">' + tagName + '</span>' + attrs + '&gt;' +
       txt + '&lt;/<span class="anr-syn-tag">' + tagName + '</span>&gt;\n';
   }
@@ -207,7 +207,7 @@ function formatXml(node, indent) {
   return out;
 }
 
-export async function renderUnknown(file: File, resultsEl: HTMLElement, opts) {
+export async function renderUnknown(file: File, resultsEl: HTMLElement, opts?: any) {
   opts = opts || {};
   // "Extensionless" mode: a file with no extension that didn't match any magic
   // route. Same inspector, but framed as an expected category (shown as text,
@@ -282,7 +282,7 @@ export async function renderUnknown(file: File, resultsEl: HTMLElement, opts) {
   // UTF-16 text decodes via TextDecoder (Blob.text() is always UTF-8, which would
   // mangle it). readSlice() returns the correctly-decoded text for either case.
   const u16enc = guess === 'UTF-16 LE text' ? 'utf-16le' : guess === 'UTF-16 BE text' ? 'utf-16be' : null;
-  const readSlice = async (start, end) => {
+  const readSlice = async (start: number, end: number) => {
     if (!u16enc) return file.slice(start, end).text();
     const buf = await file.slice(start, end & ~1).arrayBuffer();
     return new TextDecoder(u16enc).decode(buf);
@@ -546,7 +546,7 @@ async function appendEntropyCard(file: File, resultsEl: HTMLElement) {
 
   const cv = el('canvas', { class: 'anr-entropy-map' });
   cv.width = prof.length; cv.height = 1;   // 1px-tall strip, CSS-stretched; columns stay crisp
-  const ctx = cv.getContext('2d');
+  const ctx = cv.getContext('2d')!;
   for (let i = 0; i < prof.length; i++) {
     const t = Math.max(0, Math.min(1, prof[i].entropy / 8));
     ctx.fillStyle = 'hsl(' + Math.round(220 - 220 * t) + ', 75%, 50%)';   // blue (low) -> red (high)
@@ -579,12 +579,12 @@ async function appendEntropyCard(file: File, resultsEl: HTMLElement) {
 // recovered disk fragments / joined dumps / mis-typed files for whole JPEGs, PNGs,
 // GIFs, WebPs and BMPs. Reads up to a cap so a huge blob can't blow the heap.
 const CARVE_SCAN_CAP = SCAN_LARGE;
-const CARVE_MIME = { jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
+const CARVE_MIME: Record<string, string> = { jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
 
 // `host` is an empty div already sitting in the right place in the results, so
 // the card can be filled in late without the page reordering under the reader.
 // `resultsEl` stays the target for the drill-in when an Analyse button is used.
-async function appendEmbeddedImagesCard(file: File, resultsEl: HTMLElement, host) {
+async function appendEmbeddedImagesCard(file: File, resultsEl: HTMLElement, host: HTMLDivElement) {
   const bytes = new Uint8Array(await file.slice(0, Math.min(file.size, CARVE_SCAN_CAP)).arrayBuffer());
   const carved = carveImages(bytes, { max: 48 });
   if (!carved.length) return;
@@ -602,12 +602,12 @@ async function appendEmbeddedImagesCard(file: File, resultsEl: HTMLElement, host
 
   for (let k = 0; k < carved.length; k++) {
     const c = carved[k];
-    let sub = bytes.subarray(c.start, c.end);
+    let sub: Uint8Array = bytes.subarray(c.start, c.end);
     if (c.format === 'jpeg') {
       const r = repairJpeg(sub); if (r && r.data) sub = r.data;   // close off a cut-off carve
-      sub = ensureJpegHuffman(sub);                               // graft standard tables onto a tableless MJPEG frame
+      sub = ensureJpegHuffman(sub)!;                               // graft standard tables onto a tableless MJPEG frame
     }
-    const cf = new File([sub], 'carved_' + (k + 1) + '.' + c.format, { type: CARVE_MIME[c.format] || 'application/octet-stream' });
+    const cf = new File([sub as BlobPart], 'carved_' + (k + 1) + '.' + c.format, { type: CARVE_MIME[c.format] || 'application/octet-stream' });
     gallery.add({
       file: cf, format: c.format, width: c.width, height: c.height, complete: c.complete,
       // photo.js is pulled in only on click: unknown.js is the fallback for files

@@ -27,19 +27,19 @@
 
    There is no public spec; this was reverse-engineered from real .drp files. */
 
-import { el, row, rowHelp, h3help, fmtBytes, integrityCard, loadScript } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, loadScript, type ElChild } from '../core/util.js';
 
 const MAX_ENTRY = 64 * 1024 * 1024;        // cap any single inflated XML we hold
 const STD_FPS = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60];
 
-const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
-const num = (s) => { const n = Number(s); return isFinite(n) ? n : 0; };
-const basename = (p) => (p ? p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1) : '');
+const esc = (s: string) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m] as string));
+const num = (s: string) => { const n = Number(s); return isFinite(n) ? n : 0; };
+const basename = (p: string) => (p ? p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1) : '');
 
 // --- tiny DOM helpers (direct-child only - clips nest sibling clips/media refs) ---
-const kids = (e, tag) => { const out = []; if (e) for (const c of e.children) if (c.tagName === tag) out.push(c); return out; };
-const kid = (e, tag) => { if (e) for (const c of e.children) if (c.tagName === tag) return c; return null; };
-const txt = (e, tag) => { const k = kid(e, tag); return k ? k.textContent.trim() : ''; };
+const kids = (e: Element|null, tag: string) => { const out: Element[] = []; if (e) for (const c of e.children) if (c.tagName === tag) out.push(c); return out; };
+const kid = (e: Element|null, tag: string) => { if (e) for (const c of e.children) if (c.tagName === tag) return c; return null; };
+const txt = (e: Element, tag: string) => { const k = kid(e, tag); return k ? k.textContent.trim() : ''; };
 
 // Resolve's XML uses C++-style "::" inside some tag names (ListMgt::LmVersion,
 // ListMgt::LmPowerNodeList, …). That is NOT well-formed XML - ":" is the namespace
@@ -47,14 +47,14 @@ const txt = (e, tag) => { const k = kid(e, tag); return k ? k.textContent.trim()
 // get nothing back (the bug that made .drp fall through to the archive view).
 // Rewrite "::" to "__" inside tag names before parsing; we never read those tags,
 // and the ones we do read have plain names, so this is lossless for our purposes.
-function parseXml(xml) {
-  const safe = xml.replace(/<(\/?)([^\s>/!?][^\s>/]*)/g, (m, slash, name) => '<' + slash + name.replace(/::/g, '__'));
+function parseXml(xml: string) {
+  const safe = xml.replace(/<(\/?)([^\s>/!?][^\s>/]*)/g, (m, slash: string, name: string) => '<' + slash + name.replace(/::/g, '__'));
   const doc = new DOMParser().parseFromString(safe, 'application/xml');
   return doc.getElementsByTagName('parsererror').length ? null : doc;
 }
 
 // MediaFrameRate is the first 8 bytes of the field, a little-endian double.
-function hexDouble(h) {
+function hexDouble(h: string) {
   if (!h || h.length < 16) return 0;
   const b = new DataView(new ArrayBuffer(8));
   for (let i = 0; i < 8; i++) b.setUint8(i, parseInt(h.substr(i * 2, 2), 16));
@@ -92,7 +92,7 @@ async function readZip(file: File) {
   return entries;
 }
 
-async function readEntryText(file: File, e) {
+async function readEntryText(file: File, e: any) {
   if (e.uncompSize > MAX_ENTRY) throw new Error('entry too large');
   const lh = new DataView(await file.slice(e.lho, e.lho + 30).arrayBuffer());
   if (lh.getUint32(0, true) !== 0x04034b50) throw new Error('bad local header');
@@ -116,16 +116,16 @@ async function readEntryText(file: File, e) {
 // We harvest every printable length-delimited field generically, then pick those
 // paths out - so a missing/renamed field just yields less, never an error.
 const LUT_RE = /\.(cube|dctl|3dl|ilut|olut|clf|cdl|dat|look)$/i;
-const FX_NAMES = {
+const FX_NAMES: Record<string, string> = {
   colorspacetransform: 'Color Space Transform', colorspacetransformv2: 'Color Space Transform',
   gamutmapping: 'Gamut Mapping', gamutlimiter: 'Gamut Limiter', filmlooklut: 'Film Look LUT',
   colorstabilizer: 'Color Stabilizer', facerefinement: 'Face Refinement', magicmask: 'Magic Mask',
   lensflare: 'Lens Flare', glow: 'Glow', blur: 'Blur', sharpen: 'Sharpen', filmgrain: 'Film Grain',
   deflicker: 'Deflicker', dehaze: 'Dehaze', warperfx: 'Warper', objectremoval: 'Object Removal',
 };
-const prettyFx = (id) => FX_NAMES[id] || ('ResolveFX ' + id.replace(/v\d+$/, ''));
+const prettyFx = (id: string) => FX_NAMES[id] || ('ResolveFX ' + id.replace(/v\d+$/, ''));
 
-function hexToBytes(hex) {
+function hexToBytes(hex: string) {
   const n = hex.length >> 1, out = new Uint8Array(n);
   for (let i = 0; i < n; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
   return out;
@@ -133,7 +133,7 @@ function hexToBytes(hex) {
 
 // Generic protobuf walker: collect every printable length-delimited field as
 // { path, str }, recursing into the ones that are themselves sub-messages.
-function pbStrings(buf, depth, path, out) {
+function pbStrings(buf: Uint8Array, depth: number, path: string, out: any[]) {
   let p = 0;
   while (p < buf.length) {
     let tag = 0, shift = 0, b;
@@ -149,14 +149,14 @@ function pbStrings(buf, depth, path, out) {
       const sub = buf.subarray(p, p + len); p += len;
       let printable = len >= 1 && len <= 240;
       if (printable) for (let i = 0; i < sub.length; i++) { const c = sub[i]; if (!(c === 9 || c === 10 || c === 13 || (c >= 32 && c <= 126))) { printable = false; break; } }
-      if (printable) out.push({ path: path + '/' + field, str: String.fromCharCode.apply(null, sub) });
+      if (printable) out.push({ path: path + '/' + field, str: String.fromCharCode.apply(null, sub as unknown as number[]) });
       else if (depth < 10) pbStrings(sub, depth + 1, path + '/' + field, out);
     } else return;
   }
 }
 
 // Decode one Body hex -> { nodes:[labels], luts:[names], effects:[names] } (or null).
-function decodeGrade(hex) {
+function decodeGrade(hex: string) {
   let bytes;
   try { bytes = hexToBytes(hex); } catch (_) { return null; }
   let z = -1;
@@ -166,7 +166,7 @@ function decodeGrade(hex) {
   if (z < 0 || !(window.fzstd && window.fzstd.decompress)) return null;
   let raw;
   try { raw = window.fzstd.decompress(bytes.subarray(z)); } catch (_) { return null; }
-  const found = [];
+  const found: any[] = [];
   try { pbStrings(raw, 0, '', found); } catch (_) {}
   const nodes = [], luts = new Set(), effects = new Set();
   for (const o of found) {
@@ -180,7 +180,7 @@ function decodeGrade(hex) {
 }
 
 // Pull the active grade's Body hex (+ version name / corrected flag) from a clip.
-function clipGrade(clipEl) {
+function clipGrade(clipEl: Element) {
   const vers = clipEl.getElementsByTagName('ListMgt__LmVersion');
   for (const v of vers) {
     const body = txt(v, 'Body');
@@ -192,14 +192,14 @@ function clipGrade(clipEl) {
 }
 
 // Render an ordered node chain as pill chips joined by arrows.
-function nodeChipsHtml(nodes) {
+function nodeChipsHtml(nodes: any[]) {
   if (!nodes.length) return '<span class="anr-hint">grade present, no labelled nodes</span>';
   return nodes.map((n, i) => (i ? '<span class="anr-drt-arrow">→</span>' : '')
     + '<span class="anr-drt-node">' + esc(n) + '</span>').join('');
 }
 
 // ---- timeline parsing (one SeqContainer XML) ----
-function parseTimeline(xml) {
+function parseTimeline(xml: string) {
   const doc = parseXml(xml);
   const container = doc && doc.getElementsByTagName('Sm2SequenceContainer')[0];
   if (!container) return null;
@@ -207,13 +207,13 @@ function parseTimeline(xml) {
   const paths = new Set(), names = new Set();
   let seqId = '';
 
-  function buildTracks(vecTag, kind) {
-    const out = [];
+  function buildTracks(vecTag: string, kind: string) {
+    const out: any[] = [];
     for (const elem of kids(kid(container, vecTag), 'Element')) {
       const trackEl = kid(elem, 'Sm2TiTrack');
       if (!trackEl) continue;
       if (!seqId) seqId = txt(trackEl, 'Sequence');
-      const clips = [];
+      const clips: any[] = [];
       for (const item of kids(kid(trackEl, 'Items'), 'Element')) {
         const clipEl = kid(item, 'Sm2TiVideoClip') || kid(item, 'Sm2TiAudioClip');
         if (!clipEl) continue;
@@ -269,11 +269,11 @@ function parseTimeline(xml) {
 }
 
 // ---- media pool parsing (the bins and their clips) ----
-function parseMediaPool(xml) {
+function parseMediaPool(xml: string) {
   const doc = parseXml(xml);
   const folder = doc && doc.getElementsByTagName('Sm2MpFolder')[0];
   if (!folder) return null;
-  const bin = { name: txt(folder, 'Name') || 'Bin', clips: [], timelines: [] };
+  const bin: { name: string; clips: { name: string; kind: string }[]; timelines: { name: string; seqId: string|null }[] } = { name: txt(folder, 'Name') || 'Bin', clips: [], timelines: [] };
   const seen = new Set();
   for (const tag of ['Sm2MpVideoClip', 'Sm2MpAudioClip', 'Sm2MpTimelineClip', 'Sm2MpImageClip', 'Sm2MpCompoundClip']) {
     for (const c of doc.getElementsByTagName(tag)) {
@@ -292,25 +292,25 @@ function parseMediaPool(xml) {
 }
 
 // ---- timecode + axis formatting ----
-function tc(frame, fps) {
+function tc(frame: number, fps: number) {
   const f = Math.round(fps);
   if (f <= 0) return String(frame);
   const ff = ((frame % f) + f) % f;
   let s = Math.floor(frame / f);
   const hh = Math.floor(s / 3600); s -= hh * 3600;
   const mm = Math.floor(s / 60); const ss = s - mm * 60;
-  const p2 = (n) => String(n).padStart(2, '0');
+  const p2 = (n: number) => String(n).padStart(2, '0');
   return `${p2(hh)}:${p2(mm)}:${p2(ss)}:${p2(ff)}`;
 }
-const fmtFps = (v) => (v ? (v % 1 ? v.toFixed(2) : v.toFixed(0)) + ' fps' : '');
+const fmtFps = (v: number) => (v ? (v % 1 ? v.toFixed(2) : v.toFixed(0)) + ' fps' : '');
 
 const LH = 26, TOP = 6, LABEL_W = 132;
-const COLOR = { video: '#3b82c4', audio: '#3ba776', gen: '#9b6cc4' };
-const colorOf = (t, c) => (c && c.gen ? COLOR.gen : COLOR[t.kind]);
+const COLOR: Record<string, string> = { video: '#3b82c4', audio: '#3ba776', gen: '#9b6cc4' };
+const colorOf = (t: any, c: any) => (c && c.gen ? COLOR.gen : COLOR[t.kind]);
 
-function trackLabelsSvg(tracks, H) {
+function trackLabelsSvg(tracks: any[], H: number) {
   let s = '';
-  tracks.forEach((t, i) => {
+  tracks.forEach((t: any, i: number) => {
     const y = TOP + i * LH;
     s += `<rect x="0" y="${y}" width="${LABEL_W}" height="${LH}" fill="${i % 2 ? 'rgba(128,128,128,.10)' : 'rgba(128,128,128,.04)'}"/>`;
     s += `<rect x="0" y="${y + 5}" width="4" height="${LH - 10}" fill="${COLOR[t.kind]}"/>`;
@@ -320,12 +320,12 @@ function trackLabelsSvg(tracks, H) {
   return `<svg viewBox="0 0 ${LABEL_W} ${H}" width="${LABEL_W}" height="${H}" style="display:block">${s}</svg>`;
 }
 
-function trackLanesSvg(tl, H, trackW, ppf) {
+function trackLanesSvg(tl: any, H: number, trackW: number, ppf: number) {
   const { tracks, startFrame, durFrames, fps } = tl;
-  const x = (frame) => (frame - startFrame) * ppf;
+  const x = (frame: number) => (frame - startFrame) * ppf;
   const bottom = TOP + tracks.length * LH;
   let stripes = '', grid = '', bars = '';
-  tracks.forEach((t, i) => {
+  tracks.forEach((t: any, i: number) => {
     stripes += `<rect x="0" y="${TOP + i * LH}" width="${trackW}" height="${LH}" fill="${i % 2 ? 'rgba(128,128,128,.10)' : 'rgba(128,128,128,.04)'}"/>`;
   });
   // Grid every "nice" number of seconds, labelled as timecode.
@@ -337,9 +337,9 @@ function trackLanesSvg(tl, H, trackW, ppf) {
     grid += `<line x1="${gx}" y1="${TOP}" x2="${gx}" y2="${bottom}" stroke="currentColor" stroke-width="1" opacity=".12"/>`;
     grid += `<text x="${gx + 3}" y="${bottom + 14}" fill="currentColor" font-size="9.5" opacity=".5">${tc(startFrame + f, fps)}</text>`;
   }
-  tracks.forEach((t, i) => {
+  tracks.forEach((t: any, i: number) => {
     const y = TOP + i * LH;
-    t.clips.forEach((c) => {
+    t.clips.forEach((c: any) => {
       const bx = x(c.start), bw = Math.max(2, c.dur * ppf);
       const col = colorOf(t, c);
       const srcTc = c.inPt != null && c.fps ? '\nsrc in ' + tc(c.inPt, c.fps) : '';
@@ -359,7 +359,7 @@ function trackLanesSvg(tl, H, trackW, ppf) {
   return `<svg viewBox="0 0 ${trackW} ${H}" width="${trackW}" height="${H}" style="display:block">${stripes}${grid}${bars}</svg>`;
 }
 
-function buildTimelineCard(tl, title) {
+function buildTimelineCard(tl: any, title: string) {
   const tracks = tl.tracks;
   const H = TOP + tracks.length * LH + 22;
   let zoom = 1;
@@ -373,7 +373,7 @@ function buildTimelineCard(tl, title) {
   card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px' }, metaLine));
 
   const pct = el('span', { style: 'font-size:12px;opacity:.75;min-width:44px;text-align:center;font-variant-numeric:tabular-nums' }, '100%');
-  const zbtn = (t, title) => el('button', { type: 'button', class: 'anr-btn', style: 'padding:1px 9px;min-width:0;line-height:1.4', title }, t);
+  const zbtn = (t: ElChild | ElChild[], title: string) => el('button', { type: 'button', class: 'anr-btn', style: 'padding:1px 9px;min-width:0;line-height:1.4', title }, t);
   const bOut = zbtn('−', 'Zoom out'), bIn = zbtn('+', 'Zoom in'), bReset = zbtn('Reset', 'Reset zoom');
   card.appendChild(el('div', { class: 'anr-btn-row', style: 'gap:6px;align-items:center;margin:0 0 6px;flex-wrap:wrap' }, [
     el('span', { style: 'font-size:12px;opacity:.7' }, 'Zoom'), bOut, pct, bIn, bReset,
@@ -394,7 +394,7 @@ function buildTimelineCard(tl, title) {
     lanes.innerHTML = trackLanesSvg(tl, H, trackW, ppf);
     pct.textContent = Math.round(zoom * 100) + '%';
   }
-  function setZoom(z, anchorClientX?) {
+  function setZoom(z: number, anchorClientX?: number|null|undefined) {
     const oldPpf = ppfNow();
     const rect = scroller.getBoundingClientRect();
     const anchorPx = (anchorClientX != null ? anchorClientX - rect.left : rect.width / 2) + scroller.scrollLeft;
@@ -420,7 +420,7 @@ function buildTimelineCard(tl, title) {
     try { scroller.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
   });
   scroller.addEventListener('pointermove', (e) => { if (dragging) scroller.scrollLeft = startScroll - (e.clientX - startX); });
-  const endDrag = (e) => { dragging = false; scroller.style.cursor = 'grab'; try { scroller.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ } };
+  const endDrag = (e: PointerEvent) => { dragging = false; scroller.style.cursor = 'grab'; try { scroller.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ } };
   scroller.addEventListener('pointerup', endDrag);
   scroller.addEventListener('pointercancel', endDrag);
 
@@ -433,7 +433,7 @@ function buildTimelineCard(tl, title) {
 }
 
 // ---- project.xml metadata ----
-function parseProject(xml) {
+function parseProject(xml: string) {
   const m: any = {};
   const doc = parseXml(xml);
   const proj = doc && doc.getElementsByTagName('SM_Project')[0];
@@ -460,21 +460,21 @@ export async function renderDavinci(file: File, resultsEl: HTMLElement) {
     const { renderProprietary } = await import('./proprietary.js');
     return renderProprietary(file, resultsEl);
   }
-  const get = (name) => entries.find((e) => e.name === name);
-  const byPrefix = (pre, suf) => entries.filter((e) => e.name.startsWith(pre) && e.name.endsWith(suf));
+  const get = (name: string) => entries.find((e) => e.name === name);
+  const byPrefix = (pre: string, suf: string) => entries.filter((e) => e.name.startsWith(pre) && e.name.endsWith(suf));
 
   // Parse the pieces (best-effort; any one failing shouldn't sink the rest).
   let project: any = {};
   try { const pe = get('project.xml'); if (pe) project = parseProject(await readEntryText(file, pe)); } catch (_) {}
 
-  const mediaPool = [];
+  const mediaPool: any[] = [];
   for (const e of byPrefix('MediaPool/', 'MpFolder.xml')) {
     try { const bin = parseMediaPool(await readEntryText(file, e)); if (bin && (bin.clips.length || bin.timelines.length)) mediaPool.push(bin); } catch (_) {}
   }
   const tlNameBySeq = new Map();
   for (const bin of mediaPool) for (const t of bin.timelines) if (t.seqId) tlNameBySeq.set(t.seqId, t.name);
 
-  const timelines = [];
+  const timelines: any[] = [];
   for (const e of byPrefix('SeqContainer/', '.xml')) {
     try { const tl = parseTimeline(await readEntryText(file, e)); if (tl) timelines.push(tl); } catch (_) {}
   }
@@ -488,7 +488,7 @@ export async function renderDavinci(file: File, resultsEl: HTMLElement) {
   // Decode each graded clip's colour-page node graph (lazy zstd via fzstd).
   // Best-effort: if fzstd won't load or a Body won't decode, the clip just
   // shows no grade info - the rest of the view is unaffected.
-  const gradedClips = [];
+  const gradedClips: any[] = [];
   for (const tl of timelines) for (const t of tl.tracks) for (const c of t.clips) if (c.grade) gradedClips.push(c);
   if (gradedClips.length) {
     try {
@@ -529,7 +529,7 @@ export async function renderDavinci(file: File, resultsEl: HTMLElement) {
   for (const tl of timelines) for (const t of tl.tracks) for (const c of t.clips) if (c.gradeInfo) graded.push(c);
   if (graded.length) {
     const totalVideo = timelines.reduce((s, tl) =>
-      s + tl.tracks.reduce((a, t) => a + (t.kind === 'video' ? t.clips.length : 0), 0), 0);
+      s + tl.tracks.reduce((a: number, t: any) => a + (t.kind === 'video' ? t.clips.length : 0), 0), 0);
     const card = el('div', { class: 'anr-card' });
     const [gh, ghp] = h3help('Colour grades & nodes', 'The node chain is read straight from the Color page graph stored (zstd-compressed) in each clip’s grade version.');
     card.appendChild(gh); card.appendChild(ghp);
@@ -553,7 +553,7 @@ export async function renderDavinci(file: File, resultsEl: HTMLElement) {
 
     // LUTs + ResolveFX used across all grades.
     const luts = new Set(), fx = new Set();
-    for (const c of graded) { c.gradeInfo.luts.forEach((l) => luts.add(l)); c.gradeInfo.effects.forEach((e) => fx.add(e)); }
+    for (const c of graded) { c.gradeInfo.luts.forEach((l: string) => luts.add(l)); c.gradeInfo.effects.forEach((e: string) => fx.add(e)); }
     if (luts.size || fx.size) {
       const tbl2 = el('table', { class: 'anr-readout', style: 'margin-top:6px' });
       if (fx.size) tbl2.appendChild(rowHelp('ResolveFX', [...fx].join(', '), 'Add-on visual effects (Blackmagic ResolveFX or OFX plugins) applied during colour grading - on grade nodes, the steps in Resolve’s colour pipeline.'));
@@ -590,7 +590,7 @@ export async function renderDavinci(file: File, resultsEl: HTMLElement) {
       card.appendChild(el('p', { style: 'margin:10px 0 2px;font-weight:600;font-size:13px' },
         `${bin.name}  (${bin.clips.length})`));
       const ul = el('ul', { style: 'margin:0;padding-left:18px;font-size:13px;word-break:break-word;' });
-      [...bin.timelines.map((t) => '◫ ' + t.name), ...bin.clips.map((c) => c.name)].slice(0, 120)
+      [...bin.timelines.map((t: any) => '◫ ' + t.name), ...bin.clips.map((c: any) => c.name)].slice(0, 120)
         .forEach((n) => ul.appendChild(el('li', {}, n)));
       card.appendChild(ul);
     }
@@ -598,7 +598,7 @@ export async function renderDavinci(file: File, resultsEl: HTMLElement) {
   }
 
   // ---- Source media paths referenced by the timelines ----
-  const allPaths = [...new Set(timelines.flatMap((t) => t.paths))];
+  const allPaths = [...new Set<string>(timelines.flatMap((t) => t.paths))];
   if (allPaths.length) {
     const card = el('div', { class: 'anr-card' });
     card.appendChild(el('h3', {}, 'Source media (' + allPaths.length + ')'));

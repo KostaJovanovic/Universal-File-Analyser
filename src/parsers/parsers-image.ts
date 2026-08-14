@@ -29,7 +29,7 @@ async function readAll(file: File, cap = 32 * 1024 * 1024) {
 
 // Build a <canvas> from an RGBA Uint8ClampedArray, scaling down so the longest
 // edge is <= MAX_EDGE (nearest-neighbour, cheap). Returns the canvas node or null.
-function canvasFromRGBA(rgba, w, h) {
+function canvasFromRGBA(rgba: Uint8ClampedArray, w: number, h: number) {
   if (!w || !h || w < 1 || h < 1) return null;
   if (rgba.length < w * h * 4) return null;
   let dw = w, dh = h;
@@ -44,18 +44,18 @@ function canvasFromRGBA(rgba, w, h) {
       const c = el('canvas');
       c.width = w; c.height = h;
       c.style.maxWidth = '100%'; c.style.height = 'auto'; c.style.imageRendering = 'auto';
-      const ctx = c.getContext('2d');
-      ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, w * h * 4), w, h), 0, 0);
+      const ctx = c.getContext('2d')!;
+      ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer as ArrayBuffer, rgba.byteOffset, w * h * 4), w, h), 0, 0);
       return wrapPreview(c, w, h);
     }
     // Render full-res to an offscreen canvas, then draw scaled into the visible one.
     const off = document.createElement('canvas');
     off.width = w; off.height = h;
-    off.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, w * h * 4), w, h), 0, 0);
+    off.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer as ArrayBuffer, rgba.byteOffset, w * h * 4), w, h), 0, 0);
     const c = el('canvas');
     c.width = dw; c.height = dh;
     c.style.maxWidth = '100%'; c.style.height = 'auto';
-    c.getContext('2d').drawImage(off, 0, 0, dw, dh);
+    c.getContext('2d')!.drawImage(off, 0, 0, dw, dh);
     return wrapPreview(c, w, h);
   } catch (_) {
     return null;
@@ -63,7 +63,7 @@ function canvasFromRGBA(rgba, w, h) {
 }
 
 // Wrap a canvas with a checkerboard background (so transparency reads) + caption.
-function wrapPreview(canvas, w, h) {
+function wrapPreview(canvas: HTMLCanvasElement, w: number, h: number) {
   const wrap = el('div', { class: 'anr-img-preview', style: 'margin-top:12px;' });
   const board = el('div', {
     style: 'display:inline-block;background-image:linear-gradient(45deg,#bbb 25%,transparent 25%),linear-gradient(-45deg,#bbb 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#bbb 75%),linear-gradient(-45deg,transparent 75%,#bbb 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;border:1px solid var(--anr-border,#3a3a3a);max-width:100%;',
@@ -145,7 +145,7 @@ async function parseTga(file: File) {
   return out;
 }
 
-function decodeTga(b, h) {
+function decodeTga(b: Uint8Array, h: any) {
   const { width, height, pixelDepth } = h;
   const bpp = pixelDepth >> 3;          // bytes per stored pixel/index
   let off = 18 + h.idLen;
@@ -184,7 +184,7 @@ function decodeTga(b, h) {
   if (raw.length < px * bpp) return null;
 
   const rgba = new Uint8ClampedArray(px * 4);
-  const putPixel = (dst, r, g, bl, a) => { rgba[dst] = r; rgba[dst + 1] = g; rgba[dst + 2] = bl; rgba[dst + 3] = a; };
+  const putPixel = (dst: number, r: number, g: number, bl: number, a: number) => { rgba[dst] = r; rgba[dst + 1] = g; rgba[dst + 2] = bl; rgba[dst + 3] = a; };
   const cBpp = h.cmapDepth >> 3;
 
   for (let i = 0; i < px; i++) {
@@ -243,7 +243,7 @@ async function parseQoi(file: File) {
   return out;
 }
 
-function decodeQoi(b, width, height) {
+function decodeQoi(b: Uint8Array, width: number, height: number) {
   const px = width * height;
   if (px <= 0 || px > 64_000_000) return null;
   const rgba = new Uint8ClampedArray(px * 4);
@@ -338,7 +338,7 @@ async function parseNetpbm(file: File) {
   return out;
 }
 
-function decodeNetpbm(b, pos, h) {
+function decodeNetpbm(b: Uint8Array, pos: number, h: any) {
   const { width, height, maxval, ascii_, isBitmap, isGray } = h;
   const px = width * height;
   if (px <= 0 || px > 48_000_000) return null;
@@ -402,18 +402,18 @@ function decodeNetpbm(b, pos, h) {
   return canvasFromRGBA(rgba, width, height);
 }
 
-function parsePam(b) {
+function parsePam(b: Uint8Array) {
   // P7 header is line-based key/value, ending with "ENDHDR\n".
   const headEnd = findBytes(b, [0x45, 0x4e, 0x44, 0x48, 0x44, 0x52], 0, Math.min(b.length, 4096)); // "ENDHDR"
   if (headEnd < 0) return null;
   let nl = headEnd + 6;
   while (nl < b.length && b[nl] !== 0x0a) nl++;
   const headerTxt = latin1(b.subarray(0, headEnd));
-  const get = (k) => { const m = headerTxt.match(new RegExp('^' + k + '\\s+(.+)$', 'im')); return m ? m[1].trim() : null; };
-  const width = parseInt(get('WIDTH'), 10);
-  const height = parseInt(get('HEIGHT'), 10);
-  const depth = parseInt(get('DEPTH'), 10) || 1;
-  const maxval = parseInt(get('MAXVAL'), 10) || 255;
+  const get = (k: string) => { const m = headerTxt.match(new RegExp('^' + k + '\\s+(.+)$', 'im')); return m ? m[1].trim() : null; };
+  const width = parseInt(get('WIDTH')!, 10);
+  const height = parseInt(get('HEIGHT')!, 10);
+  const depth = parseInt(get('DEPTH')!, 10) || 1;
+  const maxval = parseInt(get('MAXVAL')!, 10) || 255;
   const tupltype = get('TUPLTYPE') || '';
   if (!width || !height) return null;
   const out: Row = {
@@ -479,7 +479,7 @@ async function parsePcx(file: File) {
   return out;
 }
 
-function decodePcx(b, h) {
+function decodePcx(b: Uint8Array, h: any) {
   const { bpp, planes, bytesPerLine, width, height } = h;
   // Decode RLE scanlines: total bytes per row = bytesPerLine * planes.
   const totalPerRow = bytesPerLine * planes;
@@ -696,7 +696,7 @@ async function parseXpm(file: File) {
   try {
     // Color table: lines 1..ncolors map cpp-char key -> color (look for 'c' context).
     const colorMap: any = {};
-    const parseColor = (name) => {
+    const parseColor = (name: string | null | undefined): number[] | null => {
       if (!name) return null;
       name = name.trim();
       if (/^none$/i.test(name)) return [0, 0, 0, 0];
@@ -847,7 +847,7 @@ async function parseHdr(file: File) {
   const txt = latin1(b);
   if (!/^#\?(RADIANCE|RGBE)/.test(txt)) return null;
   const out: Row = { 'Format': 'Radiance HDR (RGBE)' };
-  const get = (k) => { const m = txt.match(new RegExp('^' + k + '=\\s*(.+)$', 'im')); return m ? m[1].trim() : null; };
+  const get = (k: string) => { const m = txt.match(new RegExp('^' + k + '=\\s*(.+)$', 'im')); return m ? m[1].trim() : null; };
   const fmt = get('FORMAT'); if (fmt) out['Pixel format'] = fmt;
   const exp = get('EXPOSURE'); if (exp) out['Exposure'] = exp;
   const gamma = get('GAMMA'); if (gamma) out['Gamma'] = gamma;
@@ -964,7 +964,7 @@ async function parseDds(file: File) {
 }
 
 // Map a non-DX10 FourCC to an internal decoder kind.
-function fourCCKind(fourCC) {
+function fourCCKind(fourCC: string) {
   const f = fourCC.replace(/\0/g, '');
   if (f === 'DXT1') return 'bc1';
   if (f === 'DXT2' || f === 'DXT3') return 'bc2';
@@ -974,7 +974,7 @@ function fourCCKind(fourCC) {
   return null;
 }
 // Map a DXGI format id to an internal decoder kind.
-function dxgiKind(n) {
+function dxgiKind(n: number) {
   if (n === 70 || n === 71 || n === 72) return 'bc1';     // BC1 typeless/UNORM/sRGB
   if (n === 73 || n === 74 || n === 75) return 'bc2';     // BC2
   if (n === 76 || n === 77 || n === 78) return 'bc3';     // BC3
@@ -983,7 +983,7 @@ function dxgiKind(n) {
   if (n === 28 || n === 29 || n === 87 || n === 88) return 'rgba'; // R8G8B8A8 / B8G8R8A8 family
   return null;
 }
-function dxgiName(n) {
+function dxgiName(n: number) {
   const M: Record<string, string> = { 71: ' (BC1/DXT1)', 72: ' (BC1 sRGB)', 74: ' (BC2/DXT3)', 75: ' (BC2 sRGB)', 77: ' (BC3/DXT5)', 78: ' (BC3 sRGB)', 80: ' (BC4)', 81: ' (BC4 SNORM)', 83: ' (BC5)', 84: ' (BC5 SNORM)', 95: ' (BC6H)', 96: ' (BC6H)', 98: ' (BC7)', 99: ' (BC7)', 28: ' (R8G8B8A8)', 87: ' (B8G8R8A8)' };
   return M[n] || '';
 }
@@ -994,7 +994,7 @@ function dxgiName(n) {
 // palette and write the 16 texels into `dst` (RGBA) at the block origin.
 // `writeAlpha` controls whether BC1's 1-bit punch-through alpha is honoured
 // (true for standalone BC1; false when BC2/BC3 supply their own alpha).
-function decodeColorBlock(b, off, dst, dstW, dstH, bx, by, writeAlpha, alphaOut) {
+function decodeColorBlock(b: Uint8Array, off: number, dst: Uint8ClampedArray, dstW: number, dstH: number, bx: number, by: number, writeAlpha: boolean, alphaOut: boolean | null) {
   const c0 = b[off] | (b[off + 1] << 8);
   const c1 = b[off + 2] | (b[off + 3] << 8);
   const bits = b[off + 4] | (b[off + 5] << 8) | (b[off + 6] << 16) | (b[off + 7] << 24);
@@ -1028,7 +1028,7 @@ function decodeColorBlock(b, off, dst, dstW, dstH, bx, by, writeAlpha, alphaOut)
 
 // Decode a single BC4-style alpha/grayscale block (8 bytes): two 8-bit
 // endpoints + 16 × 3-bit indices. Calls `write(x,y,value)` for each texel.
-function decodeAlphaBlock(b, off, bx, by, dstW, dstH, write) {
+function decodeAlphaBlock(b: Uint8Array, off: number, bx: number, by: number, dstW: number, dstH: number, write: (x: number, y: number, v: number) => void) {
   const a0 = b[off], a1 = b[off + 1];
   const a = new Int32Array(8);
   a[0] = a0; a[1] = a1;
@@ -1054,7 +1054,7 @@ function decodeAlphaBlock(b, off, bx, by, dstW, dstH, write) {
 }
 
 // Decode a BCn-compressed surface (kind: bc1/bc2/bc3/bc4/bc5) into RGBA.
-function decodeBcn(b, off, width, height, kind) {
+function decodeBcn(b: Uint8Array, off: number, width: number, height: number, kind: string) {
   const px = width * height;
   if (px <= 0 || px > 64_000_000) return null;
   const dst = new Uint8ClampedArray(px * 4);
@@ -1116,13 +1116,13 @@ function decodeBcn(b, off, width, height, kind) {
 }
 
 // Decode an uncompressed 32-bit RGBA/BGRA surface using the pixel-format masks.
-function decodeDdsUncompressed(b, off, width, height, rMask, gMask, bMask, aMask) {
+function decodeDdsUncompressed(b: Uint8Array, off: number, width: number, height: number, rMask: number, gMask: number, bMask: number, aMask: number) {
   const px = width * height;
   if (px <= 0 || px > 64_000_000) return null;
   if (off + px * 4 > b.length) return null;
   const dst = new Uint8ClampedArray(px * 4);
   // Build a shift/scale for each channel mask (handles RGBA vs BGRA, etc.).
-  const chan = (mask) => {
+  const chan = (mask: number) => {
     if (!mask) return null;
     let shift = 0; let m = mask;
     while (!(m & 1)) { m >>= 1; shift++; }
@@ -1131,7 +1131,7 @@ function decodeDdsUncompressed(b, off, width, height, rMask, gMask, bMask, aMask
     return { shift, max: (1 << bitsCount) - 1 };
   };
   const rc = chan(rMask), gc = chan(gMask), bc = chan(bMask), ac = chan(aMask);
-  const get = (v, c) => c ? Math.round(((v >>> c.shift) & c.max) / c.max * 255) : 0;
+  const get = (v: number, c: { shift: number; max: number } | null) => c ? Math.round(((v >>> c.shift) & c.max) / c.max * 255) : 0;
   for (let i = 0; i < px; i++) {
     const s = off + i * 4;
     const v = (b[s] | (b[s + 1] << 8) | (b[s + 2] << 16) | (b[s + 3] << 24)) >>> 0;
@@ -1265,7 +1265,7 @@ async function parseJp2(file: File, ext: string) {
 // OpenJPEG WASM codec. Additive + fully guarded: on any failure the metadata
 // readout is left untouched (with a note), and existing image handling is never
 // affected. The ~360 KB decoder only loads when a JPEG 2000 file is opened.
-async function decodeJp2Preview(file: File, out) {
+async function decodeJp2Preview(file: File, out: Row) {
   try {
     const { decodeJ2K } = await import('../lib/openjpeg-loader.js');
     const bytes = await readAll(file, 96 * 1024 * 1024);
@@ -1282,7 +1282,7 @@ async function decodeJp2Preview(file: File, out) {
   out['Note'] = 'JPEG 2000 wavelet image; pixel preview unavailable.';
 }
 
-function readSiz(b, off, out) {
+function readSiz(b: Uint8Array, off: number, out: Row) {
   try {
     const dv = new DataView(b.buffer, b.byteOffset);
     const xsiz = dv.getUint32(off + 2, false);
@@ -1335,11 +1335,11 @@ async function parseJxr(file: File) {
   out['Note'] = 'Microsoft JPEG XR / HD Photo; pixel decode needs a JXR codec (not bundled).';
   return out;
 }
-function guidStr(b, o) {
-  const h = (i) => hexByte(b[o + i]);
+function guidStr(b: Uint8Array, o: number) {
+  const h = (i: number) => hexByte(b[o + i]);
   return (h(3) + h(2) + h(1) + h(0) + '-' + h(5) + h(4) + '-' + h(7) + h(6) + '-' + h(8) + h(9) + '-' + h(10) + h(11) + h(12) + h(13) + h(14) + h(15)).toUpperCase();
 }
-const JXR_PF = {
+const JXR_PF: Record<string, string> = {
   '24C3DD6F-034E-4E4C-BD3C-C7B524B6B12C': '24bpp BGR',
   '57A37CAA-737C-4FE4-9B7A-3B71C7DBAFC5': '24bpp RGB',
   '6FDDC324-4E03-4BFE-B185-3D77768DC908': '128bpp RGBA Float (HDR)',
@@ -1364,7 +1364,7 @@ async function parseEps(file: File, ext: string) {
   const out: Row = { 'Format': isEps ? 'Encapsulated PostScript (EPS)' : 'PostScript' };
   const m1 = txt.match(/%!PS-Adobe-([\d.]+)(?:\s+EPSF-([\d.]+))?/);
   if (m1) { out['PostScript level'] = 'Adobe ' + m1[1]; if (m1[2]) out['EPSF version'] = m1[2]; }
-  const dsc = (k) => { const m = txt.match(new RegExp('^%%' + k + ':\\s*(.+)$', 'im')); return m ? m[1].trim() : null; };
+  const dsc = (k: string) => { const m = txt.match(new RegExp('^%%' + k + ':\\s*(.+)$', 'im')); return m ? m[1].trim() : null; };
   const bbox = dsc('BoundingBox');
   if (bbox && !/atend/i.test(bbox)) {
     out['Bounding box'] = bbox;
@@ -1394,7 +1394,7 @@ async function parseEps(file: File, ext: string) {
     out._previewNode = preview;
     // Fire-and-forget; the placeholder is already in the DOM by the time this resolves.
     (async () => {
-      let url = null;
+      let url: string | null = null;
       try {
         const bytes = await readAll(file);
         const { renderPostScript } = await import('../lib/ghostscript-loader.js');
@@ -1662,7 +1662,7 @@ async function parseLottie(file: File) {
   const sects = [];
   if (Object.keys(byType).length) out['Layer types'] = Object.entries(byType).map(([k, v]) => k + ' (' + v + ')').join(', ');
   if (Array.isArray(j.markers) && j.markers.length) {
-    sects.push({ title: 'Markers (' + j.markers.length + ')', node: preBlock(j.markers.slice(0, 50).map((m) => (m.cm || '?') + ' @ ' + (m.tm != null ? m.tm : '?')).join('\n')) });
+    sects.push({ title: 'Markers (' + j.markers.length + ')', node: preBlock(j.markers.slice(0, 50).map((m: any) => (m.cm || '?') + ' @ ' + (m.tm != null ? m.tm : '?')).join('\n')) });
   }
   if (sects.length) out._sections = sects;
 
@@ -1701,7 +1701,7 @@ async function parseLottie(file: File) {
 // =====================================================================
 //                   identification-only (rare AND hard)
 // =====================================================================
-function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
+function ident(name: string, note: string) { return () => ({ 'Format': name, 'Note': note }); }
 
 // =====================================================================
 //                   dispatch

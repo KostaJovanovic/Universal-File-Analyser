@@ -199,7 +199,7 @@ function showSubmitView() {
 export function endGame() {
   if (g.gameOver) return;
   g.gameOver = true;
-  g.mobileControls.forEach((elm) => { elm.style.display = 'none'; });
+  g.mobileControls.forEach((elm: HTMLElement) => { elm.style.display = 'none'; });
   if (g.pauseBtn) g.pauseBtn.style.display = 'none';
   g.input.left = g.input.right = g.input.thrust = g.input.fire = false;
   g.joy.active = false; g.joy.mag = 0;

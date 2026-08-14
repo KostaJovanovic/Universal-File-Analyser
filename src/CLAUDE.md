@@ -13,10 +13,14 @@ source (`import { el } from '../core/util.js'`) - TypeScript resolves that to th
 `.ts` file and emits the specifier verbatim, which is what keeps the module graph
 and the offline manifest intact. Keep writing them that way.
 
-**The tree compiles clean** - zero errors under both configs. A new error is a
-real one, so fix it rather than letting a pile start again. `strict` is still
-off on purpose (`strictNullChecks` + `noImplicitAny` would report ~5,400 sites
-needing real null guards, not annotations) - see the root `CLAUDE.md`.
+**The tree compiles clean** - zero errors under both configs, with **`strict`
+on** (`strictNullChecks` + `noImplicitAny` included). A new error is a real one,
+so fix it rather than letting a pile start again - and fix it with an
+annotation, an `as` cast, a `!` assertion or a new `interface`, never a runtime
+guard. Type syntax erases, so the emitted JS must stay byte-identical; that is
+the only regression net here. Also: never put a `type`/`interface` between a doc
+comment and the declaration it documents, or the comment disappears from the
+emit. Full rules in the root `CLAUDE.md`.
 
 Shared types live in `core/types.d.ts` - `Kind`, `Route`/`RouteTable`,
 `Renderer`, `Row` (the parser row bag, including the `_sections`/`_previewNode`

@@ -17,10 +17,10 @@ import { HASH_FILE_MAX } from '../core/limits.js';
 import { cp437 } from '../core/binutil.js';
 
 // ---------- JSON value tree (objects/arrays collapsible) ----------
-function jsonTree(value, key?) {
+function jsonTree(value: any, key?: any) {
   const t = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
   if (t === 'object' || t === 'array') {
-    const entries = t === 'array' ? value.map((v, i) => [i, v]) : Object.entries(value);
+    const entries = t === 'array' ? value.map((v: any, i: number) => [i, v]) : Object.entries(value);
     const det = el('details', { class: 'anr-json-node' });
     const count = entries.length;
     const brace = t === 'array' ? '[' + count + ']' : '{' + count + '}';
@@ -50,7 +50,7 @@ function jsonTree(value, key?) {
 
 // Best-effort relaxed-JSON to value: strip // and /* */ comments and trailing
 // commas, then JSON.parse. Returns the parsed value or null on failure.
-function looseParse(text) {
+function looseParse(text: string) {
   try { return JSON.parse(text); } catch (_) {}
   try {
     const stripped = text
@@ -61,20 +61,20 @@ function looseParse(text) {
 }
 
 // ---------- HAR ----------
-function statusClass(s) {
+function statusClass(s: number) {
   if (s >= 500) return 'anr-har-5xx';
   if (s >= 400) return 'anr-har-4xx';
   if (s >= 300) return 'anr-har-3xx';
   if (s >= 200) return 'anr-har-2xx';
   return '';
 }
-function shortType(mime) {
+function shortType(mime: string) {
   if (!mime) return '';
   const m = mime.split(';')[0].trim();
   return m.replace(/^application\//, '').replace(/^text\//, '').replace(/^image\//, 'img/');
 }
 
-export async function renderHar(file: File, container) {
+export async function renderHar(file: File, container: HTMLElement) {
   container.hidden = false;
   container.innerHTML = '';
   container.appendChild(el('div', { class: 'anr-info' }, 'Reading HAR capture...'));
@@ -122,7 +122,7 @@ export async function renderHar(file: File, container) {
 
   let shown = 0;
   const BATCH = 100;
-  function addRow(i) {
+  function addRow(i: number) {
     const e = entries[i];
     const req = e.request || {}, res = e.response || {};
     const status = res.status || 0;
@@ -138,7 +138,7 @@ export async function renderHar(file: File, container) {
     ]);
     tbl.appendChild(tr);
   }
-  function reveal(upTo) {
+  function reveal(upTo: number) {
     for (; shown < upTo && shown < entries.length; shown++) addRow(shown);
     if (shown >= entries.length) btnRow.hidden = true;
     else moreBtn.textContent = 'Show more (' + shown + '/' + entries.length + ')';
@@ -152,8 +152,8 @@ export async function renderHar(file: File, container) {
 }
 
 // ---------- JSON supersets (JSON5 / JSONC / Hjson) ----------
-const JSON_LABELS = { json5: 'JSON5', jsonc: 'JSON with comments (JSONC)', hjson: 'Hjson' };
-export async function renderJsonData(file: File, container) {
+const JSON_LABELS: Record<string, string> = { json5: 'JSON5', jsonc: 'JSON with comments (JSONC)', hjson: 'Hjson' };
+export async function renderJsonData(file: File, container: HTMLElement) {
   container.hidden = false;
   container.innerHTML = '';
   const ext = (file.name.split('.').pop() || '').toLowerCase();
@@ -212,7 +212,7 @@ export async function renderJsonData(file: File, container) {
 }
 
 // ---------- NFO (CP437 ASCII art) ----------
-export async function renderNfo(file: File, container) {
+export async function renderNfo(file: File, container: HTMLElement) {
   container.hidden = false;
   container.innerHTML = '';
   try {

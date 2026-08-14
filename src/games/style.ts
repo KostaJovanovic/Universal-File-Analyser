@@ -7,7 +7,7 @@
 
 import { MONO } from './config.js';
 
-export function gameCss(t) {
+export function gameCss(t: Record<string, string>) {
   const { ACCENT, ACCENT_FG, MEDIA_BG, SURFACE, ON_DARK, BORDER, MUTED } = t;
   return '.anr-game-btn{font-family:' + MONO + ';font-weight:500;letter-spacing:.01em;background:' + SURFACE +
     ';color:' + ON_DARK + ';border:1px solid ' + BORDER + ';border-radius:0;cursor:pointer;' +

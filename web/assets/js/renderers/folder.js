@@ -414,7 +414,7 @@ function readEntries(reader) {
     return new Promise((resolve, reject) => {
         const all = [];
         (function read() {
-            reader.readEntries(entries => {
+            reader.readEntries((entries) => {
                 if (!entries.length)
                     return resolve(all);
                 all.push(...entries);

@@ -33,7 +33,7 @@ function makeSink() {
     push(b: number) { this.ensure(1); buf[len++] = b; },
     set(src: Uint8Array, from: number, count: number) { this.ensure(count); buf.set(src.subarray(from, from + count), len); len += count; },
     get pos() { return len; },
-    byte(i: string|number) { return buf[i]; },
+    byte(i: number) { return buf[i]; },
     copy(from: number, count: number) { this.ensure(count); let s = from; for (let k = 0; k < count; k++) buf[len++] = buf[s++]; },
     result() { return buf.subarray(0, len); },
   };

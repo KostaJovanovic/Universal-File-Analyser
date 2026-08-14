@@ -16,12 +16,12 @@
    Everything runs on-device; nothing is uploaded. renderCompare is handed
    { classify, routes } from app.js so it reuses the real classifyFile()/ROUTES. */
 
-import { el, fmtBytes, sha256Hex, extraHashRows, crc32Hex, errorCard } from '../core/util.js';
+import { el, fmtBytes, sha256Hex, extraHashRows, crc32Hex, errorCard, type ElChild } from '../core/util.js';
 
 // Renderers that need { inline: true } to keep their output inside the panel.
 const MEDIA = new Set(['photo', 'audio', 'video']);
 
-function stripText(a, b, typeA, typeB, sha) {
+function stripText(a: File, b: File, typeA: string, typeB: string, sha: string) {
   const shaLabel = sha === 'pending' ? 'SHA-256 checking…'
     : sha === 'match' ? 'SHA-256 match (identical files)'
     : sha === 'differ' ? 'SHA-256 differ'
@@ -31,19 +31,19 @@ function stripText(a, b, typeA, typeB, sha) {
     + '  ·  ' + shaLabel;
 }
 
-const headingText = (card) => {
+const headingText = (card: Element) => {
   const h = card && (card.querySelector(':scope > h3') || card.querySelector('h3'));
-  return h ? h.textContent.trim() : '';
+  return h ? h.textContent!.trim() : '';
 };
-const valTd = (tr) => tr && tr.querySelector('td');
+const valTd = (tr: any) => tr && tr.querySelector('td');
 const dashTd = () => el('td', { class: 'anr-cmp-absent' }, '-');
-const textOf = (td) => (td ? td.textContent.replace(/\s+/g, ' ').trim() : null);
+const textOf = (td: any) => (td ? td.textContent.replace(/\s+/g, ' ').trim() : null);
 
 // Build one merged row. `aTd`/`bTd` are the real value cells (moved in) or null
 // when that side has no such field; a missing side shows a dash and the row is
 // always a difference. Rows are tagged .is-diff when the two values differ, so
 // the "Show differences" toggle can fade the matching ones.
-function mergeRow(th, aTd, bTd) {
+function mergeRow(th: any, aTd: any, bTd: any) {
   const aMissing = aTd == null, bMissing = bTd == null;
   const differ = aMissing || bMissing || textOf(aTd) !== textOf(bTd);
   const row = el('tr', differ ? { class: 'is-diff' } : {});
@@ -57,11 +57,11 @@ function mergeRow(th, aTd, bTd) {
 // label and value cells across. Rows align by label text; a field present on
 // only one side shows a dash opposite. Non-labelled rows (e.g. the "show more
 // hashes" control) are dropped from the merged view.
-function mergeReadout(tA, tB) {
+function mergeReadout(tA: any, tB: any) {
   const out = el('table', { class: 'anr-readout anr-cmp' });
-  const bByLabel = new Map();
+  const bByLabel = new Map<string, any>();
   if (tB) for (const tr of tB.rows) { const th = tr.querySelector('th'); if (th) bByLabel.set(th.textContent.trim(), tr); }
-  const used = new Set();
+  const used = new Set<string>();
   if (tA) for (const tr of tA.rows) {
     const th = tr.querySelector('th'); if (!th) continue;
     const label = th.textContent.trim();
@@ -76,8 +76,8 @@ function mergeReadout(tA, tB) {
   return out;
 }
 
-function splitCols(aNodes, bNodes) {
-  const col = (tag, nodes) => el('div', { class: 'anr-cmp-col' }, [el('div', { class: 'anr-cmp-col-tag' }, tag), ...nodes]);
+function splitCols(aNodes: any[], bNodes: any[]) {
+  const col = (tag: ElChild | ElChild[], nodes: any[]) => el('div', { class: 'anr-cmp-col' }, [el('div', { class: 'anr-cmp-col-tag' }, tag), ...nodes]);
   // A leading empty gutter matches the merged table's Field column, so the A|B
   // divide lands at the SAME x-position (63%) as it does in the readout tables -
   // the split no longer breaks at 50% while the tables break at 63%.
@@ -90,7 +90,7 @@ function splitCols(aNodes, bNodes) {
 // its [?] button stays beside the title at the card top - out of the overflow-
 // scrolling split columns below, where its popup would be clipped ("stuck behind a
 // scroll").
-function headerNodeOf(card) {
+function headerNodeOf(card: any) {
   if (!card) return null;
   for (const n of card.children) {
     if (n.tagName === 'H3') return n;
@@ -101,16 +101,16 @@ function headerNodeOf(card) {
 // Direct children of a card in document order, skipping the header node (moved
 // separately) and any h3 [?] help panel (a sibling; wireInfoToggle pulls it back
 // under its button on demand via a closure, so it needs no home in the merge).
-function bodyNodes(card, header) {
+function bodyNodes(card: any, header: any) {
   if (!card) return [];
-  return [...card.children].filter((n) =>
+  return [...card.children].filter((n: any) =>
     n !== header && !(n.classList && n.classList.contains('anr-info-panel')));
 }
-const nodeKind = (n) =>
+const nodeKind = (n: any) =>
   (n.matches && n.matches('table.anr-readout')) ? 'table'
     : (n.classList && n.classList.contains('anr-readout-section')) ? 'section'
       : 'rest';
-const hasCanvas = (card) => !!(card && card.querySelector && card.querySelector('canvas'));
+const hasCanvas = (card: any) => !!(card && card.querySelector && card.querySelector('canvas'));
 
 // "Show differences" fades matching readout rows via .is-diff, but the fuller media
 // sections put a lot of content (forensics, edit history, container structure) in
@@ -120,8 +120,8 @@ const hasCanvas = (card) => !!(card && card.querySelector && card.querySelector(
 // players, spectrograms, waveforms - canvas/img/media) are left lit: two images or
 // sounds can't be judged equal from their text. Re-run on each activation because
 // some split content fills in asynchronously.
-function tagSplitSameness(root) {
-  const colText = (col) => [...col.children]
+function tagSplitSameness(root: HTMLElement) {
+  const colText = (col: Element) => [...col.children]
     .filter((c) => !(c.classList && c.classList.contains('anr-cmp-col-tag')))
     .map((c) => (c.textContent || '').replace(/\s+/g, ' ').trim()).join('');
   for (const split of root.querySelectorAll('.anr-cmp-split')) {
@@ -139,7 +139,7 @@ function tagSplitSameness(root) {
 // ORDER - each readout table becomes Field | A | B in place, and the section
 // sub-headings (Camera & lens, Exposure, ...) stay with the table they head
 // instead of being flattened off to the side.
-function mergeCard(cardA, cardB) {
+function mergeCard(cardA: any, cardB: any) {
   const card = el('div', { class: 'anr-card' });
   const headA = headerNodeOf(cardA), headB = headerNodeOf(cardB);
   const head = headA || headB;               // MOVE the whole header (title + wired [?])
@@ -151,7 +151,7 @@ function mergeCard(cardA, cardB) {
   }
 
   const A = bodyNodes(cardA, headA), B = bodyNodes(cardB, headB);
-  let i = 0, j = 0, restA = [], restB = [];
+  let i = 0, j = 0, restA: any[] = [], restB: any[] = [];
   const flushRest = () => {
     if (restA.length || restB.length) card.appendChild(splitCols(restA, restB));
     restA = []; restB = [];
@@ -171,17 +171,17 @@ function mergeCard(cardA, cardB) {
   return card;
 }
 
-const isCard = (n) => n && n.classList && n.classList.contains('anr-card');
-const ctaOf = (n) => (n && n.querySelector ? n.querySelector('.anr-btn--cta') : null);
+const isCard = (n: any) => n && n.classList && n.classList.contains('anr-card');
+const ctaOf = (n: any) => (n && n.querySelector ? n.querySelector('.anr-btn--cta') : null);
 // A video renderer's interactive sub-slot: a wrapper holding a prompt card with a
 // call-to-action (Analyse audio / Analyse frame). These get ONE central button.
-const isInteractiveSub = (n) => n && n.classList && n.classList.contains('anr-cmp-subslot') && !!ctaOf(n);
-const subHeading = (sub) => { const h = sub && sub.querySelector('h3'); return h ? h.textContent.trim() : ''; };
+const isInteractiveSub = (n: any) => n && n.classList && n.classList.contains('anr-cmp-subslot') && !!ctaOf(n);
+const subHeading = (sub: any) => { const h = sub && sub.querySelector('h3'); return h ? h.textContent.trim() : ''; };
 
 // One shared button that runs BOTH files' analysis: it clicks each file's own
 // (hidden) prompt button, which renders that file's result into its own container
 // - the two containers sit side by side below the button.
-function mergeInteractive(aSub, bSub) {
+function mergeInteractive(aSub: any, bSub: any) {
   const card = el('div', { class: 'anr-card' });
   const heading = subHeading(aSub) || subHeading(bSub);
   if (heading) card.appendChild(el('h3', {}, heading));
@@ -214,11 +214,11 @@ function mergeInteractive(aSub, bSub) {
 // A non-card wrapper that itself holds cards (a video's sub-analysis slot, the
 // browse-as-archive tree's container). We recurse INTO these so their inner cards
 // merge Field | A | B too, instead of the whole wrapper dropping to a 50/50 split.
-const isContainer = (n) => n && n.nodeType === 1 && !isCard(n) && !isInteractiveSub(n)
+const isContainer = (n: any) => n && n.nodeType === 1 && !isCard(n) && !isInteractiveSub(n)
   && typeof n.querySelector === 'function' && !!n.querySelector('.anr-card');
 
-function mergePanels(aBlocks, bBlocks, mount) {
-  const partition = (nodes) => {
+function mergePanels(aBlocks: any[], bBlocks: any[], mount: HTMLDivElement) {
+  const partition = (nodes: any[]) => {
     const inter = [], cards = [], containers = [], rest = [];
     for (const n of nodes) {
       if (isInteractiveSub(n)) inter.push(n);
@@ -285,9 +285,9 @@ function mergePanels(aBlocks, bBlocks, mount) {
 const HASH_AUTO_LIMIT = 50 * 1024 * 1024;
 const CRC_DESC = 'CRC-32 is a fast, non-cryptographic checksum - the same one ZIP, PNG and gzip embed, and what SFV checksum files store. It reliably catches accidental corruption, but unlike the hashes below it is not collision-resistant, so it is not proof against deliberate tampering.';
 async function crc32Of(file: File) { return crc32Hex(new Uint8Array(await file.arrayBuffer())); }
-async function appendHashExtras(mergedRoot, fileA, fileB, shaMatch) {
+async function appendHashExtras(mergedRoot: HTMLDivElement, fileA: File, fileB: File, shaMatch: Promise<any>) {
   let table = null, shaRow = null;
-  for (const t of mergedRoot.querySelectorAll('table.anr-readout.anr-cmp')) {
+  for (const t of mergedRoot.querySelectorAll<HTMLTableElement>('table.anr-readout.anr-cmp')) {
     for (const tr of t.rows) {
       const th = tr.querySelector('th');
       if (th && /^sha-?256\b/i.test(th.textContent.trim())) { table = t; shaRow = tr; break; }
@@ -301,7 +301,7 @@ async function appendHashExtras(mergedRoot, fileA, fileB, shaMatch) {
   // it with the authoritative comparison once it resolves, so "Show differences"
   // fades a matching SHA-256 row and keeps a genuinely differing one lit.
   if (shaRow && shaMatch) {
-    shaMatch.then((m) => {
+    shaMatch.then((m: string) => {
       if (m === 'match') shaRow.classList.remove('is-diff');
       else if (m === 'differ') shaRow.classList.add('is-diff');
     });
@@ -330,14 +330,14 @@ async function appendHashExtras(mergedRoot, fileA, fileB, shaMatch) {
 }
 
 // Which layout section a file's blocks belong to, mirroring the normal page.
-const mainKeyOf = (kind) => (kind === 'photo' ? 'photo' : kind === 'audio' ? 'sound' : kind === 'video' ? 'video' : 'file');
-const SECTION_TITLE = { photo: 'Photo', sound: 'Sound', video: 'Video', file: 'File' };
+const mainKeyOf = (kind: string) => (kind === 'photo' ? 'photo' : kind === 'audio' ? 'sound' : kind === 'video' ? 'video' : 'file');
+const SECTION_TITLE: Record<string, string> = { photo: 'Photo', sound: 'Sound', video: 'Video', file: 'File' };
 
 // Sort a staging tree's blocks into section buckets. A file's own cards go to its
 // main section; a video's extracted-audio sub-slot goes to Sound and its grabbed
 // frame to Photo (tagged by video.js), exactly like the normal single-file page.
-function bucketize(staging, mainKey) {
-  const buckets = { photo: [], sound: [], video: [], file: [] };
+function bucketize(staging: HTMLDivElement, mainKey: string) {
+  const buckets: Record<string, any[]> = { photo: [], sound: [], video: [], file: [] };
   for (const n of staging.children) {
     let key = mainKey;
     if (n.classList) {
@@ -351,7 +351,7 @@ function bucketize(staging, mainKey) {
 
 // A titled section wrapper (numbered kicker like the normal page). Returns the
 // element and the inner body the merge writes into.
-function buildSection(num, title) {
+function buildSection(num: ElChild | ElChild[], title: ElChild | ElChild[]) {
   const head = el('div', { class: 'anr-cmp-section-head' }, [
     num ? el('span', { class: 'section-num' }, num) : null,
     el('span', { class: 'section-kicker' }, title),
@@ -360,7 +360,7 @@ function buildSection(num, title) {
   return { el: el('section', { class: 'anr-cmp-section' }, [head, body]), body };
 }
 
-export async function renderCompare(fileA, fileB, resultsEl: HTMLElement, deps: any = {}) {
+export async function renderCompare(fileA: File, fileB: File, resultsEl: HTMLElement, deps: any = {}) {
   const classify = deps.classify || (() => 'unknown');
   const routes = deps.routes || {};
 
@@ -421,7 +421,7 @@ export async function renderCompare(fileA, fileB, resultsEl: HTMLElement, deps: 
   resultsEl.appendChild(stagingA);
   resultsEl.appendChild(stagingB);
 
-  async function renderInto(file: File, staging, kind) {
+  async function renderInto(file: File, staging: HTMLDivElement, kind: string) {
     const route = routes[kind] || routes.unknown;
     if (!route || typeof route.render !== 'function') {
       staging.appendChild(errorCard('No analyser is available for this file type.'));
@@ -474,8 +474,8 @@ export async function renderCompare(fileA, fileB, resultsEl: HTMLElement, deps: 
   // remaining media sections, then the generic File bucket.
   const bucketsA = bucketize(stagingA, mainKeyOf(kindA));
   const bucketsB = bucketize(stagingB, mainKeyOf(kindB));
-  const order = [];
-  const add = (k) => { if (!order.includes(k) && (bucketsA[k].length || bucketsB[k].length)) order.push(k); };
+  const order: any[] = [];
+  const add = (k: string) => { if (!order.includes(k) && (bucketsA[k].length || bucketsB[k].length)) order.push(k); };
   add(mainKeyOf(kindA));
   add(mainKeyOf(kindB));
   ['photo', 'sound', 'video', 'file'].forEach(add);

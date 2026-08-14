@@ -21,7 +21,7 @@
    (tessellated), and ;WIDTH:/;HEIGHT: hints. Orbit / pan / zoom / spin, colour by
    height or feedrate, and a build-height scrubber. No external 3D library. */
 
-import { el, row, rowHelp, fmtBytes, errorCard, attachViewCube, downloadBlob } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, errorCard, attachViewCube, downloadBlob, type ElChild } from '../core/util.js';
 import { byTier, WALL_PARSE } from '../core/limits.js';
 
 // Rendered-segment caps, scaled to the device's RAM so arc-heavy / multi-day prints
@@ -55,8 +55,8 @@ const HEAT_AMBIENT_C = 25;        // assumed cold/ambient start for heat-up esti
 const HEAT_RATE_C_PER_S = 8;      // rough nozzle/bed heating rate (deg C per second)
 // Heat-up estimate from ambient to a target temperature (seconds): realHeat is the
 // full estimate shown on the wait label; heatSecs is that capped to the playback hold.
-const realHeat = (target) => Math.max(0, target - HEAT_AMBIENT_C) / HEAT_RATE_C_PER_S;
-const heatSecs = (target) => Math.min(realHeat(target), PAUSE_CAP_S);
+const realHeat = (target: number) => Math.max(0, target - HEAT_AMBIENT_C) / HEAT_RATE_C_PER_S;
+const heatSecs = (target: number) => Math.min(realHeat(target), PAUSE_CAP_S);
 
 // Normalised feature types (the "line types" OrcaSlicer colours by). Each slicer
 // names them differently in its per-move comments - PrusaSlicer/Orca use
@@ -73,7 +73,7 @@ const FEATURES = [
   { id: 6, label: 'Bridge', rgb: [0.20, 0.78, 0.85] },
   { id: 7, label: 'Other', rgb: [0.70, 0.72, 0.78] },
 ];
-function featureId(raw) {
+function featureId(raw: string) {
   const s = (raw || '').toUpperCase().replace(/[\s_]+/g, '');
   if (s.includes('OUTER') || s.includes('EXTERNALPERIM')) return 0;
   if (s.includes('OVERHANG')) return 1;
@@ -89,10 +89,10 @@ function featureId(raw) {
 }
 
 // Growable Float32 buffer in fixed-size records.
-function GrowBuf(stride) {
+function GrowBuf(stride: number) {
   let cap = 1 << 16, a = new Float32Array(cap), n = 0;
   return {
-    push(vals) {
+    push(vals: number[]) {
       if (n + vals.length > cap) { while (n + vals.length > cap) cap *= 2; const b = new Float32Array(cap); b.set(a); a = b; }
       for (let k = 0; k < vals.length; k++) a[n++] = vals[k];
     },
@@ -102,7 +102,7 @@ function GrowBuf(stride) {
 }
 
 // ---------- G-code parsing ----------
-function parseGcode(text, opts) {
+function parseGcode(text: string, opts: any) {
   const len = text.length;
   if (!len) return null;
   // Normally the rendered geometry is capped (see SEG_CAP); the "Show full anyway"
@@ -128,7 +128,7 @@ function parseGcode(text, opts) {
   const ext = GrowBuf(10), trav = GrowBuf(7), order = GrowBuf(1), segFil = GrowBuf(1), pause = GrowBuf(1);
   // Per-pause human info for the wait label (one entry per order==2 move, in order):
   // { label: 'what it is waiting for', realSec: the G-code's intended duration (uncapped) }.
-  const pauseInfo = [];
+  const pauseInfo: { label: string; realSec: number }[] = [];
 
   // Multicolour / multi-material: the active filament index (set by T<n> tool selects
   // and bumped by M600 colour changes), recorded per extrusion segment so "colour by
@@ -178,7 +178,7 @@ function parseGcode(text, opts) {
   const coolant = new Set(), workOffsets = new Set();
   let curTool = null, pendingTool = null, lastParen = '', spindleMax = 0, spindleDir = '';
   let cncType = 7;                   // colour-channel slot of the active tool (CNC)
-  const ensureTool = (n) => { let d = toolDefs.get(n); if (!d) { d = { n }; toolDefs.set(n, d); } return d; };
+  const ensureTool = (n: number) => { let d = toolDefs.get(n); if (!d) { d = { n }; toolDefs.set(n, d); } return d; };
   // CAM operations (Fusion/HSM name each one in a () comment, e.g. "(2D ADAPTIVE1)").
   // Tools are reused across operations, so the op list is richer than the tool-change
   // list; track each op with the tool active during it and per-op move/length/depth.
@@ -186,14 +186,14 @@ function parseGcode(text, opts) {
   let curOp = null;
   let progNum = '', progEnd = '', optStops = 0;   // O-number, M2/M30 end, M1 optional stops
 
-  const bump = (px, py, pz) => {
+  const bump = (px: number, py: number, pz: number) => {
     if (px < minx) minx = px; if (py < miny) miny = py; if (pz < minz) minz = pz;
     if (px > maxx) maxx = px; if (py > maxy) maxy = py; if (pz > maxz) maxz = pz;
   };
   const filArea = () => { const r = (filDia || DEF_DIA) / 2; return Math.PI * r * r; };
 
   // Width from the deposited volume, the way slicers reconstruct it.
-  const widthOf = (de, L, h) => {
+  const widthOf = (de: number, L: number, h: number) => {
     if (forcedW > 0) return forcedW;
     if (!(L > 1e-6) || !(h > 1e-6)) return 0.4;
     let w = de * filArea() / (L * h) + (1 - Math.PI / 4) * h;
@@ -201,7 +201,7 @@ function parseGcode(text, opts) {
     return w > 0.01 ? w : 0.4;
   };
 
-  const emitExtrude = (x0, y0, z0, x1, y1, z1, de) => {
+  const emitExtrude = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, de: number) => {
     const L = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
     // Layer height: rise since the last extruding Z (fallback to last good value).
     if (z1 > lastExtrudeZ + 1e-4) {
@@ -217,20 +217,20 @@ function parseGcode(text, opts) {
     bump(x0, y0, z0); bump(x1, y1, z1);
     if (feed > 0) { if (feed < fmin) fmin = feed; if (feed > fmax) fmax = feed; }
   };
-  const emitFeed = (x0, y0, z0, x1, y1, z1) => {
+  const emitFeed = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) => {
     const L = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
     cutMM += L; nFeed++;
     if (ext.count < segCap) { ext.push([x0, y0, z0, x1, y1, z1, 0, 0, feed, cncType]); order.push([0]); segFil.push([curFil]); }  // width filled later for CNC; type = tool slot
     bump(x0, y0, z0); bump(x1, y1, z1);
     if (feed > 0) { if (feed < fmin) fmin = feed; if (feed > fmax) fmax = feed; }
   };
-  const emitTravel = (x0, y0, z0, x1, y1, z1) => {
+  const emitTravel = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) => {
     if (trav.count < travCap) { trav.push([x0, y0, z0, x1, y1, z1, feed]); order.push([1]); }
     nRapid++;
   };
   // A pause is a timeline event, not geometry: it advances move order (so playback
   // can hold) but adds no ext/travel segment and leaves x/y/z and the bbox untouched.
-  const emitPause = (holdSec, label, realSec) => {
+  const emitPause = (holdSec: number, label: string, realSec: number|null) => {
     if (holdSec > 0) { order.push([2]); pause.push([holdSec]); pauseInfo.push({ label, realSec: realSec != null ? realSec : holdSec }); }
   };
 
@@ -484,7 +484,7 @@ function parseGcode(text, opts) {
     forcedW = 0; forcedH = 0;          // hints apply to the next move only
   }
 
-  if (!sawG) return { sawG: false };
+  if (!sawG) return { sawG: false as const };
 
   // For a CNC program (no extrusion) give the feed segments a nominal width/height
   // so they render as a thin solid path rather than zero-size boxes.
@@ -542,7 +542,7 @@ function parseGcode(text, opts) {
   }
 
   return {
-    sawG: true,
+    sawG: true as const,
     mode: sawExtrude ? 'print' : 'cnc',
     seg: view,                 // 10 floats / segment
     segCount: ext.count,
@@ -594,7 +594,7 @@ function parseGcode(text, opts) {
   };
 }
 
-function arcPoints(x0, y0, z0, x1, y1, z1, t, unit, cw, plane) {
+function arcPoints(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, t: Record<string, number|null>, unit: number, cw: boolean, plane: number) {
   // Work in the active plane's two in-plane axes (f, s) plus the out-of-plane axis (w,
   // linearly interpolated for a helix). The RS274 canonical axis ordering per plane -
   // G17 (X,Y), G18 (Z,X), G19 (Y,Z) - is chosen so the same maths and CW/CCW sense work
@@ -615,10 +615,10 @@ function arcPoints(x0, y0, z0, x1, y1, z1, t, unit, cw, plane) {
     const sign = (cw ? 1 : -1) * (r < 0 ? -1 : 1);
     cf = mf + sign * of; cs = ms + sign * os;
   }
-  const r0 = Math.hypot(f0 - cf, s0 - cs);
+  const r0 = Math.hypot(f0 - cf, s0 - cs!);
   if (r0 < 1e-6) return null;
-  let a0 = Math.atan2(s0 - cs, f0 - cf);
-  let a1 = Math.atan2(s1 - cs, f1 - cf);
+  let a0 = Math.atan2(s0 - cs!, f0 - cf);
+  let a1 = Math.atan2(s1 - cs!, f1 - cf);
   if (cw) { while (a1 >= a0) a1 -= 2 * Math.PI; } else { while (a1 <= a0) a1 += 2 * Math.PI; }
   const sweep = Math.abs(a1 - a0);
   const maxAng = 2 * Math.acos(Math.max(0, 1 - ARC_TOL / Math.max(r0, ARC_TOL)));
@@ -627,7 +627,7 @@ function arcPoints(x0, y0, z0, x1, y1, z1, t, unit, cw, plane) {
   const pts = [];
   for (let k = 0; k <= steps; k++) {
     const fr = k / steps, a = a0 + (a1 - a0) * fr;
-    const ff = cf + r0 * Math.cos(a), ss = cs + r0 * Math.sin(a), ww = w0 + (w1 - w0) * fr;
+    const ff = cf + r0 * Math.cos(a), ss = cs! + r0 * Math.sin(a), ww = w0 + (w1 - w0) * fr;
     if (plane === 18) pts.push([ss, ww, ff]);        // s->X, w->Y, f->Z
     else if (plane === 19) pts.push([ww, ff, ss]);   // w->X, f->Y, s->Z
     else pts.push([ff, ss, ww]);                     // f->X, s->Y, w->Z
@@ -635,30 +635,30 @@ function arcPoints(x0, y0, z0, x1, y1, z1, t, unit, cw, plane) {
   return pts;
 }
 
-function parseAxes(line) {
-  const o = { x: null, y: null, z: null, e: null, f: null, i: null, j: null, k: null, r: null };
+function parseAxes(line: string) {
+  const o: Record<string, number|null> = { x: null, y: null, z: null, e: null, f: null, i: null, j: null, k: null, r: null };
   const re = /([XYZEFIJKR])(-?\d*\.?\d+)/gi;
   let m;
   while ((m = re.exec(line))) { const v = parseFloat(m[2]); if (!isNaN(v)) o[m[1].toLowerCase()] = v; }
   return o;
 }
-function numAfter(line, letter) { const m = new RegExp(letter + '(-?\\d*\\.?\\d+)', 'i').exec(line); return m ? parseFloat(m[1]) : 0; }
+function numAfter(line: string, letter: string) { const m = new RegExp(letter + '(-?\\d*\\.?\\d+)', 'i').exec(line); return m ? parseFloat(m[1]) : 0; }
 
 // ---------- tiny mat4 helpers (column-major) ----------
-function mat4Multiply(a, b) {
+function mat4Multiply(a: Float32Array, b: Float32Array) {
   const o = new Float32Array(16);
   for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
     o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
   }
   return o;
 }
-function mat4Perspective(fovy, aspect, near, far) {
+function mat4Perspective(fovy: number, aspect: number, near: number, far: number) {
   const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
   return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0]);
 }
-function mat4RotX(a) { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1]); }
-function mat4RotY(a) { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]); }
-function mat4Ortho(l, r, b, t, n, f) {
+function mat4RotX(a: number) { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1]); }
+function mat4RotY(a: number) { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]); }
+function mat4Ortho(l: number, r: number, b: number, t: number, n: number, f: number) {
   return new Float32Array([2 / (r - l), 0, 0, 0, 0, 2 / (t - b), 0, 0, 0, 0, -2 / (f - n), 0, -(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n), 1]);
 }
 
@@ -668,7 +668,7 @@ function mat4Ortho(l, r, b, t, n, f) {
 // classic 12-vertex 3-sided marker, byte-for-byte as before. The base ring sits at
 // y = PYR_YB so the digit quad (multi-tool marker) can be placed coplanar with it.
 const PYR_YB = 1.45, PYR_RB = 0.62;
-function pyramidGeo(sides) {
+function pyramidGeo(sides: number) {
   const n = Math.max(3, sides | 0), apex = [0, 0, 0], yb = PYR_YB, rb = PYR_RB, base = [];
   for (let k = 0; k < n; k++) { const a = Math.PI / 2 + k * 2 * Math.PI / n; base.push([Math.cos(a) * rb, yb, Math.sin(a) * rb]); }
   const tris = [];
@@ -742,7 +742,7 @@ interface GcodeViewer {
 // opts.antialias toggles hardware MSAA (set at context creation, so changing it
 // rebuilds the viewer). The other anti-aliasing controls (supersampling, minimum
 // line width, distant-bead flattening) are live state flags read each frame.
-function buildViewer(data, opts: any = {}): GcodeViewer {
+function buildViewer(data: any, opts: any = {}): GcodeViewer {
   const wrap = el('div', { class: 'anr-stl-viewport' });
   const canvas = el('canvas', { class: 'anr-stl-canvas' });
   wrap.appendChild(canvas);
@@ -766,7 +766,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
   const { min, max } = data.bbox;
   const cx = (min[0] + max[0]) / 2, cy = (min[1] + max[1]) / 2, cz = (min[2] + max[2]) / 2;
   const span = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) || 1;
-  const nrm = (px, py, pz) => [(px - cx) / span, (pz - cz) / span, -(py - cy) / span];   // -> [x, up, depth]; negate Y so the Z<->Y swap stays right-handed (a bare swap mirrors the model)
+  const nrm = (px: number, py: number, pz: number) => [(px - cx) / span, (pz - cz) / span, -(py - cy) / span];   // -> [x, up, depth]; negate Y so the Z<->Y swap stays right-handed (a bare swap mirrors the model)
   // Robust framing. The raw bbox is fragile: a slicer's purge/intro line (or one stray
   // move to the origin) is a legitimate extrusion far from the part, so the bbox midpoint
   // drifts off the model and the bounding sphere balloons - leaving the actual part a dot
@@ -784,7 +784,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
       ys.push(data.seg[p + 1], data.seg[p + 4]);
       zs.push(data.seg[p + 2], data.seg[p + 5]);
     }
-    const med = (arr) => { arr.sort((a, b) => a - b); return arr[arr.length >> 1]; };
+    const med = (arr: any[]) => { arr.sort((a: number, b: number) => a - b); return arr[arr.length >> 1]; };
     const ctr = nrm(med(xs), med(ys), med(zs));             // normalised orbit centre
     let m2 = 0; const ds = [];
     for (let p = 0, si = 0; p < total; p += 10, si++) {
@@ -811,11 +811,11 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
   // Render the bed-info lines (printer / size / plate) to a 2D canvas, to be pasted onto
   // the plate as a texture so the box is genuinely part of the bed (lies flat, follows
   // the plate's perspective) rather than a screen overlay. Returns the canvas + its size.
-  const makeBedLabelCanvas = (lines) => {
+  const makeBedLabelCanvas = (lines: string|any[]) => {
     const sc = 2, fs = 22 * sc, lh = 30 * sc, pad = 14 * sc;
     const cv = document.createElement('canvas');
-    const ctx = cv.getContext('2d');
-    const fontFor = (b) => `${b ? '600 ' : ''}${fs}px ui-monospace, Menlo, Consolas, monospace`;
+    const ctx = cv.getContext('2d')!;
+    const fontFor = (b: boolean) => `${b ? '600 ' : ''}${fs}px ui-monospace, Menlo, Consolas, monospace`;
     let wmax = 0;
     for (const ln of lines) { ctx.font = fontFor(ln.bold); wmax = Math.max(wmax, ctx.measureText(ln.text).width); }
     cv.width = Math.ceil(wmax + pad * 2); cv.height = Math.ceil(lines.length * lh + pad * 2);
@@ -828,16 +828,16 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
     return cv;
   };
 
-  let bedGrid = null, bedOutline = null, bedBoundR = 0, bedLabelCanvas = null, bedLabelQuad = null;
+  let bedGrid: Float32Array|null = null, bedOutline: Float32Array|null = null, bedBoundR = 0, bedLabelCanvas = null, bedLabelQuad = null;
   if (data.bed) {
-    const b = data.bed, grid = [], outline = [];
-    const pushSeg = (arr, ax, ay, bx, by) => {
+    const b = data.bed, grid: number[] = [], outline: number[] = [];
+    const pushSeg = (arr: any[], ax: number, ay: number, bx: number, by: number) => {
       const A = nrm(ax, ay, 0), B = nrm(bx, by, 0);
       arr.push(A[0], A[1], A[2], B[0], B[1], B[2]);
       for (const P of [A, B]) { const dd = Math.hypot(P[0] - ctr[0], P[1] - ctr[1], P[2] - ctr[2]); if (dd > bedBoundR) bedBoundR = dd; }
     };
     // "Nice" grid step (1/2/5 x 10^n) giving ~14 divisions across the larger bed axis.
-    const niceStep = (t) => { const pw = Math.pow(10, Math.floor(Math.log10(t || 1))); const f = (t || 1) / pw; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * pw; };
+    const niceStep = (t: number) => { const pw = Math.pow(10, Math.floor(Math.log10(t || 1))); const f = (t || 1) / pw; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * pw; };
     const step = Math.max(1, niceStep(Math.max(b.w, b.d) / 14));
     for (let gx = Math.ceil(b.x0 / step) * step; gx <= b.x1 + 1e-6; gx += step) pushSeg(grid, gx, b.y0, gx, b.y1);
     for (let gy = Math.ceil(b.y0 / step) * step; gy <= b.y1 + 1e-6; gy += step) pushSeg(grid, b.x0, gy, b.x1, gy);
@@ -858,7 +858,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
     const tw = b.w * 0.34, th = tw * (bedLabelCanvas.height / bedLabelCanvas.width);
     const rx1 = b.x1 - inset, ry0 = b.y0 + inset, rx0 = rx1 - tw, ry1 = ry0 + th;
     const zl = bu === 'in' ? 0.004 : 0.1;   // tiny lift above the plate
-    const v = (mx, my, uu, vv) => { const P = nrm(mx, my, zl); return [P[0], P[1], P[2], uu, vv]; };
+    const v = (mx: number, my: number, uu: number, vv: number) => { const P = nrm(mx, my, zl); return [P[0], P[1], P[2], uu, vv]; };
     const A = v(rx0, ry1, 0, 0), B = v(rx1, ry1, 1, 0), C = v(rx1, ry0, 1, 1), D = v(rx0, ry0, 0, 1);
     bedLabelQuad = new Float32Array([...A, ...B, ...C, ...A, ...C, ...D]);
   }
@@ -866,7 +866,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
   // Filament colour palette (flat vec3 array, max 8) for "colour by filament".
   const FIL_MAX = 8;
   const filCols = new Float32Array(FIL_MAX * 3);
-  const hex2rgb = (h) => { const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(h || ''); return m ? [parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255] : [0.7, 0.72, 0.78]; };
+  const hex2rgb = (h: string) => { const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(h || ''); return m ? [parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255] : [0.7, 0.72, 0.78]; };
   const palette = data.filamentColors || [];
   for (let k = 0; k < FIL_MAX; k++) { const c = hex2rgb(palette[k % Math.max(1, palette.length)]); filCols[k * 3] = c[0]; filCols[k * 3 + 1] = c[1]; filCols[k * 3 + 2] = c[2]; }
 
@@ -898,7 +898,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
   const layerH = (minHalfH < Infinity ? minHalfH * 2 : 0.002) || 0.002;
   // Travel instances (thin), reusing the same layout.
   const travN = inst ? data.travelCount : 0;
-  let travData = null;
+  let travData: Float32Array|null = null;
   if (travN) {
     travData = new Float32Array(travN * STR);
     const thin = Math.max(0.04 / span, boundR * 0.0008);
@@ -1017,9 +1017,9 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
       if(t<0.25)return mix(c1,c2,t/0.25); if(t<0.50)return mix(c2,c3,(t-0.25)/0.25); if(t<0.75)return mix(c3,c4,(t-0.50)/0.25); return mix(c4,c5,(t-0.75)/0.25); }
     void main(){ if(vT>uClip) discard; gl_FragColor=vec4(ramp(vT),1.0); }`;
 
-  function makeProg(vs, fs) {
-    const sh = (type, s) => { const o = gl.createShader(type); gl.shaderSource(o, s); gl.compileShader(o); return o; };
-    const p = gl.createProgram();
+  function makeProg(vs: string, fs: string) {
+    const sh = (type: number, s: string) => { const o = gl.createShader(type)!; gl.shaderSource(o, s); gl.compileShader(o); return o; };
+    const p = gl.createProgram()!;
     gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
     gl.linkProgram(p); return p;
   }
@@ -1080,7 +1080,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
       gl.drawArrays(gl.LINES, 0, bedGrid.length / 3);
       gl.bindBuffer(gl.ARRAY_BUFFER, oBuf); gl.vertexAttribPointer(aBedPos, 3, gl.FLOAT, false, 0, 0);
       gl.uniform4f(uBedCol, 0.64, 0.72, 0.88, 0.92);
-      gl.drawArrays(gl.LINES, 0, bedOutline.length / 3);
+      gl.drawArrays(gl.LINES, 0, bedOutline!.length / 3);
       gl.disable(gl.BLEND);
       drawBedLabel(mvp);   // the info panel rides on the plate
     };
@@ -1109,15 +1109,15 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
     // draw() directly, so isoFadeT would never advance and a fade would freeze mid-blend).
     // isoEndRelease: set when playback runs to completion - eases every dimmed tool back to
     // full (isoEndT 0->1) so the finished build shows normally; cleared on play/scrub.
-    isoCurTool: null, isoFadeTool: null, isoFadeT: 1, isoNoFade: false, isoEndT: 0, isoEndRelease: false };
+    isoCurTool: null as number|null, isoFadeTool: null as number|null, isoFadeT: 1, isoNoFade: false, isoEndT: 0, isoEndRelease: false };
   let viewW = 600, viewH = 420;   // CSS px, for screen-space size in the shader
   let dirty = true;
   let disposed = false;
-  const spinListeners = [];
-  function setSpin(v) { if (state.spin === v) return; state.spin = v; dirty = true; for (const cb of spinListeners) cb(v); }
+  const spinListeners: any[] = [];
+  function setSpin(v: boolean) { if (state.spin === v) return; state.spin = v; dirty = true; for (const cb of spinListeners) cb(v); }
 
   // ----- instanced path -----
-  let drawImpl, computeHead;
+  let drawImpl!: ((proj: Float32Array, view: Float32Array, model: Float32Array) => void) & { hasTravel?: boolean }, computeHead: any;
   if (inst && segN > 0) {
     const prog = makeProg(vsInst, fsInst); gl.useProgram(prog);
     const tpl = boxTemplate();
@@ -1130,7 +1130,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
     // tool position instead of popping in whole when the move finishes. Updated per frame.
     const partBuf = gl.createBuffer();
     const partArr = new Float32Array(STR);
-    let partTravBuf = null, partTravArr = null;
+    let partTravBuf: WebGLBuffer|null = null, partTravArr: Float32Array|null = null;
     if (travData) { partTravBuf = gl.createBuffer(); partTravArr = new Float32Array(STR); }
 
     // Last live tool point, kept across frames so the toolhead stays put (and visible)
@@ -1143,9 +1143,9 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
         const src = o > 0.5 ? travData : instData;
         if (src) { lastHX = src[0]; lastHY = src[1]; lastHZ = src[2]; haveLastHead = true; } break; } }
 
-    const L = (n) => gl.getAttribLocation(prog, n);
+    const L = (n: string) => gl.getAttribLocation(prog, n);
     const aEnd = L('aEnd'), aSr = L('aSr'), aSu = L('aSu'), aA = L('aA'), aB = L('aB'), aHW = L('aHW'), aHH = L('aHH'), aFeed = L('aFeed'), aType = L('aType'), aTool = L('aTool');
-    const U = (n) => gl.getUniformLocation(prog, n);
+    const U = (n: string) => gl.getUniformLocation(prog, n);
     const uMVP = U('uMVP'), uModel = U('uModel'), uMV = U('uMV'), uReal = U('uReal'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uFilVis = U('uFilVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat'), uAlpha = U('uAlpha'), uFilCols = U('uFilCols'), uWmin = U('uWmin'), uWspan = U('uWspan'), uTypeBias = U('uTypeBias'), uIsoMode = U('uIsoMode'), uIsoTool = U('uIsoTool'), uIsoTool2 = U('uIsoTool2'), uIsoUseType = U('uIsoUseType'), uDim = U('uDim');
 
     const bindTemplate = () => {
@@ -1154,7 +1154,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
       gl.enableVertexAttribArray(aSr); gl.vertexAttribPointer(aSr, 1, gl.FLOAT, false, 12, 4); inst.vertexAttribDivisorANGLE(aSr, 0);
       gl.enableVertexAttribArray(aSu); gl.vertexAttribPointer(aSu, 1, gl.FLOAT, false, 12, 8); inst.vertexAttribDivisorANGLE(aSu, 0);
     };
-    const bindInstances = (buf) => {
+    const bindInstances = (buf: WebGLBuffer|null) => {
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       const S = 44;
       gl.enableVertexAttribArray(aA); gl.vertexAttribPointer(aA, 3, gl.FLOAT, false, S, 0); inst.vertexAttribDivisorANGLE(aA, 1);
@@ -1183,10 +1183,10 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
     const HEAD_PAL = [[1.0, 0.92, 0.30], [0.20, 0.90, 0.95], [0.95, 0.32, 0.85], [0.95, 0.33, 0.33], [0.38, 0.85, 0.45], [0.42, 0.55, 0.97]];
     // One geometry per side-count 3..9 (index = sides-3); rank N (1-based first-use
     // order) uses min(N+2, 9) sides, so the 7th tool onward stops gaining sides.
-    const headVariants = [];
+    const headVariants: any[] = [];
     for (let s = 3; s <= 9; s++) { const geo = pyramidGeo(s); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, geo, gl.STATIC_DRAW); headVariants.push({ buf: b, count: geo.length / 6 }); }
     const hPos = gl.getAttribLocation(headProg, 'aPos'), hNrm = gl.getAttribLocation(headProg, 'aNrm');
-    const hU = (n) => gl.getUniformLocation(headProg, n);
+    const hU = (n: string) => gl.getUniformLocation(headProg, n);
     const uHProj = hU('uProj'), uHView = hU('uView'), uHModel = hU('uModel'), uHead = hU('uHead'), uHScale = hU('uScale'), uHColor = hU('uHeadColor');
     const headScale = Math.max(0.02, boundR * 0.06);
 
@@ -1198,7 +1198,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
     const toolOff = isCNC ? 9 : 10;
     const slotToNum = new Map();
     if (isCNC && data.cnc.toolColors) for (const tc of data.cnc.toolColors) slotToNum.set(tc.slot, tc.n);
-    const rawToNum = (raw) => isCNC ? (slotToNum.has(raw) ? slotToNum.get(raw) : raw) : raw;
+    const rawToNum = (raw: number) => isCNC ? (slotToNum.has(raw) ? slotToNum.get(raw) : raw) : raw;
     const rankMap = new Map();
     for (let s = 0; s < segN; s++) { const raw = instData[s * STR + toolOff] | 0; if (!rankMap.has(raw)) rankMap.set(raw, rankMap.size + 1); }
     const multiTool = rankMap.size > 1;
@@ -1213,7 +1213,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
       `precision mediump float; varying vec2 vUV; uniform sampler2D uTex;
        void main(){ vec4 c = texture2D(uTex, vUV); if (c.a < 0.02) discard; gl_FragColor = c; }`);
     const aDPos = gl.getAttribLocation(digitProg, 'aPos'), aDUV = gl.getAttribLocation(digitProg, 'aUV');
-    const dU = (n) => gl.getUniformLocation(digitProg, n);
+    const dU = (n: string) => gl.getUniformLocation(digitProg, n);
     const uDProj = dU('uProj'), uDView = dU('uView'), uDModel = dU('uModel'), uDHead = dU('uHead'), uDScale = dU('uScale'), uDSamp = dU('uTex');
     const dHe = PYR_RB * 0.82, dY = PYR_YB + 0.02;   // quad half-extent + tiny lift above the base cap
     const digitQuad = new Float32Array([
@@ -1222,10 +1222,10 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
     ]);
     const digitBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, digitBuf); gl.bufferData(gl.ARRAY_BUFFER, digitQuad, gl.STATIC_DRAW);
     const digitCache = new Map();
-    const digitTex = (num) => {
+    const digitTex = (num: number) => {
       let t = digitCache.get(num); if (t) return t;
       const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64;
-      const c = cv.getContext('2d'); const str = String(num);
+      const c = cv.getContext('2d')!; const str = String(num);
       c.clearRect(0, 0, 64, 64);
       c.font = 'bold ' + (str.length > 1 ? 34 : 46) + 'px ui-monospace, Menlo, Consolas, monospace';
       c.textAlign = 'center'; c.textBaseline = 'middle';
@@ -1241,7 +1241,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       digitCache.set(num, t); return t;
     };
-    const drawDigit = (proj, view, model, hx, hy, hz, num) => {
+    const drawDigit = (proj: Float32Array, view: Float32Array, model: Float32Array, hx: number, hy: number, hz: number, num: number) => {
       gl.useProgram(digitProg);
       gl.uniformMatrix4fv(uDProj, false, proj); gl.uniformMatrix4fv(uDView, false, view); gl.uniformMatrix4fv(uDModel, false, model);
       gl.uniform3f(uDHead, hx, hy, hz); gl.uniform1f(uDScale, headScale);
@@ -1253,7 +1253,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.depthMask(true); gl.disable(gl.BLEND);
     };
-    const drawHead = (proj, view, model, hx, hy, hz) => {
+    const drawHead = (proj: Float32Array, view: Float32Array, model: Float32Array, hx: number, hy: number, hz: number) => {
       const rank = Math.max(1, state.headToolRank | 0);
       const variant = headVariants[Math.min(rank - 1, headVariants.length - 1)];
       const col = HEAD_PAL[(rank - 1) % HEAD_PAL.length];
@@ -1339,7 +1339,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
         else { state.headToolRank = 1; state.headToolNum = 0; }
       } else { state.headToolRank = 1; state.headToolNum = 0; state.headToolRaw = 0; }
     };
-    drawImpl = (proj, view, model) => {
+    drawImpl = (proj: Float32Array, view: Float32Array, model: Float32Array) => {
       const mv = mat4Multiply(view, model);
       const mvp = mat4Multiply(proj, mv);
       drawBed(mvp);   // floor first, so the solid print draws crisply over it
@@ -1389,10 +1389,10 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
         // The in-progress travel (head currently gliding along it) grows toward the head.
         if (state.playKind === 2 && travShown < travN) {
           const q = travShown * STR, tf = state.playFrac;
-          for (let i = 0; i < STR; i++) partTravArr[i] = travData[q + i];
-          partTravArr[3] = travData[q] + tf * (travData[q + 3] - travData[q]);
-          partTravArr[4] = travData[q + 1] + tf * (travData[q + 4] - travData[q + 1]);
-          partTravArr[5] = travData[q + 2] + tf * (travData[q + 5] - travData[q + 2]);
+          for (let i = 0; i < STR; i++) partTravArr![i] = travData![q + i];
+          partTravArr![3] = travData![q] + tf * (travData![q + 3] - travData![q]);
+          partTravArr![4] = travData![q + 1] + tf * (travData![q + 4] - travData![q + 1]);
+          partTravArr![5] = travData![q + 2] + tf * (travData![q + 5] - travData![q + 2]);
           gl.bindBuffer(gl.ARRAY_BUFFER, partTravBuf); gl.bufferData(gl.ARRAY_BUFFER, partTravArr, gl.DYNAMIC_DRAW);
           bindInstances(partTravBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, 1);
         }
@@ -1445,10 +1445,10 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
           drawPartial();
           gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
           // Everything except the two crossfading tools, held translucent.
-          gl.uniform1f(uIsoMode, 2); gl.uniform1f(uIsoTool2, state.isoFadeTool | 0); gl.uniform1f(uAlpha, othersA);
+          gl.uniform1f(uIsoMode, 2); gl.uniform1f(uIsoTool2, state.isoFadeTool! | 0); gl.uniform1f(uAlpha, othersA);
           bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
           // Outgoing tool easing from solid down to translucent.
-          gl.uniform1f(uIsoMode, 1); gl.uniform1f(uIsoTool, state.isoFadeTool | 0); gl.uniform1f(uAlpha, aOut);
+          gl.uniform1f(uIsoMode, 1); gl.uniform1f(uIsoTool, state.isoFadeTool! | 0); gl.uniform1f(uAlpha, aOut);
           bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
           gl.disable(gl.BLEND); gl.uniform1f(uAlpha, 1); gl.uniform1f(uIsoTool2, -1);
         } else {
@@ -1487,9 +1487,9 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
     const partLineBuf = gl.createBuffer();
     const partLine = new Float32Array(6);
     const aPos = gl.getAttribLocation(prog, 'aPos');
-    const U = (n) => gl.getUniformLocation(prog, n);
+    const U = (n: string) => gl.getUniformLocation(prog, n);
     const uProj = U('uProj'), uView = U('uView'), uModel = U('uModel'), uYmin = U('uYmin'), uYspan = U('uYspan'), uClip = U('uClip');
-    drawImpl = (proj, view, model) => {
+    drawImpl = (proj: Float32Array, view: Float32Array, model: Float32Array) => {
       drawBed(mat4Multiply(proj, mat4Multiply(view, model)));
       gl.useProgram(prog);
       gl.uniformMatrix4fv(uProj, false, proj); gl.uniformMatrix4fv(uView, false, view); gl.uniformMatrix4fv(uModel, false, model);
@@ -1556,7 +1556,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
     canvas.style.margin = Math.max(0, Math.round((ch - dh) / 2)) + 'px auto 0';
     dirty = true;
   }
-  function setExportSize(w, h) {
+  function setExportSize(w: number, h: number) {
     exportW = w || 0; exportH = h || 0;
     if (exportW) applyExportSize();
     else { canvas.style.margin = ''; resize(); }
@@ -1606,7 +1606,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
   // Billboard the wait label over the toolhead tip while it dwells / heats / pauses.
   // Projects the live tool point to screen space (so a DOM box always faces the camera)
   // and parks it just above the tip; hidden whenever the head isn't holding.
-  function positionWaitTag(proj, view, model) {
+  function positionWaitTag(proj: Float32Array, view: Float32Array, model: Float32Array) {
     if (!(state.head && state.paused && state.pauseText && state.headValid)) { pauseTag.style.display = 'none'; return; }
     const m = mat4Multiply(proj, mat4Multiply(view, model));
     const x = state.headX, y = state.headY, z = state.headZ;
@@ -1623,7 +1623,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
   }
   let isoFadeLast = 0;   // wall-clock stamp for advancing the tool-change crossfade
   const ISO_FADE_S = 0.5;  // "Dim other tools" tool-change crossfade duration
-  function loop(now) {
+  function loop(now: number) {
     if (disposed) return;
     // Free the WebGL context once the card leaves the DOM (new file / SPA nav)
     // rather than leaving it live against the browser's ~16-context cap, which
@@ -1656,8 +1656,8 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
   // Orbit / pan / zoom.
   let dragging = false, panning = false, lx = 0, ly = 0;
   const panK = () => state.dist * 0.0018;
-  const down = (x, y, pan) => { dragging = true; panning = pan; lx = x; ly = y; setSpin(false); };
-  const move = (x, y) => {
+  const down = (x: number, y: number, pan: boolean) => { dragging = true; panning = pan; lx = x; ly = y; setSpin(false); };
+  const move = (x: number, y: number) => {
     if (!dragging) return;
     if (panning) { state.panX += (x - lx) * panK(); state.panY -= (y - ly) * panK(); }
     else { state.yaw += (x - lx) * 0.01; state.pitch += (y - ly) * 0.01; state.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, state.pitch)); }
@@ -1667,7 +1667,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   canvas.addEventListener('mousedown', (e) => down(e.clientX, e.clientY, e.button === 2 || e.shiftKey));
   // Named so dispose() can detach them (they live on window, past the canvas).
-  const onWinMove = (e) => move(e.clientX, e.clientY);
+  const onWinMove = (e: MouseEvent) => move(e.clientX, e.clientY);
   window.addEventListener('mousemove', onWinMove);
   window.addEventListener('mouseup', up);
   let twoFinger = false, pinchDist = 0, pcx = 0, pcy = 0;
@@ -1692,7 +1692,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
   canvas.addEventListener('touchend', (e) => { if (!e.touches.length) { up(); twoFinger = false; } });
   // Shared zoom step for the wheel and the manual +/- pad. Zooming = changing the
   // camera distance; factor < 1 moves in, > 1 moves out (clamped to the orbit range).
-  function zoomBy(factor) { state.dist = Math.max(0.04, Math.min(150, state.dist * factor)); dirty = true; }
+  function zoomBy(factor: number) { state.dist = Math.max(0.04, Math.min(150, state.dist * factor)); dirty = true; }
 
   // Scroll-zoom toggle: styled and placed like the fullscreen button (they share the
   // bottom-right stack below), OFF by default so the wheel scrolls the page until the
@@ -1714,7 +1714,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
   // Camera distance that frames the model's bounding sphere. `fill` < 1 leaves
   // padding (e.g. 0.9 -> the sphere spans ~90% of the frame); accounts for the
   // narrower of the horizontal/vertical FOV so it fits in portrait or landscape.
-  function fitDist(fill) {
+  function fitDist(fill: number) {
     const aspect = (canvas.width / canvas.height) || 1;
     const halfFovV = (45 * Math.PI / 180) / 2;
     const halfFov = Math.min(halfFovV, Math.atan(Math.tan(halfFovV) * aspect));
@@ -1745,8 +1745,8 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
   // Manual zoom pad (+ over -): a press-and-hold repeats the zoom step on a timer, so
   // you can ride the camera in or out without spamming clicks. Pointer capture keeps
   // it zooming even if the finger/cursor drifts off the button mid-hold.
-  function holdZoom(btn, factor) {
-    let timer = null;
+  function holdZoom(btn: HTMLButtonElement, factor: number) {
+    let timer: number|null|undefined = null;
     const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
     btn.addEventListener('pointerdown', (e) => {
       e.preventDefault(); e.stopPropagation();
@@ -1805,18 +1805,18 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
   // Build the legend body for the current colour mode: a blue->red ramp (height /
   // speed / width) labelled with its min and max, or a swatch key (line type / tool /
   // filament). Speed is shown in mm/s (feedrate is mm/min, so /60).
-  const swatchRgb = (rgb) => `rgb(${Math.round(rgb[0] * 255)},${Math.round(rgb[1] * 255)},${Math.round(rgb[2] * 255)})`;
-  const rampEl = (title, maxTxt, minTxt) => el('div', { class: 'anr-gcode-ramp' }, [
+  const swatchRgb = (rgb: number[]) => `rgb(${Math.round(rgb[0] * 255)},${Math.round(rgb[1] * 255)},${Math.round(rgb[2] * 255)})`;
+  const rampEl = (title: ElChild | ElChild[], maxTxt: ElChild | ElChild[], minTxt: ElChild | ElChild[]) => el('div', { class: 'anr-gcode-ramp' }, [
     el('div', { class: 'anr-gcode-ramp-title' }, title),
     el('div', { class: 'anr-gcode-ramp-body' }, [
       el('div', { class: 'anr-gcode-ramp-bar' }),
       el('div', { class: 'anr-gcode-ramp-scale' }, [el('span', {}, maxTxt), el('span', {}, minTxt)]),
     ]),
   ]);
-  const keyRow = (bg?, label?) => el('div', { class: 'anr-gcode-key-row' }, [
+  const keyRow = (bg?: string, label?: ElChild | ElChild[]) => el('div', { class: 'anr-gcode-key-row' }, [
     el('span', { class: 'anr-gcode-swatch' }, []), el('span', { class: 'anr-gcode-key-label' }, label),
   ]);
-  const setSwatch = (rowEl, bg) => { rowEl.firstChild.style.background = bg; return rowEl; };
+  const setSwatch = (rowEl: HTMLDivElement, bg: string) => { (rowEl.firstChild as HTMLElement).style.background = bg; return rowEl; };
   const refreshLegend = () => {
     colourSel.value = String(state.mode);
     legendBody.innerHTML = '';
@@ -1833,12 +1833,12 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
       const fils = (data.filsUsed && data.filsUsed.length) ? data.filsUsed : [0];
       for (const fi of fils) {
         const hex = (data.filamentColors && data.filamentColors[fi]) || '#cccccc';
-        const row = keyRow(); setSwatch(row, hex); row.lastChild.textContent = 'Filament ' + (fi + 1); legendBody.appendChild(row);
+        const row = keyRow(); setSwatch(row, hex); row.lastChild!.textContent = 'Filament ' + (fi + 1); legendBody.appendChild(row);
       }
     } else if (data.hasTypes && data.features.length) {
-      for (const id of data.features) { const f = FEATURES[id]; const row = keyRow(); setSwatch(row, swatchRgb(f.rgb)); row.lastChild.textContent = f.label; legendBody.appendChild(row); }
+      for (const id of data.features) { const f = FEATURES[id]; const row = keyRow(); setSwatch(row, swatchRgb(f.rgb)); row.lastChild!.textContent = f.label; legendBody.appendChild(row); }
     } else if (cncToolCols.length > 1) {
-      for (const t of cncToolCols) { const f = FEATURES[t.slot]; const row = keyRow(); setSwatch(row, swatchRgb(f.rgb)); row.lastChild.textContent = 'T' + t.n; legendBody.appendChild(row); }
+      for (const t of cncToolCols) { const f = FEATURES[t.slot]; const row = keyRow(); setSwatch(row, swatchRgb(f.rgb)); row.lastChild!.textContent = 'T' + t.n; legendBody.appendChild(row); }
     }
     syncLegendVis();   // keep the show/hide state + button label in sync (incl. after MSAA rebuilds)
   };
@@ -1858,7 +1858,7 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
     while (dyaw < -Math.PI) dyaw += 2 * Math.PI;
     const dur = 320; let t0 = 0;
     if (resetAnim) cancelAnimationFrame(resetAnim);
-    const tick = (ts) => {
+    const tick = (ts: number) => {
       if (!t0) t0 = ts;
       const k = Math.min(1, (ts - t0) / dur);
       const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;   // ease-in-out, matching the view-cube
@@ -1879,15 +1879,15 @@ function buildViewer(data, opts: any = {}): GcodeViewer {
     // swap, so exporters must re-read it) and the export-resolution lock. Framing
     // at the export aspect goes through fit(), which reads the locked canvas size.
     draw, canvas, setExportSize, dispose,
-    resize, setSpin, onSpinChange: (cb) => spinListeners.push(cb), resetView,
+    resize, setSpin, onSpinChange: (cb: (spin: boolean) => void) => spinListeners.push(cb), resetView,
     start: () => { resize(); if (!state.fitted) { state.dist = fitDist(0.9); state.fitted = true; } requestAnimationFrame(loop); }, markDirty: () => { dirty = true; },
-    fit: (fill) => { state.dist = fitDist(fill === undefined ? 0.9 : fill); state.fitted = true; dirty = true; },
+    fit: (fill: number|undefined) => { state.dist = fitDist(fill === undefined ? 0.9 : fill); state.fitted = true; dirty = true; },
   };
   attachViewCube(api);
   return api;
 }
 
-function detectSlicer(comments) {
+function detectSlicer(comments: any[]) {
   for (const c of comments) {
     let m = c.match(/sliced by\s+(.+)/i); if (m) return m[1].trim();
     m = c.match(/generated (?:with|by)\s+(.+)/i); if (m) return m[1].trim();
@@ -1897,7 +1897,7 @@ function detectSlicer(comments) {
   return null;
 }
 
-export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
+export async function renderGcode(file: File, resultsEl: HTMLElement, opts?: any) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reconstructing the print from "${file.name}"…`));
@@ -1916,7 +1916,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
   catch (e) { resultsEl.innerHTML = ''; resultsEl.appendChild(errorCard('Could not read file: ' + (e && e.message))); return; }
 
   await new Promise((r) => setTimeout(r, 0));
-  let data;
+  let data: any;
   try { data = parseGcode(text, opts); } catch (e) { data = null; }
 
   resultsEl.innerHTML = '';
@@ -1924,9 +1924,9 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
 
   const isPrint = data.mode === 'print';
   const u = data.units;
-  const titleCase = (s) => s.toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase());
+  const titleCase = (s: string) => s.toLowerCase().replace(/\b([a-z])/g, (m: string) => m.toUpperCase());
   const cncTools = (data.cnc && data.cnc.toolColors) ? data.cnc.toolColors : [];
-  const toolLabel = (n) => { const d = data.cnc && data.cnc.tools.find((t) => t.n === n); return 'T' + n + (d && d.desc ? ' - ' + titleCase(d.desc) : ''); };
+  const toolLabel = (n: string) => { const d = data.cnc && data.cnc.tools.find((t: any) => t.n === n); return 'T' + n + (d && d.desc ? ' - ' + titleCase(d.desc) : ''); };
 
   if (data.segCount > 0) {
     // "Show full anyway" lifts the segment cap, so the geometry can be many millions of
@@ -1953,13 +1953,13 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
       const viewRow = el('div', { class: 'anr-btn-row anr-gcode-toolrow anr-gcode-viewrow' });
       const spinBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Pause spin');
       spinBtn.addEventListener('click', () => viewer.setSpin(!viewer.state.spin));
-      const updateSpinLabel = (s) => { spinBtn.textContent = s ? 'Pause spin' : 'Resume spin'; };
+      const updateSpinLabel = (s: boolean) => { spinBtn.textContent = s ? 'Pause spin' : 'Resume spin'; };
       viewer.onSpinChange(updateSpinLabel);
 
       // Toggling hardware MSAA needs a fresh WebGL context, so rebuild the viewer on
       // a new canvas, carrying the camera and display state across. Every control
       // references `viewer` by binding, so they keep working after the swap.
-      function applyMSAA(on) {
+      function applyMSAA(on: boolean) {
         const s = viewer.state;
         const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, spin: s.spin, ortho: s.ortho, head: s.head, clip: s.clip, mode: s.mode, showTravel: s.showTravel, showBed: s.showBed, showLegend: s.showLegend, vis: s.vis, filVis: s.filVis, shown: s.shown, partial: s.partial, ssaa: s.ssaa, minWidth: s.minWidth, flatten: s.flatten, fitted: s.fitted, travShown: s.travShown, playKind: s.playKind, playFrac: s.playFrac, paused: s.paused, translucentTravel: s.translucentTravel, follow: s.follow, toolMarkers: s.toolMarkers, isoTool: s.isoTool, real: s.real };
         const old = viewer;
@@ -1988,7 +1988,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
       qPanel.appendChild(el('div', { class: 'anr-aa-title' }, 'Quality'));
       // Each setting is a site-style button whose border lights red (.is-on) when active,
       // grey when off - no descriptions, just the toggle. The label carries the state.
-      const aaBtn = (label, get, set) => {
+      const aaBtn = (label: ElChild | ElChild[], get: () => any, set: (v: any) => void) => {
         const btn = el('button', { type: 'button', class: 'anr-btn anr-aa-btn' }, label);
         const sync = () => btn.classList.toggle('is-on', !!get());
         sync();
@@ -1998,7 +1998,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
       };
       // Multi-stage button: cycles through its choices on each click (off = the first
       // choice). Label shows the current stage; border lights red whenever it is not off.
-      const aaCycleBtn = (label, choices, get, set) => {
+      const aaCycleBtn = (label: string, choices: any[], get: () => any, set: (v: any) => void) => {
         const btn = el('button', { type: 'button', class: 'anr-btn anr-aa-btn' });
         const sync = () => { const c = choices.find((o) => o.v === get()) || choices[0]; btn.textContent = label + ': ' + c.label; btn.classList.toggle('is-on', get() !== choices[0].v); };
         sync();
@@ -2019,7 +2019,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
       qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
       // Colour mode + its legend live in a top-right overlay built inside the viewer.
       const travelBtn = el('button', { type: 'button', class: 'anr-btn' }, isPrint ? 'Travel' : 'Rapids');
-      const setTravel = (on) => {
+      const setTravel = (on: boolean|undefined) => {
         viewer.state.showTravel = on;
         travelBtn.classList.toggle('is-active', on);   // red while travel is shown
         viewer.markDirty();
@@ -2029,12 +2029,12 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
       } else travelBtn.disabled = true;
 
       // Bed toggle (only when the file declared a printable area). On by default, red while shown.
-      let bedBtn = null;
+      let bedBtn: HTMLButtonElement|null = null;
       if (data.bed) {
         bedBtn = el('button', { type: 'button', class: 'anr-btn is-active', title: 'Show the print bed / build plate' }, 'Bed');
         bedBtn.addEventListener('click', () => {
           viewer.state.showBed = !viewer.state.showBed;
-          bedBtn.classList.toggle('is-active', viewer.state.showBed);
+          bedBtn!.classList.toggle('is-active', viewer.state.showBed);
           viewer.markDirty();
         });
       }
@@ -2161,9 +2161,9 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
         gTime[g + 1] = gTime[g] + (feed > 1e-6 ? len / (feed / 60) : 0);
       }
       const realTotal = gTime[G];
-      const fmtDur = (sec) => { sec = Math.round(sec); const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), ss = sec % 60; return h ? `${h}h ${m}m` : m ? `${m}m ${ss}s` : `${ss}s`; };
+      const fmtDur = (sec: number) => { sec = Math.round(sec); const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), ss = sec % 60; return h ? `${h}h ${m}m` : m ? `${m}m ${ss}s` : `${ss}s`; };
       // Compact remaining-time for the wait label: one decimal under 10s, else whole.
-      const fmtWait = (sec) => sec >= 60 ? `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s` : `${sec.toFixed(sec < 10 ? 1 : 0)}s`;
+      const fmtWait = (sec: number) => sec >= 60 ? `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s` : `${sec.toFixed(sec < 10 ? 1 : 0)}s`;
 
       // Live playback HUD, refreshed by applyGlobal as you scrub / play: elapsed / total
       // time, the current layer, and - on multi-material prints or multi-tool CNC jobs -
@@ -2185,7 +2185,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
       const hud = hudItems.length ? el('div', { class: 'anr-gcode-hud' }, hudItems) : null;
       // Rewrite the HUD for a global position `gi` (moves). Cheap: a binary search for the
       // layer and a small linear tool lookup, so it's fine to run every playback frame.
-      const updateHud = (gi) => {
+      const updateHud = (gi: number) => {
         const g = Math.max(0, Math.min(G, Math.floor(gi))), frac = Math.max(0, Math.min(G, gi)) - g, s = viewer.state;
         if (hudShowTime) {
           const elapsed = g >= G ? realTotal : gTime[g] + frac * (gTime[g + 1] - gTime[g]);
@@ -2205,7 +2205,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
             hudToolText.textContent = 'Filament ' + (fi + 1);
             hudSwatch.style.background = (data.filamentColors && data.filamentColors[fi]) || '#cccccc';
           } else {
-            const slot = data.seg[idx * 10 + 9] | 0, t = cncTools.find((c) => c.slot === slot), f = FEATURES[slot] || FEATURES[7];
+            const slot = data.seg[idx * 10 + 9] | 0, t = cncTools.find((c: any) => c.slot === slot), f = FEATURES[slot] || FEATURES[7];
             hudToolText.textContent = t ? toolLabel(t.n) : 'Tool';
             hudSwatch.style.background = `rgb(${Math.round(f.rgb[0] * 255)},${Math.round(f.rgb[1] * 255)},${Math.round(f.rgb[2] * 255)})`;
           }
@@ -2215,7 +2215,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
 
       // Playback rate in moves/s. A "length" preset scales to the file (G / seconds) so any
       // job finishes in that many seconds; a "lines/s" preset is a fixed rate.
-      const lpsForLen = (sec) => Math.max(1, G / sec);
+      const lpsForLen = (sec: number) => Math.max(1, G / sec);
       // Default playback is a fixed 30s run of the whole job (set via choose() below);
       // real time (honouring feedrates + dwell holds) stays available as a preset.
       let playLps = lpsForLen(30), realtime = false;
@@ -2223,7 +2223,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
       // Apply a fractional global position `gi` (in moves): reveal the ext + travel
       // segments done so far and set the in-progress (partial) move - ext or travel - so
       // its bead/line grows toward the live head. Syncs the slider + readout.
-      const applyGlobal = (gi) => {
+      const applyGlobal = (gi: number) => {
         gi = Math.max(0, Math.min(G, gi));
         const g = Math.floor(gi), frac = gi - g, s = viewer.state;
         if (g >= G) {
@@ -2262,11 +2262,11 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
       };
       let playPos = G, playElapsed = realTotal;
       // Scrub: snap to a whole move (no partial), so dragging only ever shows complete moves.
-      const scrubTo = (gi) => { playPos = Math.max(0, Math.min(G, Math.round(gi))); playElapsed = gTime[Math.min(G, playPos)]; viewer.state.isoEndRelease = false; applyGlobal(playPos); };
+      const scrubTo = (gi: number) => { playPos = Math.max(0, Math.min(G, Math.round(gi))); playElapsed = gTime[Math.min(G, playPos)]; viewer.state.isoEndRelease = false; applyGlobal(playPos); };
 
       let playing = false, playRAF = 0, lastTs = 0, firstPlay = true;
       function stopPlay() { if (!playing) return; playing = false; playBtn.textContent = 'Play'; viewer.state.head = false; viewer.markDirty(); if (playRAF) cancelAnimationFrame(playRAF); playRAF = 0; }
-      function stepPlay(ts) {
+      function stepPlay(ts: number) {
         if (!playing) return;
         if (!viewer.wrap.isConnected) { stopPlay(); return; }
         if (!lastTs) lastTs = ts;
@@ -2329,15 +2329,15 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
       const spdWrap = el('span', { class: 'anr-aa-wrap' });
       const spdBtn = el('button', { type: 'button', class: 'anr-btn', title: 'Playback speed' }, 'Speed');
       const spdPanel = el('div', { class: 'anr-aa-panel anr-spd-panel is-hidden' });
-      const setLabel = (txt) => { spdBtn.textContent = 'Speed: ' + txt; };
-      const allPresetBtns = [];
+      const setLabel = (txt: string) => { spdBtn.textContent = 'Speed: ' + txt; };
+      const allPresetBtns: HTMLButtonElement[] = [];
       const clearActive = () => allPresetBtns.forEach((b) => b.classList.remove('is-active'));
       const rtWarn = el('p', { class: 'anr-spd-warn', hidden: '' }, 'Real time is only an estimate - the file has no data on acceleration, rapid speeds or tool-change times.');
-      const choose = (lps, label, btn) => { realtime = false; playLps = lps; setLabel(label); clearActive(); if (btn) btn.classList.add('is-active'); rtWarn.hidden = true; };
-      const chooseReal = (btn) => { realtime = true; setLabel('real time (' + fmtDur(realTotal) + ')'); clearActive(); if (btn) btn.classList.add('is-active'); rtWarn.hidden = false; };
+      const choose = (lps: number, label: string, btn: HTMLButtonElement|null) => { realtime = false; playLps = lps; setLabel(label); clearActive(); if (btn) btn.classList.add('is-active'); rtWarn.hidden = true; };
+      const chooseReal = (btn: HTMLButtonElement) => { realtime = true; setLabel('real time (' + fmtDur(realTotal) + ')'); clearActive(); if (btn) btn.classList.add('is-active'); rtWarn.hidden = false; };
 
       const cols = el('div', { class: 'anr-spd-cols' });
-      const mkCol = (title) => { const c = el('div', { class: 'anr-spd-col' }); c.appendChild(el('div', { class: 'anr-spd-title' }, title)); return c; };
+      const mkCol = (title: ElChild | ElChild[]) => { const c = el('div', { class: 'anr-spd-col' }); c.appendChild(el('div', { class: 'anr-spd-title' }, title)); return c; };
       const lpsCol = mkCol('Lines/s'), lenCol = mkCol('Duration');
       for (const [v, l] of LINE_PRESETS) {
         const b = el('button', { type: 'button', class: 'anr-btn anr-spd-opt' }, l);
@@ -2418,7 +2418,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
       // Build the (multi-line, mono) hover popup for a bucket: title, each change's
       // from -> to tool with its filament colour swatch (or CNC tool description), and a
       // footer with the build height, move number and progress.
-      const buildMarkPop = (e) => {
+      const buildMarkPop = (e: any) => {
         markPop.textContent = '';
         const single = e.count === 1;
         markPop.appendChild(el('div', { style: 'font-weight:600;' }, single ? (e.items[0].kind === 'filament' ? 'Filament change' : 'Tool change') : (e.count + ' tool changes')));
@@ -2510,23 +2510,23 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
       // every frame is perfect regardless of machine load, and it renders faster
       // than real time. Only offered where WebCodecs can encode (Chrome, Edge,
       // Safari 16.4+, recent Firefox) - the button simply doesn't exist elsewhere.
-      let clipBtn = null;
+      let clipBtn: HTMLButtonElement|null = null;
       if (window.VideoEncoder && window.VideoFrame) {
         // orbit/follow/overlay are clip-only motion/stamp options. persp/bed/travel/dim
         // mirror live viewer-state flags (ortho / showBed / showTravel / isoTool) and are
         // re-seeded from the viewer each time the popup opens, so the export defaults to
         // whatever the user set in the normal viewer but can be overridden here.
-        const clipCfg = { dur: 10, aspect: '16:9', size: 1080, fps: 30, quality: 0.12, reset: true, orbit: true, follow: false, overlay: true, persp: true, bed: true, travel: false, dim: false };
+        const clipCfg: Record<string, any> = { dur: 10, aspect: '16:9', size: 1080, fps: 30, quality: 0.12, reset: true, orbit: true, follow: false, overlay: true, persp: true, bed: true, travel: false, dim: false };
         // Single definition of the four toggles that mirror viewer state. `cfg` is the
         // clipCfg key, `st` the viewer.state flag; `get` reads state -> clip value (to
         // seed the popup), `put` writes clip value -> state (on export). Some invert
         // (persp is !ortho) and dim only bites with multiple tools. Drives all three
         // sites - seed, apply, snapshot - so they can never drift.
         const SCENE_MIRROR = [
-          { cfg: 'persp', st: 'ortho', get: (s) => !s.ortho, put: (c) => !c },
-          { cfg: 'bed', st: 'showBed', get: (s) => !!s.showBed, put: (c) => !!c },
-          { cfg: 'travel', st: 'showTravel', get: (s) => !!s.showTravel, put: (c) => !!c },
-          { cfg: 'dim', st: 'isoTool', get: (s) => !!s.isoTool, put: (c) => !!c && hasMultiTool },
+          { cfg: 'persp', st: 'ortho', get: (s: any) => !s.ortho, put: (c: any) => !c },
+          { cfg: 'bed', st: 'showBed', get: (s: any) => !!s.showBed, put: (c: any) => !!c },
+          { cfg: 'travel', st: 'showTravel', get: (s: any) => !!s.showTravel, put: (c: any) => !!c },
+          { cfg: 'dim', st: 'isoTool', get: (s: any) => !!s.isoTool, put: (c: any) => !!c && hasMultiTool },
         ];
         const CLIP_TAIL_S = 3;   // hold on the finished build this long after the print completes
         // Fixed lead-in: rush the first CLIP_INTRO_MOVES moves through in CLIP_INTRO_S so the
@@ -2548,8 +2548,8 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
         // edge-to-edge (high-frequency detail everywhere), so it needs a healthier
         // bitrate than typical footage to stay crisp - hence the default sits at
         // 'High' (0.18), not the old flat 0.1.
-        const clipRate = (W, H) => Math.round(W * H * clipCfg.fps * clipCfg.quality);
-        const clipLevel = (W, H) => {
+        const clipRate = (W: number, H: number) => Math.round(W * H * clipCfg.fps * clipCfg.quality);
+        const clipLevel = (W: number, H: number) => {
           const r = W * H * clipCfg.fps;
           return r > 1920 * 1080 * 30 ? '2a' : r > 1280 * 720 * 60 ? '28' : r > 1280 * 720 * 30 ? '20' : '1f';
         };
@@ -2561,7 +2561,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
         // one into the other; pure bitstream structure, identical in every browser.
         // (Emulation-prevention bytes guarantee no start code can occur inside a NAL,
         // so the naive scan is safe.)
-        const splitAnnexB = (buf) => {
+        const splitAnnexB = (buf: Uint8Array) => {
           const nals = [];
           let i = 0, start = -1;
           const n = buf.length;
@@ -2582,13 +2582,13 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
         // shrugs it off, but strict parsers (WhatsApp / Android MediaCodec) reject the
         // whole file ("can't be opened"). Drop the duplicate when the first two bytes
         // are an identical, valid SPS(7)/PPS(8) header; leave clean NALs untouched.
-        const dedupeNalHeader = (nal) => {
+        const dedupeNalHeader = (nal: Uint8Array) => {
           const t = nal[0] & 31;
           return (nal.length >= 2 && nal[0] === nal[1] && (t === 7 || t === 8)) ? nal.subarray(1) : nal;
         };
         // AVCDecoderConfigurationRecord from one SPS + one PPS (all this encoder emits).
-        const buildAvcC = (spsRaw, ppsRaw) => {
-          const sps = dedupeNalHeader(spsRaw), pps = dedupeNalHeader(ppsRaw);
+        const buildAvcC = (spsRaw: Uint8Array|null, ppsRaw: Uint8Array|null) => {
+          const sps = dedupeNalHeader(spsRaw!), pps = dedupeNalHeader(ppsRaw!);
           return new Uint8Array([
             1, sps[1], sps[2], sps[3], 0xff, 0xe1,
             sps.length >> 8, sps.length & 0xff, ...sps,
@@ -2599,12 +2599,12 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
         // parameter set's NAL header (above) and restore the reserved bits (Media
         // Foundation also writes 0x03/0x01 where the spec wants 0xff/0xe1). Returns the
         // original bytes if it can't be parsed, so a good avcC is never made worse.
-        const sanitizeAvcC = (desc) => {
+        const sanitizeAvcC = (desc: Uint8Array) => {
           try {
             const b = desc instanceof Uint8Array ? desc : new Uint8Array(desc);
             if (b.length < 7 || b[0] !== 1) return desc;
             let o = 6;
-            const read = (n) => { const list = []; for (let i = 0; i < n; i++) { const len = (b[o] << 8) | b[o + 1]; o += 2; list.push(dedupeNalHeader(b.subarray(o, o + len))); o += len; } return list; };
+            const read = (n: number) => { const list = []; for (let i = 0; i < n; i++) { const len = (b[o] << 8) | b[o + 1]; o += 2; list.push(dedupeNalHeader(b.subarray(o, o + len))); o += len; } return list; };
             const spsList = read(b[5] & 0x1f);
             const ppsList = read(b[o++]);
             if (!spsList.length || !ppsList.length) return desc;
@@ -2622,7 +2622,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
         // producing a non-conformant avc1 track that strict players (WhatsApp) refuse to
         // load even once the avcC is fixed. Keeps SEI (6) and the VCL slices; returns the
         // buffer untouched if nothing needs dropping (Chrome) or it can't be parsed.
-        const stripInbandNals = (buf) => {
+        const stripInbandNals = (buf: Uint8Array) => {
           const keep = [];
           let i = 0, total = 0, dropped = false;
           while (i + 4 <= buf.length) {
@@ -2645,7 +2645,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
         };
         // Annex B frame -> MP4 sample: drop the in-band parameter sets (7/8, they live
         // in the avcC) and access-unit delimiters (9), length-prefix what remains.
-        const annexbToAvcc = (buf) => {
+        const annexbToAvcc = (buf: Uint8Array) => {
           const nals = splitAnnexB(buf).filter((nal) => { const t = nal[0] & 31; return t !== 7 && t !== 8 && t !== 9; });
           let len = 0;
           for (const nal of nals) len += 4 + nal.length;
@@ -2670,13 +2670,13 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
         // file name + progress (+ build height) chip (bottom-left) is the toggleable
         // "Info overlay" and is drawn only when `withInfo`. Fixed dark-translucent
         // treatment (like the pause tag) so it reads on any canvas.
-        const drawClipOverlay = (ctx, W, H, t, withInfo) => {
+        const drawClipOverlay = (ctx: CanvasRenderingContext2D, W: number, H: number, t: number, withInfo: boolean) => {
           const s = viewer.state;
           const fpx = Math.max(15, Math.round(Math.min(W, H) * 0.028));
           const pad = Math.round(fpx * 0.6), m = Math.round(fpx * 0.9), chipH = fpx + pad * 2;
           ctx.font = '500 ' + fpx + 'px "Geist Mono", ui-monospace, Consolas, monospace';
           ctx.textBaseline = 'middle';
-          const chip = (txt, right) => {
+          const chip = (txt: string, right: boolean) => {
             const w = Math.ceil(ctx.measureText(txt).width) + pad * 2;
             const x = right ? W - m - w : m, y = H - m - chipH;
             ctx.fillStyle = 'rgba(10, 12, 16, 0.78)'; ctx.fillRect(x, y, w, chipH);
@@ -2699,7 +2699,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
         let clipBusy = false;
         async function renderClip() {
           if (clipBusy || !viewer.ok) return;
-          clipBusy = true; clipBtn.disabled = true;
+          clipBusy = true; clipBtn!.disabled = true;
           viewer.state.isoNoFade = true;   // deterministic frames: no per-frame tool-change crossfade
           stopPlay();
           playBtn.disabled = true; progSlider.disabled = true;   // they'd fight the frame loop
@@ -2716,7 +2716,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
           // spin is restored through setSpin (not the state assign) so its listeners
           // repaint the Pause/Resume spin button.
           const savedSpin = s0.spin;
-          const saved = { yaw: s0.yaw, pitch: s0.pitch, dist: s0.dist, panX: s0.panX, panY: s0.panY, follow: s0.follow, head: s0.head, fitted: s0.fitted, isoAlpha: s0.isoAlpha };
+          const saved: Record<string, any> = { yaw: s0.yaw, pitch: s0.pitch, dist: s0.dist, panX: s0.panX, panY: s0.panY, follow: s0.follow, head: s0.head, fitted: s0.fitted, isoAlpha: s0.isoAlpha };
           for (const m of SCENE_MIRROR) saved[m.st] = s0[m.st];   // snapshot the mirrored flags so export reverts them
           const savedPos = playPos;
           // Progress chip over the canvas; Cancel aborts cleanly and restores the view.
@@ -2755,7 +2755,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
           let encoder = null, encErr = null;
           try {
             const comp = el('canvas'); comp.width = W; comp.height = H;
-            const ctx = comp.getContext('2d');
+            const ctx = comp.getContext('2d')!;
             ctx.imageSmoothingQuality = 'high';   // the GL canvas is supersampled; this is the downscale
             // Pick the H.264 config: the MOST COMPATIBLE profile the encoder supports at
             // the level this pixel rate needs (Constrained Baseline -> Main -> High). We
@@ -2767,7 +2767,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
             // contentHint 'detail' asks the encoder to preserve spatial detail - the
             // render is all thin lines - and is ignored where unsupported.
             const base = { width: W, height: H, bitrate: clipRate(W, H), framerate: fps, contentHint: 'detail' };
-            let cfgEnc = null;
+            let cfgEnc: any = null;
             for (const prof of ['avc1.42e0', 'avc1.4d40', 'avc1.6400']) {
               const cand = { ...base, codec: prof + clipLevel(W, H), avc: { format: 'avc' } } as VideoEncoderConfig;
               const sup = await VideoEncoder.isConfigSupported(cand).catch(() => null);
@@ -2782,7 +2782,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
             //     native-speed encode straight to MP4.
             //  3. No usable H.264 at all: render VP9/VP8 into a WebM and let the
             //     finish step convert it to MP4 with ffmpeg.wasm.
-            let mp4 = false, annexb = false, probeDesc = null, sps = null, pps = null;
+            let mp4 = false, annexb = false, probeDesc = null, sps: Uint8Array|null = null, pps: Uint8Array|null = null;
             if (cfgEnc) {
               let gotCfg = false;
               const probe = new VideoEncoder({ output: (pc, pm) => { if (pm && pm.decoderConfig && pm.decoderConfig.description) { gotCfg = true; probeDesc = pm.decoderConfig; } }, error: () => {} });
@@ -2798,7 +2798,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
             if (!mp4 && cfgEnc) {
               // OpenH264 (Firefox) is a notch below the other native encoders at equal
               // bitrate, and this is the final output - pay it back with bitrate.
-              const cfgAB = { ...cfgEnc, bitrate: Math.round(clipRate(W, H) * 1.5), avc: { format: 'annexb' } };
+              const cfgAB: any = { ...cfgEnc, bitrate: Math.round(clipRate(W, H) * 1.5), avc: { format: 'annexb' } };
               const sup = await VideoEncoder.isConfigSupported(cfgAB).catch(() => null);
               if (sup && sup.supported) {
                 const probe = new VideoEncoder({
@@ -2847,7 +2847,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
             // shifted or pairwise-swapped timestamps, which the strictly-ordered
             // muxers reject mid-stream. The mux loop below re-stamps chunks from
             // their arrival index, which needs the full set first.
-            const chunks = [];
+            const chunks: any[][] = [];
             encoder = new VideoEncoder({ output: (c, m) => { chunks.push([c, m]); }, error: (e) => { encErr = e; } });
             encoder.configure(cfgEnc);
             viewer.setSpin(false);
@@ -2959,14 +2959,14 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
                 // the same file type. Slow (software x264), but it's one bounded pass
                 // with live progress; if ffmpeg can't load or is cancelled/crashes,
                 // fall back to downloading the WebM itself.
-                let ffMod = null, ff = null, onProg = null;
+                let ffMod: any = null, ff: any = null, onProg: any = null;
                 try {
                   statTxt.textContent = 'Converting to MP4…';
                   ffMod = await import('./video.js');
                   ff = await ffMod.loadFFmpeg();
                   const killOnCancel = () => { try { ffMod.killFFmpeg(); } catch (_) {} };
                   statCancel.addEventListener('click', killOnCancel);
-                  onProg = (ev) => { const p = ev && ev.progress; if (p > 0 && p <= 1) statTxt.textContent = 'Converting to MP4… ' + Math.round(p * 100) + '%'; };
+                  onProg = (ev: any) => { const p = ev && ev.progress; if (p > 0 && p <= 1) statTxt.textContent = 'Converting to MP4… ' + Math.round(p * 100) + '%'; };
                   if (ff.on) ff.on('progress', onProg);
                   await ff.writeFile('clip.webm', new Uint8Array(target.buffer));
                   await ff.exec(['-i', 'clip.webm', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', 'clip.mp4']);
@@ -2985,7 +2985,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
                 // Name: "<source>-clip-HH-MM-SS.<ext>" with a local time-of-day stamp
                 // so repeat exports don't collide, and every space collapsed to an
                 // underscore for a clean, shell-friendly file name.
-                const now = new Date(), p2 = (n) => String(n).padStart(2, '0');
+                const now = new Date(), p2 = (n: number) => String(n).padStart(2, '0');
                 const stamp = p2(now.getHours()) + '-' + p2(now.getMinutes()) + '-' + p2(now.getSeconds());
                 const clipName = (file.name.replace(/\.[^.]+$/, '') + '-clip-' + stamp + '.' + ext).replace(/\s+/g, '_');
                 downloadBlob(clipName, new Blob([bytes], { type: mime }));
@@ -3008,7 +3008,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
             v.state.isoFadeT = 1; v.state.isoFadeTool = null; v.state.isoCurTool = v.state.isoTool ? (v.state.headToolRaw | 0) : null;
             scrubTo(savedPos);
             playBtn.disabled = false; progSlider.disabled = false;
-            clipBusy = false; clipBtn.disabled = false;
+            clipBusy = false; clipBtn!.disabled = false;
           }
         }
 
@@ -3020,9 +3020,9 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
           // Re-seed the scene/projection toggles from the live viewer each open, so the
           // panel reflects whatever the user last set in the normal viewer.
           for (const m of SCENE_MIRROR) clipCfg[m.cfg] = m.get(viewer.state);
-          const paints = [];
+          const paints: (() => void)[] = [];
           const repaint = () => paints.forEach((p) => p());
-          const segRow = (label, pairs, get, set) => {
+          const segRow = (label: ElChild | ElChild[], pairs: any[][], get: () => any, set: (v: any) => void) => {
             const box = el('div', { class: 'anr-clip-opts' });
             for (const [val, lab] of pairs) {
               const b = el('button', { type: 'button', class: 'anr-btn anr-clip-opt' }, lab);
@@ -3034,7 +3034,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
           };
           // defs: [key, label, title, off?]. A truthy `off` string disables the toggle
           // and shows that reason as its tooltip (e.g. a file with no travel moves).
-          const togRow = (defs) => {
+          const togRow = (defs: any[][]) => {
             const box = el('div', { class: 'anr-clip-opts' });
             for (const [key, lab, title, off] of defs) {
               const b = el('button', { type: 'button', class: 'anr-btn anr-clip-opt', title: off || title }, lab);
@@ -3052,17 +3052,17 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
           // second fields. "Lines" = the G-code move count the build steps through (G),
           // so lines/s is just G / duration and the animation reveals them uniformly.
           const DUR_MIN = 0.5, DUR_MAX = 600;
-          const setDur = (d) => { if (isFinite(d) && d > 0) clipCfg.dur = Math.min(DUR_MAX, Math.max(DUR_MIN, d)); };
+          const setDur = (d: number) => { if (isFinite(d) && d > 0) clipCfg.dur = Math.min(DUR_MAX, Math.max(DUR_MIN, d)); };
           // A labelled number field. get() supplies the shown value; editing commits via
           // set() then repaints (so the paired field updates). The value is left alone
           // while the field has focus, so mid-typing isn't overwritten.
-          const numField = (unit, get, set, step) => {
+          const numField = (unit: ElChild | ElChild[], get: () => any, set: (v: any) => void, step: string) => {
             const inp = el('input', { type: 'number', class: 'anr-clip-num', min: '1', step: step || '1' });
             inp.addEventListener('change', () => { const v = parseFloat(inp.value); if (isFinite(v) && v > 0) set(v); repaint(); });
             paints.push(() => { if (document.activeElement !== inp) inp.value = String(get()); });
             return el('label', { class: 'anr-clip-field' }, [inp, el('span', {}, unit)]);
           };
-          const secHead = (t) => el('div', { class: 'anr-clip-sec' }, t);
+          const secHead = (t: ElChild | ElChild[]) => el('div', { class: 'anr-clip-sec' }, t);
           const est = el('p', { class: 'anr-clip-est' });
           paints.push(() => {
             const [W, H] = clipDims();
@@ -3080,25 +3080,25 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
             el('p', { class: 'anr-modal-title' }, 'A short MP4 of the whole build.'),
             secHead('Frame'),
             el('div', { class: 'anr-clip-rows' }, [
-              segRow('Duration', [[5, '5s'], [10, '10s'], [20, '20s'], [30, '30s']], () => clipCfg.dur, (v) => { clipCfg.dur = v; }),
-              segRow('Speed', [[1000, '1k/s'], [5000, '5k/s'], [10000, '10k/s']], () => Math.round(G / clipCfg.dur), (v) => setDur(G / v)),
+              segRow('Duration', [[5, '5s'], [10, '10s'], [20, '20s'], [30, '30s']], () => clipCfg.dur, (v: number) => { clipCfg.dur = v; }),
+              segRow('Speed', [[1000, '1k/s'], [5000, '5k/s'], [10000, '10k/s']], () => Math.round(G / clipCfg.dur), (v: number) => setDur(G / v)),
               el('div', { class: 'anr-clip-row' }, [
                 el('span', { class: 'anr-clip-lab' }, 'Custom'),
                 el('div', { class: 'anr-clip-opts anr-clip-opts--fields' }, [
-                  numField('s', () => Math.round(clipCfg.dur * 10) / 10, (v) => setDur(v), '0.1'),
-                  numField('lines/s', () => Math.round(G / clipCfg.dur), (v) => setDur(G / v), '1'),
+                  numField('s', () => Math.round(clipCfg.dur * 10) / 10, (v: number) => setDur(v), '0.1'),
+                  numField('lines/s', () => Math.round(G / clipCfg.dur), (v: number) => setDur(G / v), '1'),
                 ]),
               ]),
-              segRow('Aspect', [['16:9', '16:9'], ['9:16', '9:16'], ['1:1', '1:1']], () => clipCfg.aspect, (v) => { clipCfg.aspect = v; }),
+              segRow('Aspect', [['16:9', '16:9'], ['9:16', '9:16'], ['1:1', '1:1']], () => clipCfg.aspect, (v: string) => { clipCfg.aspect = v; }),
             ]),
             secHead('Output'),
             el('div', { class: 'anr-clip-rows' }, [
-              segRow('Resolution', [[720, '720p'], [1080, '1080p']], () => clipCfg.size, (v) => { clipCfg.size = v; }),
-              segRow('Rate', [[30, '30 fps'], [60, '60 fps']], () => clipCfg.fps, (v) => { clipCfg.fps = v; }),
+              segRow('Resolution', [[720, '720p'], [1080, '1080p']], () => clipCfg.size, (v: number) => { clipCfg.size = v; }),
+              segRow('Rate', [[30, '30 fps'], [60, '60 fps']], () => clipCfg.fps, (v: number) => { clipCfg.fps = v; }),
               // Bitrate, as bits per pixel-second. Thin-line renders want more than
               // ordinary footage; Standard is the default, High and Max trade file size
               // for extra crispness on the thin toolpath lines.
-              segRow('Quality', [[0.12, 'Standard'], [0.18, 'High'], [0.28, 'Max']], () => clipCfg.quality, (v) => { clipCfg.quality = v; }),
+              segRow('Quality', [[0.12, 'Standard'], [0.18, 'High'], [0.28, 'Max']], () => clipCfg.quality, (v: number) => { clipCfg.quality = v; }),
             ]),
             secHead('Camera'),
             togRow([
@@ -3127,7 +3127,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
             setTimeout(() => overlay.remove(), 200);
             document.removeEventListener('keydown', onKey);
           };
-          const onKey = (e) => { if (e.key === 'Escape') close(); };
+          const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
           cancelBtn.addEventListener('click', close);
           closeX.addEventListener('click', close);
           overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
@@ -3367,7 +3367,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
         el('th', {}, '#'), el('th', {}, 'Operation'), el('th', {}, 'Tool'),
         el('th', {}, 'Moves'), el('th', {}, 'Cut length'), el('th', {}, 'Depth'),
       ]));
-      cnc.operations.forEach((o, i) => {
+      cnc.operations.forEach((o: any, i: number) => {
         const cells = [
           ['#', String(i + 1)],
           ['Operation', titleCase(o.name)],
@@ -3388,7 +3388,7 @@ export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
     // Tool-change sequence, with the operation name each change kicks off (when the
     // CAM post wrote one). Long programs revisit tools, so this shows the order.
     if (cnc.changes.length) {
-      const seq = cnc.changes.map((c, i) => {
+      const seq = cnc.changes.map((c: any, i: number) => {
         const op = c.op ? ` ${titleCase(c.op)}` : '';
         return `${i + 1}. T${c.n}${op}`;
       });

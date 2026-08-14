@@ -392,7 +392,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
         // Parts are separate spans so the responsive trimming is pure CSS: on mobile
         // the checkmark and the · separator are hidden (a - is shown instead), so the
         // badge reads just "Cached - v2.0". Desktop keeps "✓ Cached · v2.0".
-        const ver = 'v' + analyserVersion(version, RELEASE_COMMITS);
+        const ver = 'v' + analyserVersion(Number(version), RELEASE_COMMITS);
         badge.textContent = '';
         badge.appendChild(el('span', { class: 'offline-cached-check' }, '✓'));
         badge.appendChild(el('span', {}, 'Cached'));

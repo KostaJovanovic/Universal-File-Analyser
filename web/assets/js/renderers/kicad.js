@@ -1091,8 +1091,8 @@ function buildBoard3D(pcb, opts = {}) {
     for (const f of [front, back]) {
         f.s.setAttribute('viewBox', vbStr);
         f.s.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-        f.s.setAttribute('width', W);
-        f.s.setAttribute('height', H);
+        f.s.setAttribute('width', String(W));
+        f.s.setAttribute('height', String(H));
     }
     // stage = viewport; cam = 2D zoom/pan (outside the perspective, so zooming is a
     // plain camera move and never warps the perspective); scene = the perspective;

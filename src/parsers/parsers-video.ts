@@ -20,7 +20,7 @@ import { Reader, ascii, findBytes, matchMagic, latin1 } from '../core/binutil.js
 // ---------- small helpers ----------
 
 // Seconds -> H:MM:SS(.mmm) string.
-function fmtDuration(sec) {
+function fmtDuration(sec: number) {
   if (!isFinite(sec) || sec < 0) return '-';
   const whole = Math.floor(sec);
   const ms = Math.round((sec - whole) * 1000);
@@ -34,7 +34,7 @@ function fmtDuration(sec) {
 }
 
 // Parse an ISO-8601 duration (PnYnMnDTnHnMnS) into seconds, or null.
-function parseIsoDuration(s) {
+function parseIsoDuration(s: string | null | undefined) {
   if (!s) return null;
   const m = /^-?P(?:(\d+(?:\.\d+)?)Y)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)W)?(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(s.trim());
   if (!m) return null;
@@ -43,7 +43,7 @@ function parseIsoDuration(s) {
 }
 
 // Parse XML text into a Document, or null on parse error.
-function parseXml(text) {
+function parseXml(text: string) {
   try {
     const doc = new DOMParser().parseFromString(text, 'application/xml');
     if (doc.querySelector('parsererror')) return null;
@@ -61,7 +61,7 @@ async function readText(file: File, cap = 4 * 1024 * 1024) {
 // ============================================================================
 
 // ---------- HLS .m3u8 / .m3u ----------
-function parseHls(text, ext: string) {
+function parseHls(text: string, ext: string) {
   // Plain (non-HLS) M3U fallback handled by parsePlaylist; require #EXTM3U here.
   if (!/#EXTM3U/.test(text)) return null;
   const isHls = /#EXT-X-/.test(text);
@@ -136,7 +136,7 @@ function parseHls(text, ext: string) {
 }
 
 // ---------- MPEG-DASH .mpd ----------
-function parseDash(text) {
+function parseDash(text: string) {
   const doc = parseXml(text);
   if (!doc) return null;
   const mpd = doc.querySelector('MPD');
@@ -202,14 +202,14 @@ function parseDash(text) {
 }
 
 // Safe "a/b" -> number for frame-rate fractions (no eval).
-function eval2(frac) {
+function eval2(frac: string) {
   const m = /^(\d+)\/(\d+)$/.exec(frac);
   if (m && +m[2]) return Math.round((+m[1] / +m[2]) * 100) / 100;
   return frac;
 }
 
 // ---------- Smooth Streaming .ism / .ismc ----------
-function parseSmooth(text) {
+function parseSmooth(text: string) {
   const doc = parseXml(text);
   if (!doc) return null;
   const root = doc.querySelector('SmoothStreamingMedia, smil\\:smil, smil');
@@ -261,7 +261,7 @@ function parseSmooth(text) {
 }
 
 // ---------- Adobe HDS .f4m ----------
-function parseF4m(text) {
+function parseF4m(text: string) {
   const doc = parseXml(text);
   if (!doc) return null;
   if (!/<manifest/i.test(text)) return null;
@@ -288,7 +288,7 @@ function parseF4m(text) {
 }
 
 // ---------- Generic playlists .asx / .wpl / .xspf / .pls ----------
-function parsePlaylist(text, ext: string) {
+function parsePlaylist(text: string, ext: string) {
   if (ext === 'pls') {
     if (!/\[playlist\]/i.test(text)) return null;
     const files = Array.from(text.matchAll(/^File\d+\s*=\s*(.+)$/gim)).map((m) => m[1].trim());
@@ -397,7 +397,7 @@ async function parseMxf(file: File) {
   }
   // Essence container labels carry the codec family - look for known ULs.
   const codecHints = [];
-  const hex = (arr) => new Uint8Array(arr);
+  const hex = (arr: number[]) => new Uint8Array(arr);
   if (findBytes(head, hex([0x04, 0x01, 0x02, 0x02, 0x01])) >= 0) codecHints.push('MPEG');
   if (findBytes(head, hex([0x0A, 0x0E, 0x10, 0x00])) >= 0 || findBytes(head, hex([0x6A, 0x70, 0x65, 0x67])) >= 0) codecHints.push('JPEG2000');
   // Surface any embedded company / product name (UTF-16 strings are common).
@@ -617,7 +617,7 @@ async function parseReal(file: File) {
 
 // Walk top-level MP4/ISOBMFF boxes from a head buffer; returns map of box->offset
 // and basic ftyp info. Also descends into moov/trak/mdia to pull resolution/codec.
-function readMp4Boxes(buf) {
+function readMp4Boxes(buf: Uint8Array) {
   const r = new Reader(buf, false); // boxes are big-endian
   const top = [];
   let ftyp = null;
@@ -638,8 +638,8 @@ function readMp4Boxes(buf) {
 }
 
 // Pull video track resolution / codec from a moov box (best effort, head only).
-function mp4TrackInfo(buf, moovStart, moovSize) {
-  const info = { codecs: [], width: 0, height: 0, durationSec: 0, timescale: 0, fps: 0 };
+function mp4TrackInfo(buf: Uint8Array, moovStart: number, moovSize: number) {
+  const info = { codecs: [] as string[], width: 0, height: 0, durationSec: 0, timescale: 0, fps: 0 };
   const end = Math.min(moovStart + moovSize, buf.length);
   // mvhd for overall timescale/duration.
   const mvhd = findBoxIn(buf, moovStart, end, 'mvhd');
@@ -681,7 +681,7 @@ function mp4TrackInfo(buf, moovStart, moovSize) {
 
 // Find a box of `type` between [start,end) at any nesting (linear scan for the
 // 4-char type preceded by a plausible 4-byte size). Good enough for head buffers.
-function findBoxIn(buf, start, end, type) {
+function findBoxIn(buf: Uint8Array, start: number, end: number, type: string) {
   const t = [type.charCodeAt(0), type.charCodeAt(1), type.charCodeAt(2), type.charCodeAt(3)];
   for (let i = start; i + 8 <= end; i++) {
     if (buf[i + 4] === t[0] && buf[i + 5] === t[1] && buf[i + 6] === t[2] && buf[i + 7] === t[3]) return i;
@@ -690,7 +690,7 @@ function findBoxIn(buf, start, end, type) {
 }
 
 // Generic ISOBMFF/MP4 wrapper readout for f4v/lrv/insv/gifv-as-mp4/divx-as-mp4.
-async function parseMp4Wrapper(file: File, label, note) {
+async function parseMp4Wrapper(file: File, label: string, note?: string) {
   const buf = await readSlice(file, 0, Math.min(file.size, 1 << 20));
   const { top, ftyp } = readMp4Boxes(buf);
   if (!top.length || !top.some((b) => b.type === 'ftyp')) return null;
@@ -875,15 +875,15 @@ async function parseMpegVideo(file: File, ext: string) {
 class BitReader {
   b: Uint8Array;
   pos: number;
-  constructor(bytes) { this.b = bytes; this.pos = 0; }
+  constructor(bytes: Uint8Array) { this.b = bytes; this.pos = 0; }
   bit() { const byte = this.b[this.pos >> 3]; const off = 7 - (this.pos & 7); this.pos++; return (byte >> off) & 1; }
-  bits(n) { let v = 0; for (let i = 0; i < n; i++) v = (v << 1) | this.bit(); return v >>> 0; }
+  bits(n: number) { let v = 0; for (let i = 0; i < n; i++) v = (v << 1) | this.bit(); return v >>> 0; }
   ue() { let zeros = 0; while (this.pos < this.b.length * 8 && this.bit() === 0) zeros++; let v = 0; for (let i = 0; i < zeros; i++) v = (v << 1) | this.bit(); return v + (1 << zeros) - 1; }
   se() { const k = this.ue(); return (k & 1) ? (k + 1) >> 1 : -(k >> 1); }
 }
 
 // Strip emulation prevention bytes (00 00 03 -> 00 00) from a NAL RBSP.
-function stripEpb(bytes) {
+function stripEpb(bytes: Uint8Array) {
   const out = []; let zeros = 0;
   for (let i = 0; i < bytes.length; i++) {
     if (zeros >= 2 && bytes[i] === 0x03) { zeros = 0; continue; }
@@ -894,8 +894,8 @@ function stripEpb(bytes) {
 }
 
 // Find Annex-B NAL units; returns array of {type, start, end} (start at NAL header byte).
-function findNals(buf, hevc) {
-  const nals = [];
+function findNals(buf: Uint8Array, hevc: boolean) {
+  const nals: { type: number; start: number; end?: number }[] = [];
   for (let i = 0; i + 3 < buf.length; i++) {
     const sc3 = buf[i] === 0 && buf[i + 1] === 0 && buf[i + 2] === 1;
     const sc4 = buf[i] === 0 && buf[i + 1] === 0 && buf[i + 2] === 0 && buf[i + 3] === 1;
@@ -918,7 +918,7 @@ async function parseH264(file: File) {
   const nals = findNals(buf, false);
   const sps = nals.find((n) => n.type === 7);
   if (!sps) return null;
-  const rbsp = stripEpb(buf.subarray(sps.start + 1, Math.min(sps.end, sps.start + 200)));
+  const rbsp = stripEpb(buf.subarray(sps.start + 1, Math.min(sps.end!, sps.start + 200)));
   const br = new BitReader(rbsp);
   const profileIdc = br.bits(8);
   br.bits(8); // constraint flags + reserved
@@ -963,7 +963,7 @@ async function parseH265(file: File) {
   const nals = findNals(buf, true);
   const sps = nals.find((n) => n.type === 33);
   if (!sps) return null;
-  const rbsp = stripEpb(buf.subarray(sps.start + 2, Math.min(sps.end, sps.start + 300)));
+  const rbsp = stripEpb(buf.subarray(sps.start + 2, Math.min(sps.end!, sps.start + 300)));
   const br = new BitReader(rbsp);
   br.bits(4); // sps_video_parameter_set_id
   const maxSubLayers = br.bits(3);
@@ -1180,7 +1180,7 @@ async function parseWtv(file: File) {
   // WTV stores metadata as UTF-16LE key/value pairs scattered in the file.
   // Scan for known metadata key strings and pull the nearby UTF-16 value.
   const u16 = new TextDecoder('utf-16le').decode(head);
-  const grab = (key) => {
+  const grab = (key: string) => {
     const i = u16.indexOf(key);
     if (i < 0) return null;
     // value usually follows after some bytes; take the next printable UTF-16 run.
@@ -1314,7 +1314,7 @@ import { safe as wrap } from './parser-util.js';
 import type { Row, ParseFn } from '../core/types.js';
 
 // Text-manifest dispatch reads the file once and routes by extension.
-function textParser(fn) {
+function textParser(fn: (text: string, ext: string) => Row | null | undefined) {
   return wrap(async (c) => {
     const text = await readText(c.file);
     return fn(text, c.ext);

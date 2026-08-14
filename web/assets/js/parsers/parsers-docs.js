@@ -34,7 +34,7 @@ function xmlText(s) {
 // First tag content match (namespace-agnostic): <ns:tag ...>VALUE</ns:tag>.
 function tag(text, name) {
     const re = new RegExp('<(?:[\\w.-]+:)?' + name + '(?:\\s[^>]*)?>([\\s\\S]*?)</(?:[\\w.-]+:)?' + name + '>', 'i');
-    const m = text.match(re);
+    const m = (text || '').match(re);
     return m ? xmlText(m[1].replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim() : null;
 }
 // Count non-overlapping matches of a global regex.
@@ -503,7 +503,7 @@ async function parseFb3(file) {
     const descName = zip.names().find((n) => /description\.xml$/i.test(n)) ||
         zip.names().find((n) => /core\.xml$/i.test(n));
     if (descName) {
-        const xml = await zip.text(descName);
+        const xml = (await zip.text(descName));
         const t = tag(xml, 'title') || tag(xml, 'main');
         if (t)
             out['Title'] = t;
@@ -525,7 +525,7 @@ async function parseFb3(file) {
     // Chapter count: count <section> in body parts (first body only, to bound work).
     if (bodies.length) {
         try {
-            const bxml = await zip.text(bodies[0].name);
+            const bxml = (await zip.text(bodies[0].name));
             const ch = countRe(bxml, /<section\b/gi);
             if (ch)
                 out['Sections (body 1)'] = ch;
@@ -546,7 +546,7 @@ async function parseIbooks(file) {
     const out = { 'Format': 'Apple iBooks Author book (.ibooks)' };
     const opfName = zip.names().find((n) => /\.opf$/i.test(n));
     if (opfName) {
-        const opf = await zip.text(opfName);
+        const opf = (await zip.text(opfName));
         const t = tag(opf, 'title');
         if (t)
             out['Title'] = t;
@@ -688,7 +688,7 @@ function odfMeta(out, meta) {
     if (date)
         out['Modified'] = date;
     // document-statistic carries attributes (page/word/char counts).
-    const stat = meta.match(/<meta:document-statistic([^>]*)\/?>/i);
+    const stat = (meta || '').match(/<meta:document-statistic([^>]*)\/?>/i);
     if (stat) {
         for (const [a, label] of [
             ['page-count', 'Pages'], ['paragraph-count', 'Paragraphs'], ['word-count', 'Words'],
@@ -1091,7 +1091,7 @@ async function parseMaff(file) {
     const out = { 'Format': 'Mozilla Archive Format (.maff)' };
     const rdfName = zip.names().find((n) => /index\.rdf$/i.test(n));
     if (rdfName) {
-        const rdf = await zip.text(rdfName);
+        const rdf = (await zip.text(rdfName));
         const url = pick(rdf, /<MAF:originalurl[^>]*\bRDF:resource="([^"]+)"/i) || pick(rdf, /originalurl[^>]*>([^<]+)</i);
         if (url)
             out['Original URL'] = url;

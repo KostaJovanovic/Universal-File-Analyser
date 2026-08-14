@@ -51,7 +51,7 @@ async function loadArchiveModule() {
 export async function extractArchive(file: File) {
   const { Archive } = await loadArchiveModule();
   const archive = await Archive.open(file);
-  let arr;
+  let arr!: any[];
   try {
     arr = await archive.getFilesArray();
   } catch (e) {
@@ -61,8 +61,8 @@ export async function extractArchive(file: File) {
 
   const entries = arr
     // Only real compressed files (skip null directory placeholders).
-    .filter((it) => it && it.file && typeof it.file.extract === 'function')
-    .map((it) => {
+    .filter((it: any) => it && it.file && typeof it.file.extract === 'function')
+    .map((it: any) => {
       const fullName = (it.path || '') + (it.file.name || '');
       return {
         name: fullName,

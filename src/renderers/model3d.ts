@@ -6,7 +6,7 @@
      (lazy-loaded), with the ISO-10303 header metadata shown alongside.
    All three feed the shared WebGL viewer from stl.js. */
 
-import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard, type ElChild } from '../core/util.js';
 import { inflate, ascii, latin1 } from '../core/binutil.js';
 import {
   buildViewerCard, startViewer, makeResult,
@@ -17,7 +17,7 @@ import { parseStepHeader } from './proprietary.js';
 import { loadOcct } from '../lib/occt-loader.js';
 
 const FFLATE_URL = new URL('../../vendor/fflate.js', import.meta.url).href;
-let fflateLib = null;
+let fflateLib: any = null;
 async function fflate() { if (!fflateLib) fflateLib = await import(FFLATE_URL); return fflateLib; }
 
 export async function renderModel3d(file: File, resultsEl: HTMLElement) {
@@ -44,9 +44,9 @@ export async function renderMtl(file: File, resultsEl: HTMLElement) {
   catch (e) { resultsEl.appendChild(errorCard('Could not read file: ' + (e && e.message))); return; }
 
   const MAP_KEYS = ['map_kd', 'map_ka', 'map_ks', 'map_ke', 'map_ns', 'map_d', 'map_bump', 'bump', 'disp', 'decal', 'norm', 'refl'];
-  const MAP_LABEL = { map_kd: 'Diffuse', map_ka: 'Ambient', map_ks: 'Specular', map_ke: 'Emissive', map_ns: 'Shininess', map_d: 'Opacity', map_bump: 'Bump', bump: 'Bump', disp: 'Displacement', decal: 'Decal', norm: 'Normal', refl: 'Reflection' };
-  const mats = [];
-  let cur = null;
+  const MAP_LABEL: Record<string, string> = { map_kd: 'Diffuse', map_ka: 'Ambient', map_ks: 'Specular', map_ke: 'Emissive', map_ns: 'Shininess', map_d: 'Opacity', map_bump: 'Bump', bump: 'Bump', disp: 'Displacement', decal: 'Decal', norm: 'Normal', refl: 'Reflection' };
+  const mats: { name: string; props: Record<string, string>; maps: Record<string, string> }[] = [];
+  let cur: { name: string; props: Record<string, string>; maps: Record<string, string> }|null = null;
   const textures = new Set();
   for (const raw of text.split(/\r\n?|\n/)) {
     const line = raw.trim();
@@ -60,10 +60,10 @@ export async function renderMtl(file: File, resultsEl: HTMLElement) {
     else cur.props[key] = val;
   }
 
-  const rgb = (v) => { const n = (v || '').split(/\s+/).map(Number); if (n.length < 3 || n.some((x) => !isFinite(x))) return null; return n.slice(0, 3).map((x) => Math.max(0, Math.min(255, Math.round(x * 255)))); };
-  const swatch = (c) => el('span', { style: `display:inline-block;width:13px;height:13px;border:1px solid var(--hairline);background:rgb(${c[0]},${c[1]},${c[2]});vertical-align:-2px;margin-right:6px;` });
-  const colourCell = (v) => { const c = rgb(v); const span = el('span'); if (c) span.appendChild(swatch(c)); span.appendChild(document.createTextNode(c ? `rgb(${c[0]}, ${c[1]}, ${c[2]})` : v)); return span; };
-  const rowNode = (label, node) => el('tr', {}, [el('th', {}, label), el('td', {}, node)]);
+  const rgb = (v: string) => { const n = (v || '').split(/\s+/).map(Number); if (n.length < 3 || n.some((x: number) => !isFinite(x))) return null; return n.slice(0, 3).map((x: number) => Math.max(0, Math.min(255, Math.round(x * 255)))); };
+  const swatch = (c: any[]) => el('span', { style: `display:inline-block;width:13px;height:13px;border:1px solid var(--hairline);background:rgb(${c[0]},${c[1]},${c[2]});vertical-align:-2px;margin-right:6px;` });
+  const colourCell = (v: string) => { const c = rgb(v); const span = el('span'); if (c) span.appendChild(swatch(c)); span.appendChild(document.createTextNode(c ? `rgb(${c[0]}, ${c[1]}, ${c[2]})` : v)); return span; };
+  const rowNode = (label: ElChild | ElChild[], node: ElChild | ElChild[]) => el('tr', {}, [el('th', {}, label), el('td', {}, node)]);
 
   // Summary card.
   const sum = el('div', { class: 'anr-card' });
@@ -141,17 +141,17 @@ export async function renderMtl(file: File, resultsEl: HTMLElement) {
 
 const IDENTITY12 = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
 
-function parseTransform(s) {
+function parseTransform(s: string) {
   if (!s) return IDENTITY12;
   const n = s.trim().split(/\s+/).map(Number);
-  return (n.length === 12 && n.every((x) => isFinite(x))) ? n : IDENTITY12;
+  return (n.length === 12 && n.every((x: number) => isFinite(x))) ? n : IDENTITY12;
 }
 
 // 12-number 3MF affine -> 4x4 row-major (point is a row vector: P' = P·M).
-function to44(t) { return [t[0], t[1], t[2], 0, t[3], t[4], t[5], 0, t[6], t[7], t[8], 0, t[9], t[10], t[11], 1]; }
+function to44(t: any[]) { return [t[0], t[1], t[2], 0, t[3], t[4], t[5], 0, t[6], t[7], t[8], 0, t[9], t[10], t[11], 1]; }
 
 // Compose A then B for a row vector: P·A·B  ->  returns the 12-number form of A·B.
-function compose(A, B) {
+function compose(A: number[], B: number[]) {
   if (A === IDENTITY12) return B;
   if (B === IDENTITY12) return A;
   const a = to44(A), b = to44(B), c = new Array(16);
@@ -162,12 +162,12 @@ function compose(A, B) {
   return [c[0], c[1], c[2], c[4], c[5], c[6], c[8], c[9], c[10], c[12], c[13], c[14]];
 }
 
-const attr = (s, name) => (s.match(new RegExp('\\b(?:[\\w]+:)?' + name + '="([^"]*)"')) || [])[1];
+const attr = (s: string, name: string) => (s.match(new RegExp('\\b(?:[\\w]+:)?' + name + '="([^"]*)"')) || [])[1];
 
 // Parse the root 3dmodel.model: metadata, the object table, and the build items.
 // Done with regex rather than DOMParser - the 3MF default XML namespace makes CSS
 // selector / tag matching unreliable across browsers, and this is testable.
-function parseMainModel(text) {
+function parseMainModel(text: string) {
   const meta: any = {};
   let mm; const metaRe = /<metadata\b[^>]*\bname="([^"]+)"[^>]*>([\s\S]*?)<\/metadata>/gi;
   while ((mm = metaRe.exec(text))) {
@@ -194,7 +194,7 @@ function parseMainModel(text) {
 }
 
 // "#RRGGBB" / "#RRGGBBAA" / "#RGB" -> [r,g,b] in 0..1, or null.
-function hexRgb3mf(h) {
+function hexRgb3mf(h: string) {
   if (!h) return null;
   let s = String(h).trim().replace(/^#/, '');
   if (s.length === 3) s = s.split('').map((c) => c + c).join('');
@@ -215,17 +215,17 @@ const NEUTRAL_3MF = [0.82, 0.82, 0.86];
 //     files, selected by an object's pid/pindex.
 // Returns { comp, obj }: component-objectid -> rgb, and object-id -> rgb (ids kept as
 // the raw strings used elsewhere in this module). Empty maps mean "no colour info".
-function build3mfColors(files, modelSettings, projectSettings) {
+function build3mfColors(files: any[]|Map<any,any>, modelSettings: string, projectSettings: string) {
   const comp = new Map(), obj = new Map();
 
   // --- Bambu/Orca: filament palette + extruder index ---
-  let palette = [];
+  let palette: string|any[] = [];
   if (projectSettings) {
     const m = /"filament_colou?r"\s*:\s*\[([\s\S]*?)\]/i.exec(projectSettings);
     if (m) palette = [...m[1].matchAll(/"([^"]*)"/g)].map((x) => hexRgb3mf(x[1]));   // index N-1 == extruder N
   }
   if (modelSettings && palette.length) {
-    const metaVal = (block, key) => { const r = new RegExp('key="' + key + '"\\s+value="([^"]*)"').exec(block); return r ? r[1] : null; };
+    const metaVal = (block: string, key: string) => { const r = new RegExp('key="' + key + '"\\s+value="([^"]*)"').exec(block); return r ? r[1] : null; };
     let om; const oRe = /<object\b([^>]*)>([\s\S]*?)<\/object>/gi;
     while ((om = oRe.exec(modelSettings))) {
       const oid = attr(om[1], 'id'); if (oid == null) continue;
@@ -269,14 +269,14 @@ function build3mfColors(files, modelSettings, projectSettings) {
 
 // Expand one rgb-per-triangle list into the non-indexed (3 verts/triangle) colour
 // buffer buildGeoFromIndexed's positions use, so geo.colors lines up 1:1.
-function expandTriColors3mf(cols) {
+function expandTriColors3mf(cols: string|any[]) {
   const out = new Float32Array(cols.length * 9);
   for (let t = 0; t < cols.length; t++) { const c = cols[t]; for (let j = 0; j < 3; j++) { const o = t * 9 + j * 3; out[o] = c[0]; out[o + 1] = c[1]; out[o + 2] = c[2]; } }
   return out;
 }
 
 // Slice out a single <object id="ID">…</object> block from a .model file's text.
-function extractObjectText(text, id) {
+function extractObjectText(text: string, id: string) {
   const re = new RegExp('<object\\b[^>]*\\bid="' + id + '"[\\s\\S]*?</object>', 'i');
   const m = re.exec(text);
   return m ? m[0] : null;
@@ -284,7 +284,7 @@ function extractObjectText(text, id) {
 
 // Pull flat vertex coords + triangle indices out of an <object> block. Attribute
 // order isn't assumed - each value is matched by name within its own tag.
-function parseMeshText(objText) {
+function parseMeshText(objText: string) {
   const verts = [];
   const vRe = /<vertex\b([^>]*?)\/?>/g; let vm;
   while ((vm = vRe.exec(objText))) {
@@ -304,17 +304,17 @@ function parseMeshText(objText) {
 
 // Find a referenced part file, tolerating zip-name vs XML-path encoding drift by
 // falling back to a basename match.
-function findFile(files, path) {
+function findFile(files: Map<any,any>, path: string) {
   const p = (path || '').replace(/^\//, '');
   if (files.has(p)) return files.get(p);
-  const base = p.split('/').pop();
+  const base = p.split('/').pop()!;
   for (const [k, v] of files) if (k.split('/').pop() === base) return v;
-  const norm = (s) => s.replace(/[^\x20-\x7E]/g, '?');
-  for (const [k, v] of files) if (norm(k.split('/').pop()) === norm(base)) return v;
+  const norm = (s: string) => s.replace(/[^\x20-\x7E]/g, '?');
+  for (const [k, v] of files) if (norm(k.split('/').pop()!) === norm(base)) return v;
   return null;
 }
 
-function addMesh(acc, mesh, M, rgb?) {
+function addMesh(acc: any, mesh: any, M: number[], rgb?: number[]) {
   const base = acc.verts.length / 3;
   const v = mesh.verts;
   for (let i = 0; i < v.length; i += 3) {
@@ -333,7 +333,7 @@ function addMesh(acc, mesh, M, rgb?) {
 
 // Accumulate the meshes of a main-file object: its own mesh (rare) plus each
 // component's referenced part, with transforms composed onto the base matrix.
-function gatherObject(model, files, mainText, objectid, baseM, acc, colors) {
+function gatherObject(model: any, files: Map<any,any>, mainText: string, objectid: string, baseM: number[], acc: any, colors: any) {
   const obj = model.objects.get(objectid);
   if (!obj) return;
   const objRgb = colors ? (colors.obj.get(objectid) || null) : null;   // the object's default colour
@@ -354,7 +354,7 @@ function gatherObject(model, files, mainText, objectid, baseM, acc, colors) {
 // object sits on the plate" orientation (often rotating an object authored in some
 // other axis onto the printer's Z-up bed), so apply it - otherwise the per-part view
 // shows the raw object space and the model is mis-oriented (e.g. stood on its tail).
-function resolvePart(model, files, mainText, objectid, transform, colors) {
+function resolvePart(model: any, files: Map<any,any>, mainText: string, objectid: string, transform: string, colors: any) {
   const acc = { verts: [], tris: [], cols: colors ? [] : null };
   gatherObject(model, files, mainText, objectid, parseTransform(transform), acc, colors);
   if (!acc.tris.length) return null;
@@ -363,7 +363,7 @@ function resolvePart(model, files, mainText, objectid, transform, colors) {
   return geo;
 }
 
-function resolveWholeBuild(model, files, mainText, colors) {
+function resolveWholeBuild(model: any, files: Map<any,any>, mainText: string, colors: any) {
   const acc = { verts: [], tris: [], cols: colors ? [] : null };
   for (const it of model.build) gatherObject(model, files, mainText, it.objectid, parseTransform(it.transform), acc, colors);
   if (!acc.tris.length) return null;
@@ -372,7 +372,7 @@ function resolveWholeBuild(model, files, mainText, colors) {
   return geo;
 }
 
-function partName(obj, idx) {
+function partName(obj: any, idx: number) {
   if (obj.name) return obj.name;
   const comp = obj.comps[0];
   if (comp && comp.path) {
@@ -396,7 +396,7 @@ async function render3mf(file: File, resultsEl: HTMLElement) {
     // Pull the geometry (.model) plus the slicer side-cars that carry colour: Bambu/Orca
     // keep the filament palette in project_settings.config and the per-object/part extruder
     // index in model_settings.config.
-    const unzipped = ffl.unzipSync(data, { filter: (f) => /\.model$/i.test(f.name) || /(?:model_settings|project_settings)\.config$/i.test(f.name) });
+    const unzipped = ffl.unzipSync(data, { filter: (f: any) => /\.model$/i.test(f.name) || /(?:model_settings|project_settings)\.config$/i.test(f.name) });
     files = new Map();
     const dec = new TextDecoder('utf-8');
     for (const [name, bytes] of Object.entries<Uint8Array>(unzipped)) files.set(name, dec.decode(bytes));
@@ -410,7 +410,7 @@ async function render3mf(file: File, resultsEl: HTMLElement) {
   }
 
   // The viewable parts: one per build item (falling back to mesh/assembly objects).
-  const items = model.build.length
+  const items: any[] = model.build.length
     ? model.build
     : [...model.objects.values()].filter((o) => o.comps.length || o.hasMesh).map((o) => ({ objectid: o.id }));
 
@@ -418,7 +418,7 @@ async function render3mf(file: File, resultsEl: HTMLElement) {
   // materials). Best-effort - never let colour extraction break the mesh view.
   let colors = null;
   try {
-    const find = (re) => { for (const k of files.keys()) if (re.test(k)) return files.get(k); return ''; };
+    const find = (re: RegExp) => { for (const k of files.keys()) if (re.test(k)) return files.get(k); return ''; };
     const c = build3mfColors(files, find(/model_settings\.config$/i), find(/project_settings\.config$/i));
     if (c.comp.size || c.obj.size) colors = c;
   } catch (_) { colors = null; }
@@ -463,7 +463,7 @@ async function render3mf(file: File, resultsEl: HTMLElement) {
 // No-mesh 3MF: red warning, then (if the archive carries a sliced G-code file, as
 // Bambu/Prusa project 3MFs do) a button to reconstruct it in the G-code viewer, then
 // the document metadata and a full archive browser below.
-async function render3mfNoModel(file: File, resultsEl: HTMLElement, ffl, data, metaCard) {
+async function render3mfNoModel(file: File, resultsEl: HTMLElement, ffl: any, data: Uint8Array, metaCard: HTMLDivElement) {
   resultsEl.innerHTML = '';
   resultsEl.appendChild(errorCard('No 3D models found in this 3MF file.'));
 
@@ -471,9 +471,9 @@ async function render3mfNoModel(file: File, resultsEl: HTMLElement, ffl, data, m
   // 3MF (e.g. Bambu Studio projects) carries one sliced toolpath per plate
   // (Metadata/plate_1.gcode, plate_2.gcode, ...), so list them all - sorted in
   // natural plate order - not just the largest.
-  let gcodes = [];
+  let gcodes: string|any[] = [];
   try {
-    const gz = ffl.unzipSync(data, { filter: (f) => /\.gco(de)?$/i.test(f.name) });
+    const gz = ffl.unzipSync(data, { filter: (f: any) => /\.gco(de)?$/i.test(f.name) });
     gcodes = Object.keys(gz).filter((k) => gz[k] && gz[k].length)
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
       .map((k) => ({ name: k, short: k.split('/').pop(), bytes: gz[k] }));
@@ -513,7 +513,7 @@ async function render3mfNoModel(file: File, resultsEl: HTMLElement, ffl, data, m
 
 /* ================================== AMF ===================================== */
 
-const AMF_UNIT = { millimeter: 'mm', meter: 'm', inch: 'in', feet: 'ft', micron: 'µm' };
+const AMF_UNIT: Record<string, string> = { millimeter: 'mm', meter: 'm', inch: 'in', feet: 'ft', micron: 'µm' };
 
 // AMF is XML with one or more <object>s, each a <mesh> of <vertices> (nested
 // <coordinates><x/><y/><z/>) and one or more <volume>s of <triangle><v1/v2/v3>.
@@ -537,7 +537,7 @@ async function renderAmf(file: File, resultsEl: HTMLElement) {
     return { name: 'Object ' + (idM ? idM[1] : i + 1), block };
   });
 
-  function meshFromAmfBlock(block) {
+  function meshFromAmfBlock(block: string) {
     const verts = [];
     const vRe = /<vertex\b[\s\S]*?<coordinates>([\s\S]*?)<\/coordinates>/gi; let vm;
     while ((vm = vRe.exec(block))) {
@@ -585,7 +585,7 @@ async function renderAmf(file: File, resultsEl: HTMLElement) {
 // referenced mtllib, and any embedded per-vertex colours (v x y z r g b). Faces
 // are fan-triangulated; vt indices and the active material are tracked in step
 // with the emitted triangles so colours and UVs can be expanded later.
-function parseObjFull(text) {
+function parseObjFull(text: string) {
   const verts = [], vts = [], vertColors = [];
   const tris = [], triVT = [], triMat = [];
   let hasVC = false, curMat = null, mtllib = null;
@@ -631,15 +631,15 @@ function parseObjFull(text) {
 }
 
 // Parse a .mtl into name -> { kd:[r,g,b]|null, mapKd:filename|null }.
-function parseMtlMaterials(text) {
+function parseMtlMaterials(text: string) {
   const mats = new Map(); let cur = null;
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (/^newmtl\b/.test(line)) { cur = line.slice(6).trim(); mats.set(cur, { kd: null, mapKd: null }); }
-    else if (cur && /^Kd\b/.test(line)) { const p = line.split(/\s+/); mats.get(cur).kd = [+p[1], +p[2], +p[3]]; }
+    else if (cur && /^Kd\b/.test(line)) { const p = line.split(/\s+/); mats.get(cur)!.kd = [+p[1], +p[2], +p[3]]; }
     else if (cur && /^map_Kd\b/i.test(line)) {
       // The filename is the last whitespace-separated token (skip -options).
-      mats.get(cur).mapKd = line.replace(/^map_Kd\b/i, '').trim().split(/\s+/).pop().replace(/\\/g, '/').split('/').pop();
+      mats.get(cur)!.mapKd = line.replace(/^map_Kd\b/i, '').trim().split(/\s+/).pop()!.replace(/\\/g, '/').split('/').pop();
     }
   }
   return mats;
@@ -648,7 +648,7 @@ function parseMtlMaterials(text) {
 // Expand embedded per-vertex colours into the non-indexed triangle vertex order
 // buildGeoFromIndexed produces (triangle t -> verts a,b,c), so the colour buffer
 // lines up 1:1 with the position buffer.
-function objVertexColors(parsed) {
+function objVertexColors(parsed: any) {
   const triCount = parsed.tris.length / 3;
   const colors = new Float32Array(triCount * 9);
   for (let t = 0; t < triCount; t++) {
@@ -662,7 +662,7 @@ function objVertexColors(parsed) {
 
 // Bake each triangle's material diffuse colour (Kd) into a per-vertex colour
 // buffer. Returns null if no triangle resolved to a material with a Kd.
-function objMaterialColors(parsed, materials) {
+function objMaterialColors(parsed: any, materials: any) {
   const triCount = parsed.tris.length / 3;
   const colors = new Float32Array(triCount * 9);
   let any = false;
@@ -677,7 +677,7 @@ function objMaterialColors(parsed, materials) {
 }
 
 // Expand vt texture coords into the same non-indexed vertex order.
-function objUVs(parsed) {
+function objUVs(parsed: any) {
   const triCount = parsed.tris.length / 3;
   const uvs = new Float32Array(triCount * 6);
   for (let t = 0; t < triCount; t++) {
@@ -693,7 +693,7 @@ function objUVs(parsed) {
 // like one solid blob. Give each distinct material a different grey brightness so
 // the material breakdown is visible immediately; real colours replace these once
 // the .mtl is added. Returns null when there's nothing to distinguish (<2 mats).
-function objMaterialPreviewColors(parsed) {
+function objMaterialPreviewColors(parsed: any) {
   const order = [], idx = new Map();
   for (const m of parsed.triMat) {
     const key = (m == null) ? '\x00none' : m;
@@ -712,7 +712,7 @@ function objMaterialPreviewColors(parsed) {
   return colors;
 }
 
-function parseOffMesh(text) {
+function parseOffMesh(text: string) {
   const toks = text.replace(/#[^\n]*/g, ' ').split(/\s+/).filter(Boolean);
   let i = 0;
   if (toks[0] && /OFF$/i.test(toks[0]) && !/^[-\d.]/.test(toks[0])) i++;   // 'OFF', 'COFF', 'NOFF'…
@@ -727,8 +727,8 @@ function parseOffMesh(text) {
   return { verts, tris };
 }
 
-const PLY_SIZE = { char: 1, uchar: 1, int8: 1, uint8: 1, short: 2, ushort: 2, int16: 2, uint16: 2, int: 4, uint: 4, int32: 4, uint32: 4, float: 4, float32: 4, double: 8, float64: 8 };
-function plyRead(dv, off, t, le) {
+const PLY_SIZE: Record<string, number> = { char: 1, uchar: 1, int8: 1, uint8: 1, short: 2, ushort: 2, int16: 2, uint16: 2, int: 4, uint: 4, int32: 4, uint32: 4, float: 4, float32: 4, double: 8, float64: 8 };
+function plyRead(dv: DataView<any>, off: number, t: string, le: boolean) {
   switch (t) {
     case 'char': case 'int8': return dv.getInt8(off);
     case 'uchar': case 'uint8': return dv.getUint8(off);
@@ -741,7 +741,7 @@ function plyRead(dv, off, t, le) {
   }
 }
 
-function parsePlyMesh(buf) {
+function parsePlyMesh(buf: ArrayBuffer) {
   const bytes = new Uint8Array(buf);
   const headStr = new TextDecoder('latin1').decode(bytes.subarray(0, Math.min(bytes.length, 1 << 16)));
   const eh = headStr.indexOf('end_header');
@@ -750,7 +750,7 @@ function parsePlyMesh(buf) {
   while (dataStart < bytes.length && bytes[dataStart] !== 0x0a) dataStart++;
   dataStart++;
   let format = 'ascii';
-  const elements = []; let cur = null;
+  const elements: { name: string; count: number; props: any[] }[] = []; let cur: { name: string; count: number; props: any[] }|null = null;
   for (const ln of headStr.slice(0, eh).split(/\r?\n/)) {
     const t = ln.trim().split(/\s+/);
     if (t[0] === 'format') format = t[1];
@@ -831,7 +831,7 @@ async function renderMeshFile(file: File, resultsEl: HTMLElement, ext: string) {
   // OBJ that carries colour - embedded vertex colours or a referenced .mtl - goes
   // to the coloured single-mesh path (with a picker to supply the sibling .mtl +
   // textures a lone drop can't read). Plain OBJ/PLY/OFF keep the body-split path.
-  if (ext === 'obj' && (parsed.mtllib || parsed.vertColors)) return renderObjColoured(file, resultsEl, parsed);
+  if (ext === 'obj' && (parsed!.mtllib || parsed!.vertColors)) return renderObjColoured(file, resultsEl, parsed);
 
   const geo = buildGeoFromIndexed(mesh.verts, mesh.tris, ext.toUpperCase());
   if (!geo || !geo.count) { resultsEl.appendChild(errorCard('No triangles found in this ' + ext.toUpperCase() + '.')); return; }
@@ -858,7 +858,7 @@ async function renderMeshFile(file: File, resultsEl: HTMLElement, ext: string) {
 // OBJ viewer that honours colour. `materials` (parsed .mtl) and `texImage` (a
 // decoded map_Kd image) are supplied on the second pass, once the user picks the
 // sibling files; the first pass shows the model and a picker to add them.
-async function renderObjColoured(file: File, resultsEl: HTMLElement, parsed, materials = null, texImage = null) {
+async function renderObjColoured(file: File, resultsEl: HTMLElement, parsed: any, materials: any = null, texImage: any = null) {
   const geo = buildGeoFromIndexed(parsed.verts, parsed.tris, 'OBJ');
   if (!geo || !geo.count) { resultsEl.innerHTML = ''; resultsEl.appendChild(errorCard('No triangles found in this OBJ.')); return; }
 
@@ -890,7 +890,7 @@ async function renderObjColoured(file: File, resultsEl: HTMLElement, parsed, mat
 
 // Prompt + picker to supply the .mtl (and any texture images) that a lone OBJ
 // drop has no access to. Mirrors the RAW+XMP sidecar / video reference-clip flow.
-function objMaterialsPrompt(file: File, resultsEl: HTMLElement, parsed) {
+function objMaterialsPrompt(file: File, resultsEl: HTMLElement, parsed: any) {
   const card = el('div', { class: 'anr-card' });
   const [mh, mhelp] = h3help('Colours and textures', 'A dropped .obj file can’t read its sibling files, so without the material library its surfaces show above as plain grey shades.');
   card.appendChild(mh); card.appendChild(mhelp);
@@ -903,7 +903,7 @@ function objMaterialsPrompt(file: File, resultsEl: HTMLElement, parsed) {
   // Shared by the dropzone and the click-to-pick fallback: find the .mtl, parse
   // its materials, optionally decode the first matching map_Kd texture image, then
   // re-render the model in colour.
-  async function applyFiles(fileList) {
+  async function applyFiles(fileList: FileList|null) {
     const files: File[] = Array.from(fileList || []);
     if (!files.length) return;
     const mtlFile = files.find((f) => /\.mtl$/i.test(f.name));
@@ -933,7 +933,7 @@ function objMaterialsPrompt(file: File, resultsEl: HTMLElement, parsed) {
     el('span', { class: 'anr-mtl-drop-ico', 'aria-hidden': 'true' }, '+'),
     el('span', {}, ['Drop ', el('strong', {}, parsed.mtllib || '.mtl'), ' here, or click to choose']),
   ]);
-  const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+  const stop = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); };
   zone.addEventListener('click', () => input.click());
   zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
   zone.addEventListener('dragenter', (e) => { stop(e); zone.classList.add('is-dragover'); });
@@ -955,7 +955,7 @@ function objMaterialsPrompt(file: File, resultsEl: HTMLElement, parsed) {
 
 // Small readout of the applied materials: a colour swatch + name, and the
 // texture filename when one was mapped.
-function materialsSummaryCard(materials, textured) {
+function materialsSummaryCard(materials: any[], textured: boolean) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Materials'));
   const list = el('div', { style: 'display:flex;flex-direction:column;gap:6px;margin-top:6px;' });
@@ -981,11 +981,11 @@ function materialsSummaryCard(materials, textured) {
 // resolved (a lone drop has no sibling files), so only embedded or GLB buffer
 // data is read; a .gltf that points at an external .bin shows metadata only.
 
-const GLTF_COMP = { 5120: 'Int8', 5121: 'Uint8', 5122: 'Int16', 5123: 'Uint16', 5125: 'Uint32', 5126: 'Float32' };
-const GLTF_COMP_SIZE = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 };
-const GLTF_NUMC = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT2: 4, MAT3: 9, MAT4: 16 };
+const GLTF_COMP: Record<string, string> = { 5120: 'Int8', 5121: 'Uint8', 5122: 'Int16', 5123: 'Uint16', 5125: 'Uint32', 5126: 'Float32' };
+const GLTF_COMP_SIZE: Record<string, number> = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 };
+const GLTF_NUMC: Record<string, number> = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT2: 4, MAT3: 9, MAT4: 16 };
 
-function parseGlb(buf) {
+function parseGlb(buf: ArrayBuffer) {
   const dv = new DataView(buf);
   if (dv.getUint32(0, true) !== 0x46546c67) throw new Error('not a GLB (bad magic)');   // 'glTF'
   const total = dv.getUint32(8, true);
@@ -1000,7 +1000,7 @@ function parseGlb(buf) {
   return { json, bin };
 }
 
-function dataUriToBytes(uri) {
+function dataUriToBytes(uri: string) {
   const comma = uri.indexOf(',');
   const meta = uri.slice(5, comma), data = uri.slice(comma + 1);
   if (/;base64/i.test(meta)) {
@@ -1011,8 +1011,8 @@ function dataUriToBytes(uri) {
   return new TextEncoder().encode(decodeURIComponent(data));
 }
 
-function gltfBuffers(json, glbBin) {
-  return (json.buffers || []).map((b) => {
+function gltfBuffers(json: any, glbBin: Uint8Array|null|undefined) {
+  return (json.buffers || []).map((b: any) => {
     if (!b.uri) return glbBin || null;                 // GLB binary chunk
     if (b.uri.startsWith('data:')) return dataUriToBytes(b.uri);
     return null;                                        // external file - unresolved
@@ -1021,7 +1021,7 @@ function gltfBuffers(json, glbBin) {
 
 // Read an accessor into a flat Float32Array (numeric component values). Handles
 // interleaved bufferViews via byteStride and the standard component types.
-function readAccessor(json, buffers, idx) {
+function readAccessor(json: any, buffers: any, idx: number) {
   const acc = json.accessors && json.accessors[idx];
   if (!acc || acc.bufferView == null) return null;
   const numC = GLTF_NUMC[acc.type] || 1;
@@ -1034,7 +1034,7 @@ function readAccessor(json, buffers, idx) {
   const start = u8.byteOffset + (bv.byteOffset || 0) + (acc.byteOffset || 0);
   const stride = bv.byteStride || numC * compSize;
   const dv = new DataView(u8.buffer);
-  const get = (o) => dv['get' + getName](o, true);
+  const get = (o: number) => (dv as any)['get' + getName](o, true);
   const out = new Float32Array(acc.count * numC);
   for (let i = 0; i < acc.count; i++) {
     const eo = start + i * stride;
@@ -1044,7 +1044,7 @@ function readAccessor(json, buffers, idx) {
 }
 
 // Node local transform -> column-major 4x4 (matrix wins, else TRS).
-function gltfNodeMatrix(node) {
+function gltfNodeMatrix(node: any) {
   if (node.matrix) return node.matrix.slice();
   const t = node.translation || [0, 0, 0], q = node.rotation || [0, 0, 0, 1], s = node.scale || [1, 1, 1];
   const [x, y, z, w] = q, x2 = x + x, y2 = y + y, z2 = z + z;
@@ -1056,19 +1056,19 @@ function gltfNodeMatrix(node) {
     t[0], t[1], t[2], 1,
   ];
 }
-function gltfMul(a, b) {   // column-major a*b
+function gltfMul(a: number[], b: number[]) {   // column-major a*b
   const o = new Array(16);
   for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++)
     o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
   return o;
 }
 
-function gltfToMesh(json, glbBin) {
+function gltfToMesh(json: any, glbBin: Uint8Array|null|undefined) {
   const buffers = gltfBuffers(json, glbBin);
   const meshes = json.meshes || [], nodes = json.nodes || [];
-  const verts = [], tris = [];
+  const verts: number[] = [], tris: number[] = [];
   let unresolved = false, nonTri = false;
-  const addPrim = (prim, m) => {
+  const addPrim = (prim: any, m: any[]|null) => {
     if (!prim.attributes || prim.attributes.POSITION == null) return;
     if (prim.mode != null && prim.mode !== 4) { nonTri = true; return; }   // triangles only
     const pos = readAccessor(json, buffers, prim.attributes.POSITION);
@@ -1088,14 +1088,14 @@ function gltfToMesh(json, glbBin) {
       for (let i = 0; i < n; i++) tris.push(base + i);
     }
   };
-  const visit = (ni, parent) => {
+  const visit = (ni: string|number, parent: any[]) => {
     const node = nodes[ni]; if (!node) return;
     const m = gltfMul(parent, gltfNodeMatrix(node));
     if (node.mesh != null && meshes[node.mesh]) for (const p of meshes[node.mesh].primitives || []) addPrim(p, m);
     for (const ch of node.children || []) visit(ch, m);
   };
   const scene = json.scenes && json.scenes[json.scene || 0];
-  const roots = scene ? scene.nodes : nodes.map((_, i) => i);
+  const roots = scene ? scene.nodes : nodes.map((_: any, i: number) => i);
   const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   for (const r of roots || []) visit(r, I);
   // Some exporters define meshes but never instance them via a scene node - fall
@@ -1104,7 +1104,7 @@ function gltfToMesh(json, glbBin) {
   return { verts: new Float32Array(verts), tris: new Uint32Array(tris), unresolved, nonTri };
 }
 
-function gltfInfoCard(json, file: File, ext: string, mesh) {
+function gltfInfoCard(json: any, file: File, ext: string, mesh: any) {
   const a = json.asset || {};
   const [h, help] = h3help(ext === 'glb' ? 'glTF (binary)' : 'glTF', 'glTF ("GL Transmission Format") is a compact 3D scene format built for fast loading on the web, in augmented reality and in game engines. Analyser reads the model’s shape data and scene details from it.');
   const card = el('div', { class: 'anr-card' });
@@ -1116,7 +1116,7 @@ function gltfInfoCard(json, file: File, ext: string, mesh) {
   if (a.version) tbl.appendChild(row('glTF version', String(a.version)));
   if (a.generator) tbl.appendChild(rowHelp('Authoring tool', String(a.generator), 'The program or exporter that created this file, as recorded inside it (the asset.generator field).'));
   if (a.copyright) tbl.appendChild(row('Copyright', String(a.copyright)));
-  const cnt = (k) => Array.isArray(json[k]) ? json[k].length : 0;
+  const cnt = (k: string) => Array.isArray(json[k]) ? json[k].length : 0;
   tbl.appendChild(row('Meshes', String(cnt('meshes'))));
   tbl.appendChild(rowHelp('Nodes', String(cnt('nodes')), 'The number of items in the model’s scene layout. Each node places one piece of the scene (a mesh, camera or light) in 3D space and can hold others beneath it, together forming the scene’s structure.'));
   if (cnt('materials')) tbl.appendChild(row('Materials', String(cnt('materials'))));
@@ -1175,7 +1175,7 @@ async function renderGltf(file: File, resultsEl: HTMLElement, ext: string) {
 
 // Merge OpenCASCADE's tessellated meshes (indexed, with normals) into one
 // non-indexed geometry for the viewer.
-function occtMeshesToGeo(meshes) {
+function occtMeshesToGeo(meshes: any[]) {
   let triTotal = 0;
   for (const m of meshes) {
     const idx = m.index && m.index.array;
@@ -1228,7 +1228,7 @@ async function renderStepIges(file: File, resultsEl: HTMLElement, ext: string) {
   const mt = el('table', { class: 'anr-readout' });
   mt.appendChild(row('File', file.name));
   mt.appendChild(row('Size', fmtBytes(file.size)));
-  const STEP_HELP = {
+  const STEP_HELP: Record<string, string> = {
     'Preprocessor': 'The software that actually wrote this STEP file - the exporter or translator that converted the original CAD model into the STEP exchange format. It can differ from the program the model was first designed in.',
     'Application protocol': 'Which flavour of the STEP standard the file follows. STEP comes in variants tuned to different industries, and the code (AP203, AP214, AP242 and so on) tells software what kind of design and product information to expect.',
   };
@@ -1279,7 +1279,7 @@ async function renderStepIges(file: File, resultsEl: HTMLElement, ext: string) {
   const meshes = result.meshes;
   if (meshes.length > 1) {
     const parts = [{ key: 'all', name: `Whole model (${meshes.length} bodies)`, build: () => geo }];
-    meshes.forEach((m, i) => parts.push({
+    meshes.forEach((m: any, i: number) => parts.push({
       key: 'b' + i,
       name: (m && m.name) ? String(m.name) : ('Body ' + (i + 1)),
       build: () => occtMeshesToGeo([m]),
@@ -1317,7 +1317,7 @@ async function renderStepIges(file: File, resultsEl: HTMLElement, ext: string) {
 const FBX_BIN_MAGIC = 'Kaydara FBX Binary';
 
 // Decode one FBX binary array property descriptor (inflating if zlib-encoded).
-async function decodeFbxArray(d) {
+async function decodeFbxArray(d: any) {
   if (!d || !d.__fbxArray) return null;
   let bytes = d.data;
   if (d.encoding === 1) { bytes = await inflate(d.data, 'deflate'); if (!bytes) return null; }
@@ -1336,15 +1336,15 @@ async function decodeFbxArray(d) {
 
 // Walk the binary node tree and collect each Geometry node's Vertices +
 // PolygonVertexIndex array descriptors (decoded lazily by the caller).
-function fbxBinaryGeoms(u8) {
+function fbxBinaryGeoms(u8: Uint8Array) {
   const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
   const version = dv.getUint32(23, true);
   const big = version >= 7500;
-  const word = (pos) => big ? Number(dv.getBigUint64(pos, true)) : dv.getUint32(pos, true);
+  const word = (pos: number) => big ? Number(dv.getBigUint64(pos, true)) : dv.getUint32(pos, true);
   const wsz = big ? 8 : 4;
   const nullRec = big ? 25 : 13;
 
-  const readProp = (pos) => {
+  const readProp = (pos: number): any => {
     const type = String.fromCharCode(u8[pos]); pos += 1;
     switch (type) {
       case 'Y': return { value: dv.getInt16(pos, true), next: pos + 2 };
@@ -1363,7 +1363,7 @@ function fbxBinaryGeoms(u8) {
     }
   };
 
-  const readNode = (pos) => {
+  const readNode = (pos: number): any => {
     const endOffset = word(pos);
     if (endOffset === 0) return null;   // null record terminates a sibling list
     let p = pos + wsz;
@@ -1371,9 +1371,9 @@ function fbxBinaryGeoms(u8) {
     p += wsz;                            // propertyListLen (unused)
     const nameLen = u8[p]; p += 1;
     const name = ascii(u8, p, nameLen); p += nameLen;
-    const props = [];
+    const props: any[] = [];
     for (let i = 0; i < numProps; i++) { const r = readProp(p); props.push(r.value); p = r.next; if (r.bail) break; }
-    const children = [];
+    const children: any[] = [];
     while (p < endOffset && p + nullRec <= u8.length) {
       if (word(p) === 0) { p += nullRec; break; }
       const child = readNode(p);
@@ -1383,8 +1383,8 @@ function fbxBinaryGeoms(u8) {
     return { node: { name, props, children }, next: endOffset };
   };
 
-  const geoms = [];
-  const collect = (node) => {
+  const geoms: any[] = [];
+  const collect = (node: any) => {
     if (node.name === 'Geometry') {
       let v = null, idx = null;
       for (const c of node.children) {
@@ -1408,22 +1408,22 @@ function fbxBinaryGeoms(u8) {
 }
 
 // ASCII FBX: pull the numeric arrays straight out of the text blocks.
-function fbxAsciiGeoms(text) {
-  const grab = (re) => { const out = []; let m; while ((m = re.exec(text))) out.push(m[1]); return out; };
+function fbxAsciiGeoms(text: string) {
+  const grab = (re: RegExp) => { const out = []; let m; while ((m = re.exec(text))) out.push(m[1]); return out; };
   const vs = grab(/Vertices:\s*\*\d+\s*\{\s*a:\s*([\s\S]*?)\}/g);
   const is = grab(/PolygonVertexIndex:\s*\*\d+\s*\{\s*a:\s*([\s\S]*?)\}/g);
   const geoms = [];
   for (let i = 0; i < Math.min(vs.length, is.length); i++) {
     geoms.push({
-      vertices: vs[i].split(',').map(parseFloat).filter((x) => !isNaN(x)),
-      indices: is[i].split(',').map((s) => parseInt(s, 10)).filter((x) => !isNaN(x)),
+      vertices: vs[i].split(',').map(parseFloat).filter((x: number) => !isNaN(x)),
+      indices: is[i].split(',').map((s: string) => parseInt(s, 10)).filter((x: number) => !isNaN(x)),
     });
   }
   return geoms;
 }
 
 // Parse an FBX buffer into merged { verts, tris } plus a little metadata.
-async function parseFbx(buf) {
+async function parseFbx(buf: ArrayBuffer) {
   const u8 = new Uint8Array(buf);
   let isBinary = u8.length > FBX_BIN_MAGIC.length;
   for (let i = 0; i < FBX_BIN_MAGIC.length && isBinary; i++) if (u8[i] !== FBX_BIN_MAGIC.charCodeAt(i)) isBinary = false;

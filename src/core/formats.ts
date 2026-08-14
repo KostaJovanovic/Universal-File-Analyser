@@ -253,7 +253,7 @@ export const IDENTIFICATION = [...IDENTIFICATION_CORE, ...IDENTIFICATION_EXTENDE
 //               { textIncludes: ['LUT_3D_SIZE','LUT_1D_SIZE'] }  any substring present
 //               { tsSync: true }             MPEG-TS 0x47 sync at offsets 0/188/376
 //               { default: true }            fallback when nothing else matched
-export const EXT_VARIANTS = {
+export const EXT_VARIANTS: Record<string, { summary: string; variants: { name: string; desc: string; tell: string; detect?: any }[] }> = {
   // ---- Tier 1: clear collisions ----
   ts: {
     summary: 'The .ts extension names two unrelated things: TypeScript source code and an MPEG transport stream video.',
@@ -426,7 +426,7 @@ export const EXT_VARIANTS = {
 // (used as the in-app application label), or null when the ext is not ambiguous
 // or nothing matched without a default. The FIRST variant whose `detect` rule
 // matches wins; a { default: true } variant is the fallback.
-export function detectVariant(ext, bytes: Uint8Array, text: string|null, opts?) {
+export function detectVariant(ext: string, bytes: Uint8Array, text: string|null, opts?: any) {
   const entry = EXT_VARIANTS[(ext || '').toLowerCase()];
   if (!entry) return null;
   // specificOnly: return a name only when a real rule matched, not the bare
@@ -454,8 +454,8 @@ export function detectVariant(ext, bytes: Uint8Array, text: string|null, opts?) 
     if (d.hex && hexAt(0, d.hex)) return v.name;
     if (d.hexAt && hexAt(d.hexAt[0], d.hexAt[1])) return v.name;
     if (d.tsSync && tsSync()) return v.name;
-    if (head != null && d.textStarts && [].concat(d.textStarts).some((p) => head.startsWith(p.toLowerCase()))) return v.name;
-    if (head != null && d.textIncludes && [].concat(d.textIncludes).some((p) => head.includes(p.toLowerCase()))) return v.name;
+    if (head != null && d.textStarts && ([] as any[]).concat(d.textStarts).some((p) => head.startsWith(p.toLowerCase()))) return v.name;
+    if (head != null && d.textIncludes && ([] as any[]).concat(d.textIncludes).some((p) => head.includes(p.toLowerCase()))) return v.name;
   }
   if (specificOnly) return null;
   return fallback ? fallback.name : null;
@@ -483,7 +483,7 @@ export const CATEGORIES = [
 
 // label -> category key. Every catalog row label must appear here (verified at
 // load by an assertion in dev; unmapped rows fall back to 'system').
-const CAT_OF = {
+const CAT_OF: Record<string, string> = {
   // Images
   'Photo': 'images', 'RAW photo': 'images', 'Images (more)': 'images', 'RAW sidecars / cinema': 'images', 'XMP sidecar': 'images',
   // Design
@@ -606,7 +606,7 @@ const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').repla
 // and mirrored by the static generators (prerender-formats.mjs,
 // prerender-format-pages.mjs) and the samples gallery (prerender-samples.mjs)
 // so the Full / Partial / ID tag looks identical everywhere it appears.
-const DEPTH_BADGE = {
+const DEPTH_BADGE: Record<string, { cls: string; label: string; title: string }> = {
   full:    { cls: 'is-full',    label: 'Full',    title: 'Opens in a viewer with deep metadata' },
   partial: { cls: 'is-partial', label: 'Partial', title: 'Opens, but only an embedded preview and metadata are recoverable' },
   id:      { cls: 'is-id',      label: 'ID',      title: 'Identified + header metadata' },
@@ -633,8 +633,8 @@ export function formatPageHref(ext: string) {
 // landing page exists for it (the generator writes one per catalog extension).
 // Guards callers from linking formatPageHref() of an uncatalogued extension,
 // which would 404.
-let _allExtSet: Set<unknown>|null = null;
-export function hasFormatPage(ext) {
+let _allExtSet: Set<string>|null = null;
+export function hasFormatPage(ext: string) {
   if (!_allExtSet) {
     _allExtSet = new Set();
     for (const r of [...FULL_ANALYSIS, ...IDENTIFICATION]) {
@@ -653,7 +653,7 @@ export function hasFormatPage(ext) {
 //                  and id="ext-<ext>" on each extension span so #fmt-… / #ext-…
 //                  deep-links resolve and the desc text stays indexable in the
 //                  DOM even while collapsed.
-function fmtItem(r, opts: any = {}) {
+function fmtItem(r: any, opts: any = {}) {
   const extNodes: ElChild[] = [];
   r.exts.split(/\s+/).forEach((t: string) => {
     if (!t) return;
@@ -692,7 +692,7 @@ function fmtItem(r, opts: any = {}) {
 // Render the catalog grouped by domain category into a container. Each category
 // is a heading (with its extension count) followed by its rows; every <details>
 // carries data-cat so the overlay's chip filter can show/hide whole categories.
-function renderFmtItems(container, opts) {
+function renderFmtItems(container: HTMLElement, opts: any) {
   container.innerHTML = '';
   const rows = allRows();
   const counts = categoryCounts();
@@ -711,7 +711,7 @@ function renderFmtItems(container, opts) {
 // Format help overlay on index.html / about.html. Each format is a collapsible
 // dropdown; the description is hidden until the user opens it. Items carry
 // data-tags so the search box in app.js can filter them.
-export function renderFmtOverlay(container) {
+export function renderFmtOverlay(container: HTMLElement|null) {
   if (!container) return;
   renderFmtItems(container, { anchors: false });
 }
@@ -720,7 +720,7 @@ export function renderFmtOverlay(container) {
 // each item keeps id="fmt-<slug>" and each extension keeps id="ext-<ext>", and
 // the description text stays in the DOM (inside the collapsed body) so SEO and
 // #fmt-… / #ext-… deep-links keep working.
-export function renderAboutFormats(container) {
+export function renderAboutFormats(container: HTMLElement|null) {
   if (!container) return;
   renderFmtItems(container, { anchors: true });
 }

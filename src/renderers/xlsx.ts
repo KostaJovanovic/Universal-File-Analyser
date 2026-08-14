@@ -6,7 +6,7 @@ import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/ut
 import { openZip } from './zip.js';
 
 // "A1" -> { col: 0, row: 0 }; "BC12" -> { col: 54, row: 11 }
-function parseRef(ref) {
+function parseRef(ref: string|null) {
   const m = /^([A-Z]+)(\d+)$/.exec(ref || '');
   if (!m) return null;
   let col = 0;
@@ -14,19 +14,19 @@ function parseRef(ref) {
   return { col: col - 1, row: parseInt(m[2], 10) - 1 };
 }
 
-function colName(n) {
+function colName(n: number) {
   let s = '';
   n += 1;
   while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
   return s;
 }
 
-function parseXml(text) {
-  return new DOMParser().parseFromString(text, 'application/xml');
+function parseXml(text: string|null) {
+  return new DOMParser().parseFromString(text!, 'application/xml');
 }
 
 // Resolve a relationship Target (possibly '../') against the part it came from.
-function resolveRel(basePath, target) {
+function resolveRel(basePath: string|string[], target: string) {
   const dir = basePath.slice(0, basePath.lastIndexOf('/') + 1);
   const out = [];
   for (const p of (dir + target).split('/')) { if (p === '..') out.pop(); else if (p !== '.' && p !== '') out.push(p); }
@@ -36,8 +36,8 @@ function resolveRel(basePath, target) {
 // Collect pivot-table definitions: name, target location, field counts, and the
 // source range (followed through the table's rels to its pivot-cache definition).
 // Purely additive - any malformed part is skipped, never thrown.
-async function collectPivots(zip) {
-  const out = [];
+async function collectPivots(zip: any) {
+  const out: any[] = [];
   let files;
   try { files = zip.match(/^xl\/pivotTables\/pivotTable\d+\.xml$/); } catch (_) { return out; }
   for (const f of files) {
@@ -47,7 +47,7 @@ async function collectPivots(zip) {
       const name = root.getAttribute('name') || root.getAttribute('dataCaption') || '(unnamed)';
       const loc = def.getElementsByTagName('location')[0];
       const location = loc ? (loc.getAttribute('ref') || '') : '';
-      const cnt = (tag) => { const e = def.getElementsByTagName(tag)[0]; return e ? (parseInt(e.getAttribute('count'), 10) || e.getElementsByTagName('field').length || 0) : 0; };
+      const cnt = (tag: string) => { const e = def.getElementsByTagName(tag)[0]; return e ? (parseInt(e.getAttribute('count')!, 10) || e.getElementsByTagName('field').length || 0) : 0; };
       const fields = { row: cnt('rowFields'), col: cnt('colFields'), data: cnt('dataFields'), page: cnt('pageFields') };
       // Source range lives in the linked pivot-cache definition's worksheetSource.
       let source = '';
@@ -57,7 +57,7 @@ async function collectPivots(zip) {
           const rd = parseXml(await zip.text(relName));
           let cacheTarget = '';
           for (const r of rd.getElementsByTagName('Relationship')) {
-            if (/pivotCacheDefinition/i.test(r.getAttribute('Target') || '')) { cacheTarget = r.getAttribute('Target'); break; }
+            if (/pivotCacheDefinition/i.test(r.getAttribute('Target') || '')) { cacheTarget = r.getAttribute('Target')!; break; }
           }
           const cachePath = cacheTarget && resolveRel(f.name, cacheTarget);
           if (cachePath && zip.has(cachePath)) {
@@ -78,7 +78,7 @@ async function collectPivots(zip) {
 
 // Built-in number-format ids (a subset). Used to classify columns as date or
 // currency when xl/styles.xml references them without an explicit format code.
-const BUILTIN_FMT = {
+const BUILTIN_FMT: Record<number, string> = {
   14: 'date', 15: 'date', 16: 'date', 17: 'date', 22: 'date',
   45: 'date', 46: 'date', 47: 'date',
   5: 'currency', 6: 'currency', 7: 'currency', 8: 'currency',
@@ -86,7 +86,7 @@ const BUILTIN_FMT = {
 };
 
 // Classify a format code string as 'date', 'currency', or '' (general).
-function classifyFmt(code) {
+function classifyFmt(code: string) {
   if (!code) return '';
   const c = code.toLowerCase();
   // strip quoted literals and bracketed sections so we only look at tokens
@@ -102,7 +102,7 @@ function classifyFmt(code) {
 
 // Excel date serial -> readable date string (1900 date system, with the
 // well-known Feb-29-1900 leap bug offset baked into the epoch).
-function serialToDate(serial) {
+function serialToDate(serial: string) {
   const n = parseFloat(serial);
   if (!isFinite(n) || n <= 0) return null;
   const ms = (n - 25569) * 86400 * 1000; // 25569 = days from 1899-12-30 to 1970-01-01
@@ -118,7 +118,7 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading spreadsheet "${file.name}"…`));
 
-  let zip;
+  let zip: any;
   try {
     zip = await openZip(file);
   } catch (e) {
@@ -129,7 +129,7 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
   resultsEl.innerHTML = '';
 
   // ---- Shared strings ----
-  const shared = [];
+  const shared: string[] = [];
   if (zip.has('xl/sharedStrings.xml')) {
     const doc = parseXml(await zip.text('xl/sharedStrings.xml'));
     for (const si of doc.getElementsByTagName('si')) {
@@ -141,7 +141,7 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
   }
 
   // ---- Workbook: sheet names + relationship ids (+ hidden state, names) ----
-  const sheets = [];
+  const sheets: any[] = [];
   const namedRanges = [];
   let externalLinkCount = 0;
   if (zip.has('xl/workbook.xml')) {
@@ -165,19 +165,19 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
   const pivots = await collectPivots(zip);
 
   // ---- Number formats from xl/styles.xml (cell xf index -> 'date'|'currency'|'') ----
-  const xfKind = [];
+  const xfKind: any[] = [];
   try {
     if (zip.has('xl/styles.xml')) {
       const st = parseXml(await zip.text('xl/styles.xml'));
       const fmtCode: any = {}; // numFmtId -> format code
       for (const nf of st.getElementsByTagName('numFmt')) {
-        const id = parseInt(nf.getAttribute('numFmtId'), 10);
+        const id = parseInt(nf.getAttribute('numFmtId')!, 10);
         if (!isNaN(id)) fmtCode[id] = nf.getAttribute('formatCode') || '';
       }
       const cellXfs = st.getElementsByTagName('cellXfs')[0];
       if (cellXfs) {
         for (const xf of cellXfs.getElementsByTagName('xf')) {
-          const id = parseInt(xf.getAttribute('numFmtId'), 10);
+          const id = parseInt(xf.getAttribute('numFmtId')!, 10);
           let kind = '';
           if (!isNaN(id)) kind = BUILTIN_FMT[id] || classifyFmt(fmtCode[id]);
           xfKind.push(kind);
@@ -192,7 +192,7 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
     for (const r of rels.getElementsByTagName('Relationship')) {
       let target = r.getAttribute('Target') || '';
       if (!target.startsWith('xl/') && !target.startsWith('/')) target = 'xl/' + target;
-      ridToPath[r.getAttribute('Id')] = target.replace(/^\//, '');
+      ridToPath[r.getAttribute('Id')!] = target.replace(/^\//, '');
     }
   }
 
@@ -220,7 +220,7 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
   metaTbl.appendChild(row('Sheets', sheets.length || '-'));
   if (zip.has('docProps/core.xml')) {
     const core = parseXml(await zip.text('docProps/core.xml'));
-    const get = (tag) => { const e = core.getElementsByTagName(tag)[0]; return e ? e.textContent : ''; };
+    const get = (tag: string) => { const e = core.getElementsByTagName(tag)[0]; return e ? e.textContent : ''; };
     const creator = get('dc:creator'); if (creator) metaTbl.appendChild(row('Author', creator));
     const modified = get('dcterms:modified'); if (modified) metaTbl.appendChild(row('Modified', modified.replace('T', ' ').replace('Z', '')));
   }
@@ -278,8 +278,8 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
     }
   } catch (_) { /* ignore */ }
 
-  let tkHandle = null;
-  async function renderSheet(idx) {
+  let tkHandle: any = null;
+  async function renderSheet(idx: number) {
     if (tkHandle) { tkHandle.destroy(); tkHandle = null; }
     [...tabRow.children].forEach((c, i) => c.classList.toggle('is-active', i === idx));
     tableWrap.innerHTML = '';
@@ -311,7 +311,7 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
           value = raw;
           // Apply number format from the cell's style index, when known.
           try {
-            const si = parseInt(c.getAttribute('s'), 10);
+            const si = parseInt(c.getAttribute('s')!, 10);
             const kind = !isNaN(si) ? xfKind[si] : '';
             if (kind === 'date' && raw !== '') {
               const d = serialToDate(raw);
@@ -335,9 +335,9 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
     // Dense grid (row 0 = headers) for the table-analysis workbench, built from
     // the sparse cell map above - cheap since it's already parsed into memory.
     const wbHeaders = Array.from({ length: maxCol + 1 }, (_, c) => cells['0,' + c] || colName(c));
-    const wbRows = [];
+    const wbRows: any[][] = [];
     for (let r = 1; r <= maxRow; r++) {
-      const rowArr = [];
+      const rowArr: any[] = [];
       for (let c = 0; c <= maxCol; c++) rowArr.push(cells[r + ',' + c] || '');
       wbRows.push(rowArr);
     }

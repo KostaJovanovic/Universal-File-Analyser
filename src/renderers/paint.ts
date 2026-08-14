@@ -11,11 +11,11 @@
    no embedded preview, so it stays identification-only. */
 
 import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, blobImg } from '../core/util.js';
-import { openZip } from './zip.js';
+import { openZip, type ZipHandle } from './zip.js';
 import { parsePlist } from '../lib/plist.js';
 
 // Largest entry whose name matches the predicate (by uncompressed size), or null.
-function largestMatch(zip, re) {
+function largestMatch(zip: ZipHandle, re: RegExp) {
   let best = null;
   for (const e of zip.entries) {
     if (re.test(e.name) && (!best || e.uncompSize > best.uncompSize)) best = e;
@@ -23,9 +23,9 @@ function largestMatch(zip, re) {
   return best;
 }
 
-const xmlAttr = (s, name) => (s.match(new RegExp('\\b' + name + '="([^"]*)"', 'i')) || [])[1] || '';
+const xmlAttr = (s: string, name: string) => (s.match(new RegExp('\\b' + name + '="([^"]*)"', 'i')) || [])[1] || '';
 
-function parseKraMain(text) {
+function parseKraMain(text: string) {
   const img = (text.match(/<IMAGE\b[^>]*>/i) || [''])[0];
   const layers = (text.match(/<layer\b/gi) || []).length;
   return {
@@ -34,13 +34,13 @@ function parseKraMain(text) {
     colorspace: xmlAttr(img, 'colorspacename'),
     xres: xmlAttr(img, 'x-res'),
     name: xmlAttr(img, 'name'),
-    kritaVersion: xmlAttr(text.match(/<DOC\b[^>]*>/i) ? text.match(/<DOC\b[^>]*>/i)[0] : '', 'kritaVersion'),
+    kritaVersion: xmlAttr(text.match(/<DOC\b[^>]*>/i) ? text.match(/<DOC\b[^>]*>/i)![0] : '', 'kritaVersion'),
     layers,
   };
 }
 
 // Append the embedded preview image as a card with an "analyse this image" hop.
-function appendPreview(resultsEl: HTMLElement, bytes, ext: string, heading) {
+function appendPreview(resultsEl: HTMLElement, bytes: BlobPart, ext: string, heading: string) {
   const mime = 'image/' + (ext === 'jpg' ? 'jpeg' : ext);
   const blob = new Blob([bytes], { type: mime });
   const pcard = el('div', { class: 'anr-card' });
@@ -54,9 +54,9 @@ function appendPreview(resultsEl: HTMLElement, bytes, ext: string, heading) {
   resultsEl.insertBefore(pcard, resultsEl.firstChild);
 }
 
-async function renderKra(file: File, zip, resultsEl: HTMLElement) {
-  let main = null;
-  const mainEntry = zip.entries.find((e) => /(^|\/)maindoc\.xml$/i.test(e.name));
+async function renderKra(file: File, zip: any, resultsEl: HTMLElement) {
+  let main: any = null;
+  const mainEntry = zip.entries.find((e: any) => /(^|\/)maindoc\.xml$/i.test(e.name));
   if (mainEntry) {
     try { const b = await zip.bytes(mainEntry.name); if (b) main = parseKraMain(new TextDecoder().decode(b)); } catch (_) {}
   }
@@ -77,7 +77,7 @@ async function renderKra(file: File, zip, resultsEl: HTMLElement) {
   card.appendChild(tbl);
   resultsEl.appendChild(card);
 
-  const png = zip.entries.find((e) => /(^|\/)mergedimage\.png$/i.test(e.name)) || zip.entries.find((e) => /(^|\/)preview\.png$/i.test(e.name));
+  const png = zip.entries.find((e: any) => /(^|\/)mergedimage\.png$/i.test(e.name)) || zip.entries.find((e: any) => /(^|\/)preview\.png$/i.test(e.name));
   if (png) {
     const bytes = await zip.bytes(png.name).catch(() => null);
     if (bytes) { appendPreview(resultsEl, bytes, 'png', /merged/i.test(png.name) ? 'Merged image' : 'Preview'); return; }
@@ -89,7 +89,7 @@ async function renderKra(file: File, zip, resultsEl: HTMLElement) {
 // Procreate document.archive is an NSKeyedArchiver binary plist; the canvas size
 // is stored as a "{width, height}" string somewhere in the object graph. Pull it
 // out best-effort without modelling the whole archive.
-function findSizeToken(node, seen) {
+function findSizeToken(node: any, seen: WeakSet<WeakKey>): string {
   if (node == null) return '';
   if (typeof node === 'string') return /^\{\s*\d+(\.\d+)?\s*,\s*\d+(\.\d+)?\s*\}$/.test(node) ? node : '';
   if (typeof node !== 'object') return '';
@@ -99,7 +99,7 @@ function findSizeToken(node, seen) {
   return '';
 }
 
-async function renderProcreate(file: File, zip, resultsEl: HTMLElement) {
+async function renderProcreate(file: File, zip: ZipHandle, resultsEl: HTMLElement) {
   let size = '';
   const archive = zip.entries.find((e) => /(^|\/)document\.archive$/i.test(e.name));
   if (archive) {
@@ -129,7 +129,7 @@ async function renderProcreate(file: File, zip, resultsEl: HTMLElement) {
   resultsEl.appendChild(integrityCard(file));
 }
 
-function b64ToBytes(s) {
+function b64ToBytes(s: string) {
   const bin = atob(s);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
@@ -147,7 +147,7 @@ async function renderPdn(file: File, resultsEl: HTMLElement) {
   const xmlLen = head[4] | (head[5] << 8) | (head[6] << 16);
   let xml = '';
   try { xml = new TextDecoder('utf-8').decode(new Uint8Array(await file.slice(7, 7 + xmlLen).arrayBuffer())); } catch (_) {}
-  const attr = (n) => (xml.match(new RegExp(n + '="([^"]*)"')) || [])[1] || '';
+  const attr = (n: string) => (xml.match(new RegExp(n + '="([^"]*)"')) || [])[1] || '';
   const width = attr('width'), height = attr('height'), layers = attr('layers'), ver = attr('savedWithVersion');
 
   resultsEl.innerHTML = '';

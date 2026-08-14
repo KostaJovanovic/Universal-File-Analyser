@@ -16,7 +16,7 @@
 // GIF LZW decompressor (the standard prefix/suffix/stack variant). Decodes the
 // concatenated image sub-blocks `data` into `output` (palette indices), filling
 // exactly `npix` pixels. Adapted from the well-known omggif algorithm.
-function lzwDecode(minCodeSize, data, output, npix) {
+function lzwDecode(minCodeSize: number, data: Uint8Array, output: Uint8Array, npix: number) {
   const MAX = 4096;
   const nullCode = -1;
   const prefix = new Int16Array(MAX);
@@ -82,14 +82,14 @@ function lzwDecode(minCodeSize, data, output, npix) {
   for (; pi < npix; pi++) output[pi] = 0;
 }
 
-function readPalette(bytes, off, count) {
+function readPalette(bytes: Uint8Array, off: number, count: number) {
   const pal = new Array(count);
   for (let i = 0; i < count; i++) { const o = off + i * 3; pal[i] = [bytes[o], bytes[o + 1], bytes[o + 2]]; }
   return pal;
 }
 
 // Storage-order -> actual-row map for the four GIF interlace passes.
-function interlaceRows(ih) {
+function interlaceRows(ih: number) {
   const rows = new Int32Array(ih);
   let n = 0;
   for (let y = 0; y < ih; y += 8) rows[n++] = y;
@@ -101,10 +101,10 @@ function interlaceRows(ih) {
 
 // Composite one decoded sub-image (palette indices) onto the persistent RGBA
 // canvas at (ix,iy), skipping the transparent index and clipping to bounds.
-function drawFrame(canvas, W, H, indices, palette, ix, iy, iw, ih, interlace, transIdx) {
+function drawFrame(canvas: Uint8ClampedArray, W: number, H: number, indices: Uint8Array, palette: number[][], ix: number, iy: number, iw: number, ih: number, interlace: boolean, transIdx: number) {
   const rows = interlace ? interlaceRows(ih) : null;
   for (let r = 0; r < ih; r++) {
-    const y = iy + (interlace ? rows[r] : r);
+    const y = iy + (rows ? rows[r] : r);
     if (y < 0 || y >= H) continue;
     const rowBase = r * iw;
     for (let c = 0; c < iw; c++) {
@@ -121,7 +121,7 @@ function drawFrame(canvas, W, H, indices, palette, ix, iy, iw, ih, interlace, tr
 }
 
 // Clear a rectangle back to fully-transparent (disposal method 2).
-function clearRect(canvas, W, H, ix, iy, iw, ih) {
+function clearRect(canvas: Uint8ClampedArray, W: number, H: number, ix: number, iy: number, iw: number, ih: number) {
   for (let y = iy; y < iy + ih; y++) {
     if (y < 0 || y >= H) continue;
     for (let x = ix; x < ix + iw; x++) {
@@ -139,7 +139,7 @@ function clearRect(canvas, W, H, ix, iy, iw, ih) {
 //     get(idx) -> Promise<Uint8ClampedArray /*RGBA*/>, close() }
 // or null if the bytes aren't a GIF. `budget` is the retained decoded-pixel cache
 // window (width*height*frames): the LRU keeps at most floor(budget/(w*h)) frames.
-export function decodeGifFrames(buffer, budget = 120e6) {
+export function decodeGifFrames(buffer: ArrayBuffer, budget = 120e6) {
   const bytes = new Uint8Array(buffer);
   if (bytes.length < 13 || bytes[0] !== 0x47 || bytes[1] !== 0x49 || bytes[2] !== 0x46) return null;
   const dv = new DataView(buffer);
@@ -154,7 +154,7 @@ export function decodeGifFrames(buffer, budget = 120e6) {
   if (gctSize) { gct = readPalette(bytes, pos, gctSize); pos += gctSize * 3; }
 
   // Frame table: one lightweight record per frame (no pixels decoded yet).
-  const table = [];
+  const table: any[] = [];
   let gce = { delay: 0, transparentIndex: -1, disposal: 0 };
   let loop = null;
   let anyTransparency = false;
@@ -230,7 +230,7 @@ export function decodeGifFrames(buffer, budget = 120e6) {
   const entry = new Map();                                  // keyframe idx -> canvas ENTERING that frame
   entry.set(0, new Uint8ClampedArray(stride));             // frame 0 starts fully transparent
 
-  const lruPut = (idx, data) => {
+  const lruPut = (idx: number, data: Uint8ClampedArray) => {
     if (lru.has(idx)) lru.delete(idx);
     lru.set(idx, data);
     if (lru.size > L) lru.delete(lru.keys().next().value);   // evict oldest
@@ -238,7 +238,7 @@ export function decodeGifFrames(buffer, budget = 120e6) {
 
   // Composite frame `idx`, replaying forward from the nearest keyframe. Caches every
   // frame produced along the way plus keyframe snapshots at each K boundary.
-  const compose = (idx) => {
+  const compose = (idx: number) => {
     if (lru.has(idx)) { const d = lru.get(idx); lru.delete(idx); lru.set(idx, d); return d; }
     let s = Math.floor(idx / K) * K;
     while (!entry.has(s)) s -= K;                            // 0 is always present
@@ -262,12 +262,12 @@ export function decodeGifFrames(buffer, budget = 120e6) {
     return result;
   };
 
-  const clamp = (i) => Math.max(0, Math.min(count - 1, i | 0));
+  const clamp = (i: number) => Math.max(0, Math.min(count - 1, i | 0));
   const delaysMs = table.map((f) => { const ms = f.delay * 10; return ms < 20 ? 100 : ms; });
 
   return {
     width, height, count, loop, anyTransparency, delaysMs,
-    get: (idx) => Promise.resolve(compose(clamp(idx))),
+    get: (idx: number) => Promise.resolve(compose(clamp(idx))),
     close() { lru.clear(); entry.clear(); },
   };
 }

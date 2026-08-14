@@ -1832,7 +1832,7 @@ const ANDROID_API = {
     31: '12', 32: '12L', 33: '13', 34: '14', 35: '15', 36: '16',
 };
 function androidApiLabel(v) {
-    const n = parseInt(v, 10);
+    const n = parseInt(String(v), 10);
     if (isNaN(n))
         return String(v);
     return 'API ' + n + (ANDROID_API[n] ? ' (Android ' + ANDROID_API[n] + ')' : '');

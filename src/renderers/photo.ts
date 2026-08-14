@@ -7,7 +7,7 @@
    - On-device OCR via lazy-loaded Tesseract.js with language picker
    - SHA-256 file hash */
 
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, cloudFileWarning, errorCard, attachZoomPan, openOverlayBack, timeAnomalies, timeAnomalyCard, downloadBlob, inlineLoader, afterPaint, yieldToMain, setPlayerFill } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, cloudFileWarning, errorCard, attachZoomPan, openOverlayBack, timeAnomalies, timeAnomalyCard, downloadBlob, inlineLoader, afterPaint, yieldToMain, setPlayerFill, type ElChild, type Drawable} from '../core/util.js';
 import { HEIC_EXTS, RAW_EXTS } from '../core/formats.js';
 import { convertHeic, extractRawPreview, convertWithImageMagick, demosaicRaw, extractRawJpegs, extractX3fPreview } from './photo-convert.js';
 import { ascii, latin1, utf8, inflate, findBytes, hexByte, hexBytes } from '../core/binutil.js';
@@ -34,7 +34,7 @@ import { buildAiSignalsCard } from './ai-signals.js';
 // video path, plus whatever metadata exifr can still read from the bytes -
 // rather than a bare "couldn't load" error. Keyed by lowercase extension; the
 // generic message covers anything not listed.
-const UNDISPLAYABLE_IMAGES = {
+const UNDISPLAYABLE_IMAGES: Record<string, string> = {
   jxl: 'JPEG XL',
   tif: 'TIFF', tiff: 'TIFF',
   jp2: 'JPEG 2000', j2k: 'JPEG 2000', jpf: 'JPEG 2000', jpx: 'JPEG 2000', jpc: 'JPEG 2000', j2c: 'JPEG 2000',
@@ -73,16 +73,16 @@ function rawUndecodableBanner() {
 // photo analysis (opts.salvaged stops that re-render from looping back here).
 
 // Probe whether a Blob/File decodes as an image in this browser (resolves boolean).
-function imageDecodes(url) {
-  return new Promise((res) => { const im = new Image(); im.onload = () => res(true); im.onerror = () => res(false); im.src = url; });
+function imageDecodes(url: string) {
+  return new Promise<boolean>((res) => { const im = new Image(); im.onload = () => res(true); im.onerror = () => res(false); im.src = url; });
 }
-function rgbaToCanvas(rgba, w, h) {
+function rgbaToCanvas(rgba: Uint8Array|Uint8ClampedArray, w: number, h: number) {
   const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-  cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), w, h), 0, 0);
+  cv.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer as ArrayBuffer, rgba.byteOffset, rgba.length), w, h), 0, 0);
   return cv;
 }
-function canvasToPngFile(cv, name) {
-  return new Promise((res) => cv.toBlob((b) => res(b ? new File([b], name, { type: 'image/png' }) : null), 'image/png'));
+function canvasToPngFile(cv: HTMLCanvasElement, name: string) {
+  return new Promise<File|null>((res) => cv.toBlob((b) => res(b ? new File([b], name, { type: 'image/png' }) : null), 'image/png'));
 }
 
 // Cheap gate: does the browser's decode look anything other than a clean photo? A
@@ -91,14 +91,14 @@ function canvasToPngFile(cv, name) {
 // file and we can skip the (expensive) authoritative tolerant re-decode. Draw small,
 // then flag any meaningful grey fill or high-chroma saturation. False alarms only cost
 // the confirm step (which then finds nothing wrong); it never mislabels a real photo.
-function browserCanvasSuspicious(img) {
+function browserCanvasSuspicious(img: Drawable) {
   try {
     const nw = img.naturalWidth || 0, nh = img.naturalHeight || 0;
     if (!nw || !nh) return true;
     const s = Math.min(1, 384 / Math.max(nw, nh));
     const w = Math.max(1, Math.round(nw * s)), h = Math.max(1, Math.round(nh * s));
     const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-    const ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+    const ctx = cv.getContext('2d')!; ctx.drawImage(img, 0, 0, w, h);
     const d = ctx.getImageData(0, 0, w, h).data, total = w * h;
     let grey = 0, garb = 0;
     for (let i = 0; i < d.length; i += 4) {
@@ -111,7 +111,7 @@ function browserCanvasSuspicious(img) {
   } catch (_) { return true; }                          // tainted/unreadable - confirm to be safe
 }
 
-async function renderPhotoRecovery(file: File, bytes, diag, resultsEl: HTMLElement, signal) {
+async function renderPhotoRecovery(file: File, bytes: Uint8Array<ArrayBuffer>, diag: any, resultsEl: HTMLElement, signal: AbortSignal) {
   resultsEl.innerHTML = '';
   const base = (file.name || 'image').replace(/\.[^/.]+$/, '');
 
@@ -142,7 +142,7 @@ async function renderPhotoRecovery(file: File, bytes, diag, resultsEl: HTMLEleme
 
   // Show a recovered File: preview (if the browser can paint it), a download, and a
   // CTA to run the full photo analysis on it.
-  async function present(recoveredFile, note, extra?) {
+  async function present(recoveredFile: File, note: ElChild | ElChild[], extra?: Node[]|null) {
     if (signal.aborted) return;
     const url = URL.createObjectURL(recoveredFile);
     const ok = await imageDecodes(url);
@@ -212,12 +212,12 @@ async function renderPhotoRecovery(file: File, bytes, diag, resultsEl: HTMLEleme
       // lower picture is saturated colour-block noise. Show that raw decode (it's what a
       // system viewer paints) but say plainly how much is the real image and that the
       // rest is decoder noise, not the actual photo.
-      if (dec && dec.corrupt && dec.realRows > 0) {
+      if (dec && dec.corrupt && dec.realRows! > 0) {
         const cv = rgbaToCanvas(dec.data, dec.width, dec.height);
         const f = await canvasToPngFile(cv, base + '.recovered.png');
         if (f) {
-          const pct = Math.round((dec.realRows / dec.height) * 100);
-          await present(f, 'The top ' + pct + '% of this picture (' + dec.realRows.toLocaleString() + ' of ' + dec.height.toLocaleString() + ' rows) is the real image. Below the break the JPEG scan is corrupt - what shows there is decoder noise from the dead data, not the real photo, and the lost part cannot be recovered.');
+          const pct = Math.round((dec.realRows! / dec.height) * 100);
+          await present(f, 'The top ' + pct + '% of this picture (' + dec.realRows!.toLocaleString() + ' of ' + dec.height.toLocaleString() + ' rows) is the real image. Below the break the JPEG scan is corrupt - what shows there is decoder noise from the dead data, not the real photo, and the lost part cannot be recovered.');
           return;
         }
       }
@@ -235,7 +235,7 @@ async function renderPhotoRecovery(file: File, bytes, diag, resultsEl: HTMLEleme
     } catch (_) {}
     const rep = repairJpeg(bytes);
     if (rep.ok && !rep.needsReference && rep.data) {
-      const f = new File([rep.data], base + '.recovered.jpg', { type: 'image/jpeg' });
+      const f = new File([rep.data as BlobPart], base + '.recovered.jpg', { type: 'image/jpeg' });
       await present(f, 'Recovered - ' + rep.actions.join('; ').replace(/^(.)/, (m) => m.toLowerCase()) + '. The decodable part of the picture is shown; any cut-off region appears blank.');
       return;
     }
@@ -332,13 +332,13 @@ async function renderPhotoRecovery(file: File, bytes, diag, resultsEl: HTMLEleme
   // never waits on them (carve-gallery.js).
   const gallery = createCarveGallery();
   gallery.grid.style.marginTop = '10px';
-  const MIME = { jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
+  const MIME: Record<string, string> = { jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
   for (let k = 0; k < carved.length; k++) {
     const c = carved[k];
     let sub = bytes.subarray(c.start, c.end);
     if (c.format === 'jpeg') {
-      const r = repairJpeg(sub); if (r.data) sub = r.data;   // append EOI to a cut-off carve
-      sub = ensureJpegHuffman(sub);                          // graft standard tables onto a tableless MJPEG frame
+      const r = repairJpeg(sub); if (r.data) sub = r.data as Uint8Array<ArrayBuffer>;   // append EOI to a cut-off carve
+      sub = ensureJpegHuffman(sub) as Uint8Array<ArrayBuffer>;   // graft standard tables onto a tableless MJPEG frame
     }
     const cf = new File([sub], 'carved_' + (k + 1) + '.' + c.format, { type: MIME[c.format] || 'application/octet-stream' });
     gallery.add({
@@ -349,7 +349,7 @@ async function renderPhotoRecovery(file: File, bytes, diag, resultsEl: HTMLEleme
   out.appendChild(gallery.grid);
 }
 
-async function renderUndisplayableImage(file: File, ext: string, resultsEl: HTMLElement, bannerNode?) {
+async function renderUndisplayableImage(file: File, ext: string, resultsEl: HTMLElement, bannerNode?: HTMLDivElement|undefined) {
   resultsEl.appendChild(bannerNode || undecodableImageBanner(ext));
   const info = el('div', { class: 'anr-card' });
   info.appendChild(el('h3', {}, 'File info'));
@@ -428,19 +428,19 @@ export const TESSERACT_LANGS = [
 
 // Tesseract langPath for a code: bundled English loads locally (offline); every
 // other language streams from the CDN (then the service worker caches it).
-export function ocrLangPath(code) {
+export function ocrLangPath(code: string) {
   return LOCAL_OCR_LANGS.has(code) ? 'assets/vendor/tesseract' : TESS_CDN_LANGPATH;
 }
 
 // Where the trained-data file for a language lives (used both to load it and to
 // check whether it has already been downloaded into the cache).
-function ocrLangDataUrl(code) {
+function ocrLangDataUrl(code: string) {
   return ocrLangPath(code) + '/' + code + '.traineddata.gz';
 }
 
 // Has this language's trained data already been downloaded (cached by the
 // service worker)? Bundled English is always available offline.
-async function ocrLangCached(code) {
+async function ocrLangCached(code: string) {
   if (LOCAL_OCR_LANGS.has(code)) return true;
   if (typeof caches === 'undefined') return false;
   try {
@@ -454,7 +454,7 @@ async function ocrLangCached(code) {
 // Size/status span for a language menu item. Languages already available offline
 // (bundled or previously cached) show nothing - just the language name. Only
 // languages that still need fetching show a "[size · download]" hint.
-function ocrLangSizeSpan(code, size) {
+function ocrLangSizeSpan(code: string, size: string) {
   const span = el('span', { class: 'anr-dropdown-item-size' }, '');
   ocrLangCached(code).then((cached) => {
     if (LOCAL_OCR_LANGS.has(code) || cached) {
@@ -470,7 +470,7 @@ function ocrLangSizeSpan(code, size) {
 // inline image picker (e.g. the PDF page-OCR popup). Same language menu as the
 // image OCR dropdown. Resolves with the chosen Tesseract code, or null if the
 // user cancels (Esc / backdrop / Cancel).
-let _sessionOcrLang = null;
+let _sessionOcrLang: string|null = null;
 
 // What OCR is and its caveats - shown via the "?" button in the language picker.
 const OCR_HELP_HTML = '<strong>Optical Character Recognition</strong> scans the image for text using <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a>, an open-source OCR engine running entirely in your browser.<br><br><strong>How it works:</strong> the image is upscaled if needed, then Tesseract looks for letter-shaped patterns, groups them into words and lines, and assigns a confidence score to each word. Words below 60% confidence are filtered out to reduce noise.<br><br><strong>Limitations:</strong> Tesseract was designed for scanned documents - clean text on plain backgrounds. On photos it will often hallucinate text from textures, foliage, buildings, or noise. Handwriting, stylised fonts, low contrast, small text, and rotated or curved text all reduce accuracy significantly. Results are best on screenshots, signs, printed labels, and document photos.';
@@ -479,7 +479,7 @@ export function pickOcrLanguage(opts: any = {}) {
   // Once "Remember for this session" is ticked, skip the popup and reuse that
   // language for every OCR until the page is reloaded.
   if (_sessionOcrLang) return Promise.resolve(_sessionOcrLang);
-  return new Promise((resolve) => {
+  return new Promise<string|null>((resolve) => {
     let selected = 'eng';
     const remember = el('input', { type: 'checkbox' });
     const backdrop = el('div', { class: 'anr-ocr-lang', role: 'dialog', 'aria-modal': 'true' });
@@ -493,7 +493,7 @@ export function pickOcrLanguage(opts: any = {}) {
       'Pick the language of the text - English works offline; others download once, then stay cached.');
     panel.appendChild(hintP);
     const list = el('ul', { class: 'anr-ocr-lang-list' });
-    const items = [];
+    const items: HTMLLIElement[] = [];
     for (const [code, name, size] of TESSERACT_LANGS) {
       const item = el('li', { class: 'anr-dropdown-item' + (code === 'eng' ? ' is-selected' : '') }, [
         el('span', {}, name),
@@ -532,7 +532,7 @@ export function pickOcrLanguage(opts: any = {}) {
     panel.appendChild(el('div', { class: 'anr-ocr-lang-actions' }, [helpBtn, cancelBtn, runBtn]));
     backdrop.appendChild(panel);
 
-    let resultVal = null;
+    let resultVal: string|null = null;
     function finish() {
       backdrop.remove();
       document.removeEventListener('keydown', onKey);
@@ -541,14 +541,14 @@ export function pickOcrLanguage(opts: any = {}) {
     // Pushing a history entry lets the device Back button cancel the picker; the
     // returned closer both hides it and unwinds that entry, whatever the outcome.
     const backClose = openOverlayBack(finish);
-    function close(val) { resultVal = val; backClose(); }
+    function close(val: string|null) { resultVal = val; backClose(); }
     // Run with a language; if "Remember" is ticked, persist it for the session.
-    function confirm(code) {
+    function confirm(code: string) {
       if (remember.checked) _sessionOcrLang = code;
       close(code);
     }
-    const onKey = (e) => { if (e.key === 'Escape') close(null); };
-    head.querySelector('.fmt-overlay-close').addEventListener('click', () => close(null));
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(null); };
+    head.querySelector('.fmt-overlay-close')!.addEventListener('click', () => close(null));
     cancelBtn.addEventListener('click', () => close(null));
     runBtn.addEventListener('click', () => confirm(selected));
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(null); });
@@ -559,9 +559,9 @@ export function pickOcrLanguage(opts: any = {}) {
 }
 
 // ---------- helpers ----------
-function gcd(a, b) { return b ? gcd(b, a % b) : a; }
+function gcd(a: number, b: number): number { return b ? gcd(b, a % b) : a; }
 
-function aspectRatio(w, h) {
+function aspectRatio(w: number, h: number) {
   if (!w || !h) return '-';
   const d = gcd(w, h);
   return `${w / d}:${h / d}  (${(w / h).toFixed(4)})`;
@@ -569,7 +569,7 @@ function aspectRatio(w, h) {
 
 // Decode a blob to its pixel dimensions via a throwaway <img>. Used by the EXIF
 // thumbnail-proportion check; resolves null if the browser can't decode it.
-function decodeImageDims(blob): Promise<{ w: number; h: number } | null> {
+function decodeImageDims(blob: Blob|MediaSource): Promise<{ w: number; h: number } | null> {
   return new Promise((resolve) => {
     const u = URL.createObjectURL(blob);
     const im = new Image();
@@ -587,7 +587,7 @@ const COMMON_ASPECTS = [
   [1, 1], [6, 5], [5, 4], [4, 3], [7, 5], [3, 2], [14, 9], [16, 10],
   [5, 3], [16, 9], [2, 1], [21, 9], [7, 3], [5, 2], [3, 1],
 ];
-function approxAspect(w, h) {
+function approxAspect(w: number, h: number) {
   if (!w || !h) return null;
   const landscape = w >= h;
   const r = landscape ? w / h : h / w;   // normalise to >= 1, re-orient on output
@@ -597,12 +597,12 @@ function approxAspect(w, h) {
     if (err < bestErr) { bestErr = err; best = [a, b]; }
   }
   if (bestErr / r > 0.04) return null;   // nothing standard within ~4%
-  const [a, b] = best;
+  const [a, b] = best!;
   return landscape ? `${a}:${b}` : `${b}:${a}`;
 }
 
 function loadImageFromFile(file: File) {
-  return new Promise((resolve, reject) => {
+  return new Promise<{ img: HTMLImageElement; url: string }>((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => resolve({ img, url });
@@ -612,7 +612,7 @@ function loadImageFromFile(file: File) {
 }
 
 // ---------- exif formatting ----------
-const ORIENTATIONS = {
+const ORIENTATIONS: Record<number, string> = {
   1: 'Normal',
   2: 'Mirrored',
   3: 'Rotated 180°',
@@ -622,19 +622,19 @@ const ORIENTATIONS = {
   7: 'Mirrored + rotated 90° CCW',
   8: 'Rotated 90° CCW'
 };
-const EXP_PROG = { 0:'Not defined',1:'Manual',2:'Program AE',3:'Aperture priority',4:'Shutter priority',5:'Creative',6:'Action',7:'Portrait',8:'Landscape' };
-const METERING = { 0:'Unknown',1:'Average',2:'Centre-weighted',3:'Spot',4:'Multi-spot',5:'Pattern',6:'Partial',255:'Other' };
-const WHITE_BAL = { 0:'Auto',1:'Manual' };
+const EXP_PROG: Record<number, string> = { 0:'Not defined',1:'Manual',2:'Program AE',3:'Aperture priority',4:'Shutter priority',5:'Creative',6:'Action',7:'Portrait',8:'Landscape' };
+const METERING: Record<number, string> = { 0:'Unknown',1:'Average',2:'Centre-weighted',3:'Spot',4:'Multi-spot',5:'Pattern',6:'Partial',255:'Other' };
+const WHITE_BAL: Record<number, string> = { 0:'Auto',1:'Manual' };
 
-function fmtShutter(s) {
+function fmtShutter(s: number|null) {
   if (s == null) return null;
   if (s >= 1) return s + ' s';
   return '1/' + Math.round(1 / s) + ' s';
 }
-function fmtFNumber(n)    { return n != null ? 'f/' + (+n).toFixed(1) : null; }
-function fmtFocal(mm)     { return mm != null ? (+mm).toFixed(1) + ' mm' : null; }
-function fmtExpComp(ev)   { return ev != null ? (ev > 0 ? '+' : '') + (+ev).toFixed(1) + ' EV' : null; }
-function fmtDate(d) {
+function fmtFNumber(n: string|number|null)    { return n != null ? 'f/' + (+n).toFixed(1) : null; }
+function fmtFocal(mm: string|number|null)     { return mm != null ? (+mm).toFixed(1) + ' mm' : null; }
+function fmtExpComp(ev: number|null)   { return ev != null ? (ev > 0 ? '+' : '') + (+ev).toFixed(1) + ' EV' : null; }
+function fmtDate(d: any) {
   if (!d) return null;
   if (d instanceof Date) return d.toISOString().replace('T', ' ').replace(/\..*$/, '');
   return String(d);
@@ -645,7 +645,7 @@ function fmtDate(d) {
 // just past the "Exif\0\0" tag in the APP1 segment, since a JPEG's maker-note
 // offsets are relative to that embedded TIFF header rather than the file start.
 // Returns -1 if neither is found.
-function tiffBaseOf(buf) {
+function tiffBaseOf(buf: ArrayBuffer) {
   const dv = new DataView(buf), len = buf.byteLength;
   if (len < 4) return -1;
   const b0 = dv.getUint16(0, false);
@@ -680,7 +680,7 @@ function tiffBaseOf(buf) {
 // layout from yielding a bogus number rather than nothing. Works on both RAW
 // (ARW/SR2) and JPEG; `buf` is the file's ArrayBuffer. Returns the count, or null
 // if the file isn't laid out as expected, so we never show a guessed number.
-function sonyShutterCount(buf) {
+function sonyShutterCount(buf: ArrayBuffer) {
   try {
     const base = tiffBaseOf(buf);
     if (base < 0) return null;
@@ -690,12 +690,12 @@ function sonyShutterCount(buf) {
     const bo = dv.getUint16(base, false);
     const le = bo === 0x4949;                 // 'II' little-endian; 'MM' big-endian
     if (!le && bo !== 0x4D4D) return null;
-    const u16 = (o) => (o >= 0 && o + 2 <= len ? dv.getUint16(o, le) : -1);
-    const u32 = (o) => (o >= 0 && o + 4 <= len ? dv.getUint32(o, le) : -1);
+    const u16 = (o: number) => (o >= 0 && o + 2 <= len ? dv.getUint16(o, le) : -1);
+    const u32 = (o: number) => (o >= 0 && o + 4 <= len ? dv.getUint32(o, le) : -1);
     if (u16(base + 2) !== 42) return null;    // TIFF magic
-    const TS = { 1:1, 2:1, 3:2, 4:4, 5:8, 6:1, 7:1, 8:2, 9:4, 10:8, 11:4, 12:8 };
+    const TS: Record<number, number> = { 1:1, 2:1, 3:2, 4:4, 5:8, 6:1, 7:1, 8:2, 9:4, 10:8, 11:4, 12:8 };
     // `ifd` is an absolute file position; stored offsets are relative to `base`.
-    const findEntry = (ifd, tag) => {
+    const findEntry = (ifd: number, tag: number) => {
       if (ifd <= 0 || ifd + 2 > len) return null;
       const n = u16(ifd);
       if (n < 0 || n > 4096) return null;
@@ -743,20 +743,20 @@ function sonyShutterCount(buf) {
 // unexpected file yields null rather than a wrong number. Works on RAW (NEF) and
 // JPEG; `buf` is the file's ArrayBuffer. NOTE: validated structurally (synthetic
 // file + the outer/inner offset maths) but not yet against a real Nikon sample.
-function nikonShutterCount(buf) {
+function nikonShutterCount(buf: ArrayBuffer) {
   try {
     const base = tiffBaseOf(buf);
     if (base < 0) return null;
     const dv = new DataView(buf), len = buf.byteLength;
     if (base + 16 > len) return null;
     const oLE = dv.getUint16(base, false) === 0x4949;
-    const ou16 = (o) => (o >= 0 && o + 2 <= len ? dv.getUint16(o, oLE) : -1);
-    const ou32 = (o) => (o >= 0 && o + 4 <= len ? dv.getUint32(o, oLE) : -1);
+    const ou16 = (o: number) => (o >= 0 && o + 2 <= len ? dv.getUint16(o, oLE) : -1);
+    const ou32 = (o: number) => (o >= 0 && o + 4 <= len ? dv.getUint32(o, oLE) : -1);
     if (ou16(base + 2) !== 42) return null;
-    const TS = { 1:1, 2:1, 3:2, 4:4, 5:8, 6:1, 7:1, 8:2, 9:4, 10:8, 11:4, 12:8 };
+    const TS: Record<number, number> = { 1:1, 2:1, 3:2, 4:4, 5:8, 6:1, 7:1, 8:2, 9:4, 10:8, 11:4, 12:8 };
     // Find `tag` in the IFD at absolute position `ifd`; `b` is the TIFF base its
     // stored data offsets are relative to. `valPos` is where the inline value sits.
-    const findEntry = (ifd, tag, u16, u32, b) => {
+    const findEntry = (ifd: number, tag: number, u16: (o: number) => number, u32: (o: number) => number, b: number) => {
       if (ifd <= 0 || ifd + 2 > len) return null;
       const n = u16(ifd);
       if (n < 0 || n > 4096) return null;
@@ -786,8 +786,8 @@ function nikonShutterCount(buf) {
     const iBO = dv.getUint16(tb, false);
     const iLE = iBO === 0x4949;
     if (!iLE && iBO !== 0x4D4D) return null;
-    const iu16 = (o) => (o >= 0 && o + 2 <= len ? dv.getUint16(o, iLE) : -1);
-    const iu32 = (o) => (o >= 0 && o + 4 <= len ? dv.getUint32(o, iLE) : -1);
+    const iu16 = (o: number) => (o >= 0 && o + 2 <= len ? dv.getUint16(o, iLE) : -1);
+    const iu32 = (o: number) => (o >= 0 && o + 4 <= len ? dv.getUint32(o, iLE) : -1);
     if (iu16(tb + 2) !== 42) return null;
     const sc = findEntry(tb + iu32(tb + 4), 0x00A7, iu16, iu32, tb);
     if (!sc) return null;
@@ -797,13 +797,13 @@ function nikonShutterCount(buf) {
 }
 
 // Brand dispatch for the maker-note shutter-count readers above.
-function readShutterCount(buf, make) {
+function readShutterCount(buf: ArrayBuffer, make: string) {
   if (/sony/i.test(make))  return sonyShutterCount(buf);
   if (/nikon/i.test(make)) return nikonShutterCount(buf);
   return null;
 }
 
-function buildExifSections(exif) {
+function buildExifSections(exif: any) {
   if (!exif) return [];
   const sections = [];
 
@@ -873,7 +873,7 @@ function buildExifSections(exif) {
 // Samsung Motion Photo, Ultra HDR gain maps, depth maps - from the parsed EXIF/
 // XMP plus a scan of the file head + tail for the markers/trailers they use.
 // Returns [[label, value], ...]; empty when nothing is found.
-async function detectComputational(file: File, exif) {
+async function detectComputational(file: File, exif: any) {
   const rows = [];
   const ext = (file.name.split('.').pop() || '').toLowerCase();
   let blob = '';
@@ -936,10 +936,10 @@ async function detectLiveVideo(file: File) {
   } catch (_) { return null; }
 
   // Confirm a candidate offset really is the head of an ISO-BMFF clip (`....ftyp`).
-  const confirm = async (start, kind) => {
-    if (!(start > 0 && start < size)) return null;
+  const confirm = async (start: number|undefined, kind: string) => {
+    if (!(start! > 0 && start! < size)) return null;
     try {
-      const p = new Uint8Array(await file.slice(start, start + 12).arrayBuffer());
+      const p = new Uint8Array(await file.slice(start, start! + 12).arrayBuffer());
       if (ascii(p, 4, 4) === 'ftyp') return { start, kind, brand: ascii(p, 8, 4) };
     } catch (_) {}
     return null;
@@ -982,7 +982,7 @@ async function detectLiveVideo(file: File) {
 // Does the carved clip carry a decodable audio track? Probes with the Web Audio
 // decoder so a silent Motion Photo shows a tidy "no audio" note instead of the
 // audio renderer's scary "can't decode this format" card.
-async function liveClipHasAudio(clipFile) {
+async function liveClipHasAudio(clipFile: File) {
   try {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return true; // can't probe - let the audio renderer try
@@ -995,7 +995,7 @@ async function liveClipHasAudio(clipFile) {
 
 // On-demand: carve the trailer with file.slice (no full in-memory copy) and hand it
 // to the real video + audio renderers, each in its own sub-section.
-async function analyseLivePhoto(file: File, found, container) {
+async function analyseLivePhoto(file: File, found: any, container: HTMLDivElement) {
   container.innerHTML = '';
   const isQt = /qt/i.test(found.brand || '') || /Live Photo/i.test(found.kind);
   const clipFile = new File([file.slice(found.start)],
@@ -1034,10 +1034,10 @@ async function analyseLivePhoto(file: File, found, container) {
 // The "Analyse live photo" button (lives beside the preview, like the RAW demosaic
 // button): detects the clip in the background and reveals itself only if one is
 // found; on click it renders the video + audio sections at the foot of the column.
-function wireLivePhotoButton(file: File, previewSlot, resultsEl: HTMLElement, signal) {
+function wireLivePhotoButton(file: File, previewSlot: HTMLElement, resultsEl: HTMLElement, signal: AbortSignal) {
   const btn = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:10px;font-size:11px;width:100%;', hidden: '' }, 'Analyse live photo');
   const slot = el('div', { class: 'anr-live-slot' });
-  let found = null;
+  let found: any = null;
   btn.addEventListener('click', () => {
     if (!found) return;
     btn.disabled = true;
@@ -1060,15 +1060,15 @@ function wireLivePhotoButton(file: File, previewSlot, resultsEl: HTMLElement, si
 // Parse the develop recipe an Adobe (or compatible) raw developer writes into a
 // .xmp sidecar next to a RAW file (crs: = Camera Raw Settings namespace), plus
 // rating / label / keywords. Returns [[label, value], ...] or null.
-function parseDevelopSettings(xmpText) {
+function parseDevelopSettings(xmpText: string) {
   if (!xmpText) return null;
-  const get = (ns, key) => {
+  const get = (ns: string, key: string) => {
     let m = xmpText.match(new RegExp(ns + ':' + key + '\\s*=\\s*"([^"]*)"'));
     if (m) return m[1];
     m = xmpText.match(new RegExp('<' + ns + ':' + key + '>([^<]*)</'));
     return m ? m[1] : null;
   };
-  const crs = (k) => get('crs', k);
+  const crs = (k: string) => get('crs', k);
   const rows = [];
   const sw = get('xmp', 'CreatorTool') || (crs('Version') ? 'Camera Raw ' + crs('Version') : null);
   if (sw) rows.push(['Edited with', sw]);
@@ -1076,16 +1076,16 @@ function parseDevelopSettings(xmpText) {
   if (crs('CameraProfile')) rows.push(['Camera profile', crs('CameraProfile')]);
   const wb = crs('WhiteBalance');
   if (wb) rows.push(['White balance', wb + (crs('Temperature') ? '  (' + crs('Temperature') + 'K, tint ' + (crs('Tint') || '0') + ')' : '')]);
-  const signed = (v) => (Number(v) > 0 ? '+' : '') + v;
+  const signed = (v: string|number) => (Number(v) > 0 ? '+' : '') + v;
   const tone = [['Exposure', 'Exposure2012'], ['Contrast', 'Contrast2012'], ['Highlights', 'Highlights2012'],
     ['Shadows', 'Shadows2012'], ['Whites', 'Whites2012'], ['Blacks', 'Blacks2012']]
     .map(([l, k]) => { const v = crs(k); return v != null ? l + ' ' + signed(v) : null; }).filter(Boolean);
   if (tone.length) rows.push(['Tone', tone.join('  ·  ')]);
   const presence = [['Texture', 'Texture'], ['Clarity', 'Clarity2012'], ['Dehaze', 'Dehaze'],
     ['Vibrance', 'Vibrance'], ['Saturation', 'Saturation']]
-    .map(([l, k]) => { const v = crs(k); return (v != null && v !== '0') ? l + ' ' + signed(v) : null; }).filter(Boolean);
+    .map(([l, k]) => { const v = crs(k); return (v != null && v !== '0') ? l + ' ' + signed(v!) : null; }).filter(Boolean);
   if (presence.length) rows.push(['Presence', presence.join('  ·  ')]);
-  if (crs('HasCrop') === 'True') rows.push(['Crop', 'cropped' + (crs('CropAngle') && crs('CropAngle') !== '0' ? '  (rotated ' + (+crs('CropAngle')).toFixed(1) + '°)' : '')]);
+  if (crs('HasCrop') === 'True') rows.push(['Crop', 'cropped' + (crs('CropAngle') && crs('CropAngle') !== '0' ? '  (rotated ' + (+crs('CropAngle')!).toFixed(1) + '°)' : '')]);
   if (crs('LensProfileEnable') === '1') rows.push(['Lens corrections', 'enabled']);
   const rating = get('xmp', 'Rating');
   if (rating) rows.push(['Rating', '★'.repeat(Math.max(0, Math.min(5, +rating))) + '  (' + rating + ')']);
@@ -1098,7 +1098,7 @@ function parseDevelopSettings(xmpText) {
   return rows.length ? rows : null;
 }
 
-function buildDevelopCard(xmpText, label) {
+function buildDevelopCard(xmpText: string, label: string) {
   const rows = parseDevelopSettings(xmpText);
   const card = el('div', { class: 'anr-card' });
   const [h, helpPanel] = h3help('Develop settings (XMP sidecar)',
@@ -1109,7 +1109,7 @@ function buildDevelopCard(xmpText, label) {
     return card;
   }
   const t = el('table', { class: 'anr-readout' });
-  for (const [k, v, rowHelpText] of rows) t.appendChild(rowHelpText ? rowHelp(k, v, rowHelpText) : row(k, v));
+  for (const [k, v, rowHelpText] of rows) t.appendChild(rowHelpText ? rowHelp(k!, v!, rowHelpText) : row(k!, v!));
   card.appendChild(t);
   return card;
 }
@@ -1136,10 +1136,10 @@ const AI_KEYWORDS = [
   'ai generated', 'ai-generated', 'text2img', 'txt2img', 'img2img',
 ];
 
-function detectAI(exif) {
+function detectAI(exif: any) {
   if (!exif) return null;
   const hints = [];
-  const check = (field, label) => {
+  const check = (field: string, label: string) => {
     if (!field) return;
     const lower = String(field).toLowerCase();
     for (const kw of AI_KEYWORDS) {
@@ -1180,7 +1180,7 @@ function detectAI(exif) {
   return hints.length ? hints : null;
 }
 
-function buildRawDump(exif) {
+function buildRawDump(exif: any) {
   if (!exif) return null;
   const keys = Object.keys(exif).sort();
   const rows = [];
@@ -1199,7 +1199,7 @@ function buildRawDump(exif) {
 // at ISO 100 with a plain-language lighting label - all pure arithmetic over tags
 // the camera already recorded. `meanLuma` (0-255, from the decoded pixels) drives a
 // gentle sanity note when the frame's brightness clearly contradicts the settings.
-function evDescriptor(ev) {
+function evDescriptor(ev: number) {
   if (ev >= 15) return 'snow / sand in sun';
   if (ev === 14) return 'bright sun';
   if (ev === 13) return 'hazy sun';
@@ -1212,9 +1212,9 @@ function evDescriptor(ev) {
   if (ev >= 2) return 'dark indoors';
   return 'night / very low light';
 }
-function opticsRows(exif, meanLuma) {
+function opticsRows(exif: any, meanLuma: number|null) {
   if (!exif) return [];
-  const num = (v) => { const n = (typeof v === 'object' && v !== null) ? NaN : parseFloat(v); return isFinite(n) ? n : NaN; };
+  const num = (v: any) => { const n = (typeof v === 'object' && v !== null) ? NaN : parseFloat(v); return isFinite(n) ? n : NaN; };
   const rows = [];
   const fReal = num(exif.FocalLength);
   const f35 = num(exif.FocalLengthIn35mmFormat);
@@ -1261,7 +1261,7 @@ function opticsRows(exif, meanLuma) {
 // part is a FLAT labelled block (an .anr-readout-section-style sub-heading with its
 // content below), not a disclosure of its own. Returns the same { det, body } shape
 // the call sites already use - `det` is simply a plain div rather than a <details>.
-function advPanel(title, help) {
+function advPanel(title: ElChild | ElChild[], help: string) {
   const det = el('div', { class: 'anr-adv-part' });
   const head = el('div', { class: 'anr-adv-parthead' }, title);
   let panel = null;
@@ -1281,7 +1281,7 @@ function advPanel(title, help) {
 
 // Like h3help, but for a `.anr-readout-section` sub-heading: returns
 // [sectionLabel, panel] with a [?] info button folding helpHtml behind it.
-function sectionHelp(title, helpHtml) {
+function sectionHelp(title: string, helpHtml: string) {
   const wrap = el('div', { class: 'anr-readout-section' });
   wrap.appendChild(document.createTextNode(title + ' '));
   const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
@@ -1296,7 +1296,7 @@ function sectionHelp(title, helpHtml) {
 // alternatives like {'x-default': ...}, an exifr {value: ...} wrapper) or an
 // array into readable text, instead of the "[object Object]" a bare String()
 // would give (e.g. dc:rights copyright often comes through as a lang-alt object).
-function exifText(v) {
+function exifText(v: any): string {
   if (v == null) return '';
   if (Array.isArray(v)) return v.map(exifText).filter(Boolean).join(', ');
   if (typeof v === 'object') {
@@ -1309,11 +1309,11 @@ function exifText(v) {
   return String(v);
 }
 
-function privacyRows(exif) {
+function privacyRows(exif: any) {
   if (!exif) return [];
-  const rows = [];
-  const cap = (v) => { const s = exifText(v); return s.length > 90 ? s.slice(0, 90) + '…' : s; };
-  const push = (label, val) => { const s = cap(val); if (s) rows.push([label, s]); };
+  const rows: [string, string][] = [];
+  const cap = (v: any) => { const s = exifText(v); return s.length > 90 ? s.slice(0, 90) + '…' : s; };
+  const push = (label: string, val: any) => { const s = cap(val); if (s) rows.push([label, s]); };
   if (Number.isFinite(exif.latitude) && Number.isFinite(exif.longitude) && !(exif.latitude === 0 && exif.longitude === 0))
     push('GPS location', exif.latitude.toFixed(5) + ', ' + exif.longitude.toFixed(5));
   push('Camera serial', exif.SerialNumber || exif.BodySerialNumber || exif.InternalSerialNumber || exif.CameraSerialNumber);
@@ -1339,7 +1339,7 @@ function privacyRows(exif) {
 // onto a clean 0-100 score.
 const SHARP_K = 0.35; // curve steepness - the one tuning knob (see score map below)
 
-function computeSharpness(imgData) {
+function computeSharpness(imgData: ImageData) {
   const w = imgData.width, h = imgData.height, d = imgData.data;
   const gray = new Float32Array(w * h);
   let lumSum = 0, lumSqSum = 0;
@@ -1370,7 +1370,7 @@ function computeSharpness(imgData) {
   return Math.round(100 * (1 - Math.exp(-SHARP_K * ratio)));
 }
 
-function sharpnessLabel(v) {
+function sharpnessLabel(v: number) {
   if (v >= 80) return 'very sharp';
   if (v >= 60) return 'sharp';
   if (v >= 40) return 'normal';
@@ -1378,7 +1378,7 @@ function sharpnessLabel(v) {
   return 'blurry';
 }
 
-function detectFocusRegion(imgData, gridSize) {
+function detectFocusRegion(imgData: ImageData, gridSize: number) {
   const w = imgData.width, h = imgData.height, d = imgData.data;
   const gray = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) gray[i] = 0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2];
@@ -1407,7 +1407,7 @@ function detectFocusRegion(imgData, gridSize) {
 }
 
 // ---------- color statistics ----------
-function computeColorStats(imgData) {
+function computeColorStats(imgData: ImageData) {
   const d = imgData.data, total = imgData.width * imgData.height;
   let rSum = 0, gSum = 0, bSum = 0, shadows = 0, midtones = 0, highlights = 0;
   for (let i = 0; i < d.length; i += 4) {
@@ -1426,12 +1426,12 @@ function computeColorStats(imgData) {
 }
 
 // ---------- perceptual hash (pHash) ----------
-function computePHash(img) {
+function computePHash(img: Drawable) {
   const S = 32;
   const cv = document.createElement('canvas');
   cv.width = S; cv.height = S;
-  cv.getContext('2d').drawImage(img, 0, 0, S, S);
-  const d = cv.getContext('2d').getImageData(0, 0, S, S).data;
+  cv.getContext('2d')!.drawImage(img, 0, 0, S, S);
+  const d = cv.getContext('2d')!.getImageData(0, 0, S, S).data;
   const gray = new Float64Array(S * S);
   for (let i = 0; i < S * S; i++) gray[i] = 0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2];
   const dct = new Float64Array(S * S);
@@ -1459,7 +1459,7 @@ function computePHash(img) {
 }
 
 // ---------- QR code detection ----------
-async function detectQrCode(img) {
+async function detectQrCode(img: Drawable) {
   await loadScript(JSQR_URL);
   if (!window.jsQR) return null;
   const MAX = 800;
@@ -1467,25 +1467,25 @@ async function detectQrCode(img) {
   const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
-  cv.getContext('2d').drawImage(img, 0, 0, w, h);
-  return window.jsQR(cv.getContext('2d').getImageData(0, 0, w, h).data, w, h);
+  cv.getContext('2d')!.drawImage(img, 0, 0, w, h);
+  return window.jsQR(cv.getContext('2d')!.getImageData(0, 0, w, h).data, w, h);
 }
 
 // Pretty-print a BarcodeDetector format id (e.g. 'ean_13' -> 'EAN-13').
-function fmtCodeFormat(f) {
-  const map = {
+function fmtCodeFormat(f: string|number) {
+  const map: Record<string, string> = {
     qr_code: 'QR code', micro_qr_code: 'Micro QR', rm_qr_code: 'rMQR',
     aztec: 'Aztec', data_matrix: 'Data Matrix', pdf417: 'PDF417', maxi_code: 'MaxiCode',
     ean_13: 'EAN-13', ean_8: 'EAN-8', upc_a: 'UPC-A', upc_e: 'UPC-E',
     code_128: 'Code 128', code_39: 'Code 39', code_93: 'Code 93', codabar: 'Codabar', itf: 'ITF', dx_film_edge: 'DX film edge',
   };
-  return map[f] || String(f || 'Barcode').replace(/_/g, ' ').toUpperCase();
+  return map[String(f)] || String(f || 'Barcode').replace(/_/g, ' ').toUpperCase();
 }
 
 // Detect every 1D/2D code in the image: native BarcodeDetector (many formats,
 // Chromium/Android) first, with the vendored jsQR as a QR fallback for browsers
 // without it. Returns a de-duplicated [{ format, data }].
-async function detectCodes(img) {
+async function detectCodes(img: Drawable) {
   const results = [];
   try {
     if ('BarcodeDetector' in window) {
@@ -1502,19 +1502,19 @@ async function detectCodes(img) {
 }
 
 // ---------- histogram + palette ----------
-function getPixelData(img) {
+function getPixelData(img: Drawable) {
   const MAX = 240;
   const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
   const w = Math.max(1, Math.round(img.naturalWidth * scale));
   const h = Math.max(1, Math.round(img.naturalHeight * scale));
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
-  const c = cv.getContext('2d', { willReadFrequently: true });
+  const c = cv.getContext('2d', { willReadFrequently: true })!;
   c.drawImage(img, 0, 0, w, h);
   return c.getImageData(0, 0, w, h);
 }
 
-function computeHistogram(imgData) {
+function computeHistogram(imgData: ImageData) {
   const r = new Uint32Array(256), g = new Uint32Array(256), b = new Uint32Array(256), l = new Uint32Array(256);
   const d = imgData.data;
   for (let i = 0; i < d.length; i += 4) {
@@ -1525,9 +1525,9 @@ function computeHistogram(imgData) {
   return { r, g, b, l };
 }
 
-function renderHistogram(canvas, hist) {
+function renderHistogram(canvas: HTMLCanvasElement, hist: any) {
   const w = canvas.width, h = canvas.height;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d')!;
   ctx.fillStyle = '#1a1a1a';
   ctx.fillRect(0, 0, w, h);
 
@@ -1574,7 +1574,7 @@ function renderHistogram(canvas, hist) {
 
 // Tiny color quantizer: bin into an 8-level-per-channel cube (512 buckets, STEP 32),
 // sort by population, merge near duplicates.
-function dominantColors(imgData, n = 8) {
+function dominantColors(imgData: ImageData, n = 8) {
   const d = imgData.data;
   const STEP = 32;
   const map = new Map();
@@ -1586,7 +1586,7 @@ function dominantColors(imgData, n = 8) {
     map.set(k, (map.get(k) || 0) + 1);
   }
   const entries = [...map.entries()].sort((a, b) => b[1] - a[1]);
-  const out = [];
+  const out: { r: number; g: number; b: number; count: number }[] = [];
   for (const [k, count] of entries) {
     const r = (k >> 16) & 255;
     const g = (k >> 8)  & 255;
@@ -1599,13 +1599,13 @@ function dominantColors(imgData, n = 8) {
   return out;
 }
 
-function toHex(c) {
+function toHex(c: { r: number; g: number; b: number }) {
   const h = hexByte;
   return '#' + h(c.r) + h(c.g) + h(c.b);
 }
 
 // ---------- GPS / Leaflet (lazy) ----------
-async function makeMap(container, lat, lon, label) {
+async function makeMap(container: HTMLDivElement, lat: number, lon: number, label: string) {
   try {
     await loadCss(LEAFLET_CSS);
     await loadScript(LEAFLET_JS);
@@ -1626,7 +1626,7 @@ async function makeMap(container, lat, lon, label) {
 }
 
 // ---------- OCR (lazy) ----------
-function prepareOcrCanvas(img) {
+function prepareOcrCanvas(img: Drawable) {
   const MIN_DIM = 2000;
   let w = img.naturalWidth, h = img.naturalHeight;
   const scale = Math.max(1, MIN_DIM / Math.min(w, h));
@@ -1634,7 +1634,7 @@ function prepareOcrCanvas(img) {
   h = Math.round(h * scale);
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
-  const ctx = cv.getContext('2d');
+  const ctx = cv.getContext('2d')!;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, 0, 0, w, h);
@@ -1647,7 +1647,7 @@ async function ensureTesseract() {
   return window.Tesseract;
 }
 
-function makeOcrCard(file: File, img) {
+function makeOcrCard(file: File, img: Drawable) {
   const card = el('div', { class: 'anr-card' });
   const det = el('details');
   // The "?" help now lives in the language picker popup (see pickOcrLanguage).
@@ -1660,7 +1660,7 @@ function makeOcrCard(file: File, img) {
   // rescale. Building it here charged that to every photo load for a feature that
   // sits behind a button, so build it on first run instead. Cached after that, so
   // a second run reuses it.
-  let ocrCanvas = null;
+  let ocrCanvas: HTMLCanvasElement|null = null;
   const ocrInputFor = () => {
     if (!img) return file;
     if (!ocrCanvas) ocrCanvas = prepareOcrCanvas(img);
@@ -1679,9 +1679,9 @@ function makeOcrCard(file: File, img) {
   progressWrap.appendChild(progressLabel);
   detContent.appendChild(progressWrap);
 
-  function setBar(frac) {
+  function setBar(frac: number) {
     const ch = parseFloat(getComputedStyle(progressBar).fontSize) * 0.6 || 8;
-    const total = Math.max(10, Math.floor((progressBar.parentElement.clientWidth - ch * 2) / ch));
+    const total = Math.max(10, Math.floor((progressBar.parentElement!.clientWidth - ch * 2) / ch));
     const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
     progressBar.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' + ' '.repeat(total - filled) + ']';
   }
@@ -1690,7 +1690,7 @@ function makeOcrCard(file: File, img) {
   detContent.appendChild(out);
 
   let busy = false;
-  let activeWorker = null;
+  let activeWorker: any = null;
 
   async function run() {
     if (busy) return;
@@ -1704,7 +1704,7 @@ function makeOcrCard(file: File, img) {
     setBar(0);
     progressLabel.textContent = 'starting…';
 
-    const setProgress = (m) => {
+    const setProgress = (m: any) => {
       if (m && m.progress != null) {
         const status = m.status || 'working';
         const isRecognising = status === 'recognizing text';
@@ -1728,7 +1728,7 @@ function makeOcrCard(file: File, img) {
       const MIN_CONF = 60;
       const MIN_WORD_LEN = 2;
       const words = (r.data && r.data.words) || [];
-      const good = words.filter(w => w.confidence >= MIN_CONF && w.text.trim().length >= MIN_WORD_LEN);
+      const good = words.filter((w: any) => w.confidence >= MIN_CONF && w.text.trim().length >= MIN_WORD_LEN);
       if (good.length === 0) {
         out.textContent = '(no text detected)';
       } else {
@@ -1775,10 +1775,10 @@ function makeOcrCard(file: File, img) {
 }
 
 // ---------- LSB steganography planes ----------
-function makeLsbPlane(srcData, w, h, offset, bit = 0) {
+function makeLsbPlane(srcData: ImageDataArray, w: number, h: number, offset: number, bit = 0) {
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
-  const ctx = cv.getContext('2d');
+  const ctx = cv.getContext('2d')!;
   const out = ctx.createImageData(w, h);
   const od = out.data;
   for (let i = 0; i < w * h; i++) {
@@ -1789,7 +1789,7 @@ function makeLsbPlane(srcData, w, h, offset, bit = 0) {
   return cv;
 }
 
-function renderLsbPlanes(img, container) {
+function renderLsbPlanes(img: Drawable, container: HTMLDivElement) {
   const MAX_W = 400;
   const scale = Math.min(1, MAX_W / img.naturalWidth);
   const w = Math.max(1, Math.round(img.naturalWidth * scale));
@@ -1797,7 +1797,7 @@ function renderLsbPlanes(img, container) {
 
   const srcCv = document.createElement('canvas');
   srcCv.width = w; srcCv.height = h;
-  const srcCtx = srcCv.getContext('2d', { willReadFrequently: true });
+  const srcCtx = srcCv.getContext('2d', { willReadFrequently: true })!;
   srcCtx.drawImage(img, 0, 0, w, h);
   const srcData = srcCtx.getImageData(0, 0, w, h).data;
 
@@ -1815,15 +1815,15 @@ function renderLsbPlanes(img, container) {
   // Which bit plane is on show (0 = LSB, 7 = MSB). The classic steganalysis view is
   // the LSB, but hidden data occasionally lives higher up, so all eight are browsable.
   let currentBit = 0;
-  const bitLabel = (b) => 'bit ' + b + (b === 0 ? ' (LSB)' : (b === 7 ? ' (MSB)' : ''));
+  const bitLabel = (b: number) => 'bit ' + b + (b === 0 ? ' (LSB)' : (b === 7 ? ' (MSB)' : ''));
 
   // Full-resolution planes are built lazily on lightbox open, cached per bit.
   const fullByBit: any = {};
-  function ensureFullRes(bit) {
+  function ensureFullRes(bit: number) {
     if (fullByBit[bit]) return fullByBit[bit];
     const fullCv = document.createElement('canvas');
     fullCv.width = img.naturalWidth; fullCv.height = img.naturalHeight;
-    const fCtx = fullCv.getContext('2d', { willReadFrequently: true });
+    const fCtx = fullCv.getContext('2d', { willReadFrequently: true })!;
     fCtx.drawImage(img, 0, 0);
     const fullData = fCtx.getImageData(0, 0, img.naturalWidth, img.naturalHeight).data;
     fullByBit[bit] = channels.map((ch) =>
@@ -1832,7 +1832,7 @@ function renderLsbPlanes(img, container) {
   }
 
   // ---- Chi-square steganalysis verdict (statistical LSB-replacement test) ----
-  const fmtPct = (v) => (v == null ? '-' : Math.round(v * 100) + '%');
+  const fmtPct = (v: number|null) => (v == null ? '-' : Math.round(v * 100) + '%');
   try {
     const chi = lsbChiSquare(img);
     if (chi) {
@@ -1845,21 +1845,21 @@ function renderLsbPlanes(img, container) {
     }
   } catch (_) { /* too small / undecodable - skip the verdict */ }
 
-  function openLsbLightbox(startIdx) {
+  function openLsbLightbox(startIdx: number) {
     const lb = ensureLightbox();
-    const lbWrap = lb.querySelector('.lightbox-img-wrap');
-    const lbImg = lbWrap.querySelector('img:first-child');
-    const toolbar = lb.querySelector('.lightbox-toolbar');
-    const meta = lb.querySelector('.lightbox-meta');
+    const lbWrap = lb.querySelector<HTMLDivElement>('.lightbox-img-wrap')!;
+    const lbImg = lbWrap.querySelector<HTMLImageElement>('img:first-child')!;
+    const toolbar = lb.querySelector<HTMLDivElement>('.lightbox-toolbar')!;
+    const meta = lb.querySelector<HTMLDivElement>('.lightbox-meta')!;
     toolbar.innerHTML = '';
     lbWrap.classList.remove('anr-checkerboard');
-    const overlays = lbWrap.querySelectorAll('.lightbox-peaking');
-    overlays.forEach(o => { o.hidden = true; });
-    lbWrap.querySelector('.lightbox-focus-map').hidden = true;
-    lbWrap.querySelector('.lightbox-focus-dot').hidden = true;
+    const overlays = lbWrap.querySelectorAll<HTMLElement>('.lightbox-peaking');
+    overlays.forEach((o) => { o.hidden = true; });
+    lbWrap.querySelector<HTMLElement>('.lightbox-focus-map')!.hidden = true;
+    lbWrap.querySelector<HTMLElement>('.lightbox-focus-dot')!.hidden = true;
 
     let idx = startIdx;
-    function show(i) {
+    function show(i: number) {
       idx = i;
       const ch = channels[idx];
       const srcs = ensureFullRes(currentBit);
@@ -1918,7 +1918,7 @@ function renderLsbPlanes(img, container) {
   }
 
   // Bit-plane selector (0 = LSB on the left, 7 = MSB on the right).
-  const bitBtns = [];
+  const bitBtns: HTMLButtonElement[] = [];
   const styleBits = () => bitBtns.forEach((b, i) => {
     b.style.cssText = 'min-width:30px; padding:3px 6px; font-size:12px;' +
       (i === currentBit ? ' background:var(--fg); color:var(--bg);' : '');
@@ -1938,12 +1938,12 @@ function renderLsbPlanes(img, container) {
 }
 
 // ---------- lightbox (singleton, lazy) ----------
-let lightboxEl = null;
-let lbZoom = null;
+let lightboxEl: HTMLDivElement|null = null;
+let lbZoom: any = null;
 // Current gallery navigation config ({onPrev, onNext} + action buttons), set per
 // open by openLightbox. Drives the prev/next arrows and the ArrowLeft/Right keys.
-let lbNav = null;
-let lbClose = null;   // history-aware closer while the lightbox is open
+let lbNav: any = null;
+let lbClose: (() => void)|null = null;   // history-aware closer while the lightbox is open
 function ensureLightbox() {
   if (lightboxEl) return lightboxEl;
   lightboxEl = document.createElement('div');
@@ -2017,7 +2017,7 @@ function ensureLightbox() {
     if (e.target === lightboxEl || e.target === closeBtn) closeLightbox();
   });
   document.addEventListener('keydown', (e) => {
-    if (lightboxEl.hidden) return;
+    if (lightboxEl!.hidden) return;
     if (e.key === 'Escape') { closeLightbox(); return; }
     if (e.key === 'ArrowLeft' && lbNav && lbNav.onPrev) { e.preventDefault(); lbNav.onPrev(); }
     else if (e.key === 'ArrowRight' && lbNav && lbNav.onNext) { e.preventDefault(); lbNav.onNext(); }
@@ -2026,18 +2026,18 @@ function ensureLightbox() {
   // lightbox is open, so it scales correctly at any window size (rAF-coalesced).
   let resizeRaf = 0;
   window.addEventListener('resize', () => {
-    if (lightboxEl.hidden) return;
+    if (lightboxEl!.hidden) return;
     cancelAnimationFrame(resizeRaf);
     resizeRaf = requestAnimationFrame(() => {
       if (lbZoom) lbZoom.reset();
-      const im = wrap.querySelector<HTMLImageElement>('img:first-child');
+      const im = wrap.querySelector<HTMLImageElement>('img:first-child')!;
       if (im && im.naturalWidth) sizeWrap(wrap, im.naturalWidth, im.naturalHeight);
     });
   });
   document.body.appendChild(lightboxEl);
   return lightboxEl;
 }
-function sizeWrap(wrap, w, h) {
+function sizeWrap(wrap: HTMLDivElement, w: number, h: number) {
   // Fit the image to the viewport, reserving ~140px of vertical room for the
   // toolbar, meta line and padding so nothing clips on short / landscape windows.
   // Re-run on resize (see ensureLightbox) so it stays correct at any window size.
@@ -2047,19 +2047,19 @@ function sizeWrap(wrap, w, h) {
   wrap.style.width = Math.round(w * scale) + 'px';
   wrap.style.height = Math.round(h * scale) + 'px';
 }
-function computePeaking(imgEl, canvas) {
+function computePeaking(imgEl: Drawable, canvas: HTMLCanvasElement) {
   const w = imgEl.naturalWidth, h = imgEl.naturalHeight;
   const scale = Math.min(1, 2000 / Math.max(w, h));
   const sw = Math.round(w * scale), sh = Math.round(h * scale);
   const tmp = document.createElement('canvas');
   tmp.width = sw; tmp.height = sh;
-  const tctx = tmp.getContext('2d');
+  const tctx = tmp.getContext('2d')!;
   tctx.drawImage(imgEl, 0, 0, sw, sh);
   const id = tctx.getImageData(0, 0, sw, sh);
   const d = id.data;
 
   canvas.width = sw; canvas.height = sh;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d')!;
   const out = ctx.createImageData(sw, sh);
   const od = out.data;
   const threshold = 220;
@@ -2100,19 +2100,19 @@ function computePeaking(imgEl, canvas) {
   ctx.putImageData(out, 0, 0);
 }
 
-function computeExposureOverlay(imgEl, canvas, mode) {
+function computeExposureOverlay(imgEl: Drawable, canvas: HTMLCanvasElement, mode: string) {
   const w = imgEl.naturalWidth, h = imgEl.naturalHeight;
   const scale = Math.min(1, 2000 / Math.max(w, h));
   const sw = Math.round(w * scale), sh = Math.round(h * scale);
   const tmp = document.createElement('canvas');
   tmp.width = sw; tmp.height = sh;
-  const tctx = tmp.getContext('2d');
+  const tctx = tmp.getContext('2d')!;
   tctx.drawImage(imgEl, 0, 0, sw, sh);
   const id = tctx.getImageData(0, 0, sw, sh);
   const d = id.data;
 
   canvas.width = sw; canvas.height = sh;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d')!;
   const out = ctx.createImageData(sw, sh);
   const od = out.data;
 
@@ -2129,14 +2129,14 @@ function computeExposureOverlay(imgEl, canvas, mode) {
   ctx.putImageData(out, 0, 0);
 }
 
-export function openLightbox(src, alt, metaText, focusOpts, showAlpha, photoTools = true, nav = null) {
+export function openLightbox(src: string, alt: string, metaText: string, focusOpts: any, showAlpha: boolean, photoTools = true, nav: any = null) {
   const lb = ensureLightbox();
   if (lbZoom) lbZoom.reset();
-  const wrap = lb.querySelector('.lightbox-img-wrap');
-  const lbImg = wrap.querySelector('img:first-child');
-  const mapOverlay = wrap.querySelector('.lightbox-focus-map');
-  const dot = wrap.querySelector('.lightbox-focus-dot');
-  const toolbar = lb.querySelector('.lightbox-toolbar');
+  const wrap = lb.querySelector<HTMLDivElement>('.lightbox-img-wrap')!;
+  const lbImg = wrap.querySelector<HTMLImageElement>('img:first-child')!;
+  const mapOverlay = wrap.querySelector<HTMLImageElement>('.lightbox-focus-map')!;
+  const dot = wrap.querySelector<HTMLElement>('.lightbox-focus-dot')!;
+  const toolbar = lb.querySelector<HTMLDivElement>('.lightbox-toolbar')!;
   toolbar.innerHTML = '';
   // Photo-analysis tools (focus peaking, exposure overlays, focus map) only make
   // sense for actual photos - hide the whole toolbar for histograms and the like.
@@ -2150,7 +2150,7 @@ export function openLightbox(src, alt, metaText, focusOpts, showAlpha, photoTool
   lbImg.alt = alt || '';
   lbImg.onload = () => { sizeWrap(wrap, lbImg.naturalWidth, lbImg.naturalHeight); };
   if (lbImg.complete && lbImg.naturalWidth) sizeWrap(wrap, lbImg.naturalWidth, lbImg.naturalHeight);
-  const overlays = wrap.querySelectorAll('.lightbox-peaking');
+  const overlays = wrap.querySelectorAll<HTMLCanvasElement>('.lightbox-peaking');
   const peakingCv = overlays[0], highlightsCv = overlays[1], shadowsCv = overlays[2];
   peakingCv.hidden = true;
   highlightsCv.hidden = true;
@@ -2158,15 +2158,15 @@ export function openLightbox(src, alt, metaText, focusOpts, showAlpha, photoTool
   mapOverlay.hidden = true;
   mapOverlay.src = '';
   dot.hidden = true;
-  lb.querySelector('.lightbox-meta').textContent = metaText || '';
+  lb.querySelector<HTMLElement>('.lightbox-meta')!.textContent = metaText || '';
 
   // Gallery navigation: prev/next arrows, ArrowLeft/Right keys, and action buttons
   // (Analyse / Download …). nav.checker paints the alpha checkerboard so a partly
   // recovered image's transparent region is visible against the dark backdrop.
   lbNav = nav || null;
-  const prevBtn = lb.querySelector('.lightbox-prev');
-  const nextBtn = lb.querySelector('.lightbox-next');
-  const actionsEl = lb.querySelector('.lightbox-actions');
+  const prevBtn = lb.querySelector<HTMLButtonElement>('.lightbox-prev')!;
+  const nextBtn = lb.querySelector<HTMLButtonElement>('.lightbox-next')!;
+  const actionsEl = lb.querySelector<HTMLElement>('.lightbox-actions')!;
   prevBtn.hidden = !(nav && nav.onPrev);
   nextBtn.hidden = !(nav && nav.onNext);
   actionsEl.innerHTML = '';
@@ -2279,11 +2279,11 @@ const PNG_AI_TEXT_KEYS = new Set([
   'description', 'title', 'sd-metadata', 'invokeai_metadata', 'invokeai'
 ]);
 
-function pngColourType(t) {
+function pngColourType(t: number) {
   return { 0: 'Grayscale', 2: 'RGB', 3: 'Palette (indexed)', 4: 'Grayscale + alpha', 6: 'RGBA' }[t] || ('type ' + t);
 }
 
-function parsePngContainer(bytes) {
+function parsePngContainer(bytes: Uint8Array) {
   const rows = [];
   const text = [];          // { key, value } for every text chunk
   const seen = new Set();
@@ -2369,7 +2369,7 @@ function parsePngContainer(bytes) {
   return { rows, text };
 }
 
-function parseJpegContainer(bytes) {
+function parseJpegContainer(bytes: Uint8Array) {
   const rows = [];
   let pos = 2;   // skip SOI
   let sof = null, progressive = false, hasExif = false, comment = null, adobe = null, jfif = null;
@@ -2430,7 +2430,7 @@ function parseJpegContainer(bytes) {
   return rows.length ? { rows, text: [] } : null;
 }
 
-function parseGifContainer(bytes) {
+function parseGifContainer(bytes: Uint8Array) {
   const rows = [];
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const w = dv.getUint16(6, true), h = dv.getUint16(8, true);
@@ -2472,7 +2472,7 @@ function parseGifContainer(bytes) {
   return { rows, text: [] };
 }
 
-function parseWebpContainer(bytes) {
+function parseWebpContainer(bytes: Uint8Array) {
   const rows = [];
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const fourcc = ascii(bytes, 12, 4);
@@ -2513,7 +2513,7 @@ function parseWebpContainer(bytes) {
   return { rows, text: [] };
 }
 
-function parseBmpContainer(bytes) {
+function parseBmpContainer(bytes: Uint8Array) {
   const rows = [];
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const headerSize = dv.getUint32(14, true);
@@ -2522,7 +2522,7 @@ function parseBmpContainer(bytes) {
   const bpp = dv.getUint16(28, true);
   const compression = dv.getUint32(30, true);
   const xppm = dv.getInt32(38, true), yppm = dv.getInt32(42, true);
-  const COMP = { 0: 'none (BI_RGB)', 1: 'RLE8', 2: 'RLE4', 3: 'bitfields', 4: 'JPEG', 5: 'PNG' };
+  const COMP: Record<number, string> = { 0: 'none (BI_RGB)', 1: 'RLE8', 2: 'RLE4', 3: 'bitfields', 4: 'JPEG', 5: 'PNG' };
   rows.push(['BMP image', w + ' × ' + Math.abs(h) + ' px']);
   rows.push(['Bit depth', bpp + '-bit']);
   rows.push(['Compression', COMP[compression] || String(compression)]);
@@ -2584,15 +2584,15 @@ async function peekImageContainer(file: File) {
 
 // Pretty-format an AI prompt value: ComfyUI/A1111 JSON is parsed for the positive
 // prompt where easy, otherwise the raw text is shown verbatim.
-function formatAiPrompt(value) {
-  const out = { pretty: null, raw: value };
+function formatAiPrompt(value: string) {
+  const out: { pretty: string|null; raw: string } = { pretty: null, raw: value };
   const trimmed = value.trim();
   if (trimmed.startsWith('{')) {
     try {
       const obj = JSON.parse(trimmed);
       // ComfyUI 'workflow'/'prompt' graphs: hunt for CLIPTextEncode positive text.
-      const texts = [];
-      const walk = (o) => {
+      const texts: any[] = [];
+      const walk = (o: any) => {
         if (!o || typeof o !== 'object') return;
         if (o.class_type === 'CLIPTextEncode' && o.inputs && typeof o.inputs.text === 'string')
           texts.push(o.inputs.text);
@@ -2606,7 +2606,7 @@ function formatAiPrompt(value) {
   return out;
 }
 
-function buildContainerCard(container) {
+function buildContainerCard(container: any) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Container structure'));
   if (container.rows.length) {
@@ -2659,7 +2659,7 @@ export function revealPhotoSection() {
 // Frames are decoded on demand via source.get() so a long animation never holds
 // every frame in memory at once. `signal` aborts the playback loop and closes the
 // source on teardown. `opts`: { kindLabel?: 'animated GIF' }.
-function buildFrameViewerCard(file: File, source, resultsEl: HTMLElement, signal, opts: any = {}) {
+function buildFrameViewerCard(file: File, source: any, resultsEl: HTMLElement, signal: AbortSignal, opts: any = {}) {
   const kindLabel = opts.kindLabel || 'animated GIF';
   const { width, height, count, loop, anyTransparency, delaysMs } = source;
   const n = count;
@@ -2671,10 +2671,10 @@ function buildFrameViewerCard(file: File, source, resultsEl: HTMLElement, signal
   let acc = 0;
   for (let i = 0; i < n; i++) { startTimes[i] = acc / 1000; acc += delaysMs[i]; }
   const totalTime = acc / 1000;
-  const fmtTc = (sec) => sec < 60 ? sec.toFixed(2) + 's'
+  const fmtTc = (sec: number) => sec < 60 ? sec.toFixed(2) + 's'
     : Math.floor(sec / 60) + ':' + (sec % 60).toFixed(1).padStart(4, '0');
   // Binary search for the frame whose interval contains time t.
-  const frameAtTime = (t) => {
+  const frameAtTime = (t: number) => {
     if (t <= 0) return 0;
     if (t >= totalTime) return lastIdx;
     let lo = 0, hi = lastIdx;
@@ -2687,20 +2687,20 @@ function buildFrameViewerCard(file: File, source, resultsEl: HTMLElement, signal
   const cv = document.createElement('canvas');
   cv.width = width; cv.height = height;
   cv.style.cssText = 'max-width:100%; max-height:480px; height:auto; display:block;';
-  const ctx = cv.getContext('2d');
+  const ctx = cv.getContext('2d')!;
   // Async on-demand draw. A monotonically increasing token means that if several
   // draws are requested in quick succession (e.g. fast scrubbing), only the most
   // recent one paints - stale decodes are dropped rather than flickering.
   let drawToken = 0;
-  const draw = (idx) => {
+  const draw = (idx: number) => {
     const my = ++drawToken;
-    return source.get(idx).then((data) => {
+    return source.get(idx).then((data: number) => {
       if (my !== drawToken) return;
       ctx.putImageData(new ImageData(data, width, height), 0, 0);
     }).catch(() => {});
   };
   // Warm the next frame's cache so forward playback stays smooth.
-  const prefetch = (idx) => { if (idx >= 0 && idx <= lastIdx) source.get(idx).catch(() => {}); };
+  const prefetch = (idx: number) => { if (idx >= 0 && idx <= lastIdx) source.get(idx).catch(() => {}); };
   const stage = el('div', {
     class: 'anr-gif-stage' + (anyTransparency ? ' anr-checkerboard' : ''),
     style: 'display:inline-block; max-width:100%; border:1px solid var(--hairline); background:'
@@ -2708,9 +2708,9 @@ function buildFrameViewerCard(file: File, source, resultsEl: HTMLElement, signal
   }, [cv]);
 
   let currentFrame = 0;
-  let onFrameShown = null;
+  let onFrameShown: ((idx: number) => void)|null = null;
   const frameLabel = el('span', { class: 'anr-hint' }, `Frame 1 / ${n}`);
-  const showFrame = (idx) => {
+  const showFrame = (idx: number) => {
     idx = Math.max(0, Math.min(lastIdx, idx));
     currentFrame = idx;
     draw(idx);
@@ -2721,11 +2721,11 @@ function buildFrameViewerCard(file: File, source, resultsEl: HTMLElement, signal
   draw(0);
 
   // Composite a frame to a standalone PNG blob, for Analyse frame / Frame grab.
-  const frameToBlob = async (idx) => {
+  const frameToBlob = async (idx: number) => {
     const data = await source.get(idx);
     const c = document.createElement('canvas');
     c.width = width; c.height = height;
-    c.getContext('2d').putImageData(new ImageData(data, width, height), 0, 0);
+    c.getContext('2d')!.putImageData(new ImageData(data, width, height), 0, 0);
     return new Promise<Blob | null>((res) => c.toBlob(res, 'image/png'));
   };
   const base = (file.name || 'image').replace(/\.[^.]+$/, '');
@@ -2737,7 +2737,7 @@ function buildFrameViewerCard(file: File, source, resultsEl: HTMLElement, signal
   const timeEl = el('span', { class: 'anr-player-time' }, `${fmtTc(0)} / ${fmtTc(totalTime)}`);
   const playerBar = el('div', { class: 'anr-player', style: 'margin-top:10px;' }, [playBtn, trackEl, timeEl]);
 
-  onFrameShown = (idx) => {
+  onFrameShown = (idx: number) => {
     const t = startTimes[idx];
     setPlayerFill(fillEl, totalTime > 0 ? t / totalTime : 0);
     timeEl.textContent = `${fmtTc(t)} / ${fmtTc(totalTime)}`;
@@ -2752,7 +2752,7 @@ function buildFrameViewerCard(file: File, source, resultsEl: HTMLElement, signal
     playBtn.textContent = '▶';
     playBtn.setAttribute('aria-label', 'Play');
   };
-  const tick = (ts) => {
+  const tick = (ts: number) => {
     if (!playing) return;
     let t = baseTime + (ts - playStart) / 1000;
     if (t >= totalTime) { t = totalTime > 0 ? t % totalTime : 0; baseTime = t; playStart = ts; }
@@ -2769,19 +2769,19 @@ function buildFrameViewerCard(file: File, source, resultsEl: HTMLElement, signal
   });
 
   // Click or drag the track to scrub (stops playback, like the AVI/audio scrubber).
-  const seekFromX = (clientX) => {
+  const seekFromX = (clientX: number) => {
     const rect = trackEl.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     showFrame(frameAtTime(frac * totalTime));
   };
   let dragging = false;
-  const onMove = (e) => { if (dragging) seekFromX(e.clientX); };
+  const onMove = (e: MouseEvent) => { if (dragging) seekFromX(e.clientX); };
   const onUp = () => { dragging = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   trackEl.addEventListener('mousedown', (e) => {
     dragging = true; stop(); seekFromX(e.clientX); e.preventDefault();
     window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
   });
-  const onTMove = (e) => { if (dragging && e.touches[0]) { e.preventDefault(); seekFromX(e.touches[0].clientX); } };
+  const onTMove = (e: TouchEvent) => { if (dragging && e.touches[0]) { e.preventDefault(); seekFromX(e.touches[0].clientX); } };
   const onTEnd = () => { dragging = false; window.removeEventListener('touchmove', onTMove); window.removeEventListener('touchend', onTEnd); };
   trackEl.addEventListener('touchstart', (e) => {
     dragging = true; stop(); seekFromX(e.touches[0].clientX); e.preventDefault();
@@ -2809,12 +2809,12 @@ function buildFrameViewerCard(file: File, source, resultsEl: HTMLElement, signal
   } }, 'Frame grab');
 
   // Contact sheet (>= 8 frames): a 4×2 grid sampled evenly across the animation.
-  let sheetBtn = null;
+  let sheetBtn: HTMLButtonElement|null = null;
   const sheetOut = el('div');
   if (n >= 8) {
     sheetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Generate contact sheet');
     sheetBtn.addEventListener('click', async () => {
-      sheetBtn.disabled = true; sheetBtn.textContent = 'Generating…';
+      sheetBtn!.disabled = true; sheetBtn!.textContent = 'Generating…';
       const cols = 4, rows = 2, total = cols * rows;
       const scale = 320 / Math.max(width, height);
       const tw = Math.max(1, Math.round(width * scale)), th = Math.max(1, Math.round(height * scale));
@@ -2822,11 +2822,11 @@ function buildFrameViewerCard(file: File, source, resultsEl: HTMLElement, signal
       const g = document.createElement('canvas');
       g.width = cols * tw + (cols + 1) * pad;
       g.height = rows * th + (rows + 1) * pad;
-      const gctx = g.getContext('2d');
+      const gctx = g.getContext('2d')!;
       gctx.fillStyle = '#111'; gctx.fillRect(0, 0, g.width, g.height);
       const tmp = document.createElement('canvas');
       tmp.width = width; tmp.height = height;
-      const tctx = tmp.getContext('2d');
+      const tctx = tmp.getContext('2d')!;
       for (let i = 0; i < total; i++) {
         const fi = Math.floor(i * (n - 1) / (total - 1));
         tctx.putImageData(new ImageData(await source.get(fi), width, height), 0, 0);
@@ -2836,7 +2836,7 @@ function buildFrameViewerCard(file: File, source, resultsEl: HTMLElement, signal
       sheetOut.innerHTML = '';
       sheetOut.appendChild(el('img', { src: g.toDataURL('image/png'),
         style: 'max-width:100%; margin-top:10px; border:1px solid var(--hairline);' }));
-      sheetBtn.disabled = false; sheetBtn.textContent = 'Generate contact sheet';
+      sheetBtn!.disabled = false; sheetBtn!.textContent = 'Generate contact sheet';
     });
   }
 
@@ -2865,7 +2865,7 @@ function buildFrameViewerCard(file: File, source, resultsEl: HTMLElement, signal
 // source), and a reversed-GIF download encoded from those frames. Mirrors the
 // audio/video reverse controls. `source` is the same lazy frame source the forward
 // viewer used; `opts` carries kindLabel.
-function buildReverseAnimationCard(file: File, source, resultsEl: HTMLElement, signal, opts: any = {}) {
+function buildReverseAnimationCard(file: File, source: any, resultsEl: HTMLElement, signal: AbortSignal, opts: any = {}) {
   const kindLabel = opts.kindLabel || 'animated GIF';
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Reverse'));
@@ -2886,7 +2886,7 @@ function buildReverseAnimationCard(file: File, source, resultsEl: HTMLElement, s
         const revSource = {
           width: source.width, height: source.height, count: n,
           loop: source.loop, anyTransparency: source.anyTransparency, delaysMs,
-          get: (i) => source.get(n - 1 - Math.max(0, Math.min(n - 1, i | 0))),
+          get: (i: number) => source.get(n - 1 - Math.max(0, Math.min(n - 1, i | 0))),
           close() {},   // the underlying source is owned + closed by the forward card
         };
         out.appendChild(buildFrameViewerCard(file, revSource, resultsEl, signal,
@@ -2895,7 +2895,7 @@ function buildReverseAnimationCard(file: File, source, resultsEl: HTMLElement, s
         // Encoding a reversed GIF needs every frame's pixels; pull them on demand.
         const framesData = [];
         for (let i = 0; i < n; i++) framesData.push(await source.get(n - 1 - i));
-        const delaysCs = delaysMs.map((ms) => Math.max(2, Math.round(ms / 10)));
+        const delaysCs = delaysMs.map((ms: number) => Math.max(2, Math.round(ms / 10)));
         const blob = encodeAnimatedGif(source.width, source.height,
           framesData, delaysCs, source.loop == null ? 0 : source.loop);
         const url = URL.createObjectURL(blob);
@@ -2919,7 +2919,7 @@ function buildReverseAnimationCard(file: File, source, resultsEl: HTMLElement, s
 
 // Tears down the previous photo's persistent loops (the GIF frame player's
 // requestAnimationFrame loop) when a new file is analysed or the page navigates.
-let photoRenderAbort = null;
+let photoRenderAbort: AbortController|null = null;
 
 export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any = {}) {
   // Inline renders (e.g. the compare view's side-by-side panels) must NOT touch
@@ -2962,7 +2962,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   }
 
   let imgInfo;
-  let convertedFile = null;
+  let convertedFile: File|null = null;
   // True once a full libraw demosaic has produced the displayed image (manual
   // "Demosaic RAW" button, or the automatic last-resort fallback below). It tells
   // the downstream code the picture is the real sensor image, not an embedded
@@ -2989,7 +2989,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
           let hb = null; try { hb = new Uint8Array(await file.arrayBuffer()); } catch (_) {}
           let hd = null; if (hb) { try { hd = diagnoseImage(hb); } catch (_) {} }
           if (hd && !hd.healthy && (hd.format === 'heif' || hd.format === 'avif')) {
-            return renderPhotoRecovery(file, hb, hd, resultsEl, renderSignal);
+            return renderPhotoRecovery(file, hb!, hd, resultsEl, renderSignal);
           }
         }
         resultsEl.appendChild(errorCard('HEIC conversion failed: ' + (e2 && e2.message ? e2.message : e2)));
@@ -3069,7 +3069,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
       // "undecodable" banner. Guarded so the repaired file we re-render doesn't loop.
       let salvageDiag = null;
       if (!unreadable && full && !opts.salvaged) {
-        try { salvageDiag = diagnoseImage(fileBytes); } catch (_) { salvageDiag = null; }
+        try { salvageDiag = diagnoseImage(fileBytes!); } catch (_) { salvageDiag = null; }
       }
       const canSalvage = salvageDiag && !salvageDiag.healthy &&
         (salvageDiag.format === 'jpeg' || salvageDiag.format === 'png' ||
@@ -3087,13 +3087,13 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
       if (unreadable) {
         resultsEl.appendChild(cloudFileWarning(file));
       } else if (canSalvage) {
-        return renderPhotoRecovery(file, fileBytes, salvageDiag, resultsEl, renderSignal);
+        return renderPhotoRecovery(file, fileBytes!, salvageDiag, resultsEl, renderSignal);
       } else if (decCorrupt) {
         const diag = {
           format: 'jpeg', healthy: false,
           issues: [{ msg: 'The JPEG scan desynchronises partway - past that point it decodes to garbage. Only the rows above the break are the real picture.' }],
         };
-        return renderPhotoRecovery(file, fileBytes, diag, resultsEl, renderSignal);
+        return renderPhotoRecovery(file, fileBytes!, diag, resultsEl, renderSignal);
       } else if (full && (ext === 'tif' || ext === 'tiff')) {
         // Browsers can't decode TIFF, but a TIFF can hold many pages. Render them
         // all with ImageMagick (only if there are 2+; single-page falls through to
@@ -3155,7 +3155,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
         format: 'jpeg', healthy: false,
         issues: [{ msg: 'The JPEG scan desynchronises partway - past that point it decodes to garbage (the browser paints it as saturated colour-block noise). Only the rows above the break are the real picture.' }],
       };
-      return renderPhotoRecovery(file, bytes, diag, resultsEl, renderSignal);
+      return renderPhotoRecovery(file, bytes!, diag, resultsEl, renderSignal);
     }
   }
 
@@ -3222,7 +3222,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
     const mode = fullDecode ? 'demosaic' : 'preview';
     const bar = el('div', { class: 'anr-raw-modebar' });
     bar.appendChild(el('span', { class: 'anr-raw-modebar-label' }, 'Analyse'));
-    const mk = (label, m, help) => {
+    const mk = (label: ElChild | ElChild[], m: string, help: string) => {
       const b = el('button', { type: 'button', class: 'anr-btn' + (mode === m ? ' is-active' : ''), title: help }, label);
       if (mode !== m) b.addEventListener('click', () => { b.disabled = true; renderPhoto(file, resultsEl, { ...opts, rawMode: m }); });
       return b;
@@ -3244,13 +3244,13 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   // Develop-settings (.xmp sidecar) card. showDevelop fills/replaces it; it's fed
   // either by a RAW+XMP drop (opts.sidecarXmp) or the per-RAW "Import XMP" button.
   const developContainer = el('div');
-  const showDevelop = (xmpText, label) => {
+  const showDevelop = (xmpText: string, label: string) => {
     developContainer.innerHTML = '';
     developContainer.appendChild(buildDevelopCard(xmpText, label));
   };
 
   const previewSlot = inline ? el('div') : document.getElementById('photoPreview');
-  if (inline) resultsEl.appendChild(previewSlot);
+  if (inline) resultsEl.appendChild(previewSlot!);
   if (previewSlot) {
     previewSlot.innerHTML = '';
     const thumb = el('div', { class: 'section-meta-preview' });
@@ -3271,7 +3271,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
 
     const focusCv = document.createElement('canvas');
     focusCv.width = focus.cols; focusCv.height = focus.rows;
-    const fCtx = focusCv.getContext('2d');
+    const fCtx = focusCv.getContext('2d')!;
     const fImg = fCtx.createImageData(focus.cols, focus.rows);
     for (let i = 0; i < focus.grid.length; i++) {
       const t = Math.min(1, focus.grid[i] / (focus.maxVar * 0.8));
@@ -3429,7 +3429,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   }
   if (convertedFile) {
     const ext = fileExt(file.name).toUpperCase();
-    const isPreview = convertedFile.name.includes('_preview');
+    const isPreview = convertedFile!.name.includes('_preview');
     const convLabel = isPreview ? 'embedded preview' : 'full resolution';
     tbl.appendChild(rowHelp('Converted', ext + ' → JPEG (' + convLabel + ')',
       'The original format cannot be shown directly, so your browser converted a copy to JPEG on your device for previewing and analysis here. The original file is left untouched.'));
@@ -3439,7 +3439,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   if (convertedFile) {
     const dlBtn = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:12px;' }, 'Download as JPEG');
     dlBtn.addEventListener('click', () => {
-      downloadBlob(convertedFile.name, convertedFile);
+      downloadBlob(convertedFile!.name, convertedFile!);
     });
     infoCard.appendChild(dlBtn);
   }
@@ -3577,7 +3577,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   if (full) {
     const c2paManifests = await readC2pa(file).catch(() => null);
     try {
-      const c2paCard = await buildC2paCard(file, c2paManifests);
+      const c2paCard = await buildC2paCard(file, c2paManifests as any[]|undefined);
       if (c2paCard && !renderSignal.aborted) resultsEl.appendChild(c2paCard);
     } catch (_) { /* no C2PA / unparsable - show nothing */ }
 
@@ -3599,7 +3599,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
       if (thumbBytes && thumbBytes.byteLength) {
         const tDim = await decodeImageDims(new Blob([thumbBytes], { type: 'image/jpeg' }));
         if (tDim && tDim.w && tDim.h) {
-          const longShort = (a, b) => Math.max(a, b) / Math.min(a, b);
+          const longShort = (a: number, b: number) => Math.max(a, b) / Math.min(a, b);
           const mainAR = longShort(w, h);
           const thumbAR = longShort(tDim.w, tDim.h);
           // Many older cameras write a fixed 160×120 thumbnail regardless of the
@@ -3671,7 +3671,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   // Heavy Advanced-card reads (ELA, LSB bit planes) that must not run on load.
   // They used to fire when their own <details> was opened; the card is now the only
   // disclosure, so they queue here and run the first time it is expanded.
-  const advLazy = [];
+  const advLazy: (() => void)[] = [];
   let advForensics = null;
   if (full && !convertedFile && (/^(jpe?g|jpe|jfif)$/.test(fileExt(file.name)) || file.type === 'image/jpeg')) {
     const fDet = el('div', { class: 'anr-adv-part' });
@@ -3903,7 +3903,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
 
   // ---- OCR in section-meta column ----
   const ocrSlot = inline ? el('div') : document.getElementById('photoOcrSlot');
-  if (inline) resultsEl.appendChild(ocrSlot);
+  if (inline) resultsEl.appendChild(ocrSlot!);
   if (ocrSlot) {
     ocrSlot.innerHTML = '';
     ocrSlot.appendChild(makeOcrCard(file, img));
@@ -4054,10 +4054,11 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
 }
 
 // ---------- setup ----------
-export function initPhoto({ dropEl, inputEl, resultsEl, onFile }) {
+export function initPhoto({ dropEl, inputEl, resultsEl, onFile }: { dropEl: HTMLElement; inputEl: HTMLInputElement; resultsEl: HTMLElement; onFile?: (f: File) => void }) {
   const handle = onFile || ((file: File) => renderPhoto(file, resultsEl));
   inputEl.addEventListener('change', (e) => {
-    const file = e.target.files && e.target.files[0];
+    const t = e.target as HTMLInputElement;
+    const file = t.files && t.files[0];
     if (file) handle(file);
     inputEl.value = '';
   });

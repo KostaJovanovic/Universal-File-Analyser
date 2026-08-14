@@ -37,6 +37,8 @@ async function toBytes(input) {
             return input;
         if (input instanceof ArrayBuffer)
             return new Uint8Array(input);
+        // Duck-typed on purpose: File, Blob and Response all satisfy it. Narrowing
+        // this to `instanceof Blob` would quietly drop the Response case.
         if (typeof input.arrayBuffer === 'function')
             return new Uint8Array(await input.arrayBuffer());
         if (ArrayBuffer.isView(input))

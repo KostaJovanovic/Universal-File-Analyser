@@ -23,10 +23,10 @@ import { el, row, wireInfoToggle, fmtDate, timeAnomalies } from '../core/util.js
 import { ascii } from '../core/binutil.js';
 
 const MAC_EPOCH = 2082844800; // seconds between 1904-01-01 and 1970-01-01 (UTC)
-const okDate = (d) => d instanceof Date && !isNaN(d.getTime()) && d.getTime() > 0;
+const okDate = (d: Date|null) => d instanceof Date && !isNaN(d.getTime()) && d.getTime() > 0;
 
 // ---------- MP4 / QuickTime movie header ----------
-async function readBoxHeader(file: File, pos) {
+async function readBoxHeader(file: File, pos: number) {
   const hdr = new Uint8Array(await file.slice(pos, pos + 16).arrayBuffer());
   if (hdr.length < 8) return null;
   const dv = new DataView(hdr.buffer);
@@ -39,9 +39,9 @@ async function readBoxHeader(file: File, pos) {
   return { size, type: ascii(hdr, 4, 4), headerSize, pos };
 }
 
-function mvhdFromMoov(moov) {
+function mvhdFromMoov(moov: Uint8Array) {
   const dv = new DataView(moov.buffer, moov.byteOffset, moov.byteLength);
-  const toDate = (s) => (s > MAC_EPOCH ? new Date((s - MAC_EPOCH) * 1000) : null);
+  const toDate = (s: number) => (s > MAC_EPOCH ? new Date((s - MAC_EPOCH) * 1000) : null);
   let p = 0;
   while (p + 8 <= moov.length) {
     let size = dv.getUint32(p);
@@ -50,7 +50,7 @@ function mvhdFromMoov(moov) {
     if (size < 8) break;
     if (ascii(moov, p + 4, 4) === 'mvhd') {
       const version = moov[p + hs];
-      const u64 = (o) => dv.getUint32(o) * 4294967296 + dv.getUint32(o + 4);
+      const u64 = (o: number) => dv.getUint32(o) * 4294967296 + dv.getUint32(o + 4);
       let c, m;
       if (version === 1) { c = u64(p + hs + 4); m = u64(p + hs + 12); }
       else { c = dv.getUint32(p + hs + 4); m = dv.getUint32(p + hs + 8); }
@@ -98,7 +98,7 @@ async function pngTime(file: File) {
 }
 
 // ---------- ZIP-based documents (OOXML / ODF) ----------
-function pickTag(xml, tag) {
+function pickTag(xml: string, tag: string) {
   const m = xml.match(new RegExp('<' + tag + '[^>]*>([^<]+)</' + tag + '>', 'i'));
   if (!m) return null;
   const d = new Date(m[1].trim());
@@ -128,11 +128,11 @@ async function zipDocDates(file: File) {
 // ---------- gather every timestamp ----------
 export async function collectTimestamps(file: File) {
   // stamps: what we list. probe: the named dates fed to the anomaly detector.
-  const stamps = [];
+  const stamps: { label: string; date: Date }[] = [];
   const probe: any = {};
-  const add = (label, d, key) => {
+  const add = (label: string, d: Date|null, key: string) => {
     if (!okDate(d)) return;
-    stamps.push({ label, date: d });
+    stamps.push({ label, date: d! });
     if (key) probe[key] = d;
   };
 
@@ -176,7 +176,7 @@ export async function forensicTimelineCard(file: File) {
   card.appendChild(head);
   card.appendChild(help);
 
-  const sorted = [...stamps].sort((a, b) => a.date - b.date);
+  const sorted = [...stamps].sort((a, b) => +a.date - +b.date);
   const tbl = el('table', { class: 'anr-readout' });
   for (const s of sorted) tbl.appendChild(row(s.label, fmtDate(s.date)));
   card.appendChild(tbl);

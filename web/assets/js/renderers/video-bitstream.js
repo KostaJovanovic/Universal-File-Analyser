@@ -600,10 +600,11 @@ function mergeSps(rec) {
     const sps = rec.sps;
     if (!sps)
         return rec;
+    const r = rec;
     for (const k of ['width', 'height', 'fps', 'fpsSource', 'fullRange', 'primaries',
         'transfer', 'matrix', 'sarWidth', 'sarHeight']) {
-        if (rec[k] === undefined && sps[k] !== undefined)
-            rec[k] = sps[k];
+        if (r[k] === undefined && sps[k] !== undefined)
+            r[k] = sps[k];
     }
     if (rec.bitDepthLuma === undefined && sps.bitDepthLuma) {
         rec.bitDepthLuma = sps.bitDepthLuma;

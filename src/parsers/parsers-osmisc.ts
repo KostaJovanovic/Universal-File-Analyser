@@ -10,18 +10,19 @@
    Dependency-free: only the shared toolkit (util/binutil) is imported. */
 
 import { el, fmtBytes, preBlock, fmtDate, readSlice, readText } from '../core/util.js';
+import type { ElChild, ElAttrs } from '../core/util.js';
 import { Reader, ascii, cp437, latin1, utf8 } from '../core/binutil.js';
 import type { Row, ParseFn } from '../core/types.js';
 
 // ---------- small helpers ----------
 // A monospace block that preserves ASCII art (no wrapping, horizontal scroll).
-function monoBlock(text) {
+function monoBlock(text: string) {
   return el('pre', { class: 'anr-code', style: 'max-height:480px;overflow:auto;font-size:12px;line-height:1.2;white-space:pre;margin:0;font-family:monospace;' }, text);
 }
 
 // Parse an INI / freedesktop-style file into { section: { key: value } } plus an
 // ordered list of section names. Comments (#, ;) and blank lines are skipped.
-function parseIni(text) {
+function parseIni(text: string) {
   const out: any = {}; const order = [];
   let cur = '';
   out[cur] = {};
@@ -45,7 +46,7 @@ function parseIni(text) {
 
 // First DOM element matching a tag name (case-insensitive), searched across the
 // whole document; returns its trimmed textContent or ''.
-function xmlText(doc, sel) {
+function xmlText(doc: ParentNode, sel: string) {
   const n = doc.querySelector(sel);
   return n ? (n.textContent || '').trim() : '';
 }
@@ -65,7 +66,7 @@ async function parseOpml(file: File) {
     if (created) out['Date created'] = created;
     if (owner) out['Owner'] = owner;
   }
-  const ver = doc.querySelector('opml').getAttribute('version');
+  const ver = doc.querySelector('opml')!.getAttribute('version');
   if (ver) out['Version'] = ver;
   // Feed outlines carry an xmlUrl attribute.
   const outlines = Array.from(doc.querySelectorAll('outline'));
@@ -100,8 +101,8 @@ async function parseFeed(file: File) {
   if (isAtom) {
     out['Format'] = 'Atom feed';
     const feed = doc.querySelector('feed');
-    out['Title'] = xmlText(feed, 'title') || '-';
-    const sub = xmlText(feed, 'subtitle'); if (sub) out['Subtitle'] = sub;
+    out['Title'] = xmlText(feed!, 'title') || '-';
+    const sub = xmlText(feed!, 'subtitle'); if (sub) out['Subtitle'] = sub;
     out['Items (entries)'] = (items = Array.from(doc.querySelectorAll('entry'))).length;
     for (const e of items) {
       const d = xmlText(e, 'updated') || xmlText(e, 'published');
@@ -130,7 +131,9 @@ async function parseFeed(file: File) {
 
   const valid = dates.filter((d) => d instanceof Date && !isNaN(d.getTime()));
   if (valid.length) {
-    const min = new Date(Math.min(...valid)), max = new Date(Math.max(...valid));
+    // Math.min/max coerce each Date through valueOf(); the cast only says so.
+    const nums = valid as unknown as number[];
+    const min = new Date(Math.min(...nums)), max = new Date(Math.max(...nums));
     out['Date range'] = fmtDate(min) + '  →  ' + fmtDate(max);
   }
   if (enclosures.length) {
@@ -222,7 +225,7 @@ async function parseCrash(file: File) {
   return parseTextCrash(text);
 }
 
-function parseAppleCrash(text) {
+function parseAppleCrash(text: string) {
   // Try whole-document JSON first.
   let whole = null;
   try { whole = JSON.parse(text); } catch (_) {}
@@ -264,15 +267,15 @@ function parseAppleCrash(text) {
   // Binary images / UUIDs.
   if (Array.isArray(b.usedImages)) {
     out['Loaded images'] = b.usedImages.length;
-    const uuids = b.usedImages.slice(0, 50).map((im) => (im.name || '?') + '  ' + (im.uuid || ''));
+    const uuids = b.usedImages.slice(0, 50).map((im: any) => (im.name || '?') + '  ' + (im.uuid || ''));
     out._sections = [{ title: 'Binary images (' + b.usedImages.length + ')', node: preBlock(uuids.join('\n')) }];
   }
   return out;
 }
 
-function parseTextCrash(text) {
+function parseTextCrash(text: string) {
   const out: Row = { 'Format': 'Crash report (text)' };
-  const grab = (re) => { const m = text.match(re); return m ? m[1].trim() : null; };
+  const grab = (re: RegExp) => { const m = text.match(re); return m ? m[1].trim() : null; };
   const fields: [string, RegExp][] = [
     ['Process', /^Process:\s*(.+)$/m],
     ['Identifier', /^Identifier:\s*(.+)$/m],
@@ -440,7 +443,7 @@ async function parseFontList(file: File) {
     if (f.hasSVG === 'yes') svg++;
     if (f.FamilyName) families.add(f.FamilyName.trim());
   }
-  const brk = (o) => Object.entries<number>(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
+  const brk = (o: Record<string, number>) => Object.entries<number>(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
   out['Unique families'] = String(families.size);
   if (Object.keys(tally).length) out['Font types'] = brk(tally);
   if (Object.keys(scripts).length) out['Writing scripts'] = brk(scripts);
@@ -458,8 +461,8 @@ async function parseFontList(file: File) {
   }
   const topRoots = Object.entries(roots).sort((a, b) => b[1] - a[1]).slice(0, 6);
 
-  const th = (t) => el('th', { style: 'text-align:left;padding:4px 8px;border-bottom:1px solid var(--hairline);position:sticky;top:0;background:var(--surface)' }, t);
-  const td = (v, extra?) => el('td', Object.assign({ style: 'padding:3px 8px;border-bottom:1px solid var(--hairline);white-space:nowrap' }, extra || {}), v);
+  const th = (t: ElChild) => el('th', { style: 'text-align:left;padding:4px 8px;border-bottom:1px solid var(--hairline);position:sticky;top:0;background:var(--surface)' }, t);
+  const td = (v: ElChild | ElChild[], extra?: ElAttrs | null) => el('td', Object.assign({ style: 'padding:3px 8px;border-bottom:1px solid var(--hairline);white-space:nowrap' }, extra || {}), v);
   const rows = fonts.slice(0, 600).map((f) => {
     const name = (f.FamilyName || f.FullName || f.FontName || '?').trim() + (f.StyleName && f.StyleName.trim() && f.StyleName.trim() !== 'Regular' ? ' ' + f.StyleName.trim() : '');
     const path = (f.OutlineFileName || '').trim();

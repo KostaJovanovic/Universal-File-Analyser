@@ -59,7 +59,7 @@ export class Reader {
   u64num() { return Number(this.u64()); }
 
   bytes_(n: number) { const b = this.bytes.subarray(this.pos, this.pos + n); this.pos += n; return b; }
-  ascii(n: number|undefined)  { const s = ascii(this.bytes, this.pos, n); this.pos += n; return s; }
+  ascii(n: number)  { const s = ascii(this.bytes, this.pos, n); this.pos += n; return s; }
   // Read a fixed-length latin1 string (advances n).
   latin1(n: number) { const s = latin1(this.bytes.subarray(this.pos, this.pos + n)); this.pos += n; return s; }
   // Null-terminated ASCII string starting at the cursor (advances past the NUL).
@@ -122,7 +122,7 @@ export function ascii(buf: Uint8Array, start = 0, len = buf.length - start) {
 // (default no separator, e.g. a continuous SHA-style hex string - pass ' ' for a
 // spaced hex dump). Replaces the ad-hoc `b.toString(16).padStart(2,'0')` idiom.
 export function hexByte(b: number) { return b.toString(16).padStart(2, '0'); }
-export function hexBytes(bytes: Uint8Array, sep = '', start = 0, len = bytes.length - start) {
+export function hexBytes(bytes: Bytes, sep = '', start = 0, len = bytes.length - start) {
   const end = Math.min(start + len, bytes.length);
   const out = [];
   for (let i = start; i < end; i++) out.push(bytes[i].toString(16).padStart(2, '0'));

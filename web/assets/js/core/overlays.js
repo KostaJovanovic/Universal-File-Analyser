@@ -49,8 +49,8 @@ export function anrConfirm(title, okLabel, opts) {
 // when the renderer settles. A short delay before showing keeps quick files
 // from flashing it.
 let _dropLoaderEl = null;
-let _dropLoaderTimer = null;
-let _dropLoaderHideTimer = null;
+let _dropLoaderTimer;
+let _dropLoaderHideTimer;
 let _dropLoaderOnCancel = null;
 let _dropLoaderShownAt = 0;
 // Intent flag: true once reveal() commits to showing the bar - set BEFORE the

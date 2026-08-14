@@ -33,12 +33,12 @@ const CC_AI_HELP = 'Content Credentials (C2PA) is a signed "made by / edited by"
 
 // Fields that legitimately mention a tool as normal usage (avoid over-flagging a
 // plain camera "Software" note); we still scan them but flag only on AI matches.
-function pushUnique(list, sig) {
+function pushUnique(list: any[], sig: any) {
   if (!list.some((s) => s.label === sig.label && s.detail === sig.detail)) list.push(sig);
 }
 
-function sdSummary(text) {
-  const grab = (re) => { const m = text.match(re); return m ? m[1].trim() : null; };
+function sdSummary(text: string) {
+  const grab = (re: string|RegExp) => { const m = text.match(re); return m ? m[1].trim() : null; };
   const parts = [];
   const map = [
     ['Steps', /Steps:\s*(\d+)/i], ['Sampler', /Sampler:\s*([^,\n]+)/i], ['CFG', /CFG scale:\s*([\d.]+)/i],
@@ -53,7 +53,7 @@ function sdSummary(text) {
 }
 
 // ---------- PNG text chunks ----------
-async function pngTextChunks(b) {
+async function pngTextChunks(b: Uint8Array) {
   if (b[0] !== 0x89 || b[1] !== 0x50) return [];
   const out = [];
   let i = 8;
@@ -89,7 +89,7 @@ async function pngTextChunks(b) {
 }
 
 // ---------- raw XMP packet from the bytes ----------
-function extractXmp(b) {
+function extractXmp(b: Uint8Array) {
   const open = findBytes(b, [0x3C, 0x78, 0x3A, 0x78, 0x6D, 0x70, 0x6D, 0x65, 0x74, 0x61]); // "<x:xmpmeta"
   if (open < 0) return null;
   const closeSig = [0x3C, 0x2F, 0x78, 0x3A, 0x78, 0x6D, 0x70, 0x6D, 0x65, 0x74, 0x61, 0x3E]; // "</x:xmpmeta>"
@@ -98,9 +98,9 @@ function extractXmp(b) {
 }
 
 // ---------- collect all signals ----------
-export async function collectAiSignals(file: File, exif, preManifests) {
+export async function collectAiSignals(file: File, exif: any, preManifests: any) {
   const b = new Uint8Array(await file.arrayBuffer());
-  const signals = [];
+  const signals: any[] = [];
 
   // 1) EXIF / XMP fields the parser already surfaced.
   if (exif) {
@@ -156,7 +156,7 @@ export async function collectAiSignals(file: File, exif, preManifests) {
 // ---------- card ----------
 const AI_HELP = 'Clues in the file that are often left by AI image generators - the name of an AI tool in the metadata, the standard IPTC "AI-generated" marker, or the settings blocks that tools like Stable Diffusion save inside the image. These are hints, not a verdict: metadata can be removed (so a genuine AI image might show nothing here) or added by hand (so a match is not proof either). Everything is read on your device.';
 
-export async function buildAiSignalsCard(file: File, exif, manifests) {
+export async function buildAiSignalsCard(file: File, exif: any, manifests: any) {
   let signals;
   try { signals = await collectAiSignals(file, exif, manifests); } catch (_) { return null; }
   if (!signals || !signals.length) return null;

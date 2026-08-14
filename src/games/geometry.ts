@@ -7,6 +7,12 @@
 import { rand, MONO } from './config.js';
 import { g } from './state.js';
 
+/** The minimum shape the spatial helpers below touch: a world position, and
+ *  with the velocity / radius they scale or reflect riding on the index
+ *  signature, since not every entity carries all three. Every game entity
+ *  (asteroid, bullet, ufo, powerup, particle, flyer, wreck) satisfies it. */
+export interface Positioned { x: number; y: number; [k: string]: any; }
+
 // Measure on the live context but restore its font afterwards, so this never leaks the
 // measuring font into the frame (makeAsteroid runs mid-update). Deliberately NOT a private
 // offscreen canvas: an extra 2D canvas can trip Chrome's accelerated-canvas cap and demote
@@ -14,7 +20,7 @@ import { g } from './state.js';
 // The size is quantised to an integer px so the game reuses a small, stable set of font
 // sizes - the old fractional sizes meant every asteroid split introduced a brand-new size
 // string, making every on-screen label re-rasterise for one frame (the "pulse" on destroy).
-export const fitFont = (label, radius: number) => {
+export const fitFont = (label: string, radius: number) => {
   const ctx = g.ctx;
   const prevFont = ctx.font;
   let f = Math.max(9, radius * 0.6);
@@ -76,7 +82,7 @@ export function rescaleScene(oldS: number, oldCx: number, oldCy: number, oldHW: 
   const fx = HW / oldHW, fy = HH / oldHH;    // per-axis position ratio
   const mapX = (x: number) => cx + (x - oldCx) * fx;
   const mapY = (y: number) => cy + (y - oldCy) * fy;
-  const remap = (o) => {
+  const remap = (o: Positioned) => {
     o.x = mapX(o.x); o.y = mapY(o.y);
     if (o.vx !== undefined) { o.vx *= sr; o.vy *= sr; }
     if (o.radius !== undefined) o.radius *= sr;
@@ -114,7 +120,7 @@ export function wrapDelta(ax: number, ay: number, bx: number, by: number) {
 }
 
 // Toroidal wrap: each axis wraps independently (classic Asteroids "the screen is a torus").
-export function wrap(o) {
+export function wrap(o: Positioned) {
   if (hardEdges()) return;   // mega fight: the walls are solid, nothing wraps
   const { cx, cy, HW, HH } = g;
   if (o.x < cx - HW) o.x += 2 * HW; else if (o.x > cx + HW) o.x -= 2 * HW;
@@ -131,7 +137,7 @@ export function edgeBounceShip() {
 }
 
 // Asteroids ping-pong off the solid walls (perfect reflection) during the mega fight.
-export function edgeReflect(o) {
+export function edgeReflect(o: Positioned) {
   const { cx, cy, HW, HH } = g;
   const r = o.radius || 0;
   if (o.x < cx - HW + r) { o.x = cx - HW + r; o.vx = Math.abs(o.vx); }
@@ -161,7 +167,7 @@ export function distToSeg(px: number, py: number, ax: number, ay: number, bx: nu
 
 // Toroidal render ghost: while an object (radius `extent`) straddles an edge, also
 // paint a copy shifted by the full field width/height so the crossing is seamless.
-export function withWrap(x: number, y: number, extent: number, paint) {
+export function withWrap(x: number, y: number, extent: number, paint: (x: number, y: number) => void) {
   const { cx, cy, HW, HH } = g;
   paint(x, y);
   const ox = (x - extent < cx - HW) ? 2 * HW : (x + extent > cx + HW) ? -2 * HW : 0;

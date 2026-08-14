@@ -21,7 +21,7 @@ const GB = 1024 * MB;
 // ---- device tier (RAM-based, memoised) ----
 // Falsy `|| 0` (not `=== undefined`) so any unreported/zero value lands in `mid`,
 // identical to gcode's historical `navigator.deviceMemory || 4`.
-let _tier: string;
+let _tier: 'high' | 'mid' | 'low';
 export function deviceTier() {
   if (_tier) return _tier;
   const dm = (typeof navigator !== 'undefined' && navigator.deviceMemory) || 0;
@@ -30,7 +30,7 @@ export function deviceTier() {
 }
 
 // Pick a value for the current device tier: byTier({ high, mid, low }).
-export function byTier({ high, mid, low }) {
+export function byTier<T>({ high, mid, low }: { high: T; mid: T; low: T }): T {
   return { high, mid, low }[deviceTier()];
 }
 

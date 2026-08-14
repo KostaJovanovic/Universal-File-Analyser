@@ -468,7 +468,8 @@ async function parseVcs(file) {
         return null;
     const lines = unfoldIcal(text).map(icalLine).filter(Boolean);
     const out = { 'Format': 'vCalendar 1.0 (legacy)', 'Legacy': 'yes (superseded by iCalendar/.ics)' };
-    let version = '', events = 0, cur = null;
+    let version = '', events = 0;
+    let cur = null;
     for (const l of lines) {
         if (l.name === 'VERSION' && !version)
             version = l.value;
@@ -782,7 +783,7 @@ async function parseMsg(file) {
     const attachNames = [];
     for (const st of attachStorages) {
         const prefix = (st.path || st.name) + '/';
-        const childFilter = (x) => x.path && x.path.startsWith(prefix);
+        const childFilter = (x) => !!x.path && x.path.startsWith(prefix);
         const fname = getMapiProp(cfbf, '3707', childFilter) || // attach long filename
             getMapiProp(cfbf, '3704', childFilter) || // attach filename (short)
             getMapiProp(cfbf, '3001', childFilter); // display name

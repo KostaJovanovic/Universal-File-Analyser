@@ -9,9 +9,16 @@ import { g, saveSettings } from './state.js';
 import { layout } from './geometry.js';
 import { restart, makeAsteroid } from './world.js';
 
+/** One row in the Settings menu: a boolean toggle, or a segmented `select`
+ *  with its options and an optional apply hook. `key` indexes g.settings. */
+export interface SettingDef {
+  key: string; t: string; d?: string; type?: string;
+  options?: { v: any; label: string }[]; apply?: () => void;
+}
+
 // Drives the Settings menu rows. type 'toggle' (default) renders a switch; 'select'
 // renders a segmented control over `options`. `apply` (optional) runs on change.
-export const SETTING_DEFS = [
+export const SETTING_DEFS: SettingDef[] = [
   { key: 'legacyControls', t: 'Classic controls', d: 'Rotate with A / D, thrust with W - the original Asteroids steering' },
   { key: 'reduceFlash', t: 'Reduce flashing' },
   { key: 'bgDetail', t: 'Background detail', d: 'Starfield and drifting ship squadrons' },
@@ -50,7 +57,7 @@ function statChip(k: string|null, v: string|null, acc?: boolean|undefined) {
   const vv = document.createElement('span'); vv.className = 'v' + (acc ? ' acc' : ''); vv.textContent = v;
   c.append(kk, vv); return c;
 }
-function menuButton(icon: string|null, label: string|null, onClick, primary?: boolean|undefined) {
+function menuButton(icon: string|null, label: string|null, onClick: (e: MouseEvent) => void, primary?: boolean|undefined) {
   const b = document.createElement('button');
   b.type = 'button'; b.className = 'anr-menu-btn' + (primary ? ' anr-menu-btn--primary' : '');
   const ic = document.createElement('span'); ic.className = 'ic'; ic.textContent = icon;
@@ -59,7 +66,7 @@ function menuButton(icon: string|null, label: string|null, onClick, primary?: bo
   b.addEventListener('click', onClick);
   return b;
 }
-function toggleRow(def) {
+function toggleRow(def: SettingDef) {
   const row = document.createElement('button');
   row.type = 'button'; row.className = 'anr-menu-toggle';
   row.setAttribute('role', 'switch');
@@ -74,15 +81,15 @@ function toggleRow(def) {
   return row;
 }
 // A multi-option setting: label on the left, a segmented control on the right.
-function selectRow(def) {
+function selectRow(def: SettingDef) {
   const row = document.createElement('div'); row.className = 'anr-menu-toggle'; row.style.cursor = 'default';
   const lab = document.createElement('span'); lab.className = 'lab';
   lab.append(menuLine('t', def.t));
   if (def.d) lab.append(menuLine('d', def.d));
   const seg = document.createElement('div'); seg.className = 'anr-menu-seg';
-  const btns = [];
+  const btns: { b: HTMLButtonElement; v: any }[] = [];
   const sync = () => btns.forEach((x) => x.b.classList.toggle('on', x.v === g.settings[def.key]));
-  for (const opt of def.options) {
+  for (const opt of def.options!) {
     const b = document.createElement('button'); b.type = 'button'; b.textContent = opt.label;
     b.addEventListener('click', () => { g.settings[def.key] = opt.v; sync(); saveSettings(); if (def.apply) def.apply(); });
     btns.push({ b, v: opt.v });
@@ -126,7 +133,7 @@ function renderSplash() {
 export function showSplash() {
   g.splash = true; g.menuOpen = false;
   if (g.pauseBtn) g.pauseBtn.style.display = 'none';
-  g.mobileControls.forEach((elm) => { elm.style.display = 'none'; });
+  g.mobileControls.forEach((elm: HTMLElement) => { elm.style.display = 'none'; });
   spawnSplashDecor();
   renderSplash();
 }
@@ -150,7 +157,7 @@ function renderPauseRoot() {
   p.append(menuButton('✕', 'Exit', () => g.teardown()));
 }
 // Settings view: toggle rows + a Back button that returns to whichever view opened it.
-function renderSettings(back) {
+function renderSettings(back: () => void) {
   const p = menuShell();
   p.append(menuLine('anr-score-title', 'SETTINGS'), menuRule());
   for (const def of SETTING_DEFS) p.append(def.type === 'select' ? selectRow(def) : toggleRow(def));

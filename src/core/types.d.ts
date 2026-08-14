@@ -69,7 +69,16 @@ export type Renderer = (
 
 /** One ROUTES entry. Only photo/audio/video use anything beyond `render`. */
 export interface Route {
-  render: Renderer;
+  /** Written as a METHOD, not a `render: Renderer` property, and that is
+      deliberate under `strictFunctionTypes`. Method parameters are checked
+      bivariantly, property-position function types contravariantly - so as a
+      property, `renderProprietary(file, el, extOverride?: string)` would be
+      rejected for not also accepting a `RenderOpts`. It never receives one:
+      app.js pairs the string form with proprietary/comic and the object form
+      with photo, in separate branches. The pairing is a dispatcher invariant the
+      type system cannot see, and the method form is how TypeScript spells
+      "checked bivariantly on purpose" rather than papering over it with `any`. */
+  render(file: File, resultsEl: HTMLElement, arg?: string | RenderOpts): Promise<unknown> | unknown;
   /** Which results container to draw into; omitted means #unknownResults. */
   results?: ResultsSection;
   /** Nav anchors to light up, e.g. ['#video', '#audio', '#photo']. */

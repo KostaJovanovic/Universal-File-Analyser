@@ -9,6 +9,11 @@
 
 import { el, h3help } from './util.js';
 
+/** The four indicator buckets. Also the key of the per-bucket `seen` dedupe sets. */
+export type IndicatorKind = 'urls' | 'ips' | 'domains' | 'emails';
+/** What extractIndicators() returns: each bucket deduped, capped, insertion-ordered. */
+export type Indicators = Record<IndicatorKind, string[]>;
+
 // File-ish "TLDs" that are almost always a filename, not a real domain, so a token
 // like "bundle.min.js" or "logo.png" doesn't get reported as a domain indicator.
 const FILE_TLDS = new Set([
@@ -25,10 +30,10 @@ const FILE_TLDS = new Set([
 // { urls, ips, domains, emails }, each a deduped, capped array (insertion order).
 export function extractIndicators(text: string, opts: any = {}) {
   const cap = opts.cap || 300;
-  const out = { urls: [], ips: [], domains: [], emails: [] };
+  const out: Indicators = { urls: [], ips: [], domains: [], emails: [] };
   if (!text) return out;
-  const seen = { urls: new Set(), ips: new Set(), domains: new Set(), emails: new Set() };
-  const add = (k: string, v: string) => { if (v && !seen[k].has(v) && out[k].length < cap) { seen[k].add(v); out[k].push(v); } };
+  const seen: Record<IndicatorKind, Set<string>> = { urls: new Set(), ips: new Set(), domains: new Set(), emails: new Set() };
+  const add = (k: IndicatorKind, v: string) => { if (v && !seen[k].has(v) && out[k].length < cap) { seen[k].add(v); out[k].push(v); } };
 
   // URLs first; strip them out so their host isn't re-counted as a bare domain.
   let work = text.replace(/\bhttps?:\/\/[^\s"'<>()[\]{}\\|^`]+/gi, (m: string) => {
@@ -58,16 +63,16 @@ export function extractIndicators(text: string, opts: any = {}) {
 
 // Public lookup links per indicator type. enc keeps query strings safe.
 const enc = encodeURIComponent;
-const LOOKUPS = {
-  url: (v: string|number|boolean) => [['VirusTotal', 'https://www.virustotal.com/gui/search/' + enc(v)], ['urlscan', 'https://urlscan.io/search/#' + enc(v)]],
-  ip: (v: string|number|boolean) => [['VirusTotal', 'https://www.virustotal.com/gui/ip-address/' + enc(v)], ['AbuseIPDB', 'https://www.abuseipdb.com/check/' + enc(v)], ['Shodan', 'https://www.shodan.io/host/' + enc(v)]],
-  domain: (v: string|number|boolean) => [['VirusTotal', 'https://www.virustotal.com/gui/domain/' + enc(v)], ['urlscan', 'https://urlscan.io/domain/' + enc(v)]],
+const LOOKUPS: Record<string, (v: string) => string[][]> = {
+  url: (v: string) => [['VirusTotal', 'https://www.virustotal.com/gui/search/' + enc(v)], ['urlscan', 'https://urlscan.io/search/#' + enc(v)]],
+  ip: (v: string) => [['VirusTotal', 'https://www.virustotal.com/gui/ip-address/' + enc(v)], ['AbuseIPDB', 'https://www.abuseipdb.com/check/' + enc(v)], ['Shodan', 'https://www.shodan.io/host/' + enc(v)]],
+  domain: (v: string) => [['VirusTotal', 'https://www.virustotal.com/gui/domain/' + enc(v)], ['urlscan', 'https://urlscan.io/domain/' + enc(v)]],
   email: () => [],
 };
 
 // Build a "Network indicators" card from extracted indicators, or null if none.
 // Each value carries small lookup links; per-section list capped for sanity.
-export function osintCard(ind, opts: any = {}) {
+export function osintCard(ind: Indicators, opts: any = {}) {
   const total = ind.urls.length + ind.ips.length + ind.domains.length + ind.emails.length;
   if (!total) return null;
   const limit = opts.limit || 100;
@@ -79,7 +84,7 @@ export function osintCard(ind, opts: any = {}) {
   card.appendChild(el('p', { class: 'anr-hint' },
     'URLs, IPs, domains and email addresses found in this file’s text. Nothing is sent until you click a lookup link.'));
 
-  const section = (title: string, items: string|any[], kind: string) => {
+  const section = (title: string, items: string[], kind: string) => {
     if (!items.length) return;
     card.appendChild(el('div', { class: 'anr-readout-section' }, title + ' (' + items.length + ')'));
     const list = el('div', { class: 'anr-osint-list' });
@@ -102,6 +107,6 @@ export function osintCard(ind, opts: any = {}) {
 }
 
 // Convenience: extract from text and return a ready card (or null). Guarded.
-export function buildOsintCard(text: string, opts) {
+export function buildOsintCard(text: string, opts?: any) {
   try { return osintCard(extractIndicators(text || '', opts), opts); } catch (_) { return null; }
 }

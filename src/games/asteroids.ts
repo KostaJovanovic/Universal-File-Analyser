@@ -293,7 +293,7 @@ export function launchAsteroids() {
       h.style.cssText = 'font-size:10px; letter-spacing:.18em; color:' + MUTED + '; margin-top:4px;';
       return h;
     };
-    const mkBtn = (label: string|null, onClick) => {
+    const mkBtn = (label: string|null, onClick: (b: HTMLButtonElement) => void) => {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'anr-game-btn';
       b.textContent = label;

@@ -1660,7 +1660,7 @@ function fmtCodeFormat(f) {
         ean_13: 'EAN-13', ean_8: 'EAN-8', upc_a: 'UPC-A', upc_e: 'UPC-E',
         code_128: 'Code 128', code_39: 'Code 39', code_93: 'Code 93', codabar: 'Codabar', itf: 'ITF', dx_film_edge: 'DX film edge',
     };
-    return map[f] || String(f || 'Barcode').replace(/_/g, ' ').toUpperCase();
+    return map[String(f)] || String(f || 'Barcode').replace(/_/g, ' ').toUpperCase();
 }
 // Detect every 1D/2D code in the image: native BarcodeDetector (many formats,
 // Chromium/Android) first, with the vendored jsQR as a QR fallback for browsers
@@ -1909,7 +1909,7 @@ function makeOcrCard(file, img) {
             const MIN_CONF = 60;
             const MIN_WORD_LEN = 2;
             const words = (r.data && r.data.words) || [];
-            const good = words.filter(w => w.confidence >= MIN_CONF && w.text.trim().length >= MIN_WORD_LEN);
+            const good = words.filter((w) => w.confidence >= MIN_CONF && w.text.trim().length >= MIN_WORD_LEN);
             if (good.length === 0) {
                 out.textContent = '(no text detected)';
             }
@@ -2040,7 +2040,7 @@ function renderLsbPlanes(img, container) {
         toolbar.innerHTML = '';
         lbWrap.classList.remove('anr-checkerboard');
         const overlays = lbWrap.querySelectorAll('.lightbox-peaking');
-        overlays.forEach(o => { o.hidden = true; });
+        overlays.forEach((o) => { o.hidden = true; });
         lbWrap.querySelector('.lightbox-focus-map').hidden = true;
         lbWrap.querySelector('.lightbox-focus-dot').hidden = true;
         let idx = startIdx;
@@ -4481,7 +4481,8 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
 export function initPhoto({ dropEl, inputEl, resultsEl, onFile }) {
     const handle = onFile || ((file) => renderPhoto(file, resultsEl));
     inputEl.addEventListener('change', (e) => {
-        const file = e.target.files && e.target.files[0];
+        const t = e.target;
+        const file = t.files && t.files[0];
         if (file)
             handle(file);
         inputEl.value = '';

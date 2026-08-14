@@ -130,7 +130,7 @@ function unwatch(video: HTMLMediaElement) {
 // --- exclusive audio ownership ---------------------------------------------
 // The one synced video allowed to make sound. null until the user starts a clip.
 let audioOwner: HTMLMediaElement|null = null;
-let onOwner = null;   // callback so the volume system re-applies level/mute on change
+let onOwner: ((el: HTMLMediaElement|null) => void)|null = null;   // callback so the volume system re-applies level/mute on change
 
 export function getAudioOwner() {
   // A leftover owner from a previous analysis (now detached) must not silence the
@@ -141,7 +141,7 @@ export function getAudioOwner() {
 export function isSynced(video: HTMLMediaElement) { return players.has(video); }
 // Register a callback fired whenever the audio owner changes (the volume system
 // uses it to push the shared level/mute onto the new owner and mute the rest).
-export function onAudioOwner(cb) { onOwner = cb; }
+export function onAudioOwner(cb: (el: HTMLMediaElement|null) => void) { onOwner = cb; }
 
 // Make `video` the sole audio source: unmute it, mute every other synced player.
 export function claimAudio(video: HTMLMediaElement) {
@@ -159,8 +159,8 @@ export function claimAudio(video: HTMLMediaElement) {
 // video owns the audio (same play / pause / seek, nudged back into step during
 // playback). The shared-volume system drives its level/mute. Result: you hear the
 // clip you pressed, in sync with the picture, with no echo.
-let companion = null;
-export function setAudioCompanion(audioEl) {
+let companion: HTMLMediaElement|null = null;
+export function setAudioCompanion(audioEl: HTMLMediaElement|null) {
   companion = audioEl || null;
   if (onOwner) try { onOwner(companion); } catch (_) {}   // let the volume system adopt it
 }

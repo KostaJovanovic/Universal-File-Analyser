@@ -5,7 +5,7 @@
 
 import { el, buildReadout, errorCard } from '../core/util.js';
 
-const META_NAMES = {
+const META_NAMES: Record<string, string> = {
   ti: 'Title', ar: 'Artist', al: 'Album', au: 'Author', by: 'Created by',
   offset: 'Offset (ms)', length: 'Length', re: 'Editor', tool: 'Editor', ve: 'Version', '#': 'Comment',
 };
@@ -14,7 +14,7 @@ const META_NAMES = {
 const TIME_RE = /\[(\d{1,3}):(\d{1,2}(?:[.:]\d{1,3})?)\]/g;
 const WORD_RE = /<\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?>/g;
 
-function fmtTime(sec) {
+function fmtTime(sec: number) {
   const m = Math.floor(sec / 60);
   const s = sec - m * 60;
   return m + ':' + s.toFixed(2).padStart(5, '0');

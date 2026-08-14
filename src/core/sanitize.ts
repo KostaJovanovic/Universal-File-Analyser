@@ -137,7 +137,7 @@ export function sanitizeDoc(doc: Document, opts: any = {}) {
 }
 
 /* Parse an HTML string and return a wrapper div holding its sanitised content. */
-export function sanitizeHtml(html, opts: any = {}) {
+export function sanitizeHtml(html: unknown, opts: any = {}) {
   const doc = new DOMParser().parseFromString(String(html == null ? '' : html), 'text/html');
   return sanitizeDoc(doc, opts);
 }

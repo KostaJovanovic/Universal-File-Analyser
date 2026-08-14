@@ -14,8 +14,8 @@ import { openZip } from '../renderers/zip.js';
 // ---------- small helpers ----------
 
 // CRC32 (IEEE) over a Uint8Array.
-let CRC_TABLE = null;
-function crc32(bytes, start = 0, end = bytes.length) {
+let CRC_TABLE: Uint32Array | null = null;
+function crc32(bytes: Uint8Array, start = 0, end = bytes.length) {
   if (!CRC_TABLE) {
     CRC_TABLE = new Uint32Array(256);
     for (let n = 0; n < 256; n++) {
@@ -28,11 +28,11 @@ function crc32(bytes, start = 0, end = bytes.length) {
   for (let i = start; i < end; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
   return (c ^ 0xFFFFFFFF) >>> 0;
 }
-const hex8 = (n) => hexU32(n, true);
+const hex8 = (n: number) => hexU32(n, true);
 
 // ---------- iNES / NES 2.0 ----------
 const NES_MIRROR = ['Horizontal', 'Vertical'];
-function parseNes(head) {
+function parseNes(head: Uint8Array) {
   if (!(head[0] === 0x4E && head[1] === 0x45 && head[2] === 0x53 && head[3] === 0x1A)) return null;
   const f6 = head[6], f7 = head[7];
   const isNes2 = (f7 & 0x0C) === 0x08;
@@ -80,7 +80,7 @@ const GB_MBC: Record<string, string> = {
   0xFC: 'Pocket Camera', 0xFD: 'Bandai TAMA5', 0xFE: 'HuC3', 0xFF: 'HuC1+RAM+Battery'
 };
 const GB_RAM: Record<string, string> = { 0: 'None', 1: '2 KB', 2: '8 KB', 3: '32 KB (4 banks)', 4: '128 KB (16 banks)', 5: '64 KB (8 banks)' };
-function parseGb(head, ext: string) {
+function parseGb(head: Uint8Array, ext: string) {
   if (head.length < 0x150) return null;
   // Validate Nintendo logo start (0xCE 0xED 0x66 0x66) at 0x104 - cheap sanity check.
   const logoOk = head[0x104] === 0xCE && head[0x105] === 0xED && head[0x106] === 0x66 && head[0x107] === 0x66;
@@ -113,7 +113,7 @@ function parseGb(head, ext: string) {
 }
 
 // ---------- Game Boy Advance ----------
-function parseGba(head) {
+function parseGba(head: Uint8Array) {
   if (head.length < 0xC0) return null;
   // Fixed value 0x96 at 0xB2 is the strongest GBA signature.
   if (head[0xB2] !== 0x96) return null;
@@ -139,7 +139,7 @@ const SNES_REGION: Record<number, string> = {
   4: 'Finland', 5: 'Denmark', 6: 'France', 7: 'Netherlands', 8: 'Spain', 9: 'Germany',
   10: 'Italy', 11: 'China', 13: 'South Korea', 14: 'Common', 15: 'Canada', 16: 'Brazil', 17: 'Australia'
 };
-function scoreSnesHeader(b, base) {
+function scoreSnesHeader(b: Uint8Array, base: number) {
   if (base + 0x30 > b.length) return -1;
   let score = 0;
   // Title region: mostly printable
@@ -188,7 +188,7 @@ async function parseSnes(file: File) {
 }
 
 // ---------- Nintendo DS / DSi ----------
-function parseNds(head) {
+function parseNds(head: Uint8Array) {
   if (head.length < 0x170) return null;
   const out: Row = { 'Format': 'Nintendo DS / DSi ROM' };
   out['Title'] = cleanAscii(head, 0x00, 12) || '(none)';
@@ -207,7 +207,7 @@ function parseNds(head) {
 }
 
 // ---------- Nintendo 64 ----------
-function n64Order(head) {
+function n64Order(head: Uint8Array) {
   // First 4 bytes encode byte order. Standard header word is 0x80371240.
   const b = head;
   if (b[0] === 0x80 && b[1] === 0x37 && b[2] === 0x12 && b[3] === 0x40) return 'z64'; // big-endian (native)
@@ -216,7 +216,7 @@ function n64Order(head) {
   return null;
 }
 // Reorder a chunk into big-endian (z64) layout given a detected order.
-function n64ToBig(bytes, order) {
+function n64ToBig(bytes: Uint8Array, order: string) {
   if (order === 'z64') return bytes;
   const out = new Uint8Array(bytes.length);
   if (order === 'v64') {           // swap each 2-byte pair
@@ -232,7 +232,7 @@ const N64_REGION: Record<string, string> = {
   0x49: 'Italy', 0x4A: 'Japan', 0x4B: 'Korea', 0x4C: 'Gateway 64 (PAL)', 0x4E: 'Canada',
   0x50: 'Europe', 0x53: 'Spain', 0x55: 'Australia', 0x57: 'Scandinavia', 0x58: 'Europe', 0x59: 'Europe'
 };
-function parseN64(head) {
+function parseN64(head: Uint8Array) {
   const order = n64Order(head);
   if (!order || head.length < 0x40) return null;
   const b = n64ToBig(head.subarray(0, 0x40), order);
@@ -302,7 +302,7 @@ async function parseIps(file: File) {
 }
 
 // ---------- BPS patch ----------
-function readVarint(b, cur) {
+function readVarint(b: Uint8Array, cur: { i: number }) {
   let data = 0, shift = 1;
   for (;;) {
     const x = b[cur.i++];
@@ -402,7 +402,7 @@ async function parseWad(file: File) {
 // ---------- NBT (Minecraft) ----------
 const NBT_TYPES = ['End', 'Byte', 'Short', 'Int', 'Long', 'Float', 'Double', 'ByteArray', 'String', 'List', 'Compound', 'IntArray', 'LongArray'];
 // Minimal NBT walker: collects scalar tags by name into a flat map, capped.
-function walkNbt(b) {
+function walkNbt(b: Uint8Array) {
   const r = new Reader(b); // NBT is big-endian
   const found: any = {};
   let depth = 0, visited = 0;
@@ -411,7 +411,7 @@ function walkNbt(b) {
     const s = ascii(r.bytes, r.pos, len); r.skip(len);
     return s;
   }
-  function readPayload(type, name) {
+  function readPayload(type: number, name: string) {
     visited++;
     if (visited > 20000) throw new Error('cap');
     switch (type) {
@@ -449,7 +449,7 @@ function walkNbt(b) {
       default: throw new Error('badtype');
     }
   }
-  function skipPayload(type) {
+  function skipPayload(type: number) {
     visited++;
     if (visited > 20000) throw new Error('cap');
     switch (type) {
@@ -463,7 +463,7 @@ function walkNbt(b) {
       default: throw new Error('badtype');
     }
   }
-  function record(name, v) {
+  function record(name: string, v: any) {
     if (!name) return;
     if (Object.keys(found).length < 400 && found[name] === undefined) found[name] = v;
   }
@@ -519,22 +519,22 @@ async function parseMcZip(file: File, ext: string) {
   if (manEntry) {
     try {
       const txt = await zip.text(manEntry.name);
-      const j = JSON.parse(txt);
+      const j = JSON.parse(txt!);
       const h = j.header || {};
       if (h.name) out['Pack name'] = String(h.name);
       if (h.description) out['Description'] = String(h.description).slice(0, 200);
       if (h.uuid) out['UUID'] = String(h.uuid);
       if (Array.isArray(h.version)) out['Version'] = h.version.join('.');
       if (Array.isArray(h.min_engine_version)) out['Min engine version'] = h.min_engine_version.join('.');
-      const mods = (j.modules || []).map((m) => m.type).filter(Boolean);
+      const mods = (j.modules || []).map((m: any) => m.type).filter(Boolean);
       if (mods.length) out['Module types'] = mods.join(', ');
     } catch (_) { /* ignore */ }
   }
   if (zip.has('levelname.txt')) {
-    try { out['Level name'] = (await zip.text('levelname.txt')).trim().slice(0, 120); } catch (_) {}
+    try { out['Level name'] = (await zip.text('levelname.txt'))!.trim().slice(0, 120); } catch (_) {}
   } else {
     const lvl = zip.entries.find((e) => /levelname\.txt$/i.test(e.name));
-    if (lvl) { try { out['Level name'] = (await zip.text(lvl.name)).trim().slice(0, 120); } catch (_) {} }
+    if (lvl) { try { out['Level name'] = (await zip.text(lvl.name))!.trim().slice(0, 120); } catch (_) {} }
   }
   out._sections = [{ title: 'Files (' + zip.entries.length + ', sample)', node: preBlock(zip.names().slice(0, 300).join('\n')) }];
   return out;
@@ -846,7 +846,7 @@ async function parseTiledJson(file: File, ext: string) {
   }
   if (j.type !== 'map' && !(j.width && j.layers)) return null;
   const layers = j.layers || [];
-  const objects = layers.reduce((a, l) => a + ((l.objects && l.objects.length) || 0), 0);
+  const objects = layers.reduce((a: number, l: any) => a + ((l.objects && l.objects.length) || 0), 0);
   const out = {
     'Format': 'Tiled map (JSON)',
     'Orientation': j.orientation || '-',
@@ -1380,7 +1380,7 @@ async function parseSega8(file: File, ext: string) {
   const r = new Reader(buf, true); r.seek(10); r.le(true);
   const checksum = r.u16();
   // BCD product code (2.5 bytes) + version nibble at 0x0E-0x0F.
-  const regByte = buf[15];
+  const regByte = buf![15];
   const region = regByte >> 4;
   const romCode = regByte & 0x0F;
   return {
@@ -1517,7 +1517,7 @@ async function parsePyxel(file: File) {
   const out: Row = { 'Format': 'Pyxel Edit document (.pyxel, ZIP)', 'Entries': zip.entries.length };
   if (docEntry) {
     try {
-      const j = JSON.parse(await zip.text(docEntry.name));
+      const j = JSON.parse((await zip.text(docEntry.name))!);
       if (j.tileset) out['Tile size'] = (j.tileset.tileWidth || '?') + ' x ' + (j.tileset.tileHeight || '?');
       if (j.canvas) {
         out['Canvas'] = (j.canvas.width || '?') + ' x ' + (j.canvas.height || '?');
@@ -1624,7 +1624,7 @@ async function parseEmuSave(file: File, ext: string) {
       // Still likely an fm2 - read more thoroughly.
     }
     const full = await readText(file, 1 << 16);
-    const get = (k) => (full.match(new RegExp('^' + k + '\\s+(.+)$', 'm')) || [])[1];
+    const get = (k: string) => (full.match(new RegExp('^' + k + '\\s+(.+)$', 'm')) || [])[1];
     const out: Row = { 'Format': 'FCEUX movie (.fm2)' };
     if (get('version')) out['Movie version'] = get('version').trim();
     if (get('emuVersion')) out['Emulator version'] = get('emuVersion').trim();
@@ -1639,7 +1639,7 @@ async function parseEmuSave(file: File, ext: string) {
   if (ext === 'dsm') {
     const full = await readText(file, 1 << 16);
     if (!/version\s+\d/i.test(full) && !/rerecordCount/i.test(full)) return null;
-    const get = (k) => (full.match(new RegExp('^' + k + '\\s+(.+)$', 'm')) || [])[1];
+    const get = (k: string) => (full.match(new RegExp('^' + k + '\\s+(.+)$', 'm')) || [])[1];
     const out: Row = { 'Format': 'DeSmuME movie (.dsm)' };
     if (get('version')) out['Movie version'] = get('version').trim();
     if (get('emuVersion')) out['Emulator version'] = get('emuVersion').trim();

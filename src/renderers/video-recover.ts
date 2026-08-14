@@ -23,7 +23,12 @@
    Promise<Uint8Array> abstracts the byte source so this runs identically under the
    browser File API and a Node test harness. */
 
-function fourcc(u8, p) {
+/** The byte source every helper here reads through: reader(start, end) resolves
+ *  the bytes in [start, end). Backed by the File API in the browser and by fs in
+ *  a Node harness. */
+type ByteReader = (start: number, end: number) => Promise<Uint8Array>;
+
+function fourcc(u8: Uint8Array, p: number) {
   return String.fromCharCode(u8[p], u8[p + 1], u8[p + 2], u8[p + 3]);
 }
 
@@ -31,7 +36,7 @@ function fourcc(u8, p) {
 // followed by an mdat with no moov anywhere. Returns null for a normal file (moov
 // present, or not ISOBMFF at all). On a hit, returns the mdat payload range plus
 // how much data the mdat header claims is missing past EOF (the truncation gap).
-export async function detectMoovlessMp4(reader, size) {
+export async function detectMoovlessMp4(reader: ByteReader, size: number) {
   if (size < 16) return null;
   const head = await reader(0, 16);
   if (head.length < 8 || fourcc(head, 4) !== 'ftyp') return null;
@@ -76,7 +81,7 @@ export async function detectMoovlessMp4(reader, size) {
 // which carries a fixed 78-byte header that a generic box-tree walk would have to
 // special-case; a tag scan sidesteps that. The 4 bytes preceding the tag are the
 // box size, validated to reject a coincidental match inside a string/payload.
-function locateTag(u8, start, end, type) {
+function locateTag(u8: Uint8Array, start: number, end: number, type: string) {
   const a = type.charCodeAt(0), b = type.charCodeAt(1), c = type.charCodeAt(2), d = type.charCodeAt(3);
   for (let i = Math.max(start, 4); i + 4 <= end; i++) {
     if (u8[i] === a && u8[i + 1] === b && u8[i + 2] === c && u8[i + 3] === d) {
@@ -90,7 +95,7 @@ function locateTag(u8, start, end, type) {
 }
 
 // Concatenate parameter-set NAL payloads into one Annex B blob (4-byte start codes).
-function toAnnexB(nals) {
+function toAnnexB(nals: any[]) {
   let total = 0;
   for (const n of nals) total += 4 + n.length;
   const out = new Uint8Array(total);
@@ -102,7 +107,7 @@ function toAnnexB(nals) {
 // Lift the codec parameter sets (SPS/PPS, plus HEVC VPS) and stream geometry from a
 // healthy reference MP4/MOV's avcC / hvcC box. Used to supply the params a
 // moov-less clip is missing. Returns null if the file has no usable config box.
-export async function extractMp4ParamSets(reader, size) {
+export async function extractMp4ParamSets(reader: ByteReader, size: number) {
   const det = await (async () => {
     // Walk top-level boxes to the moov (may sit before or after mdat). Reference
     // clips are healthy and small, so reading the whole moov is cheap.
@@ -170,7 +175,7 @@ export async function extractMp4ParamSets(reader, size) {
 // SampleEntry 8 + 16 reserved, then width(2) height(2)). locateTag returns the
 // position just after the 4CC, i.e. the SampleEntry body start, so width sits 24
 // bytes in (8 SampleEntry reserved/data_ref + 16 VisualSampleEntry pre-defined).
-function sampleEntryDims(u8, dv, N, fcc) {
+function sampleEntryDims(u8: Uint8Array, dv: DataView<any>, N: number, fcc: string) {
   const box = locateTag(u8, 0, N, fcc);
   if (!box) return {};
   const dim = box.dataStart + 24;
@@ -178,13 +183,13 @@ function sampleEntryDims(u8, dv, N, fcc) {
   const w = dv.getUint16(dim), h = dv.getUint16(dim + 2);
   return (w > 0 && h > 0) ? { width: w, height: h } : {};
 }
-function avcDims(u8, dv, N) { return sampleEntryDims(u8, dv, N, 'avc1'); }
-function hvcDims(u8, dv, N) { return sampleEntryDims(u8, dv, N, 'hvc1'); }
+function avcDims(u8: Uint8Array, dv: DataView<any>, N: number) { return sampleEntryDims(u8, dv, N, 'avc1'); }
+function hvcDims(u8: Uint8Array, dv: DataView<any>, N: number) { return sampleEntryDims(u8, dv, N, 'hvc1'); }
 
 // Valid video NAL types we accept while carving. Slices/IDR/SEI/AUD/SPS/PPS for
 // H.264; for HEVC the set spans VCL 0..31 plus VPS/SPS/PPS/AUD/SEI (32..39).
 const H264_VID = new Set([1, 5, 6, 7, 8, 9]);
-function isVidType(t, h265) {
+function isVidType(t: number, h265: boolean) {
   if (h265) return (t >= 0 && t <= 21) || (t >= 32 && t <= 39);
   return H264_VID.has(t);
 }
@@ -200,7 +205,7 @@ function isVidType(t, h265) {
 // NOT retained - essential in the browser, where a multi-GB carve must stream into
 // a disk-backed Blob rather than pile ~9 GB of Uint8Arrays onto the JS heap. With
 // no onChunk the chunks accumulate in the returned `parts` array (Node tests).
-export async function carveAvccToAnnexB(reader, mdatStart, mdatEnd, opts: any = {}) {
+export async function carveAvccToAnnexB(reader: ByteReader, mdatStart: number, mdatEnd: number, opts: any = {}) {
   const lenSize = opts.lenSize || 4;
   const h265 = opts.codec === 'h265';
   const signal = opts.signal;
@@ -216,19 +221,19 @@ export async function carveAvccToAnnexB(reader, mdatStart, mdatEnd, opts: any = 
   // carry the exact ids the slices reference - far more reliable than borrowing a
   // reference clip's (whose PPS ids may differ). Deduped by content; prepended by
   // the caller so frames before the first in-band copy still decode.
-  const isParam = (t) => h265 ? (t === 32 || t === 33 || t === 34) : (t === 7 || t === 8);
+  const isParam = (t: number) => h265 ? (t === 32 || t === 33 || t === 34) : (t === 7 || t === 8);
   const paramSeen = new Set();
-  const paramNals = [];   // { t, nal }
+  const paramNals: { t: number; nal: Uint8Array }[] = [];
 
   // Read a uint of lenSize big-endian at buf offset i.
-  const readLen = (buf, i) => {
+  const readLen = (buf: Uint8Array, i: number) => {
     let v = 0;
     for (let k = 0; k < lenSize; k++) v = v * 256 + buf[i + k];
     return v;
   };
   // Is there a valid NAL at buf offset i (within [0,n))? Returns its total span
   // (lenSize + L) or 0.
-  const nalAt = (buf, n, i) => {
+  const nalAt = (buf: Uint8Array, n: number, i: number) => {
     if (i + lenSize + 1 > n) return 0;
     const L = readLen(buf, i);
     if (L < 1 || L > MAX_NAL || i + lenSize + L > n) return 0;
@@ -240,7 +245,7 @@ export async function carveAvccToAnnexB(reader, mdatStart, mdatEnd, opts: any = 
   };
   // Validate a chain of k NALs starting at i (so a stray valid-looking prefix in
   // PCM audio doesn't get accepted - real video NALs tile exactly).
-  const chainOk = (buf, n, i, k) => {
+  const chainOk = (buf: Uint8Array, n: number, i: number, k: number) => {
     let q = i;
     for (let c = 0; c < k; c++) {
       const span = nalAt(buf, n, q);
@@ -312,7 +317,7 @@ export async function carveAvccToAnnexB(reader, mdatStart, mdatEnd, opts: any = 
 // SPS/PPS, or HEVC VPS/SPS/PPS). Cameras that embed them per-IDR (GoPro, DJI, many
 // phones) need no reference clip; Sony XAVC does not embed them, so this returns
 // null and the caller asks for a reference. scanBytes defaults to 64 MB.
-export async function findInbandParamSets(reader, mdatStart, mdatEnd, opts: any = {}) {
+export async function findInbandParamSets(reader: ByteReader, mdatStart: number, mdatEnd: number, opts: any = {}) {
   const lenSize = opts.lenSize || 4;
   const h265 = opts.codec === 'h265';
   const scanEnd = Math.min(mdatEnd, mdatStart + (opts.scanBytes || 64 * 1024 * 1024));
@@ -320,8 +325,8 @@ export async function findInbandParamSets(reader, mdatStart, mdatEnd, opts: any 
   const n = buf.length;
   const want = h265 ? [32, 33, 34] : [7, 8];
   const found = new Map();
-  const readLen = (i) => { let v = 0; for (let k = 0; k < lenSize; k++) v = v * 256 + buf[i + k]; return v; };
-  const nalAt = (i) => {
+  const readLen = (i: number) => { let v = 0; for (let k = 0; k < lenSize; k++) v = v * 256 + buf[i + k]; return v; };
+  const nalAt = (i: number) => {
     if (i + lenSize + 1 > n) return 0;
     const L = readLen(i);
     if (L < 1 || L > 24 * 1024 * 1024 || i + lenSize + L > n) return 0;

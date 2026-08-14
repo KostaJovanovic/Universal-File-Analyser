@@ -50,14 +50,14 @@ function loadTurnstile() {
 // 'failed' (rendered but errored/expired). Callers reveal the address ONLY in the
 // resolve path, so it stays hidden until a real challenge is solved. Mail needs
 // the network regardless, so offline is a hard stop, not a fallback.
-async function turnstileChallenge(box: HTMLDivElement, setStatus) {
+async function turnstileChallenge(box: HTMLDivElement, setStatus: (s: string) => void) {
   // Real reachability check, not just navigator.onLine - the Turnstile script may
   // be precached and load offline, but the challenge itself needs the network.
   if (!(await probeOnline())) throw 'offline';
   let ts;
   try { ts = await loadTurnstile(); } catch (_) { throw 'offline'; }
   return new Promise<void>((resolve, reject) => {
-    let wid = null;
+    let wid: any = null;
     const drop = () => { if (wid != null) { try { ts.remove(wid); } catch (_) {} wid = null; } };
     wid = ts.render(box, {
       sitekey: TURNSTILE_SITEKEY,
@@ -80,7 +80,7 @@ export function hideSuggestPopup() {
   if (_suggestPopEl) _suggestPopEl.classList.remove('is-open');
   _suggestActive = false;
 }
-export function showSuggestPopup(ext) {
+export function showSuggestPopup(ext: string) {
   // Suppressed while the compare view renders each file off-screen: an unrecognised
   // file there must not pop the single-file "suggest this format" nudge (it belongs
   // to the normal one-file analyse flow, and would fire once per compared file).
@@ -103,8 +103,8 @@ export function showSuggestPopup(ext) {
     // in the DOM or in scraper-reachable state until a challenge has passed.
     const openMailto = () => {
       const addr = ['valjdakosta', 'gmail.com'].join('@');
-      const subject = 'Format suggestion: ' + (_suggestPopEl._label || 'a file type');
-      const body = 'Hi! Analyser couldn’t get much out of ' + (_suggestPopEl._label || 'this file type') + '.\n'
+      const subject = 'Format suggestion: ' + (_suggestPopEl!._label || 'a file type');
+      const body = 'Hi! Analyser couldn’t get much out of ' + (_suggestPopEl!._label || 'this file type') + '.\n'
         + 'Could you add (or improve) support for it?\n\n'
         + 'I can attach a sample file to this email if that helps.\n';
       // Open in a new tab so the current analysis page is never navigated away.
@@ -169,7 +169,7 @@ export function showSuggestPopup(ext) {
   if (_suggestTimer) clearTimeout(_suggestTimer);
   _suggestTimer = setTimeout(() => {
     _suggestTimer = null;
-    _suggestPopEl.classList.add('is-open');
+    _suggestPopEl!.classList.add('is-open');
   }, 1000);
 }
 window._anrSuggest = { show: showSuggestPopup, hide: hideSuggestPopup };
@@ -205,7 +205,7 @@ function openContactModal() {
     setTimeout(() => overlay.remove(), 200);
     document.removeEventListener('keydown', onKey);
   };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey);
@@ -255,10 +255,10 @@ const SHARE_TEXT = 'This website helped me analyse metadata of a file and reveal
 // it leads with what the tool just did to that specific file - its extension plus a
 // per-type highlight - then closes on the privacy/offline line. Without context it's
 // the generic message above.
-function shareMessage(ctx) {
+function shareMessage(ctx?: any) {
   if (!ctx || !ctx.ext) return SHARE_TEXT;
   const e = '.' + String(ctx.ext).toUpperCase();
-  const leads = {
+  const leads: Record<string, string> = {
     photo: 'This website pulled the full EXIF out of my ' + e + ' photo - camera, lens, even GPS.',
     audio: 'This website even drew a spectrogram of my ' + e + ' and broke down the audio.',
     video: 'This website analysed my ' + e + ' frame-by-frame and pulled the audio track out.',
@@ -277,7 +277,7 @@ function shareMessage(ctx) {
 // straight away (the click is a valid user gesture) - it's the natural way to share
 // on a phone. Cancelling just dismisses the sheet; anything else (sharing
 // unsupported, or a real error) falls back to the modal.
-function openShareModal(ctx?) {
+function openShareModal(ctx?: any) {
   const text = shareMessage(ctx);
   const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   if (coarse && navigator.share) {
@@ -291,7 +291,7 @@ function openShareModal(ctx?) {
 }
 
 let _shareModalOpen = false;
-function showShareModal(ctx) {
+function showShareModal(ctx?: any) {
   if (_shareModalOpen) return;
   _shareModalOpen = true;
 
@@ -375,7 +375,7 @@ function showShareModal(ctx) {
     setTimeout(() => overlay.remove(), 200);
     document.removeEventListener('keydown', onKey);
   };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey);
@@ -456,7 +456,7 @@ export function hideShareNudge() {
 // Snapshot the on-page spectrogram canvas to a PNG File named after the audio file.
 // Pre-built when the nudge appears so the eventual navigator.share() call stays
 // inside the click gesture (awaiting toBlob first would break the gesture on Safari).
-function spectrogramFile(name): Promise<File|null> {
+function spectrogramFile(name: string): Promise<File|null> {
   return new Promise((resolve) => {
     const canvas = document.querySelector<HTMLCanvasElement>('.anr-spec-canvas');
     if (!canvas || !canvas.width || !canvas.toBlob) { resolve(null); return; }
@@ -472,7 +472,7 @@ function spectrogramFile(name): Promise<File|null> {
 
 // Schedule the nudge 5s after an analysis settles. Skips entirely when the day/hold
 // caps say no, so a suppressed run never marks the day as "seen".
-export function scheduleShareNudge(ctx) {
+export function scheduleShareNudge(ctx?: any) {
   if (_shareNudgeTimer) { clearTimeout(_shareNudgeTimer); _shareNudgeTimer = null; }
   // Never nudge on the /samples demo page - those are sandboxed example runs, not the
   // visitor's own analysis worth sharing.
@@ -493,7 +493,7 @@ export function scheduleShareNudge(ctx) {
   }, 5000);
 }
 
-function showShareNudge(ctx) {
+function showShareNudge(ctx?: any) {
   if (_shareNudgeEl) return;
 
   // For audio, start rendering the spectrogram attachment now so it's ready by the

@@ -117,7 +117,7 @@ function interlaceRows(ih) {
 function drawFrame(canvas, W, H, indices, palette, ix, iy, iw, ih, interlace, transIdx) {
     const rows = interlace ? interlaceRows(ih) : null;
     for (let r = 0; r < ih; r++) {
-        const y = iy + (interlace ? rows[r] : r);
+        const y = iy + (rows ? rows[r] : r);
         if (y < 0 || y >= H)
             continue;
         const rowBase = r * iw;

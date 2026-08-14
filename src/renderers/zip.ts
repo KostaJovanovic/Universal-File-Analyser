@@ -18,7 +18,7 @@ import { loadScript } from '../core/util.js';
 // WebView). Lazy-loaded on first use so it never costs anything on modern
 // browsers that take the native path.
 const FFLATE_URL = new URL('../../vendor/fflate.js', import.meta.url).href;
-let fflateLib = null;
+let fflateLib: any = null;
 async function loadFflate() {
   if (fflateLib) return fflateLib;
   fflateLib = await import(FFLATE_URL);
@@ -27,12 +27,12 @@ async function loadFflate() {
 
 // Inflate raw DEFLATE (ZIP method 8). Prefers the native DecompressionStream,
 // falling back to fflate. Returns bytes, or null if every path fails.
-async function inflateRaw(raw) {
+async function inflateRaw(raw: Uint8Array) {
   if (typeof DecompressionStream !== 'undefined') {
     try {
       const ds = new DecompressionStream('deflate-raw');
       const writer = ds.writable.getWriter();
-      writer.write(raw);
+      writer.write(raw as BufferSource);
       writer.close();
       const reader = ds.readable.getReader();
       const chunks = [];
@@ -61,7 +61,7 @@ async function inflateRaw(raw) {
 // Zstandard (ZIP method 93) - Autodesk Fusion 360 .f3d packs every member this
 // way. Decompressed lazily via the vendored fzstd UMD library, loaded on first
 // use. Returns the bytes, or null on any failure so callers degrade gracefully.
-async function zstdInflate(raw) {
+async function zstdInflate(raw: Uint8Array) {
   try {
     if (!(window.fzstd && window.fzstd.decompress)) await loadScript('assets/vendor/fzstd.js');
     if (!(window.fzstd && window.fzstd.decompress)) return null;
@@ -154,7 +154,7 @@ async function readCentralDirectory(file: File) {
 // their data in `buf` at `dataStart`; central-directory entries carry `lho` and
 // are fetched with a ranged read of the local header (whose name/extra lengths
 // can differ from the central record) plus the compressed data.
-async function readEntryRaw(file: File, buf, entry) {
+async function readEntryRaw(file: File, buf: Uint8Array|null, entry: any) {
   if (entry.dataStart != null && buf) {
     return buf.slice(entry.dataStart, entry.dataStart + entry.compSize);
   }
@@ -167,7 +167,7 @@ async function readEntryRaw(file: File, buf, entry) {
   return new Uint8Array(await file.slice(ds, ds + entry.compSize).arrayBuffer());
 }
 
-async function decodeEntry(file: File, buf, entry) {
+async function decodeEntry(file: File, buf: Uint8Array|null, entry: any) {
   const raw = await readEntryRaw(file, buf, entry);
   if (raw == null) return null;
   if (entry.method === 0) return raw;
@@ -179,21 +179,26 @@ async function decodeEntry(file: File, buf, entry) {
 // Open an archive as a name -> entry map. Reads the central directory first
 // (order-independent, ranged), falling back to the sequential local-header walk.
 // `maxBytes` bounds only the fallback buffer read.
-export async function openZip(file: File, maxBytes?) {
-  let entries;
-  let buf = null;
+export async function openZip(file: File, maxBytes?: number) {
+  let entries: any[]|null;
+  let buf: Uint8Array|null = null;
   try { entries = await readCentralDirectory(file); } catch (_) { entries = null; }
-  if (!entries) { const seq = await readZipEntries(file, maxBytes); entries = seq.entries; buf = seq.buf; }
-  const map = new Map();
+  if (!entries) { const seq = await readZipEntries(file, maxBytes); entries = seq.entries as any[]; buf = seq.buf; }
+  const map = new Map<string, any>();
   for (const e of entries) map.set(e.name, e);
   return {
     buf,
     entries,
-    has: (name) => map.has(name),
+    has: (name: string) => map.has(name),
     names: () => [...map.keys()],
-    text: async (name) => { const e = map.get(name); if (!e) return null; const b = await decodeEntry(file, buf, e); return b ? new TextDecoder().decode(b) : null; },
-    bytes: async (name) => { const e = map.get(name); return e ? decodeEntry(file, buf, e) : null; },
+    text: async (name: string|undefined) => { const e = map.get(name!); if (!e) return null; const b = await decodeEntry(file, buf, e); return b ? new TextDecoder().decode(b) : null; },
+    bytes: async (name: string) => { const e = map.get(name); return e ? decodeEntry(file, buf, e) : null; },
     // All entries whose name matches a predicate, in archive order.
-    match: (re) => entries.filter((e) => re.test(e.name)),
+    match: (re: RegExp) => entries.filter((e: any) => re.test(e.name)),
   };
 }
+
+/** The handle openZip() hands back - an entry list plus lazy readers. Derived
+    from the function rather than restated, so it cannot drift from it. Renderers
+    that take an already-opened archive should use this instead of `any`. */
+export type ZipHandle = Awaited<ReturnType<typeof openZip>>;

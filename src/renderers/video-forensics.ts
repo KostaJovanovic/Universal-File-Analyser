@@ -23,18 +23,18 @@ import {
 
 // ---------- low-level box reading ----------
 
-function fourcc(view, p) {
+function fourcc(view: DataView<ArrayBuffer>, p: number) {
   return String.fromCharCode(
     view.getUint8(p), view.getUint8(p + 1), view.getUint8(p + 2), view.getUint8(p + 3));
 }
 
-const IS_ALPHA_FCC = (s) => /^[\x20-\x7e]{4}$/.test(s) && /[A-Za-z]/.test(s[0]);
+const IS_ALPHA_FCC = (s: string) => /^[\x20-\x7e]{4}$/.test(s) && /[A-Za-z]/.test(s[0]);
 
 // Walk the boxes directly inside [start, end) of a DataView. Coordinates are
 // whatever the view uses (callers pass a view over the moov buffer, so these are
 // buffer-local). Handles 64-bit (size==1) and size==0 (extends to end).
-function walkBoxes(view, start, end) {
-  const out = [];
+function walkBoxes(view: DataView<ArrayBuffer>, start: number, end: number) {
+  const out: { type: string; start: number; size: number; headerSize: number }[] = [];
   let pos = start;
   while (pos + 8 <= end) {
     let size = view.getUint32(pos);
@@ -68,7 +68,7 @@ const CONTAINER_BOXES = new Set([
 // A 'meta' box is a FULL box (4 version/flags bytes before its children) in ISO
 // files but a plain box in QuickTime. Peek: if bytes at `off` already look like
 // a child box header, it's the QuickTime layout; otherwise skip the 4 bytes.
-function metaChildStart(view, off, end) {
+function metaChildStart(view: DataView<ArrayBuffer>, off: number, end: number) {
   if (off + 8 > end) return off;
   const size = view.getUint32(off);
   const type = fourcc(view, off + 4);
@@ -80,13 +80,13 @@ function metaChildStart(view, off, end) {
 // `view`). `base` is the absolute file offset of buffer index 0, used only to
 // report absolute offsets. Depth-guarded so a pathological file can't recurse
 // without bound.
-function buildChildren(view, box, base, depth) {
+function buildChildren(view: DataView<ArrayBuffer>, box: { type: string; start: number; size: number; headerSize: number }, base: number, depth: number): BoxNode[] {
   let childStart = box.start + box.headerSize;
   const childEnd = box.start + box.size;
   if (box.type === 'meta') childStart = metaChildStart(view, childStart, childEnd);
-  const nodes = [];
+  const nodes: BoxNode[] = [];
   for (const c of walkBoxes(view, childStart, childEnd)) {
-    const node = {
+    const node: BoxNode = {
       type: c.type, offset: base + c.start, size: c.size, headerSize: c.headerSize, children: null,
     };
     if (CONTAINER_BOXES.has(c.type) && depth < 16) {
@@ -101,11 +101,11 @@ function buildChildren(view, box, base, depth) {
 // Same container set as the tree, but returns boxes (buffer-local coords) of a
 // given type. Used for pulling sample-table fields out of a trak.
 
-function findAll(view, start, end, type) {
+function findAll(view: DataView<ArrayBuffer>, start: number, end: number, type: string) {
   const out = [];
   const stack = [{ s: start, e: end }];
   while (stack.length) {
-    const { s, e } = stack.pop();
+    const { s, e } = stack.pop()!;
     for (const b of walkBoxes(view, s, e)) {
       if (b.type === type) out.push(b);
       if (CONTAINER_BOXES.has(b.type)) {
@@ -118,13 +118,13 @@ function findAll(view, start, end, type) {
   return out;
 }
 
-const first = (view, s, e, type) => findAll(view, s, e, type)[0] || null;
+const first = (view: DataView<ArrayBuffer>, s: number, e: number, type: string) => findAll(view, s, e, type)[0] || null;
 
 // ---------- reference tables ----------
 
 // One-line glosses for the box tree. Not exhaustive - unknown boxes just show
 // their 4CC. Kept terse; the tree is scanned, not read.
-export const BOX_GLOSS = {
+export const BOX_GLOSS: Record<string, string> = {
   ftyp: 'File type & compatible brands', styp: 'Segment type',
   moov: 'Movie header (index of all tracks)', mdat: 'Media data (the actual frames/samples)',
   free: 'Free space (padding)', skip: 'Free space (padding)', wide: 'Reserved placeholder (QuickTime)',
@@ -155,7 +155,7 @@ export const BOX_GLOSS = {
 };
 
 // hdlr handler_type -> human label.
-const HANDLERS = {
+const HANDLERS: Record<string, string> = {
   vide: 'Video', soun: 'Audio', sbtl: 'Subtitle', subt: 'Subtitle', text: 'Text',
   subp: 'Subtitle', clcp: 'Closed caption', tmcd: 'Timecode', meta: 'Timed metadata',
   hint: 'Hint', mebx: 'Timed metadata', crsm: 'Clock reference', sdsm: 'Scene description',
@@ -163,7 +163,7 @@ const HANDLERS = {
 };
 
 // Codec / metadata-format 4CC (from the stsd sample entry) -> friendly name.
-const CODEC_NAMES = {
+const CODEC_NAMES: Record<string, string> = {
   avc1: 'H.264 / AVC', avc3: 'H.264 / AVC', hvc1: 'H.265 / HEVC', hev1: 'H.265 / HEVC',
   dvh1: 'Dolby Vision (HEVC)', dvhe: 'Dolby Vision (HEVC)', av01: 'AV1', vp09: 'VP9', vp08: 'VP8',
   mp4v: 'MPEG-4 Visual', s263: 'H.263', mjpg: 'Motion JPEG', jpeg: 'Motion JPEG',
@@ -177,7 +177,7 @@ const CODEC_NAMES = {
 
 // ---------- media header / language ----------
 
-function readMdhd(view, box) {
+function readMdhd(view: DataView<ArrayBuffer>, box: BoxRange) {
   const d = box.start + box.headerSize;
   const ver = view.getUint8(d);
   let timescale, duration, langOff;
@@ -201,7 +201,7 @@ function readMdhd(view, box) {
 
 // ---------- sample tables ----------
 
-function readStsz(view, box) {
+function readStsz(view: DataView<ArrayBuffer>, box: BoxRange) {
   const d = box.start + box.headerSize;
   const sampleSize = view.getUint32(d + 4);
   const count = view.getUint32(d + 8);
@@ -217,7 +217,7 @@ function readStsz(view, box) {
   return { count, sizes: null, fixed: sampleSize };
 }
 
-function readStss(view, box) {
+function readStss(view: DataView<ArrayBuffer>, box: BoxRange) {
   const d = box.start + box.headerSize;
   const count = view.getUint32(d + 4);
   const set = new Set<number>();
@@ -231,7 +231,7 @@ function readStss(view, box) {
 
 // time-to-sample: list of {count, delta}. delta is per-sample duration in the
 // media timescale.
-function readStts(view, box) {
+function readStts(view: DataView<ArrayBuffer>, box: BoxRange) {
   const d = box.start + box.headerSize;
   const entries = view.getUint32(d + 4);
   const out = [];
@@ -243,7 +243,7 @@ function readStts(view, box) {
   return out;
 }
 
-function readChunkOffsets(view, trakStart, trakEnd) {
+function readChunkOffsets(view: DataView<ArrayBuffer>, trakStart: number, trakEnd: number) {
   const stco = first(view, trakStart, trakEnd, 'stco');
   if (stco) {
     const d = stco.start + stco.headerSize;
@@ -273,7 +273,7 @@ function readChunkOffsets(view, trakStart, trakEnd) {
 
 // ---------- edit list ----------
 
-function readElst(view, box) {
+function readElst(view: DataView<ArrayBuffer>, box: BoxRange) {
   const d = box.start + box.headerSize;
   const ver = view.getUint8(d);
   const count = view.getUint32(d + 4);
@@ -304,7 +304,7 @@ function readElst(view, box) {
 // drop-frame flag, timescale, frame duration and frames/second; the first sample
 // (in mdat) is a 32-bit frame number. Needs one small file read for that sample.
 
-async function readTimecode(file: File, view, trakStart, trakEnd) {
+async function readTimecode(file: File, view: DataView<ArrayBuffer>, trakStart: number, trakEnd: number) {
   const stsd = first(view, trakStart, trakEnd, 'stsd');
   if (!stsd) return null;
   const entryStart = stsd.start + stsd.headerSize + 8;   // full-box hdr + entry count
@@ -331,8 +331,8 @@ async function readTimecode(file: File, view, trakStart, trakEnd) {
   return { timecode: framesToTimecode(frame, numFrames, dropFrame), dropFrame, fps: numFrames };
 }
 
-function framesToTimecode(frame, fps, dropFrame) {
-  const two = (n) => String(n).padStart(2, '0');
+function framesToTimecode(frame: number, fps: number, dropFrame: boolean) {
+  const two = (n: number) => String(n).padStart(2, '0');
   if (dropFrame && (fps === 30 || fps === 60)) {
     // SMPTE drop-frame: drop 2 (or 4 at 60) frame numbers each minute except every tenth.
     const dropPerMin = fps === 60 ? 4 : 2;
@@ -351,7 +351,7 @@ function framesToTimecode(frame, fps, dropFrame) {
 
 // ---------- GOP / bitrate map (first video track) ----------
 
-function computeGopMap(view, trakStart, trakEnd, timescale) {
+function computeGopMap(view: DataView<ArrayBuffer>, trakStart: number, trakEnd: number, timescale: number) {
   const stszBox = first(view, trakStart, trakEnd, 'stsz');
   const sttsBox = first(view, trakStart, trakEnd, 'stts');
   if (!stszBox || !sttsBox) return null;
@@ -370,7 +370,7 @@ function computeGopMap(view, trakStart, trakEnd, timescale) {
   }
   while (si < total) durations[si++] = stts.length ? stts[stts.length - 1].delta : 0;
 
-  const size = (i) => (stsz.sizes ? (stsz.sizes[i] || 0) : stsz.fixed);
+  const size = (i: number) => (stsz.sizes ? (stsz.sizes[i] || 0) : stsz.fixed);
 
   // Per-second byte buckets.
   const totalTicks = durations.reduce((a, b) => a + b, 0);
@@ -452,7 +452,7 @@ async function topLevelBoxes(file: File) {
   return boxes;
 }
 
-function readFtyp(file: File, box) {
+function readFtyp(file: File, box: BoxRange) {
   return file.slice(box.start, box.start + Math.min(box.size, 256)).arrayBuffer().then((buf) => {
     const v = new DataView(buf);
     const d = 8;   // box header is 8 bytes here (ftyp never uses 64-bit size)
@@ -465,6 +465,15 @@ function readFtyp(file: File, box) {
     }
     return { majorBrand, minorVersion, brands };
   }).catch(() => null);
+}
+
+/** A box located inside the moov buffer (buffer-local coordinates). */
+interface BoxRange { type: string; start: number; size: number; headerSize: number; }
+
+/** One node of the displayed box tree (absolute file offsets). */
+interface BoxNode {
+  type: string; offset: number; size: number; headerSize: number;
+  children: BoxNode[] | null;
 }
 
 /** What analyzeMp4Structure() reports: the top-level box layout plus a row per
@@ -480,11 +489,12 @@ interface Mp4Track {
 }
 
 interface Mp4Structure {
-  top: any; ftyp: any; tree: any[];
-  faststart: boolean; mdatCount: any;
+  top: any; ftyp: any; tree: BoxNode[];
+  faststart: boolean|null; mdatCount: any;
   padBytes: any; padCount: any; fragmented: any;
-  trailing: { type: any; size: any };
+  trailing: { type: any; size: any }|null;
   tracks: Mp4Track[]; gop: any;
+  tree2?: never;
   movieDurationSec?: number;
 }
 
@@ -514,7 +524,7 @@ export async function analyzeMp4Structure(file: File) {
   const moovBox = top.find((b) => b.type === 'moov');
   const mdatBoxes = top.filter((b) => b.type === 'mdat');
   const padBoxes = top.filter((b) => b.type === 'free' || b.type === 'skip' || b.type === 'wide');
-  const moovIdx = top.indexOf(moovBox);
+  const moovIdx = top.indexOf(moovBox!);
   const firstMdatIdx = mdatBoxes.length ? top.indexOf(mdatBoxes[0]) : -1;
   const faststart = moovBox && firstMdatIdx >= 0 ? moovIdx < firstMdatIdx : null;
   const lastBox = top[top.length - 1];
@@ -534,7 +544,7 @@ export async function analyzeMp4Structure(file: File) {
   // (moov, plus a small meta/moof/mfra); mdat and huge boxes stay leaves.
   const BUDGET = 48 * 1024 * 1024;
   for (const b of top) {
-    const node = { type: b.type, offset: b.start, size: b.size, headerSize: b.headerSize, children: null };
+    const node: BoxNode = { type: b.type, offset: b.start, size: b.size, headerSize: b.headerSize, children: null };
     result.tree.push(node);
     if (CONTAINER_BOXES.has(b.type) && b.size <= BUDGET && b.size >= b.headerSize) {
       try {
@@ -575,10 +585,10 @@ export async function analyzeMp4Structure(file: File) {
     const track: Mp4Track = { index: ti + 1 };
     try {
       const hdlr = first(moovView, ts, te, 'hdlr');
-      let handler = null;
+      let handler: string|null = null;
       if (hdlr) handler = fourcc(moovView, hdlr.start + hdlr.headerSize + 8);
       track.handler = handler;
-      track.handlerName = HANDLERS[handler] || (handler ? handler : 'Unknown');
+      track.handlerName = HANDLERS[handler!] || (handler ? handler : 'Unknown');
 
       const stsd = first(moovView, ts, te, 'stsd');
       if (stsd && stsd.start + stsd.headerSize + 16 <= moovEnd) {
@@ -663,7 +673,7 @@ const MATRIX = MATRIX_COEFFS;
 // stopped at the bit depth for H.265, so an HEVC file never produced a frame
 // rate or a colour description and the stream-vs-container verdict silently had
 // nothing to compare. `nal` includes the NAL header byte(s).
-function spsFacts(nal, h265) {
+function spsFacts(nal: Uint8Array, h265: boolean) {
   const parsed = h265
     ? parseHevcSps(stripEpb(nal.subarray(2)))
     : parseAvcSps(stripEpb(nal.subarray(1)));
@@ -687,7 +697,7 @@ function spsFacts(nal, h265) {
 }
 
 // Pull the SPS NAL(s) + NAL length size out of an avcC / hvcC box (buffer-local).
-function readParamSets(view, box, codec) {
+function readParamSets(view: DataView<ArrayBuffer>, box: BoxRange, codec: string) {
   const d = box.start + box.headerSize;
   const end = box.start + box.size;
   const sps = [];
@@ -711,7 +721,7 @@ function readParamSets(view, box, codec) {
 
 // Scan length-prefixed NALs of one sample for a user_data_unregistered SEI and
 // return its ASCII payload (the x264/x265 settings string), or null.
-function findEncoderSei(bytes, lenSize, h265) {
+function findEncoderSei(bytes: Uint8Array, lenSize: number, h265: boolean) {
   let p = 0;
   while (p + lenSize <= bytes.length) {
     let len = 0; for (let i = 0; i < lenSize; i++) len = len * 256 + bytes[p + i];
@@ -744,7 +754,7 @@ function findEncoderSei(bytes, lenSize, h265) {
 // generic findAll doesn't descend into stsd or the sample-entry box, so we locate
 // the region and walk its children flat. Offsets: box header(8) + SampleEntry(8) +
 // VisualSampleEntry fixed fields(70) = 86 before the first child box.
-function videoSampleEntryRange(view, ts, te) {
+function videoSampleEntryRange(view: DataView<ArrayBuffer>, ts: number, te: number) {
   const stsd = first(view, ts, te, 'stsd');
   if (!stsd) return null;
   const se = stsd.start + stsd.headerSize + 8;
@@ -752,13 +762,13 @@ function videoSampleEntryRange(view, ts, te) {
   const size = view.getUint32(se);
   return { seStart: se, seType: fourcc(view, se + 4), start: se + 86, end: Math.min(se + size, view.byteLength) };
 }
-function seFind(view, range, type) {
+function seFind(view: DataView<ArrayBuffer>, range: { start: number; end: number }|null, type: string) {
   if (!range) return null;
   return walkBoxes(view, range.start, range.end).find((b) => b.type === type) || null;
 }
 
 // Container-side reference values for the consistency check (dims/fps/colour).
-function containerVideoFacts(view, ts, te, seRange) {
+function containerVideoFacts(view: DataView<ArrayBuffer>, ts: number, te: number, seRange: { start: number; end: number }|null) {
   const facts: any = {};
   const stsd = first(view, ts, te, 'stsd');
   if (stsd) {
@@ -786,7 +796,7 @@ function containerVideoFacts(view, ts, te, seRange) {
 }
 
 // Read the first video sample's leading bytes from mdat (for the SEI scan).
-async function readFirstSample(file: File, view, ts, te) {
+async function readFirstSample(file: File, view: DataView<ArrayBuffer>, ts: number, te: number) {
   const stco = first(view, ts, te, 'stco') || first(view, ts, te, 'co64');
   const stsz = first(view, ts, te, 'stsz');
   if (!stco || !stsz) return null;
@@ -794,12 +804,12 @@ async function readFirstSample(file: File, view, ts, te) {
   const n = view.getUint32(co + 4);
   if (!n) return null;
   const off = stco.type === 'co64' ? Number(view.getBigUint64(co + 8)) : view.getUint32(co + 8);
-  const size = readStsz(view, stsz).sizes ? readStsz(view, stsz).sizes[0] : readStsz(view, stsz).fixed;
+  const size = readStsz(view, stsz).sizes ? readStsz(view, stsz).sizes![0] : readStsz(view, stsz).fixed;
   const want = Math.min(size || 512 * 1024, 512 * 1024);
   try { return new Uint8Array(await file.slice(off, off + want).arrayBuffer()); } catch (_) { return null; }
 }
 
-function parseMdcv(view, box) {
+function parseMdcv(view: DataView<ArrayBuffer>, box: BoxRange) {
   const d = box.start + box.headerSize;
   if (d + 24 > box.start + box.size) return null;
   const prim = [];
@@ -808,12 +818,12 @@ function parseMdcv(view, box) {
   const maxLum = view.getUint32(d + 16) / 10000, minLum = view.getUint32(d + 20) / 10000;
   return { prim, wp, maxLum, minLum };
 }
-function parseClli(view, box) {
+function parseClli(view: DataView<ArrayBuffer>, box: BoxRange) {
   const d = box.start + box.headerSize;
   if (d + 4 > box.start + box.size) return null;
   return { maxCLL: view.getUint16(d), maxFALL: view.getUint16(d + 2) };
 }
-function parseDvcC(view, box) {
+function parseDvcC(view: DataView<ArrayBuffer>, box: BoxRange) {
   const d = box.start + box.headerSize;
   if (d + 4 > box.start + box.size) return null;
   const profile = view.getUint8(d + 2) >> 1;
@@ -823,7 +833,7 @@ function parseDvcC(view, box) {
 
 // Detect a C2PA / Content Credentials manifest in a top-level uuid box by scanning
 // its head for the JUMBF/C2PA markers (the exact usertype UUID varies by tool).
-async function detectC2pa(file: File, top) {
+async function detectC2pa(file: File, top: any[]) {
   for (const b of top.filter((x) => x.type === 'uuid')) {
     let buf;
     try { buf = new Uint8Array(await file.slice(b.start, b.start + Math.min(b.size, 65536)).arrayBuffer()); } catch (_) { continue; }
@@ -849,7 +859,7 @@ export async function analyzeBitstream(file: File) {
   const moovEnd = view.byteLength;
 
   // First video trak.
-  let ts = 0, te = 0, codecFcc = null;
+  let ts = 0, te = 0, codecFcc: string|null = null;
   for (const trak of findAll(view, 0, moovEnd, 'trak')) {
     const s = trak.start + trak.headerSize, e = trak.start + trak.size;
     if (!first(view, s, e, 'vmhd')) continue;
@@ -859,8 +869,8 @@ export async function analyzeBitstream(file: File) {
   }
   if (!ts) return null;
 
-  const isAvc = /^avc[13]$/.test(codecFcc);
-  const isHevc = /^(hvc1|hev1|dvh1|dvhe)$/.test(codecFcc);
+  const isAvc = /^avc[13]$/.test(codecFcc!);
+  const isHevc = /^(hvc1|hev1|dvh1|dvhe)$/.test(codecFcc!);
   const result: BitstreamFacts = { codec: codecFcc, sps: null, consistency: [], encoder: null, hdr: null, c2pa: null };
   const seRange = videoSampleEntryRange(view, ts, te);
 
@@ -886,7 +896,7 @@ export async function analyzeBitstream(file: File) {
   // Consistency: SPS stream values vs what the container claims.
   if (result.sps) {
     const cf = containerVideoFacts(view, ts, te, seRange);
-    const push = (field, container, stream, match) => result.consistency.push({ field, container, stream, match });
+    const push = (field: string, container: string, stream: string, match: boolean) => result.consistency.push({ field, container, stream, match });
     if (cf.width && result.sps.width) {
       // Container dims can be rotated (portrait tkhd) vs the stream's stored dims.
       const match = (cf.width === result.sps.width && cf.height === result.sps.height) ||
@@ -926,7 +936,7 @@ export async function analyzeBitstream(file: File) {
   if (clliBox) hdr.clli = parseClli(view, clliBox);
   const dvBox = seFind(view, seRange, 'dvcC') || seFind(view, seRange, 'dvvC') || seFind(view, seRange, 'dvwC');
   if (dvBox) hdr.dolbyVision = parseDvcC(view, dvBox);
-  if (/^dv/.test(codecFcc)) hdr.dolbyVisionCodec = true;
+  if (/^dv/.test(codecFcc!)) hdr.dolbyVisionCodec = true;
   if (hdr.mdcv || hdr.clli || hdr.dolbyVision || hdr.dolbyVisionCodec) result.hdr = hdr;
 
   // C2PA / Content Credentials in a top-level uuid box.

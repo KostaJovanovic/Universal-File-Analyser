@@ -11,14 +11,14 @@ import { openZip } from './zip.js';
 
 const IMG_RE = /\.(jpe?g|png|gif|webp|avif|bmp|jxl)$/i;
 const NATIVE_RE = /\.(jpe?g|png|gif|webp|avif)$/i;   // formats <img> can display directly
-const natCmp = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+const natCmp = (a: string, b: string) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
 
 // Minimal TAR walker for .cbt: returns image page entries + ComicInfo.xml text.
-function tarPages(buf) {
+function tarPages(buf: Uint8Array) {
   const pages = [];
   let comicInfo = null;
   const dec = new TextDecoder('latin1');
-  const oct = (s) => parseInt(s.replace(/\0.*$/s, '').trim(), 8) || 0;
+  const oct = (s: string) => parseInt(s.replace(/\0.*$/s, '').trim(), 8) || 0;
   let p = 0;
   while (p + 512 <= buf.length) {
     const name = dec.decode(buf.subarray(p, p + 100)).replace(/\0.*$/s, '');
@@ -62,10 +62,10 @@ async function extractPages(file: File, ext: string) {
 }
 
 // Pull common fields out of a ComicInfo.xml string.
-function parseComicInfo(xml) {
+function parseComicInfo(xml: string|null) {
   const out: any = {};
   if (!xml) return out;
-  const grab = (tag) => { const m = xml.match(new RegExp('<' + tag + '>([\\s\\S]*?)</' + tag + '>', 'i')); return m ? m[1].trim() : null; };
+  const grab = (tag: string) => { const m = xml.match(new RegExp('<' + tag + '>([\\s\\S]*?)</' + tag + '>', 'i')); return m ? m[1].trim() : null; };
   for (const [tag, label] of [
     ['Series', 'Series'], ['Title', 'Title'], ['Number', 'Issue'], ['Count', 'Issue count'],
     ['Volume', 'Volume'], ['Writer', 'Writer'], ['Penciller', 'Penciller'], ['Inker', 'Inker'],
@@ -83,7 +83,7 @@ function revokeComicPageUrls() {
   _comicPageUrls.clear();
 }
 
-export async function renderComic(file: File, resultsEl: HTMLElement, extOverride) {
+export async function renderComic(file: File, resultsEl: HTMLElement, extOverride: string) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   revokeComicPageUrls();   // free the previous comic's page object URLs
@@ -122,7 +122,7 @@ export async function renderComic(file: File, resultsEl: HTMLElement, extOverrid
 
   // Per-page object-URL cache (created on demand; kept for the session).
   const urlCache = new Map();
-  async function pageUrl(i) {
+  async function pageUrl(i: number) {
     if (urlCache.has(i)) return urlCache.get(i);
     const bytes = await pages[i].getBytes();
     const url = URL.createObjectURL(new Blob([bytes]));
@@ -132,7 +132,7 @@ export async function renderComic(file: File, resultsEl: HTMLElement, extOverrid
   }
 
   // --- Metadata card ---
-  const APP = { cbz: 'Comic Book ZIP', cbr: 'Comic Book RAR', cbt: 'Comic Book TAR', cb7: 'Comic Book 7-Zip' };
+  const APP: Record<string, string> = { cbz: 'Comic Book ZIP', cbr: 'Comic Book RAR', cbt: 'Comic Book TAR', cb7: 'Comic Book 7-Zip' };
   const metaCard = el('div', { class: 'anr-card' });
   metaCard.appendChild(el('h3', {}, ci.Series ? (ci.Series + (ci.Issue ? ' #' + ci.Issue : '')) : 'Comic book'));
   const tbl = el('table', { class: 'anr-readout' });
@@ -149,8 +149,8 @@ export async function renderComic(file: File, resultsEl: HTMLElement, extOverrid
   resultsEl.appendChild(metaCard);
 
   // --- Lightbox reader (built lazily, reused) ---
-  function openReader(start) {
-    let overlay = document.getElementById('anr-comic-viewer');
+  function openReader(start: number) {
+    let overlay = document.getElementById('anr-comic-viewer')!;
     if (!overlay) {
       overlay = el('div', { id: 'anr-comic-viewer', class: 'lightbox' });
       const closeBtn = el('button', { type: 'button', class: 'lightbox-close' }, 'Close');
@@ -175,12 +175,12 @@ export async function renderComic(file: File, resultsEl: HTMLElement, extOverrid
       });
       document.body.appendChild(overlay);
     }
-    const img = overlay.querySelector<HTMLImageElement>('.lightbox-img-wrap img');
-    const toolbar = overlay.querySelector('.lightbox-toolbar');
-    const meta = overlay.querySelector('.lightbox-meta');
+    const img = overlay.querySelector<HTMLImageElement>('.lightbox-img-wrap img')!;
+    const toolbar = overlay.querySelector<HTMLElement>('.lightbox-toolbar')!;
+    const meta = overlay.querySelector<HTMLElement>('.lightbox-meta')!;
     toolbar.innerHTML = '';
     let current = start;
-    async function show(i) {
+    async function show(i: number) {
       current = i;
       if (overlay._zoom) overlay._zoom.reset();
       meta.textContent = 'Page ' + (i + 1) + ' / ' + pages.length;

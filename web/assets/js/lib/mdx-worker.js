@@ -260,6 +260,11 @@ async function handleSeparate(msg) {
             vocals: result.vocals,
             instrumental: result.instrumental,
             sampleRate: MDX_SR,
+            // BUG, deliberately left as-is: separateVocals() returns only
+            // { vocals, instrumental, sampleRate }, so this is always undefined. The
+            // intent was almost certainly `model.stem` ('Vocals'). Nothing in audio.js
+            // reads the field, so it is dead plumbing - fixing it would be a behaviour
+            // change, not a type fix, so it stays out of the strict pass.
             stem: result.stem,
             // A persistent ORT WASM heap plus four returned song channels can exceed
             // WebKit's tab budget. The client retires this worker after receiving the

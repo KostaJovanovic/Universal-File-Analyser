@@ -15,7 +15,7 @@ import { el, type ElChild } from './util.js';
 // opts (all optional): { kicker } overrides the 'Upload' eyebrow, { cancelLabel }
 // the Cancel text, { hideCancel } drops the cancel button (a one-button notice,
 // e.g. the native updater's "up to date" message).
-export function anrConfirm(title: ElChild | ElChild[], okLabel?, opts?) {
+export function anrConfirm(title: ElChild | ElChild[], okLabel?: string, opts?: any) {
   opts = opts || {};
   return new Promise((resolve) => {
     const cancelBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, opts.cancelLabel || 'Cancel');
@@ -51,9 +51,9 @@ export function anrConfirm(title: ElChild | ElChild[], okLabel?, opts?) {
 // when the renderer settles. A short delay before showing keeps quick files
 // from flashing it.
 let _dropLoaderEl: HTMLDivElement|null = null;
-let _dropLoaderTimer: number|null|undefined = null;
-let _dropLoaderHideTimer: number|null|undefined = null;
-let _dropLoaderOnCancel = null;
+let _dropLoaderTimer: number|undefined;
+let _dropLoaderHideTimer: number|undefined;
+let _dropLoaderOnCancel: (() => void)|null = null;
 let _dropLoaderShownAt = 0;
 // Intent flag: true once reveal() commits to showing the bar - set BEFORE the
 // rAF that actually applies the is-open class, so hideDropLoader() can tell
@@ -74,7 +74,7 @@ const DROP_LOADER_MIN_MS = 420;
 // never show. Disk-backed drops keep the debounce (they cross 160ms on their own).
 // Only the name is read, and the folder-drop path has no File to give - it passes
 // a bare { name } for the folder itself. Typed to what is actually used.
-export function showDropLoader(file: { name?: string }|null, onCancel, labelText?, immediate?: boolean) {
+export function showDropLoader(file: { name?: string }|null, onCancel?: (() => void)|null, labelText?: string, immediate?: boolean) {
   clearTimeout(_dropLoaderTimer);
   clearTimeout(_dropLoaderHideTimer);
   _dropLoaderOnCancel = onCancel || null;
@@ -149,7 +149,7 @@ export function hideDropLoader() {
 // The bar is a CSS animation, so it keeps stepping even under the heavy
 // synchronous decode/FFT work these actions trigger.
 window._anrLoader = {
-  show: (label) => showDropLoader(null, null, label || 'Working…'),
+  show: (label?: string) => showDropLoader(null, null, label || 'Working…'),
   hide: hideDropLoader,
 };
 
@@ -162,7 +162,7 @@ export function hideTypeSuggestion() {
   e.classList.remove('is-open');
   setTimeout(() => e.remove(), 200);
 }
-export function showTypeSuggestion(sniff, onAccept) {
+export function showTypeSuggestion(sniff: { label: string }, onAccept: () => void) {
   hideTypeSuggestion();
   const label = el('div', { class: 'anr-drop-loader-label' }, 'This looks like a ' + sniff.label + '.');
   const dismiss = el('button', { type: 'button', class: 'anr-drop-loader-cancel' }, 'Dismiss');
@@ -172,17 +172,17 @@ export function showTypeSuggestion(sniff, onAccept) {
   yes.addEventListener('click', () => { hideTypeSuggestion(); onAccept(); });
   _typeSuggestEl = el('div', { class: 'anr-drop-loader', role: 'status' }, [head, el('div', { style: 'margin-top:8px;' }, [yes])]);
   document.body.appendChild(_typeSuggestEl);
-  requestAnimationFrame(() => _typeSuggestEl.classList.add('is-open'));
+  requestAnimationFrame(() => _typeSuggestEl!.classList.add('is-open'));
 }
 
 // Cursor-style confirm popup (reuses the treemap .anr-treemap-menu look) shown
 // when the "Links" button is clicked, so leaving the site is deliberate.
-export function showLinkConfirm(anchor: Element, opts?) {
+export function showLinkConfirm(anchor: Element, opts?: any) {
   opts = opts || {};
   document.querySelectorAll('.anr-link-confirm').forEach((n) => n.remove());
   const url = anchor.getAttribute('href');
   const message = opts.message || 'This link leads to link.valjdakosta.com, proceed?';
-  const onProceed = opts.onProceed || function () { window.open(url, '_blank', 'noopener'); };
+  const onProceed = opts.onProceed || function () { window.open(url!, '_blank', 'noopener'); };
   const cancelBtn = el('button', { class: 'anr-tm-btn' }, 'Cancel');
   const okBtn = el('button', { class: 'anr-tm-btn anr-tm-btn-ok' }, 'Proceed');
   const menu = el('div', { class: 'anr-treemap-menu anr-link-confirm' }, [
@@ -205,8 +205,8 @@ export function showLinkConfirm(anchor: Element, opts?) {
     document.removeEventListener('keydown', onKey, true);
     window.removeEventListener('scroll', close, true);
   }
-  function onOut(e) { if (!menu.contains(e.target) && e.target !== anchor) close(); }
-  function onKey(e) { if (e.key === 'Escape') close(); }
+  function onOut(e: Event) { if (!menu.contains(e.target as Node) && e.target !== anchor) close(); }
+  function onKey(e: KeyboardEvent) { if (e.key === 'Escape') close(); }
   cancelBtn.addEventListener('click', close);
   okBtn.addEventListener('click', () => { close(); onProceed(); });
   setTimeout(() => {

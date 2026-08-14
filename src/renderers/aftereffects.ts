@@ -24,7 +24,7 @@
    create/modify dates), which is where the "made in After Effects 20XX" comes
    from. We show the project metadata, then each composition's layer timeline. */
 
-import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, type ElChild } from '../core/util.js';
 
 const SCALE = 30720;                       // default ticks-per-second; the real value is per-comp (cdta u32@8)
 const MAX_READ = 256 * 1024 * 1024;        // guard: don't buffer absurdly large projects whole
@@ -42,33 +42,33 @@ const AE_LABEL_NAMES = [null,
   'Red', 'Yellow', 'Aqua', 'Pink', 'Lavender', 'Peach', 'Sea Foam', 'Blue',
   'Green', 'Purple', 'Orange', 'Brown', 'Fuchsia', 'Cyan', 'Sandstone', 'Dark Green'];
 // Fallback fill when a layer carries no label (index 0), keyed by layer type.
-const typeColour = (l) => (l.audio ? '#3ba776' : l.isComp ? '#8a6fd6' : l.src === 0 ? '#7f8896' : '#3b82c4');
-const layerColour = (l) => AE_LABEL_COLOURS[l.labelIdx] || typeColour(l);
+const typeColour = (l: any) => (l.audio ? '#3ba776' : l.isComp ? '#8a6fd6' : l.src === 0 ? '#7f8896' : '#3b82c4');
+const layerColour = (l: any) => AE_LABEL_COLOURS[l.labelIdx] || typeColour(l);
 const AUDIO_EXT = /\.(mp3|wav|aac|m4a|aif|aiff|flac|ogg|opus|wma|mka)$/i;
 const VIDEO_EXT = /\.(mp4|mov|avi|mkv|webm|m4v|mpg|mpeg|wmv|flv|m2ts|mts|mxf|prores|r3d|braw)$/i;
 // A short glyph marking each layer kind, mirroring After Effects' source-type icons.
-const TYPE_GLYPH = { text: 'T', shape: '◆', camera: '◉', light: '☼', audio: '♪',
+const TYPE_GLYPH: Record<string, string> = { text: 'T', shape: '◆', camera: '◉', light: '☼', audio: '♪',
   image: '▣', video: '►', precomp: '⧉', solid: '■' };
-const TYPE_NAME = { text: 'text', shape: 'shape', camera: 'camera', light: 'light',
+const TYPE_NAME: Record<string, string> = { text: 'text', shape: 'shape', camera: 'camera', light: 'light',
   audio: 'audio', image: 'image', video: 'video', precomp: 'pre-comp', solid: 'solid', footage: 'footage' };
-const typeGlyph = (l) => TYPE_GLYPH[l.ltype] || '';
+const typeGlyph = (l: any) => TYPE_GLYPH[l.ltype] || '';
 
-const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
+const esc = (s: string) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m] as string));
 
 // Walk the RIFX chunk tree, collecting compositions (with layers), an id->name
 // map for footage/precomp resolution, the set of composition item ids, and the
 // names of footage items.
-function parseAep(buf) {
+function parseAep(buf: Uint8Array) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const L1 = new TextDecoder('latin1'), U8 = new TextDecoder('utf-8');
-  const id = (o) => L1.decode(buf.subarray(o, o + 4));
-  const u32 = (o) => dv.getUint32(o, false), i32 = (o) => dv.getInt32(o, false), u16 = (o) => dv.getUint16(o, false);
-  const comps = [], idName: any = {}, compIds = new Set(), footage = [];
+  const id = (o: number) => L1.decode(buf.subarray(o, o + 4));
+  const u32 = (o: number) => dv.getUint32(o, false), i32 = (o: number) => dv.getInt32(o, false), u16 = (o: number) => dv.getUint16(o, false);
+  const comps: any[] = [], idName: any = {}, compIds = new Set(), footage: string[] = [];
   // Read a null-terminated string from a fixed-length buffer (the legacy layer
   // name field inside ldta - used when the modern Utf8 name chunk is absent).
-  const cstr = (o, max) => { let s = ''; for (let i = 0; i < max && buf[o + i]; i++) s += String.fromCharCode(buf[o + i]); return s; };
+  const cstr = (o: number, max: number) => { let s = ''; for (let i = 0; i < max && buf[o + i]; i++) s += String.fromCharCode(buf[o + i]); return s; };
 
-  function walk(start, end, c) {
+  function walk(start: number, end: number, c: any) {
     let o = start;
     while (o + 8 <= end) {
       const t = id(o), sz = u32(o + 4), ds = o + 8;
@@ -101,7 +101,7 @@ function parseAep(buf) {
       } else if (t === 'ldta') {
         const a = [buf[ds + 37], buf[ds + 38], buf[ds + 39]];
         const sc = (c.cur && c.cur.scale) || SCALE;
-        const dn = (off) => u32(ds + off) || sc;   // each rational's own denominator (per-layer time scale)
+        const dn = (off: number) => u32(ds + off) || sc;   // each rational's own denominator (per-layer time scale)
         const labelIdx = buf[ds + 61];            // AE label-colour index (1..16; 0 = None)
         // tIn/tOut are added just below, once start has been read.
         const L: Record<string, any> = {
@@ -131,18 +131,18 @@ function parseAep(buf) {
   walk(12, buf.length, { lastType: null, lastId: null, pn: null, cur: null, eL: null });
 
   for (const comp of comps) {
-    comp.real = comp.layers.filter((l) => !VIEW_NAMES.has(l.name) && !VIEW_NAMES.has(l.fld));
+    comp.real = comp.layers.filter((l: any) => !VIEW_NAMES.has(l.name) && !VIEW_NAMES.has(l.fld));
     // Duration is authoritative from the comp header (cdta u32@44): individual
     // layer out-points are unreliable - an unset layer carries a huge sentinel
     // and a time-remapped layer can run far past the comp end. Only if the header
     // value is missing do we fall back to the longest sane layer.
     const headerDur = comp.durTicks > 0 ? comp.durTicks / comp.scale : 0;
     comp.dur = headerDur > 0.01 ? headerDur
-      : Math.max(0.01, ...comp.real.map((l) => l.tOut).filter((x) => x > 0.01 && x < 1e5));
+      : Math.max(0.01, ...comp.real.map((l: any) => l.tOut).filter((x: number) => x > 0.01 && x < 1e5));
     // Name priority: renamed layer (Utf8) -> legacy ldta name -> source file /
     // comp name -> numbered fallback. The source resolves footage to its filename
     // and pre-comps to the composition name.
-    comp.real.forEach((l, i) => {
+    comp.real.forEach((l: any, i: number) => {
       l.label = l.name || l.fld || idName[l.src] || ('Layer ' + (i + 1));
       l.isComp = compIds.has(l.src);
       // AE's per-layer audio bit is always on; identify audio by the source's extension instead.
@@ -157,14 +157,14 @@ function parseAep(buf) {
 
 // Pull the authoring app + dates from the trailing XMP packet (plain regex - the
 // packet is small UTF-8 and we only want a handful of fields).
-function parseXmp(buf) {
+function parseXmp(buf: Uint8Array) {
   // Scan the tail (XMP sits near the end); decode that slice as latin1 for regex.
   const tail = buf.subarray(Math.max(0, buf.length - 512 * 1024));
   const xml = new TextDecoder('latin1').decode(tail);
   const start = xml.indexOf('<?xpacket');
   if (start < 0) return null;
   const x = xml.slice(start);
-  const grab = (re) => { const m = x.match(re); return m ? m[1].trim() : ''; };
+  const grab = (re: RegExp) => { const m = x.match(re); return m ? m[1].trim() : ''; };
   const agents = [...x.matchAll(/<stEvt:softwareAgent>([^<]+)<\/stEvt:softwareAgent>/g)].map((m) => m[1].trim());
   return {
     creatorTool: grab(/<xmp:CreatorTool>([^<]+)<\/xmp:CreatorTool>/),
@@ -174,15 +174,15 @@ function parseXmp(buf) {
   };
 }
 
-const fmtTime = (s) => (s >= 60 ? Math.floor(s / 60) + ':' + String(Math.round(s % 60)).padStart(2, '0') : s.toFixed(s < 10 ? 2 : 1) + 's');
+const fmtTime = (s: number) => (s >= 60 ? Math.floor(s / 60) + ':' + String(Math.round(s % 60)).padStart(2, '0') : s.toFixed(s < 10 ? 2 : 1) + 's');
 
 const LH = 24, TOP = 6, LABEL_W = 200;       // row height, top pad, frozen label column
-const fmtTick = (t) => (t >= 60 ? Math.floor(t / 60) + ':' + String(Math.round(t % 60)).padStart(2, '0') : (Number.isInteger(t) ? t + 's' : t.toFixed(1) + 's'));
+const fmtTick = (t: number) => (t >= 60 ? Math.floor(t / 60) + ':' + String(Math.round(t % 60)).padStart(2, '0') : (Number.isInteger(t) ? t + 's' : t.toFixed(1) + 's'));
 
 // The frozen left column: one row per layer with its name (right-aligned).
-function aepLabelsSvg(real, H) {
+function aepLabelsSvg(real: any[], H: number) {
   let s = '';
-  real.forEach((l, i) => {
+  real.forEach((l, i: number) => {
     const y = TOP + i * LH;
     s += `<rect x="0" y="${y}" width="${LABEL_W}" height="${LH}" fill="${i % 2 ? 'rgba(128,128,128,.10)' : 'rgba(128,128,128,.04)'}"/>`;
     s += `<rect x="5" y="${y + LH / 2 - 5}" width="10" height="10" fill="${layerColour(l)}"/>`;   // AE label-colour swatch
@@ -195,11 +195,11 @@ function aepLabelsSvg(real, H) {
 }
 
 // The scrollable track, drawn at a given pixels-per-second (zoom) and width.
-function aepTrackSvg(real, dur, H, trackW, pps) {
-  const x = (t) => Math.max(0, Math.min(dur, t)) * pps;
+function aepTrackSvg(real: any[], dur: number, H: number, trackW: number, pps: number) {
+  const x = (t: number) => Math.max(0, Math.min(dur, t)) * pps;
   const bottom = TOP + real.length * LH;
   let stripes = '', grid = '', bars = '';
-  real.forEach((l, i) => {
+  real.forEach((l, i: number) => {
     stripes += `<rect x="0" y="${TOP + i * LH}" width="${trackW}" height="${LH}" fill="${i % 2 ? 'rgba(128,128,128,.10)' : 'rgba(128,128,128,.04)'}"/>`;
   });
   const STEPS = [0.25, 0.5, 1, 2, 5, 10, 15, 20, 30, 60, 120, 300, 600];
@@ -209,7 +209,7 @@ function aepTrackSvg(real, dur, H, trackW, pps) {
     grid += `<line x1="${gx}" y1="${TOP}" x2="${gx}" y2="${bottom}" stroke="currentColor" stroke-width="1" opacity=".12"/>`;
     grid += `<text x="${gx + 3}" y="${bottom + 14}" fill="currentColor" font-size="9.5" opacity=".5">${fmtTick(t)}</text>`;
   }
-  real.forEach((l, i) => {
+  real.forEach((l, i: number) => {
     const y = TOP + i * LH;
     const oo = Math.min(Math.max(l.tOut, 0), dur);   // clamp runaway / unset out-points to the comp end
     const ii = Math.min(Math.max(l.tIn, 0), dur);
@@ -228,7 +228,7 @@ function aepTrackSvg(real, dur, H, trackW, pps) {
 
 // Build one composition's card: header + a frozen label column beside a
 // horizontally zoomable / pannable track (ctrl/cmd+wheel to zoom, drag to pan).
-function buildCompTimeline(comp) {
+function buildCompTimeline(comp: any) {
   const real = comp.real, dur = comp.dur;
   const H = TOP + real.length * LH + 22;
   let zoom = 1;
@@ -242,7 +242,7 @@ function buildCompTimeline(comp) {
 
   // Zoom controls.
   const pct = el('span', { style: 'font-size:12px;opacity:.75;min-width:44px;text-align:center;font-variant-numeric:tabular-nums' }, '100%');
-  const zbtn = (txt, title) => el('button', { type: 'button', class: 'anr-btn', style: 'padding:1px 9px;min-width:0;line-height:1.4', title }, txt);
+  const zbtn = (txt: ElChild | ElChild[], title: string) => el('button', { type: 'button', class: 'anr-btn', style: 'padding:1px 9px;min-width:0;line-height:1.4', title }, txt);
   const bOut = zbtn('−', 'Zoom out'), bIn = zbtn('+', 'Zoom in'), bReset = zbtn('Reset', 'Reset zoom');
   card.appendChild(el('div', { class: 'anr-btn-row', style: 'gap:6px;align-items:center;margin:0 0 6px;flex-wrap:wrap' }, [
     el('span', { style: 'font-size:12px;opacity:.7' }, 'Zoom'), bOut, pct, bIn, bReset,
@@ -272,7 +272,7 @@ function buildCompTimeline(comp) {
   // Hover playhead: snap the cursor to the nearest frame and show its timecode + frame.
   const fpsN = comp.fps && isFinite(comp.fps) && comp.fps > 0 ? comp.fps : 30;
   const fpsR = Math.max(1, Math.round(fpsN));
-  function movePlayhead(clientX) {
+  function movePlayhead(clientX: number) {
     const pps = ppsNow();
     const t = Math.max(0, Math.min(dur, (clientX - track.getBoundingClientRect().left) / pps));
     const frame = Math.round(t * fpsN);
@@ -283,7 +283,7 @@ function buildCompTimeline(comp) {
     playline.style.display = playbox.style.display = 'block';
   }
   const hidePlayhead = () => { playline.style.display = playbox.style.display = 'none'; };
-  function setZoom(z, anchorClientX?) {
+  function setZoom(z: number, anchorClientX?: number|null|undefined) {
     const oldPps = ppsNow();
     const rect = scroller.getBoundingClientRect();
     const anchorPx = (anchorClientX != null ? anchorClientX - rect.left : rect.width / 2) + scroller.scrollLeft;
@@ -319,7 +319,7 @@ function buildCompTimeline(comp) {
     if (e.pointerType !== 'touch') movePlayhead(e.clientX);
   });
   scroller.addEventListener('pointerleave', hidePlayhead);
-  const endDrag = (e) => { dragging = false; scroller.style.cursor = 'grab'; try { scroller.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ } };
+  const endDrag = (e: PointerEvent) => { dragging = false; scroller.style.cursor = 'grab'; try { scroller.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ } };
   scroller.addEventListener('pointerup', endDrag);
   scroller.addEventListener('pointercancel', endDrag);
 
@@ -393,7 +393,7 @@ export async function renderAep(file: File, resultsEl: HTMLElement) {
   }
 
   // ---- Legend ----
-  const usedLabels = [...new Set<number>(data.comps.flatMap((c) => (c.real || []).map((l) => l.labelIdx)).filter(Boolean))].sort((a, b) => a - b);
+  const usedLabels = [...new Set<number>(data.comps.flatMap((c: any) => (c.real || []).map((l: any) => l.labelIdx)).filter(Boolean))].sort((a, b) => a - b);
   const swatches = usedLabels.map((i) =>
     `<span style="display:inline-block;width:10px;height:10px;background:${AE_LABEL_COLOURS[i]};vertical-align:middle;margin:0 5px 0 10px"></span>${AE_LABEL_NAMES[i]}`).join('');
   const [legH, legP] = h3help('Legend',

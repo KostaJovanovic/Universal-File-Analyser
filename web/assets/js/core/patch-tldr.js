@@ -334,6 +334,10 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+    { range: '8.18', notes: [
+            'Every one of the 176 files the app is built from is now **checked far more strictly** before it ships - about 11,400 places where something could have been missing or the wrong shape. The app itself is deliberately unchanged; the point was to make future mistakes fail early instead of in front of you.',
+            'One real fix fell out of it: a **document that cannot read one of its inner parts now still shows the rest**, instead of throwing away everything it had already read.',
+        ] },
     { range: '8.07 - 8.11', notes: [
             'The site **moved to analyser.valjdakosta.com** - the old lab.valjdakosta.com address still works and serves the same pages, so nothing saved or installed breaks.',
             'The on-device **AI sound tools** got much harder to break - a stalled graphics card is retried on the compatible engine, a job that stops responding reports a failure instead of hanging for ever, and every model file is checked against its exact size before it is used.',

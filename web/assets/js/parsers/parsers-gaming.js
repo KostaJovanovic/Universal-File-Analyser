@@ -1867,7 +1867,7 @@ async function parsePyxel(file) {
     const out = { 'Format': 'Pyxel Edit document (.pyxel, ZIP)', 'Entries': zip.entries.length };
     if (docEntry) {
         try {
-            const j = JSON.parse(await zip.text(docEntry.name));
+            const j = JSON.parse((await zip.text(docEntry.name)));
             if (j.tileset)
                 out['Tile size'] = (j.tileset.tileWidth || '?') + ' x ' + (j.tileset.tileHeight || '?');
             if (j.canvas) {

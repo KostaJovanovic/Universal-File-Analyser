@@ -45,6 +45,14 @@ program with the DOM lib).
 and `web/docs/` - which keeps the Cloudflare deploy a pure static upload of
 `web/` with no build configured on their side.
 
+The compile runs with `strict` on, `strictNullChecks` and `noImplicitAny`
+included, and the tree is clean under both configs. Because there is no test
+suite, the rule that keeps a type fix honest is that **the emitted JavaScript
+must not change**: type syntax erases, so the right answer to a strict error is
+an annotation, a cast or a non-null assertion, not a new runtime guard. A
+correct pass leaves `web/assets/js/` byte-identical, which is checkable by
+building the previous commit's sources into a scratch directory and diffing.
+
 ## Commit / version-bump flow (save.bat)
 
 `save.bat` is **the only correct way to commit** to this repo - never

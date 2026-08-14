@@ -145,7 +145,7 @@ export function makeFeatureState(erb: string|any[]) {
   }
   // feat_cplx: first nbDf complex bins, each divided by sqrt of the running mean
   // of its magnitude (libDF band_unit_norm: s=|x|*(1-a)+s*a; x/=sqrt(s)).
-  function featCplx(re: number[], im: number[], outRe: number[], outIm: number[]) {
+  function featCplx(re: FloatBuf, im: FloatBuf, outRe: FloatBuf, outIm: FloatBuf) {
     for (let k = 0; k < nbDf; k++) {
       const mag = Math.hypot(re[k], im[k]);
       unitState[k] = mag * (1 - alpha) + unitState[k] * alpha;
@@ -159,7 +159,7 @@ export function makeFeatureState(erb: string|any[]) {
 // Apply a 32-band ERB gain to a full one-sided spectrum in place: each band's gain
 // multiplies every bin it spans (libDF apply_interp_band_gain - replication, no
 // interpolation). re/im are one frame (length nBins).
-export function applyErbGain(re: number[]|Float32Array, im: number[]|Float32Array, gains: any[], erb: string|any[]) {
+export function applyErbGain(re: number[]|Float32Array, im: number[]|Float32Array, gains: ArrayLike<number>, erb: ArrayLike<number>) {
   let bc = 0;
   for (let b = 0; b < erb.length; b++) {
     const g = gains[b], bs = erb[b];

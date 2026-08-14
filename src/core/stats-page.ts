@@ -74,7 +74,7 @@ export async function setupStatsPage() {
       const launchGame = () => { import('../games/asteroids.js').then((m) => m.launchAsteroids()).catch(() => {}); };
       // The "final blow" tag: a file extension ('.pdf') or the literal 'nuke'.
       const causeText = (c: string) => !c ? '' : (c === 'nuke' ? 'nuclear bomb' : c);
-      const scoreRow = (s, i: number) => {
+      const scoreRow = (s: any, i: number) => {
         const top = i === 0;
         const num = el('span', { class: 'stats-score-num' + (top ? ' stats-score-num--play' : '') }, Number(s.score).toLocaleString());
         // Only the reigning #1 score number launches Asteroids.
@@ -99,7 +99,7 @@ export async function setupStatsPage() {
       let scoresShown = SCORES_TOP;
       const renderScores = () => {
         scoreList.innerHTML = '';
-        scores.slice(0, scoresShown).forEach((s, i: number) => scoreList.appendChild(scoreRow(s, i)));
+        scores.slice(0, scoresShown).forEach((s: any, i: number) => scoreList.appendChild(scoreRow(s, i)));
         if (!scoreToggle) return;
         const remaining = scores.length - scoresShown;
         if (remaining <= 0) { scoreToggle.hidden = true; return; }
@@ -129,7 +129,7 @@ export async function setupStatsPage() {
   // not only in the Worker. A worker old enough to still send individual unsupported
   // rows would otherwise render as several identical "Unsupported types" rows; this
   // guarantees exactly one, whichever Worker version is live.
-  const exts = [];
+  const exts: any[] = [];
   let unsupportedTotal = 0;
   for (const e of rawExts) {
     if (e.supported) exts.push(e);
@@ -140,9 +140,9 @@ export async function setupStatsPage() {
   // Percentages are each extension's share of all analysed files (the real total,
   // not just the rows shown), so they read as a true share even when the list is
   // truncated to the top entries.
-  const total = data.files || rawExts.reduce((s, e) => s + e.count, 0) || 1;
+  const total = data.files || rawExts.reduce((s: number, e: any) => s + e.count, 0) || 1;
 
-  const row = (e, i: number) => {
+  const row = (e: any, i: number) => {
     // Supported extensions link to their own /formats/<ext> guide page (the same
     // full-wins routing the generator used, so the link can't 404); ones not in the
     // catalog stay plain text. The server pools every unsupported extension into one
@@ -199,7 +199,7 @@ function niceCeil(v: number) {
 }
 
 const _SVGNS = 'http://www.w3.org/2000/svg';
-function svgEl(tag: string, attrs, kids?: string|null|undefined) {
+function svgEl(tag: string, attrs: Record<string, any>|null, kids?: any) {
   const n = document.createElementNS(_SVGNS, tag);
   if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
   if (kids != null) (Array.isArray(kids) ? kids : [kids]).forEach((c) => {
@@ -208,24 +208,29 @@ function svgEl(tag: string, attrs, kids?: string|null|undefined) {
   return n;
 }
 
-const _fmtDay = (s: string, opts?) => {
+const _fmtDay = (s: string, opts?: Intl.DateTimeFormatOptions) => {
   const d = new Date(s + 'T00:00:00Z');
   return isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB', opts || { day: 'numeric', month: 'short' });
 };
 
+/** Which of the trend chart's two lines a value belongs to. Doubles as the
+    `data-series` attribute on each legend button, so the DOM round-trip
+    (`btn.dataset.series`) lands back on this union. */
+type TrendKey = 'visitors' | 'files';
+
 // The two series the chart can show. `key` matches data-series in the legend.
-const _TREND_SERIES = ['visitors', 'files'];
+const _TREND_SERIES: TrendKey[] = ['visitors', 'files'];
 // Module-scoped so it survives an SPA navigation that swaps <main> (and with it
 // #statsTrendsChart). Storing the dedup handle on the chart element instead
 // would orphan the old window 'resize' listener, since the new element carries
 // no reference to it. See renderStatsTrends().
-let _trendResizeHandler = null;
+let _trendResizeHandler: (() => void)|null = null;
 
 // Per-mode {visitors, files} arrays: each day's count, or the running total.
 // In cumulative mode `baseline` seeds the running total with the all-time count
 // that existed before the first tracked day, so the line continues from the real
 // figure instead of restarting at zero.
-function trendSeries(daily: any[], mode: string, baseline) {
+function trendSeries(daily: any[], mode: string, baseline: any) {
   const cumulative = mode === 'cumulative';
   const out: { visitors: number[]; files: number[] } = { visitors: [], files: [] };
   let cv = cumulative && baseline ? (Number(baseline.visitors) || 0) : 0;
@@ -241,7 +246,7 @@ function trendSeries(daily: any[], mode: string, baseline) {
 // Show the trend card and wire the per-day / cumulative toggle plus the
 // clickable legend (each series can be hidden). Hidden entirely until the worker
 // has at least one day of buckets (older worker -> daily: []).
-function renderStatsTrends(daily, totals) {
+function renderStatsTrends(daily: any[], totals: any) {
   const card = $('statsTrends');
   if (!card) return;
   const chartEl = $('statsTrendsChart');
@@ -262,7 +267,7 @@ function renderStatsTrends(daily, totals) {
   };
 
   let mode = 'cumulative';
-  const visible = { visitors: true, files: true };
+  const visible: Record<TrendKey, boolean> = { visitors: true, files: true };
   let layout = trendLayout();
   let chart = buildTrendChart(chartEl, rows, baseline, layout);   // builds the SVG once; we only tween attributes after
   let drawnMax: number|null = null;   // y-scale currently rendered, tweened for a smooth resize
@@ -282,7 +287,7 @@ function renderStatsTrends(daily, totals) {
   // Tween the y-scale from its current value to `to`, updating attributes each
   // frame (no DOM rebuild, so it stays smooth), then run `done`. Hiding the
   // larger series grows the smaller one to fill the chart.
-  const animateTo = (to: number, done?) => {
+  const animateTo = (to: number, done?: () => void) => {
     if (raf) { cancelAnimationFrame(raf); raf = 0; }
     if (drawnMax == null || reduceMotion || Math.abs(to - drawnMax) < 0.5) {
       drawnMax = to; chart.apply(mode, drawnMax, visible); if (done) done();
@@ -339,7 +344,7 @@ function renderStatsTrends(daily, totals) {
     legendEl.addEventListener('click', (e) => {
       const btn = (e.target as HTMLElement).closest<HTMLElement>('.stats-trends-key');
       if (!btn) return;
-      const key = btn.dataset.series;
+      const key = btn.dataset.series as TrendKey;
       const turningOn = !visible[key];
       // Never let the user hide the last visible series (chart would go empty).
       if (!turningOn && _TREND_SERIES.filter((k) => visible[k]).length <= 1) return;
@@ -399,7 +404,7 @@ function trendLayout() {
 // series via CSS opacity; a transparent overlay drives a custom hover tooltip
 // that snaps to the nearest day. `layout` comes from trendLayout(); the chart is
 // rebuilt (not resized) when the viewport crosses the narrow/wide breakpoint.
-function buildTrendChart(chartEl: HTMLElement|null, daily: any[], baseline, layout) {
+function buildTrendChart(chartEl: HTMLElement|null, daily: any[], baseline: any, layout: any) {
   if (!chartEl) return { apply() {}, setShown() {}, fade() {} };
   const n = daily.length;
   const L = layout || trendLayout();
@@ -472,8 +477,8 @@ function buildTrendChart(chartEl: HTMLElement|null, daily: any[], baseline, layo
   tip.hidden = true;
   chartEl.appendChild(tip);
 
-  const linePath = (s: number[], yFor) => s.map((val, i) => (i ? 'L' : 'M') + xFor(i).toFixed(1) + ' ' + yFor(val).toFixed(1)).join(' ');
-  const areaPath = (s: number[], yFor) => linePath(s, yFor) + ' L ' + xFor(n - 1).toFixed(1) + ' ' + yFor(0).toFixed(1)
+  const linePath = (s: number[], yFor: (v: number) => number) => s.map((val, i) => (i ? 'L' : 'M') + xFor(i).toFixed(1) + ' ' + yFor(val).toFixed(1)).join(' ');
+  const areaPath = (s: number[], yFor: (v: number) => number) => linePath(s, yFor) + ' L ' + xFor(n - 1).toFixed(1) + ' ' + yFor(0).toFixed(1)
     + ' L ' + xFor(0).toFixed(1) + ' ' + yFor(0).toFixed(1) + ' Z';
 
   const state = { mode: 'daily', niceMax: 1, visible: { visitors: true, files: true }, series: trendSeries(daily, 'daily', baseline) };
@@ -487,7 +492,7 @@ function buildTrendChart(chartEl: HTMLElement|null, daily: any[], baseline, layo
     fFocus.style.opacity = '0';
     vFocus.style.opacity = '0';
   };
-  const onMove = (e) => {
+  const onMove = (e: PointerEvent) => {
     if (!state.series || !n) return;
     const rect = svg.getBoundingClientRect();
     if (!rect.width) return;
@@ -502,7 +507,7 @@ function buildTrendChart(chartEl: HTMLElement|null, daily: any[], baseline, layo
     if (state.visible.visitors) { vFocus.setAttribute('cx', px.toFixed(1)); vFocus.setAttribute('cy', yFor(state.series.visitors[i]).toFixed(1)); vFocus.style.opacity = '1'; } else vFocus.style.opacity = '0';
     if (state.visible.files) { fFocus.setAttribute('cx', px.toFixed(1)); fFocus.setAttribute('cy', yFor(state.series.files[i]).toFixed(1)); fFocus.style.opacity = '1'; } else fFocus.style.opacity = '0';
 
-    const tipRow = (key: string, label: ElChild) => el('div', { class: 'stats-trend-tip-row' }, [
+    const tipRow = (key: TrendKey, label: ElChild) => el('div', { class: 'stats-trend-tip-row' }, [
       el('span', { class: 'stats-trend-tip-swatch stats-trend-tip-swatch--' + key }),
       label, el('strong', {}, state.series[key][i].toLocaleString()),
     ]);
@@ -533,7 +538,7 @@ function buildTrendChart(chartEl: HTMLElement|null, daily: any[], baseline, layo
 
   return {
     // Lay out everything for `mode` at y-scale `scaleMax` (raw; nice-rounded here).
-    apply(mode: string, scaleMax: number, visible) {
+    apply(mode: string, scaleMax: number, visible?: Record<TrendKey, boolean>) {
       const step = Math.max(1, Math.ceil(niceCeil(Math.max(1, scaleMax) / TICKS)));
       state.niceMax = step * TICKS;
       state.mode = mode;

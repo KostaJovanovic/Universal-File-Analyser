@@ -24,7 +24,7 @@ const PREVIEW_MAX_EDGE = 768;   // cap longest edge of a decoded science preview
 
 // Build a <canvas> from an RGBA Uint8ClampedArray, scaling down (nearest) so the
 // longest edge is <= PREVIEW_MAX_EDGE. Returns a wrapped node (with caption) or null.
-function canvasFromRGBA(rgba, w, h, caption) {
+function canvasFromRGBA(rgba: Uint8ClampedArray, w: number, h: number, caption?: string | null) {
   if (!w || !h || w < 1 || h < 1) return null;
   if (rgba.length < w * h * 4) return null;
   let dw = w, dh = h;
@@ -35,25 +35,25 @@ function canvasFromRGBA(rgba, w, h, caption) {
     dh = Math.max(1, Math.round(h * s));
   }
   try {
-    const img = new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, w * h * 4), w, h);
+    const img = new ImageData(new Uint8ClampedArray(rgba.buffer as ArrayBuffer, rgba.byteOffset, w * h * 4), w, h);
     let c;
     if (dw === w && dh === h) {
       c = el('canvas');
       c.width = w; c.height = h;
-      c.getContext('2d').putImageData(img, 0, 0);
+      c.getContext('2d')!.putImageData(img, 0, 0);
     } else {
       const off = document.createElement('canvas');
       off.width = w; off.height = h;
-      off.getContext('2d').putImageData(img, 0, 0);
+      off.getContext('2d')!.putImageData(img, 0, 0);
       c = el('canvas');
       c.width = dw; c.height = dh;
-      c.getContext('2d').drawImage(off, 0, 0, dw, dh);
+      c.getContext('2d')!.drawImage(off, 0, 0, dw, dh);
     }
     c.style.maxWidth = '100%';
     c.style.height = 'auto';
     c.style.imageRendering = 'auto';
     c.style.background = '#000';
-    const children = [c];
+    const children: (HTMLElement | null)[] = [c];
     if (caption) children.push(el('div', { style: 'font-size:11px;opacity:.6;margin-top:4px;' }, caption));
     return el('div', { class: 'anr-img-preview', style: 'margin-top:12px;' }, children);
   } catch (_) {
@@ -63,7 +63,7 @@ function canvasFromRGBA(rgba, w, h, caption) {
 
 // Pack a grayscale Float64/typed array (length w*h) into RGBA using a window/level.
 // `lo`/`hi` map to 0/255; values are clamped. `invert` flips (MONOCHROME1).
-function grayToRGBA(samples, w, h, lo, hi, invert) {
+function grayToRGBA(samples: ArrayLike<number>, w: number, h: number, lo: number, hi: number, invert: boolean) {
   const px = w * h;
   const rgba = new Uint8ClampedArray(px * 4);
   const span = (hi - lo) || 1;
@@ -79,7 +79,7 @@ function grayToRGBA(samples, w, h, lo, hi, invert) {
 }
 
 // Robust low/high bounds via a 0.5 / 99.5 percentile stretch over a sample.
-function percentileBounds(samples, count, loP = 0.005, hiP = 0.995) {
+function percentileBounds(samples: ArrayLike<number>, count: number, loP = 0.005, hiP = 0.995) {
   const n = Math.min(count, samples.length);
   if (n <= 0) return [0, 1];
   // Sample up to ~50k values to keep the sort cheap on big volumes.
@@ -262,7 +262,7 @@ async function parseDicom(file: File) {
 }
 
 // Decode the first frame of an uncompressed DICOM image to a <canvas>.
-async function renderDicomPreview(file: File, found, px) {
+async function renderDicomPreview(file: File, found: any, px: { offset: number; len: number; little: boolean }) {
   const cols = found.Columns | 0, rows = found.Rows | 0;
   if (!cols || !rows || cols > 20000 || rows > 20000) return null;
   if (px.offset < 0 || px.offset > file.size) return null;
@@ -334,7 +334,7 @@ async function renderDicomPreview(file: File, found, px) {
 // ============================================================================
 // FIT (.fit) - Garmin / ANT. Disambiguated from FITS via SIMPLE sniff.
 // ============================================================================
-function parseFit(head, file: File) {
+function parseFit(head: Uint8Array, file: File) {
   // FITS astronomy files reuse .fit; their header begins "SIMPLE  =".
   if (startsWithAscii(head, 'SIMPLE') && /^SIMPLE\s*=/.test(ascii(head, 0, 16))) {
     return parseFits(head, file);
@@ -365,7 +365,7 @@ function parseFit(head, file: File) {
 // ============================================================================
 // FITS (.fits / .fts / .fit-as-FITS) - 2880-byte header cards.
 // ============================================================================
-function fitsCards(buf) {
+function fitsCards(buf: Uint8Array) {
   // Cards are 80-byte fixed records of "KEYWORD = value / comment".
   const cards: any = {};
   const order = [];
@@ -384,7 +384,7 @@ function fitsCards(buf) {
   return cards;
 }
 // Byte length of the primary header (padded to the next 2880 block), or -1.
-function fitsHeaderBytes(head) {
+function fitsHeaderBytes(head: Uint8Array) {
   const limit = Math.min(head.length, 2880 * 36);
   for (let off = 0; off + 80 <= limit; off += 80) {
     if (ascii(head, off, 8).trim() === 'END') {
@@ -394,7 +394,7 @@ function fitsHeaderBytes(head) {
   return -1;
 }
 
-async function parseFits(head, file: File) {
+async function parseFits(head: Uint8Array, file: File) {
   if (!startsWithAscii(head, 'SIMPLE')) return null;
   const c = fitsCards(head);
   if (!('SIMPLE' in c)) return null;
@@ -441,7 +441,7 @@ async function parseFits(head, file: File) {
   return out;
 }
 
-async function renderFitsImage(file: File, h) {
+async function renderFitsImage(file: File, h: any) {
   const px = h.nx * h.ny;
   const dataBytes = px * h.bpv;
   if (dataBytes <= 0 || dataBytes > 96 * 1024 * 1024) return null;
@@ -452,12 +452,12 @@ async function renderFitsImage(file: File, h) {
   const samples = new Float64Array(px);
   const read = (() => {
     switch (h.bitpix) {
-      case 8:   return (o) => dv.getUint8(o);
-      case 16:  return (o) => dv.getInt16(o, false);
-      case 32:  return (o) => dv.getInt32(o, false);
-      case 64:  return (o) => Number(dv.getBigInt64(o, false));
-      case -32: return (o) => dv.getFloat32(o, false);
-      case -64: return (o) => dv.getFloat64(o, false);
+      case 8:   return (o: number) => dv.getUint8(o);
+      case 16:  return (o: number) => dv.getInt16(o, false);
+      case 32:  return (o: number) => dv.getInt32(o, false);
+      case 64:  return (o: number) => Number(dv.getBigInt64(o, false));
+      case -32: return (o: number) => dv.getFloat32(o, false);
+      case -64: return (o: number) => dv.getFloat64(o, false);
       default:  return null;
     }
   })();
@@ -485,7 +485,7 @@ async function parseTcx(file: File) {
   const sport = (text.match(/<Activity[^>]*\bSport="([^"]+)"/i) || [])[1];
   const laps = (text.match(/<Lap\b/gi) || []).length;
   const trackpoints = (text.match(/<Trackpoint\b/gi) || []).length;
-  const sum = (re) => {
+  const sum = (re: RegExp) => {
     let total = 0, any = false;
     for (const m of text.matchAll(re)) { const v = parseFloat(m[1]); if (!isNaN(v)) { total += v; any = true; } }
     return any ? total : null;
@@ -493,7 +493,7 @@ async function parseTcx(file: File) {
   const dist = sum(/<DistanceMeters>([\d.]+)<\/DistanceMeters>/gi);
   const time = sum(/<TotalTimeSeconds>([\d.]+)<\/TotalTimeSeconds>/gi);
   const cals = sum(/<Calories>(\d+)<\/Calories>/gi);
-  const range = (re) => {
+  const range = (re: RegExp) => {
     let lo = Infinity, hi = -Infinity, any = false;
     for (const m of text.matchAll(re)) { const v = parseFloat(m[1]); if (!isNaN(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); any = true; } }
     return any ? [lo, hi] : null;
@@ -519,7 +519,7 @@ async function parseTcx(file: File) {
 // ============================================================================
 // FASTA / FASTQ
 // ============================================================================
-function guessSeqType(seq) {
+function guessSeqType(seq: string) {
   if (!seq) return 'unknown';
   const sample = seq.slice(0, 2000).toUpperCase().replace(/[^A-Z]/g, '');
   if (!sample) return 'unknown';
@@ -657,7 +657,7 @@ async function parseMol(file: File, ext: string) {
   return out;
 }
 
-function parseMol2(text) {
+function parseMol2(text: string) {
   const out: Row = { 'Format': 'MOL2 chemical structure (Tripos)' };
   const nameM = text.match(/@<TRIPOS>MOLECULE\s*\r?\n([^\r\n]*)/);
   if (nameM && nameM[1].trim()) out['Molecule name'] = nameM[1].trim().slice(0, 80);
@@ -678,7 +678,7 @@ async function parseCif(file: File) {
   const out: Row = { 'Format': 'Crystallographic Information File (CIF)' };
   const dataBlock = (text.match(/^\s*data_(\S+)/m) || [])[1];
   if (dataBlock) out['Data block'] = dataBlock;
-  const grab = (key) => {
+  const grab = (key: string) => {
     const m = text.match(new RegExp('^\\s*' + key.replace(/[.[\]]/g, '\\$&') + "\\s+(?:'([^']*)'|\"([^\"]*)\"|(\\S+))", 'm'));
     return m ? (m[1] || m[2] || m[3]) : null;
   };
@@ -889,7 +889,7 @@ async function parseEdf(file: File, ext: string) {
 async function parseJcamp(file: File) {
   const text = await readText(file, 2_000_000);
   if (!text || !/##TITLE\s*=/i.test(text)) return null;
-  const grab = (key) => {
+  const grab = (key: string) => {
     const m = text.match(new RegExp('##' + key.replace(/[.$]/g, '\\$&') + '\\s*=\\s*([^\\r\\n]*)', 'i'));
     return m ? m[1].trim() : null;
   };
@@ -1152,7 +1152,7 @@ async function parseNifti(file: File) {
 }
 
 // Datatypes we can render: bytes-per-voxel + reader.
-const NIFTI_RENDER_DTYPES: Record<string, number> = {
+const NIFTI_RENDER_DTYPES: Record<string, { bpv: number; read: (dv: DataView, o: number, le: boolean) => number }> = {
   2:   { bpv: 1, read: (dv, o, le) => dv.getUint8(o) },         // uint8
   256: { bpv: 1, read: (dv, o, le) => dv.getInt8(o) },          // int8
   4:   { bpv: 2, read: (dv, o, le) => dv.getInt16(o, le) },     // int16
@@ -1163,7 +1163,7 @@ const NIFTI_RENDER_DTYPES: Record<string, number> = {
   64:  { bpv: 8, read: (dv, o, le) => dv.getFloat64(o, le) },   // float64
 };
 
-async function renderNiftiSlice(file: File, h) {
+async function renderNiftiSlice(file: File, h: any) {
   const dt = NIFTI_RENDER_DTYPES[h.datatype];
   if (!dt) return null;
   const sliceVox = h.nx * h.ny;
@@ -1200,7 +1200,7 @@ async function renderNiftiSlice(file: File, h) {
 // ============================================================================
 // Identification-only (rare AND hard) - {Format, Note}
 // ============================================================================
-function idOnly(format, note) { return () => ({ 'Format': format, 'Note': note }); }
+function idOnly(format: string, note: string) { return () => ({ 'Format': format, 'Note': note }); }
 
 async function parseSegy(file: File) {
   // EBCDIC 3200-byte textual header + 400-byte binary header. Just identify.
@@ -1278,7 +1278,7 @@ const R_SEXP: Record<number, string> = {
   25: 'S4 object', 238: 'altrep',
 };
 async function parseRds(file: File, ext: string) {
-  let buf = await readSlice(file, 0, Math.min(file.size, 4096));
+  let buf: Uint8Array | null = await readSlice(file, 0, Math.min(file.size, 4096));
   if (buf.length < 6) return null;
   // R serialization files may be gzip ('\x1f\x8b'), bzip2 ('BZh') or raw. We can
   // only inflate gzip dependency-free; bzip2/xz fall through to header sniff.
@@ -1347,7 +1347,7 @@ async function parseAb1(file: File) {
   out['Version'] = (version / 100).toFixed(2);
   out['Directory entries'] = dirEntries;
   // ABIF string values: pString = len byte + chars; cString = NUL-terminated.
-  const readVal = (off, type, size) => {
+  const readVal = (off: number, type: number, size: number) => {
     if (off < 0 || off + size > buf.length) return null;
     if (type === 18) return ascii(buf, off + 1, Math.max(0, size - 1)).replace(/\0+$/, ''); // pString
     if (type === 19) return ascii(buf, off, size).replace(/\0+$/, '');                       // cString
@@ -1396,11 +1396,11 @@ async function parsePoscar(file: File) {
   // symbols (VASP5) OR counts (VASP4), line7 counts, then Direct/Cartesian.
   const scale = parseFloat((lines[1] || '').trim());
   if (!Number.isFinite(scale)) return null;
-  const vec = (l) => (l || '').trim().split(/\s+/).map(Number);
+  const vec = (l: string | undefined) => (l || '').trim().split(/\s+/).map(Number);
   const a = vec(lines[2]), b = vec(lines[3]), c = vec(lines[4]);
   if (a.length !== 3 || b.length !== 3 || c.length !== 3 ||
-      a.concat(b, c).some((n) => !Number.isFinite(n))) return null;
-  const len = (v) => Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) * (scale > 0 ? scale : 1);
+      a.concat(b, c).some((n: number) => !Number.isFinite(n))) return null;
+  const len = (v: number[]) => Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) * (scale > 0 ? scale : 1);
   const out: Row = { 'Format': 'VASP POSCAR/CONTCAR (DFT structure)' };
   const comment = (lines[0] || '').trim();
   if (comment) out['Comment'] = comment.slice(0, 100);
@@ -1572,7 +1572,7 @@ async function parseBrainVision(file: File, ext: string) {
   // .vhdr - INI-style "Brain Vision Data Exchange Header File".
   if (!/Brain\s*Vision/i.test(text) && !/\[Common Infos\]/i.test(text)) return null;
   const out: Row = { 'Format': 'BrainVision header (.vhdr)' };
-  const grab = (key) => { const m = text.match(new RegExp('^' + key + '=([^\\r\\n]+)', 'im')); return m ? m[1].trim() : null; };
+  const grab = (key: string) => { const m = text.match(new RegExp('^' + key + '=([^\\r\\n]+)', 'im')); return m ? m[1].trim() : null; };
   const dataFile = grab('DataFile'); if (dataFile) out['Data file'] = dataFile;
   const markerFile = grab('MarkerFile'); if (markerFile) out['Marker file'] = markerFile;
   const nch = grab('NumberOfChannels'); if (nch) out['Channels'] = parseInt(nch, 10);

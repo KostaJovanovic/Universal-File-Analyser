@@ -148,7 +148,7 @@ function buildFrameControls(playerEl, getFps, file) {
         if (!editing)
             return;
         const rf = Math.round(fps());
-        const clamp = (v, max) => { v = parseInt(v, 10) || 0; return Math.max(0, max != null ? Math.min(v, max) : v); };
+        const clamp = (v, max) => { const n = parseInt(v, 10) || 0; return Math.max(0, max != null ? Math.min(n, max) : n); };
         const h = clamp(sH.value), m = clamp(sM.value, 59), s = clamp(sS.value, 59), f = clamp(sF.value, Math.max(0, rf - 1));
         let t = h * 3600 + m * 60 + s + f / fps();
         if (isFinite(playerEl.duration))
@@ -5472,7 +5472,8 @@ export async function renderVideo(file, resultsEl, opts = {}) {
 export function initVideo({ dropEl, inputEl, resultsEl, onFile }) {
     const handle = onFile || ((file) => renderVideo(file, resultsEl));
     inputEl.addEventListener('change', (e) => {
-        const file = e.target.files && e.target.files[0];
+        const t = e.target;
+        const file = t.files && t.files[0];
         if (file)
             handle(file);
         inputEl.value = '';

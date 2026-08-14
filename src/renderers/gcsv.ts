@@ -27,16 +27,16 @@ const MAX_TEXT = SCAN_MED;     // don't read absurdly large logs whole
 const MAX_POINTS = 4000;               // decimate the trace to keep the canvas cheap
 const RAD2DEG = 180 / Math.PI;
 
-function parseGcsv(text) {
+function parseGcsv(text: string) {
   const lines = text.split(/\r?\n/);
-  const meta = { tscale: 1, gscale: 1, ascale: 1, id: '', version: '', orientation: '' };
-  let cols = null, dataStart = 0;
+  const meta: Record<string, any> = { tscale: 1, gscale: 1, ascale: 1, id: '', version: '', orientation: '' };
+  let cols: string[]|null = null, dataStart = 0;
   for (let i = 0; i < lines.length; i++) {
     const ln = lines[i].trim();
     if (!ln) continue;
     if (/imu\s*log/i.test(ln) && i < 3) continue;          // "GYROFLOW IMU LOG" banner
-    const parts = ln.split(/[,\t]/).map((s) => s.trim());
-    if (parts[0].toLowerCase() === 't') { cols = parts.map((s) => s.toLowerCase()); dataStart = i + 1; break; }
+    const parts = ln.split(/[,\t]/).map((s: string) => s.trim());
+    if (parts[0].toLowerCase() === 't') { cols = parts.map((s: string) => s.toLowerCase()); dataStart = i + 1; break; }
     if (parts.length >= 2) {
       const k = parts[0].toLowerCase(), v = parts.slice(1).join(',').trim();
       if (k in meta) meta[k] = (k === 'tscale' || k === 'gscale' || k === 'ascale') ? (parseFloat(v) || 1) : v;
@@ -44,14 +44,14 @@ function parseGcsv(text) {
   }
   if (!cols) return null;
 
-  const ix = (name) => cols.indexOf(name);
+  const ix = (name: string) => cols.indexOf(name);
   const it = ix('t');
   const ig = ['gx', 'gy', 'gz'].map(ix), ia = ['ax', 'ay', 'az'].map(ix);
   const hasGyro = ig.every((k) => k >= 0), hasAccel = ia.every((k) => k >= 0);
   if (it < 0 || (!hasGyro && !hasAccel)) return null;
 
   // First pass over data rows -> typed columns (raw), then decimate.
-  const rowsT = [], rg = [[], [], []], ra = [[], [], []];
+  const rowsT: number[] = [], rg: number[][] = [[], [], []], ra: number[][] = [[], [], []];
   for (let i = dataStart; i < lines.length; i++) {
     const ln = lines[i].trim();
     if (!ln) continue;
@@ -67,7 +67,7 @@ function parseGcsv(text) {
 
   const t0 = rowsT[0];
   const stride = Math.max(1, Math.ceil(n / MAX_POINTS));
-  const t = [], gyro = { x: [], y: [], z: [] }, accel = { x: [], y: [], z: [] };
+  const t: number[] = [], gyro: Record<string, number[]> = { x: [], y: [], z: [] }, accel: Record<string, number[]> = { x: [], y: [], z: [] };
   const ax = ['x', 'y', 'z'];
   for (let i = 0; i < n; i += stride) {
     t.push(rowsT[i] - t0);
@@ -151,14 +151,14 @@ export async function renderGcsv(file: File, resultsEl: HTMLElement) {
 // counts for our export), accelerometer in g.
 
 // Does this text look like a gyro CSV? (Used by csv.js to route .csv files here.)
-export function looksLikeGyroCsv(text) {
+export function looksLikeGyroCsv(text: string) {
   const head = text.slice(0, 4000);
   if (/sony rtmd imu export/i.test(head)) return true;
   for (const ln of head.split(/\r?\n/)) {
     const t = ln.trim().toLowerCase();
     if (!t || t.startsWith('#')) continue;
-    const cols = t.split(',').map((s) => s.trim());
-    const has = (n) => cols.includes(n);
+    const cols = t.split(',').map((s: string) => s.trim());
+    const has = (n: string) => cols.includes(n);
     if ((has('gyro_x') && has('gyro_y') && has('gyro_z')) ||
         (has('accel_x_g') && has('accel_y_g') && has('accel_z_g')) ||
         (has('accel_x') && has('accel_y') && has('accel_z'))) return true;
@@ -167,25 +167,25 @@ export function looksLikeGyroCsv(text) {
   return false;
 }
 
-function parsePlainGyroCsv(text) {
+function parsePlainGyroCsv(text: string) {
   const lines = text.split(/\r?\n/);
   let header = null, dataStart = 0;
   for (let i = 0; i < lines.length; i++) {
     const ln = lines[i].trim();
     if (!ln || ln.startsWith('#')) continue;
-    header = ln.split(',').map((s) => s.trim().toLowerCase());
+    header = ln.split(',').map((s: string) => s.trim().toLowerCase());
     dataStart = i + 1;
     break;
   }
   if (!header) return null;
-  const ix = (names) => { for (const n of names) { const k = header.indexOf(n); if (k >= 0) return k; } return -1; };
+  const ix = (names: string[]) => { for (const n of names) { const k = header.indexOf(n); if (k >= 0) return k; } return -1; };
   const it = ix(['time_s', 'time', 't', 'timestamp']);
   const ig = [ix(['gyro_x', 'gx']), ix(['gyro_y', 'gy']), ix(['gyro_z', 'gz'])];
   const ia = [ix(['accel_x_g', 'accel_x', 'ax']), ix(['accel_y_g', 'accel_y', 'ay']), ix(['accel_z_g', 'accel_z', 'az'])];
   const hasGyro = ig.every((k) => k >= 0), hasAccel = ia.every((k) => k >= 0);
   if (it < 0 || (!hasGyro && !hasAccel)) return null;
 
-  const T = [], G = [[], [], []], A = [[], [], []];
+  const T: number[] = [], G: number[][] = [[], [], []], A: number[][] = [[], [], []];
   for (let i = dataStart; i < lines.length; i++) {
     const ln = lines[i];
     if (!ln || ln[0] === '#') continue;
@@ -201,7 +201,7 @@ function parsePlainGyroCsv(text) {
 
   const t0 = T[0];
   const stride = Math.max(1, Math.ceil(n / MAX_POINTS));
-  const t = [], gyro = { x: [], y: [], z: [] }, accel = { x: [], y: [], z: [] };
+  const t: number[] = [], gyro: Record<string, number[]> = { x: [], y: [], z: [] }, accel: Record<string, number[]> = { x: [], y: [], z: [] };
   const ax = ['x', 'y', 'z'];
   for (let i = 0; i < n; i += stride) {
     t.push(T[i] - t0);
@@ -220,7 +220,7 @@ function parsePlainGyroCsv(text) {
   };
 }
 
-export async function renderGyroCsv(file: File, resultsEl: HTMLElement, preText) {
+export async function renderGyroCsv(file: File, resultsEl: HTMLElement, preText: string) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));

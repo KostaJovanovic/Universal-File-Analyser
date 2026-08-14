@@ -16,6 +16,26 @@
    Pure and DOM-free: takes a Uint8Array, returns { width, height, data (RGBA),
    rows } or null, so it runs under a Node test harness against real images. */
 
+/** One frame component (Y / Cb / Cr). parseHeader fills the SOF fields; the
+ *  decode loop then hangs its per-component decode state off the same object. */
+interface JpegComp {
+  id: number; h: number; v: number; qId: number;
+  // Filled in by decodeJpegPartial before the scan loop starts (the SOF push
+  // below is cast in, since parseHeader only knows the first four).
+  dcTab: HuffTable; acTab: HuffTable; quant: Int32Array;
+  pw: number; ph: number; plane: Uint8ClampedArray; pred: number;
+}
+
+/** A canonical Huffman decode table as built by buildHuff(). */
+type HuffTable = ReturnType<typeof buildHuff>;
+
+/** What decodeJpegPartial hands back: the RGBA raster plus how much of it is
+ *  real (see the header comment). Spelled out because the function recurses. */
+interface PartialJpeg {
+  width: number; height: number; data: Uint8ClampedArray<ArrayBuffer>; rows: number;
+  corrupt?: boolean; realRows?: number; thumb?: boolean;
+}
+
 // Natural-order position of each coefficient in zig-zag sequence.
 const ZIG = [
   0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5,
@@ -26,7 +46,7 @@ const ZIG = [
 
 // Build the canonical Huffman decode tables (ITU-T T.81 Annex F) from a DHT's 16
 // length-counts + value bytes: mincode/maxcode/valptr let decodeHuff walk bit by bit.
-function buildHuff(counts, values) {
+function buildHuff(counts: ArrayLike<number>, values: ArrayLike<number>) {
   const sizes = [];
   for (let l = 0; l < 16; l++) for (let i = 0; i < counts[l]; i++) sizes.push(l + 1);
   const codes = [];
@@ -69,7 +89,7 @@ class BitReader {
   cur: number;
   count: number;
   hitMarker: boolean;
-  constructor(data, pos) { this.data = data; this.pos = pos; this.cur = 0; this.count = 0; this.hitMarker = false; }
+  constructor(data: Uint8Array, pos: number) { this.data = data; this.pos = pos; this.cur = 0; this.count = 0; this.hitMarker = false; }
   bit() {
     if (this.count === 0) {
       if (this.pos >= this.data.length) { this.hitMarker = true; return 0; }
@@ -84,7 +104,7 @@ class BitReader {
     this.count--;
     return (this.cur >> this.count) & 1;
   }
-  bits(n) { let v = 0; for (let i = 0; i < n; i++) v = (v << 1) | this.bit(); return v; }
+  bits(n: number) { let v = 0; for (let i = 0; i < n; i++) v = (v << 1) | this.bit(); return v; }
   // At a restart interval: drop the partial byte and skip an FF D0-D7 marker.
   restart() {
     this.count = 0;
@@ -96,7 +116,7 @@ class BitReader {
   }
 }
 
-function decodeHuff(br, tab) {
+function decodeHuff(br: BitReader, tab: HuffTable) {
   let code = 0;
   for (let len = 1; len <= 16; len++) {
     code = (code << 1) | br.bit();
@@ -107,11 +127,11 @@ function decodeHuff(br, tab) {
 }
 
 // Sign-extend an s-bit magnitude to a signed DCT coefficient (T.81 receive/extend).
-function extend(v, s) { return v < (1 << (s - 1)) ? v - (1 << s) + 1 : v; }
+function extend(v: number, s: number) { return v < (1 << (s - 1)) ? v - (1 << s) + 1 : v; }
 
 // Integer inverse DCT (row then column pass), after Fiedler's public-domain NanoJPEG.
 const W1 = 2841, W2 = 2676, W3 = 2408, W5 = 1609, W6 = 1108, W7 = 565;
-function rowIDCT(blk, o) {
+function rowIDCT(blk: Int32Array, o: number) {
   let x0, x1, x2, x3, x4, x5, x6, x7, x8;
   x1 = blk[o + 4] << 11; x2 = blk[o + 6]; x3 = blk[o + 2]; x4 = blk[o + 1];
   x5 = blk[o + 7]; x6 = blk[o + 5]; x7 = blk[o + 3];
@@ -131,7 +151,7 @@ function rowIDCT(blk, o) {
   blk[o] = (x7 + x1) >> 8; blk[o + 1] = (x3 + x2) >> 8; blk[o + 2] = (x0 + x4) >> 8; blk[o + 3] = (x8 + x6) >> 8;
   blk[o + 4] = (x8 - x6) >> 8; blk[o + 5] = (x0 - x4) >> 8; blk[o + 6] = (x3 - x2) >> 8; blk[o + 7] = (x7 - x1) >> 8;
 }
-function colIDCT(blk, o, out, outPos, stride) {
+function colIDCT(blk: Int32Array, o: number, out: Uint8ClampedArray, outPos: number, stride: number) {
   let x0, x1, x2, x3, x4, x5, x6, x7, x8;
   x1 = blk[o + 32] << 8; x2 = blk[o + 48]; x3 = blk[o + 16]; x4 = blk[o + 8];
   x5 = blk[o + 56]; x6 = blk[o + 40]; x7 = blk[o + 24];
@@ -149,13 +169,13 @@ function colIDCT(blk, o, out, outPos, stride) {
   x1 = x4 + x6; x4 -= x6; x6 = x5 + x7; x5 -= x7;
   x7 = x8 + x3; x8 -= x3; x3 = x0 + x2; x0 -= x2;
   x2 = (181 * (x4 + x5) + 128) >> 8; x4 = (181 * (x4 - x5) + 128) >> 8;
-  const clip = (v) => { v = (v >> 14) + 128; return v < 0 ? 0 : v > 255 ? 255 : v; };
+  const clip = (v: number) => { v = (v >> 14) + 128; return v < 0 ? 0 : v > 255 ? 255 : v; };
   out[outPos] = clip(x7 + x1); out[outPos + stride] = clip(x3 + x2); out[outPos + 2 * stride] = clip(x0 + x4); out[outPos + 3 * stride] = clip(x8 + x6);
   out[outPos + 4 * stride] = clip(x8 - x6); out[outPos + 5 * stride] = clip(x0 - x4); out[outPos + 6 * stride] = clip(x3 - x2); out[outPos + 7 * stride] = clip(x7 - x1);
 }
 
 // Parse just enough of the JPEG header to decode the scan; ignore APPn/COM.
-function parseHeader(d) {
+function parseHeader(d: Uint8Array) {
   if (d[0] !== 0xFF || d[1] !== 0xD8) return null;
   let p = 2;
   const qt: any = {}, huffDC: any = {}, huffAC: any = {};
@@ -187,11 +207,11 @@ function parseHeader(d) {
     } else if (m === 0xDD) { dri = (d[seg] << 8) | d[seg + 1]; }   // DRI
     else if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) {
       if (m !== 0xC0 && m !== 0xC1) return null;       // baseline sequential only
-      const comps = [];
+      const comps: JpegComp[] = [];
       const nc = d[seg + 5];
       for (let i = 0; i < nc; i++) {
         const o = seg + 6 + i * 3;
-        comps.push({ id: d[o], h: d[o + 1] >> 4, v: d[o + 1] & 15, qId: d[o + 2] });
+        comps.push({ id: d[o], h: d[o + 1] >> 4, v: d[o + 1] & 15, qId: d[o + 2] } as JpegComp);
       }
       frame = { height: (d[seg + 1] << 8) | d[seg + 2], width: (d[seg + 3] << 8) | d[seg + 4], comps };
     } else if (m === 0xDA) {                           // SOS - scan header, then entropy data
@@ -210,7 +230,7 @@ function parseHeader(d) {
 // files carry a small preview here; when the main image body was overwritten but the
 // header cluster survived, this thumbnail still shows the real, downscaled picture.
 // Returns the thumbnail's bytes, or null.
-function findEmbeddedThumb(d) {
+function findEmbeddedThumb(d: Uint8Array) {
   if (d.length < 4 || d[0] !== 0xFF || d[1] !== 0xD8) return null;
   let p = 2;
   while (p + 4 <= d.length) {
@@ -250,7 +270,7 @@ function findEmbeddedThumb(d) {
 // Only once that is seen do we walk back to the desync onset: the first flat band
 // (variance collapsed) that a textured band led into. A clean image never reaches the
 // walk-back, so its flat skies/walls are never mistaken for corruption.
-export function detectCorruptCut(data, w, h, rows = h) {
+export function detectCorruptCut(data: Uint8ClampedArray, w: number, h: number, rows = h) {
   const BAND = 8, nb = Math.ceil(rows / BAND);
   if (nb < 3) return -1;
   const garb = new Float64Array(nb), sd = new Float64Array(nb);
@@ -293,7 +313,7 @@ export function detectCorruptCut(data, w, h, rows = h) {
 // rows are real (the rest is mid-grey fill); `thumb` is set when the returned image
 // is the file's embedded thumbnail (its full-size image could not be decoded), and
 // `corrupt` when the scan desynced into garbage that was detected and greyed out.
-export function decodeJpegPartial(bytes, allowThumb = true) {
+export function decodeJpegPartial(bytes: Uint8Array, allowThumb = true): PartialJpeg | null {
   // Last resort when the main image yields nothing (its body was overwritten but the
   // header cluster, with its EXIF thumbnail, survived): decode that thumbnail. It's
   // decoded with allowThumb=false so a thumbnail can't recurse into its own.
@@ -383,7 +403,7 @@ export function decodeJpegPartial(bytes, allowThumb = true) {
 }
 
 // Decode one 8x8 block into `blk` (dequantised, natural order). false => stream ended.
-function decodeBlock(br, c, blk) {
+function decodeBlock(br: BitReader, c: JpegComp, blk: Int32Array) {
   if (br.hitMarker) return false;
   blk.fill(0);
   const t = decodeHuff(br, c.dcTab);

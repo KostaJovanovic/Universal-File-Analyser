@@ -23,21 +23,21 @@
    clip drawn as a bar positioned by its in / out point - mirroring the After
    Effects viewer, then show the project metadata and the clips it references. */
 
-import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, type ElChild } from '../core/util.js';
 
 const TPS = 254016000000;                  // Premiere ticks per second (fixed timebase)
 const MAX_COMPRESSED = 64 * 1024 * 1024;   // don't buffer absurdly large projects whole
 const MAX_XML = 96 * 1024 * 1024;          // cap the inflated XML we hold / parse
 const MAX_CLIP_S = 24 * 3600;              // ignore clips with runaway / sentinel out-points
 
-const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
-const num = (s) => { const n = Number(s); return isFinite(n) ? n : 0; };
-const basename = (p) => (p ? p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1) : '');
+const esc = (s: string) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m] as string));
+const num = (s: string) => { const n = Number(s); return isFinite(n) ? n : 0; };
+const basename = (p: string) => (p ? p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1) : '');
 
 // --- tiny DOM helpers (the model nests deeply; CSS selectors get unwieldy) ---
-const kids = (e, tag) => { const out = []; if (e) for (const c of e.children) if (c.tagName === tag) out.push(c); return out; };
-const kid = (e, tag) => { if (e) for (const c of e.children) if (c.tagName === tag) return c; return null; };
-const txt = (e, tag) => { const k = kid(e, tag); return k ? k.textContent.trim() : ''; };
+const kids = (e: Element|null, tag: string) => { const out: Element[] = []; if (e) for (const c of e.children) if (c.tagName === tag) out.push(c); return out; };
+const kid = (e: Element|null, tag: string) => { if (e) for (const c of e.children) if (c.tagName === tag) return c; return null; };
+const txt = (e: Element|null, tag: string) => { const k = kid(e, tag); return k ? k.textContent!.trim() : ''; };
 
 // Inflate the gzip stream to a string (capped). Premiere also ships the odd
 // uncompressed-XML project, so fall back to reading the file as text.
@@ -63,7 +63,7 @@ async function inflate(file: File) {
 }
 
 // Walk the object graph into a flat model: sequences, each with tracks of clips.
-function parsePremiere(xml) {
+function parsePremiere(xml: string) {
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
   if (doc.getElementsByTagName('parsererror').length && !doc.querySelector('PremiereData, Project')) {
     throw new Error('not a readable PremiereData document');
@@ -77,28 +77,28 @@ function parsePremiere(xml) {
     const oid = e.getAttribute('ObjectID');
     if (oid) { const a = byId.get(oid); if (a) a.push(e); else byId.set(oid, [e]); }
   }
-  const derefId = (id, pred) => { const a = id != null && byId.get(id); if (!a) return null; return pred ? (a.find(pred) || null) : a[0]; };
-  const ref = (e, tag) => { const k = kid(e, tag); return k ? (k.getAttribute('ObjectRef') || k.getAttribute('ObjectURef')) : null; };
+  const derefId = (id: string|null, pred?: (e: Element) => boolean) => { const a = id != null && byId.get(id); if (!a) return null; return pred ? (a.find(pred) || null) : a[0]; };
+  const ref = (e: Element|null, tag: string) => { const k = kid(e, tag); return k ? (k.getAttribute('ObjectRef') || k.getAttribute('ObjectURef')) : null; };
 
-  const kindOf = (tag) => tag.startsWith('Video') ? 'video' : tag.startsWith('Audio') ? 'audio' : 'data';
+  const kindOf = (tag: string) => tag.startsWith('Video') ? 'video' : tag.startsWith('Audio') ? 'audio' : 'data';
 
   // Resolve a master clip to its source media file path (the real filename on
   // disk): MasterClip ▸ Clips ▸ Clip ─▶ {Video,Audio}Clip ▸ Clip ▸ Source ─▶
   // Media ▸ <ActualMediaFilePath>. Graphics / nested-sequence sources have no
   // file path (their Source is a *SequenceSource), so this returns '' for them.
-  const mediaPath = (mc) => {
+  const mediaPath = (mc: Element) => {
     for (const c of kids(kid(mc, 'Clips'), 'Clip')) {
-      const clip = derefId(c.getAttribute('ObjectRef'), (e) => /^(?:Video|Audio)Clip$/.test(e.tagName));
+      const clip = derefId(c.getAttribute('ObjectRef'), (e: Element) => /^(?:Video|Audio)Clip$/.test(e.tagName));
       const src = kid(kid(clip, 'Clip'), 'Source');
-      const media = src && derefId(src.getAttribute('ObjectRef'), (e) => e.tagName === 'Media');
+      const media = src && derefId(src.getAttribute('ObjectRef'), (e: Element) => e.tagName === 'Media');
       const p = media && (txt(media, 'ActualMediaFilePath') || txt(media, 'FilePath'));
       if (p && /[\\/]|\.\w{2,5}$/.test(p)) return p.replace(/^file:\/+/, '/');   // skip synthetic numeric "paths"
     }
     return '';
   };
-  const mediaPaths = new Set(), usedNames = new Set();
+  const mediaPaths = new Set<string>(), usedNames = new Set<string>();
 
-  const sequences = [];
+  const sequences: any[] = [];
   for (const seqEl of doc.getElementsByTagName('Sequence')) {
     if (!seqEl.getAttribute('ObjectUID')) continue;        // skip <Sequence ObjectRef> pointers
     // dur/clipCount are derived from the tracks once they have all been read.
@@ -106,7 +106,7 @@ function parsePremiere(xml) {
 
     const groups = kids(kid(seqEl, 'TrackGroups'), 'TrackGroup')
       .map((g) => ref(g, 'Second'))
-      .map((id) => derefId(id, (e) => /TrackGroup$/.test(e.tagName)))
+      .map((id) => derefId(id, (e: Element) => /TrackGroup$/.test(e.tagName)))
       .filter(Boolean);
 
     for (const tg of groups) {
@@ -127,17 +127,17 @@ function parsePremiere(xml) {
         const idx = num(txt(kid(clipTrack, 'Track'), 'Index'));
         const itemEls = kids(kid(kid(clipTrack, 'ClipItems'), 'TrackItems'), 'TrackItem')
           .map((t) => t.getAttribute('ObjectRef'))
-          .map((id) => derefId(id, (e) => /ClipTrackItem$/.test(e.tagName)))
+          .map((id) => derefId(id, (e: Element) => /ClipTrackItem$/.test(e.tagName)))
           .filter(Boolean);
 
-        const clips = [];
+        const clips: any[] = [];
         for (const it of itemEls) {
           const cti = kid(it, 'ClipTrackItem');
           const inner2 = kid(cti, 'TrackItem');
           const start = num(txt(inner2, 'Start')) / TPS;
           const end = num(txt(inner2, 'End')) / TPS;
           if (!(end > start) || end - start > MAX_CLIP_S) continue;   // skip empty / sentinel spans
-          const sub = derefId(ref(cti, 'SubClip'), (e) => e.tagName === 'SubClip');
+          const sub = derefId(ref(cti, 'SubClip'), (e: Element) => e.tagName === 'SubClip');
           const mc = sub && byUid.get(ref(sub, 'MasterClip'));
           const inst = (sub && txt(sub, 'Name')) || '';               // the instance / placeholder name
           const path = mc ? mediaPath(mc) : '';                       // real source file path, if any
@@ -156,17 +156,17 @@ function parsePremiere(xml) {
     // Drop empty sequences; order tracks like Premiere stacks them: video on top
     // (highest index first), audio beneath (lowest index first).
     if (!seq.tracks.length) continue;
-    seq.tracks.sort((a, b) => a.kind !== b.kind
+    seq.tracks.sort((a: any, b: any) => a.kind !== b.kind
       ? (a.kind === 'video' ? -1 : a.kind === 'data' ? 1 : b.kind === 'video' ? 1 : -1)
       : a.kind === 'video' ? b.idx - a.idx : a.idx - b.idx);
     const vN: any = {}, aN: any = {}, dN: any = {};
-    seq.tracks.forEach((t) => {
+    seq.tracks.forEach((t: any) => {
       const n = (t.kind === 'video' ? vN : t.kind === 'audio' ? aN : dN);
       const c = (n.c = (n.c || 0) + 1);
       t.label = (t.kind === 'video' ? 'V' : t.kind === 'audio' ? 'A' : 'C') + (t.idx + 1 || c);
     });
-    seq.dur = Math.max(0.01, ...seq.tracks.flatMap((t) => t.clips.map((c) => c.end)));
-    seq.clipCount = seq.tracks.reduce((s, t) => s + t.clips.length, 0);
+    seq.dur = Math.max(0.01, ...seq.tracks.flatMap((t: any) => t.clips.map((c: any) => c.end)));
+    seq.clipCount = seq.tracks.reduce((s: number, t: any) => s + t.clips.length, 0);
     sequences.push(seq);
   }
 
@@ -180,16 +180,16 @@ function parsePremiere(xml) {
   return { sequences, projVer, dataVer, mediaItems, clipNames: [...usedNames], mediaPaths: [...mediaPaths] };
 }
 
-const fmtTime = (s) => (s >= 60 ? Math.floor(s / 60) + ':' + String(Math.round(s % 60)).padStart(2, '0') : s.toFixed(s < 10 ? 2 : 1) + 's');
-const fmtTick = (t) => (t >= 60 ? Math.floor(t / 60) + ':' + String(Math.round(t % 60)).padStart(2, '0') : (Number.isInteger(t) ? t + 's' : t.toFixed(1) + 's'));
+const fmtTime = (s: number) => (s >= 60 ? Math.floor(s / 60) + ':' + String(Math.round(s % 60)).padStart(2, '0') : s.toFixed(s < 10 ? 2 : 1) + 's');
+const fmtTick = (t: number) => (t >= 60 ? Math.floor(t / 60) + ':' + String(Math.round(t % 60)).padStart(2, '0') : (Number.isInteger(t) ? t + 's' : t.toFixed(1) + 's'));
 
 const LH = 26, TOP = 6, LABEL_W = 150;     // row height, top pad, frozen label column
-const COLOR = { video: '#3b82c4', audio: '#3ba776', data: '#7f8896' };
+const COLOR: Record<string, string> = { video: '#3b82c4', audio: '#3ba776', data: '#7f8896' };
 
 // The frozen left column: one row per track with its name (V1, A1, ...).
-function trackLabelsSvg(tracks, H) {
+function trackLabelsSvg(tracks: any[], H: number) {
   let s = '';
-  tracks.forEach((t, i) => {
+  tracks.forEach((t: any, i: number) => {
     const y = TOP + i * LH;
     s += `<rect x="0" y="${y}" width="${LABEL_W}" height="${LH}" fill="${i % 2 ? 'rgba(128,128,128,.10)' : 'rgba(128,128,128,.04)'}"/>`;
     s += `<rect x="0" y="${y + 5}" width="4" height="${LH - 10}" fill="${COLOR[t.kind]}"/>`;
@@ -200,11 +200,11 @@ function trackLabelsSvg(tracks, H) {
 }
 
 // The scrollable track lane, drawn at a given pixels-per-second (zoom) and width.
-function trackLanesSvg(tracks, dur, H, trackW, pps) {
-  const x = (t) => Math.max(0, Math.min(dur, t)) * pps;
+function trackLanesSvg(tracks: any[], dur: number, H: number, trackW: number, pps: number) {
+  const x = (t: number) => Math.max(0, Math.min(dur, t)) * pps;
   const bottom = TOP + tracks.length * LH;
   let stripes = '', grid = '', bars = '';
-  tracks.forEach((t, i) => {
+  tracks.forEach((t, i: number) => {
     stripes += `<rect x="0" y="${TOP + i * LH}" width="${trackW}" height="${LH}" fill="${i % 2 ? 'rgba(128,128,128,.10)' : 'rgba(128,128,128,.04)'}"/>`;
   });
   const STEPS = [0.25, 0.5, 1, 2, 5, 10, 15, 20, 30, 60, 120, 300, 600];
@@ -214,9 +214,9 @@ function trackLanesSvg(tracks, dur, H, trackW, pps) {
     grid += `<line x1="${gx}" y1="${TOP}" x2="${gx}" y2="${bottom}" stroke="currentColor" stroke-width="1" opacity=".12"/>`;
     grid += `<text x="${gx + 3}" y="${bottom + 14}" fill="currentColor" font-size="9.5" opacity=".5">${fmtTick(t)}</text>`;
   }
-  tracks.forEach((t, i) => {
+  tracks.forEach((t: any, i: number) => {
     const y = TOP + i * LH, col = COLOR[t.kind];
-    t.clips.forEach((c) => {
+    t.clips.forEach((c: any) => {
       const bx = x(c.start), bw = Math.max(2, x(c.end) - x(c.start));
       const tip = c.file + (c.inst ? ' · ' + c.inst : '') + (c.path ? '\n' + c.path : '') + ` · ${fmtTime(c.start)}–${fmtTime(c.end)}`;
       bars += `<rect x="${bx}" y="${y + 4}" width="${bw}" height="${LH - 8}" fill="${col}"><title>${esc(tip)}</title></rect>`;
@@ -228,7 +228,7 @@ function trackLanesSvg(tracks, dur, H, trackW, pps) {
 
 // Build one sequence's card: header + a frozen track-label column beside a
 // horizontally zoomable / pannable timeline (ctrl/cmd+wheel to zoom, drag to pan).
-function buildSequenceTimeline(seq) {
+function buildSequenceTimeline(seq: Record<string,any>) {
   const tracks = seq.tracks, dur = seq.dur;
   const H = TOP + tracks.length * LH + 22;
   let zoom = 1;
@@ -242,7 +242,7 @@ function buildSequenceTimeline(seq) {
 
   // Zoom controls.
   const pct = el('span', { style: 'font-size:12px;opacity:.75;min-width:44px;text-align:center;font-variant-numeric:tabular-nums' }, '100%');
-  const zbtn = (t, title) => el('button', { type: 'button', class: 'anr-btn', style: 'padding:1px 9px;min-width:0;line-height:1.4', title }, t);
+  const zbtn = (t: ElChild | ElChild[], title: string) => el('button', { type: 'button', class: 'anr-btn', style: 'padding:1px 9px;min-width:0;line-height:1.4', title }, t);
   const bOut = zbtn('−', 'Zoom out'), bIn = zbtn('+', 'Zoom in'), bReset = zbtn('Reset', 'Reset zoom');
   card.appendChild(el('div', { class: 'anr-btn-row', style: 'gap:6px;align-items:center;margin:0 0 6px;flex-wrap:wrap' }, [
     el('span', { style: 'font-size:12px;opacity:.7' }, 'Zoom'), bOut, pct, bIn, bReset,
@@ -264,7 +264,7 @@ function buildSequenceTimeline(seq) {
     lanes.innerHTML = trackLanesSvg(tracks, dur, H, trackW, pps);
     pct.textContent = Math.round(zoom * 100) + '%';
   }
-  function setZoom(z, anchorClientX?) {
+  function setZoom(z: number, anchorClientX?: number|null|undefined) {
     const oldPps = ppsNow();
     const rect = scroller.getBoundingClientRect();
     const anchorPx = (anchorClientX != null ? anchorClientX - rect.left : rect.width / 2) + scroller.scrollLeft;
@@ -291,7 +291,7 @@ function buildSequenceTimeline(seq) {
     try { scroller.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
   });
   scroller.addEventListener('pointermove', (e) => { if (dragging) scroller.scrollLeft = startScroll - (e.clientX - startX); });
-  const endDrag = (e) => { dragging = false; scroller.style.cursor = 'grab'; try { scroller.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ } };
+  const endDrag = (e: PointerEvent) => { dragging = false; scroller.style.cursor = 'grab'; try { scroller.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ } };
   scroller.addEventListener('pointerup', endDrag);
   scroller.addEventListener('pointercancel', endDrag);
 

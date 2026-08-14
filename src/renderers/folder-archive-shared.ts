@@ -2,7 +2,7 @@
    Category classification, breakdown cards, and view toggle (treemap / tree)
    used by both folder.js and archive.js. */
 
-import { el, row, rowHelp, fmtBytes, buildFileTree } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, buildFileTree, type ElChild, type TreeNode } from '../core/util.js';
 import { PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, DOC_EXTS, ARCHIVE_EXTS } from '../core/formats.js';
 import { renderTreemap, attachTreemapEvents } from './treemap.js';
 
@@ -10,7 +10,7 @@ import { renderTreemap, attachTreemapEvents } from './treemap.js';
 
 export const CATEGORIES = ['photo', 'audio', 'video', 'document', 'archive', 'other'];
 
-export const CATEGORY_COLORS = {
+export const CATEGORY_COLORS: Record<string, { light: string; dark: string }> = {
   photo:    { light: '#3b82f6', dark: '#60a5fa' },
   audio:    { light: '#f59e0b', dark: '#fbbf24' },
   video:    { light: '#8b5cf6', dark: '#a78bfa' },
@@ -19,7 +19,7 @@ export const CATEGORY_COLORS = {
   other:    { light: '#6b7280', dark: '#9ca3af' },
 };
 
-export const CATEGORY_LABELS = {
+export const CATEGORY_LABELS: Record<string, string> = {
   photo: 'Photo', audio: 'Audio', video: 'Video',
   document: 'Document', archive: 'Archive', other: 'Other',
 };
@@ -39,27 +39,27 @@ function isDark() {
   return document.documentElement.getAttribute('data-theme') === 'dark';
 }
 
-export function categoryColor(cat) {
+export function categoryColor(cat: string) {
   const c = CATEGORY_COLORS[cat] || CATEGORY_COLORS.other;
   return isDark() ? c.dark : c.light;
 }
 
 // ---------- normalize items ----------
 
-function extOf(name) {
+function extOf(name: string) {
   const m = name.match(/\.([^./\\]+)$/);
   return m ? m[1].toLowerCase() : '';
 }
 
-export function normalizeFolder(files) {
-  return files.map(f => {
+export function normalizeFolder(files: any[]) {
+  return files.map((f) => {
     const ext = extOf(f.path);
     return { path: f.path, size: f.size, file: f.file || null, entry: null, category: categorizeExt(ext), ext };
   });
 }
 
-export function normalizeArchive(entries) {
-  return entries.filter(e => !e.isDir).map(e => {
+export function normalizeArchive(entries: any[]) {
+  return entries.filter((e) => !e.isDir).map((e) => {
     const ext = extOf(e.name);
     return { path: e.name, size: e.uncompSize, file: null, entry: e, category: categorizeExt(ext), ext };
   });
@@ -67,7 +67,7 @@ export function normalizeArchive(entries) {
 
 // ---------- breakdown ----------
 
-export function buildCategoryBreakdown(items) {
+export function buildCategoryBreakdown(items: any[]) {
   const byCategory: any = {};
   const byExt: Record<string, { count: number; size: number }> = {};
   for (const cat of CATEGORIES) byCategory[cat] = { count: 0, size: 0 };
@@ -85,12 +85,12 @@ export function buildCategoryBreakdown(items) {
 
 const VISIBLE_EXT_COUNT = 5;
 
-function fmtExtRow(ext: string, data) {
+function fmtExtRow(ext: string, data: { count: number; size: number }) {
   const dot = ext === '(no ext)' ? ext : '.' + ext;
   return row(dot, data.count + (data.count === 1 ? ' file' : ' files') + '  (' + fmtBytes(data.size) + ')');
 }
 
-export function renderBreakdownCards(items, resultsEl: HTMLElement, extraSummaryRows?) {
+export function renderBreakdownCards(items: any[], resultsEl: HTMLElement, extraSummaryRows?: HTMLTableRowElement[]|undefined) {
   const breakdown = buildCategoryBreakdown(items);
   const totalSize = items.reduce((s, i) => s + i.size, 0);
 
@@ -150,21 +150,21 @@ export function renderBreakdownCards(items, resultsEl: HTMLElement, extraSummary
 
 // ---------- view toggle (treemap / tree) ----------
 
-export function renderViewToggle(container, items, treeObj, treeOpts, onFileClick, opts) {
+export function renderViewToggle(container: HTMLElement, items: any[], treeObj: TreeNode, treeOpts: any, onFileClick: any, opts?: any) {
   // The Contents cards land at the anchor slot (between Overview and File types)
   // when renderBreakdownCards left one; otherwise they append to the end.
   // When opts.treemapFirst is set (top-level archive/folder views), the treemap
   // is instead hoisted to the very front of the container so the visual render
   // leads the whole result; the file tree still lands in its slot.
   const slot = container.querySelector('.anr-contents-slot');
-  const place = (node) => { if (slot && slot.parentNode === container) container.insertBefore(node, slot); else container.appendChild(node); };
+  const place = (node: HTMLDivElement) => { if (slot && slot.parentNode === container) container.insertBefore(node, slot); else container.appendChild(node); };
 
   // File-tree card - built here but placed AFTER (under) the treemap below.
   const treeCard = el('div', { class: 'anr-card' });
   treeCard.appendChild(el('h3', {}, 'File tree'));
   const treeFullOpts = {
     ...treeOpts,
-    fileAccent: (key) => categoryColor(categorizeExt(extOf(key))),
+    fileAccent: (key: string) => categoryColor(categorizeExt(extOf(key))),
   };
   treeCard.appendChild(buildFileTree(treeObj, treeFullOpts));
 
@@ -178,7 +178,7 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
   // popup, rather than a long always-there chip row) on the left, category legend
   // on the right.
   const controls = el('div', { class: 'anr-view-controls' });
-  let activeExt = null;
+  let activeExt: string|null = null;
   const fmtExtLabel = (ext: string) => ext === '(no ext)' ? ext : '.' + ext;
   const filterBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm anr-treemap-filterbtn' }, 'Filter by type');
   function updateFilterBtn() {
@@ -205,7 +205,7 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
   // '(no ext)' for extensionless files.
   function openExtFilterModal() {
     const chipRow = el('div', { class: 'anr-extfilter-chips' });
-    const mkChip = (key, content, title?) => {
+    const mkChip = (key: string|null, content: ElChild | ElChild[], title?: string) => {
       const chip = el('button', { type: 'button', class: 'anr-extchip' + (key === activeExt ? ' is-active' : ''), title: title || '' }, content);
       chip.addEventListener('click', () => { setFilter(key === activeExt ? null : key); close(); });
       return chip;
@@ -233,7 +233,7 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
       setTimeout(() => overlay.remove(), 200);
       document.removeEventListener('keydown', onKey);
     }
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
     closeBtn.addEventListener('click', close);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     document.addEventListener('keydown', onKey);
@@ -247,7 +247,7 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
   // canvas lets renderTreemap rebuild its cached hierarchy from the filtered set,
   // and clearing contentArea drops the previous canvas with its listeners,
   // tooltip and breadcrumb. The old ResizeObserver is disconnected first.
-  let currentRO = null;
+  let currentRO: ResizeObserver|null = null;
   function mount() {
     if (currentRO) { currentRO.disconnect(); currentRO = null; }
     contentArea.innerHTML = '';
@@ -282,7 +282,7 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
     currentRO = ro;
   }
 
-  function setFilter(ext: string) {
+  function setFilter(ext: string|null) {
     activeExt = ext;
     updateFilterBtn();
     mount();

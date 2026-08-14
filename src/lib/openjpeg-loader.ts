@@ -57,7 +57,7 @@ function scaleTo8(v: number, bitDepth: number) {
 }
 
 /* Decode a JPEG 2000 codestream/JP2 to RGBA. Returns null on any failure. */
-export async function decodeJ2K(bytes: string|any[]) {
+export async function decodeJ2K(bytes: Uint8Array) {
   let decoder = null;
   try {
     if (!bytes || !bytes.length) return null;

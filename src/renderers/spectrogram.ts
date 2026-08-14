@@ -53,6 +53,18 @@
  *   Built-in colormaps: viridis · magma · inferno · grayscale · phosphor.
  *   Window functions:   hann · hamming · blackman · rect. */
 
+import type { FloatBuf } from '../core/types.js';
+
+/* The slice of a <canvas> renderSpectrogram touches, spelled structurally rather
+   than as HTMLCanvasElement: this module is pulled into the worker program too
+   (audio-dsp-worker -> audio-dsp -> audio-forensics -> here), which compiles
+   against lib.webworker, where no DOM element types exist. */
+interface SpecCanvas {
+  width: number;
+  height: number;
+  getContext(contextId: '2d'): any;
+}
+
 // ---------- WINDOWS ----------
 /*
  * A "window" fades each chunk of audio in and out at its edges before the FFT.
@@ -64,18 +76,18 @@
  *   blackman - fades hardest: cleanest, but blurs nearby frequencies together.
  *   rect     - no fade at all: sharpest detail, but the most leakage.
  */
-export const windows = {
-  hann: (N) => {
+export const windows: Record<string, (N: number) => Float32Array> = {
+  hann: (N: number) => {
     const w = new Float32Array(N);
     for (let i = 0; i < N; i++) w[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1));
     return w;
   },
-  hamming: (N) => {
+  hamming: (N: number) => {
     const w = new Float32Array(N);
     for (let i = 0; i < N; i++) w[i] = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (N - 1));
     return w;
   },
-  blackman: (N) => {
+  blackman: (N: number) => {
     const w = new Float32Array(N);
     for (let i = 0; i < N; i++) {
       const x = (2 * Math.PI * i) / (N - 1);
@@ -83,7 +95,7 @@ export const windows = {
     }
     return w;
   },
-  rect: (N) => {
+  rect: (N: number) => {
     const w = new Float32Array(N);
     w.fill(1);
     return w;
@@ -102,7 +114,7 @@ export const windows = {
  *         walk the array contiguously).
  * Step 2: log2(N) passes of butterflies, doubling the sub-FFT size each pass.
  */
-export function fft(real, imag) {
+export function fft(real: Float32Array|Float64Array, imag: Float32Array|Float64Array) {
   const n = real.length;
   if ((n & (n - 1)) !== 0) throw new Error('FFT size must be a power of 2');
 
@@ -154,7 +166,7 @@ export function fft(real, imag) {
  * Each frame is windowed, FFT'd, normalised so absolute dB values are
  * comparable across window choices, then converted to dB (20 log10).
  */
-export function computeSpectrogram(samples, sampleRate, options: any = {}) {
+export function computeSpectrogram(samples: FloatBuf, sampleRate: number, options: any = {}) {
   const fftSize  = options.fftSize  || 2048;
   const hopSize  = options.hopSize  || Math.floor(fftSize / 4);
   const winName  = options.window   || 'hann';
@@ -210,7 +222,7 @@ export function computeSpectrogram(samples, sampleRate, options: any = {}) {
 // called after each batch; opts.shouldAbort() is polled so a superseded compute (the
 // user changed a setting mid-run) can bail cleanly. Returns the same shape, or null
 // if aborted.
-export async function computeSpectrogramAsync(samples, sampleRate, options: any = {}) {
+export async function computeSpectrogramAsync(samples: FloatBuf, sampleRate: number, options: any = {}) {
   const fftSize  = options.fftSize  || 2048;
   const hopSize  = options.hopSize  || Math.floor(fftSize / 4);
   const winName  = options.window   || 'hann';
@@ -306,7 +318,7 @@ function yieldFrame() {
  * Refs: Auger & Flandrin 1995; Fulop & Fitz 2006. See FFT-SUBSTITUTES-RESEARCH.md
  * (Part B - time-frequency representations that beat the fixed-window STFT).
  */
-export function computeReassignedSpectrogram(samples, sampleRate, options: any = {}) {
+export function computeReassignedSpectrogram(samples: FloatBuf, sampleRate: number, options: any = {}) {
   const N        = options.fftSize || 2048;
   const hopSize  = options.hopSize || Math.floor(N / 4);
   const winName  = options.window  || 'hann';
@@ -426,7 +438,7 @@ export function computeReassignedSpectrogram(samples, sampleRate, options: any =
  *     re / im : row-major Float32Array(frames*bins); cell (f,b) at f*bins + b
  *     norm    : window-sum normalization (magnitude = hypot(re,im) * norm * 2)
  */
-export function computeStftComplex(samples, sampleRate, options: any = {}) {
+export function computeStftComplex(samples: FloatBuf, sampleRate: number, options: any = {}) {
   const fftSize = options.fftSize || 2048;
   const hopSize = options.hopSize || Math.floor(fftSize / 4);
   const winName = options.window  || 'hann';
@@ -468,7 +480,7 @@ export function computeStftComplex(samples, sampleRate, options: any = {}) {
  * Float32Array(frames*bins), so a slider drag allocates nothing). Returns a
  * { frames, bins, sampleRate, data } spec ready for renderSpectrogram.
  */
-export function combineStftToDb(a, b, gainA, gainB, out) {
+export function combineStftToDb(a: any, b: any, gainA: number, gainB: number, out: Float32Array) {
   // Guard against any grid mismatch between the two stems: iterate only the
   // cells both actually have (a length overrun would read `undefined` -> NaN ->
   // an all-black image). frames is derived from what was filled.
@@ -488,11 +500,11 @@ export function combineStftToDb(a, b, gainA, gainB, out) {
 
 // ---------- COLORMAPS ----------
 // Each returns [r,g,b] for t in [0,1]
-function lerp(a, b, t) { return a + (b - a) * t; }
+function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
 
-function makeRampMap(stops) {
+function makeRampMap(stops: number[][]) {
   // stops: [[t, r, g, b], ...] sorted by t
-  return (t) => {
+  return (t: number) => {
     if (t <= stops[0][0]) return [stops[0][1], stops[0][2], stops[0][3]];
     for (let i = 1; i < stops.length; i++) {
       if (t <= stops[i][0]) {
@@ -506,7 +518,7 @@ function makeRampMap(stops) {
   };
 }
 
-export const colormaps = {
+export const colormaps: Record<string, (t: number) => number[]> = {
   // matplotlib-inspired, ~7 stops each (close enough for a spectrogram)
   viridis: makeRampMap([
     [0.00,  68,   1,  84],
@@ -566,7 +578,7 @@ export const colormaps = {
  * fractional bin index, then sample with linear interpolation between adjacent
  * bins. Writes pixels via a single ImageData blit.
  */
-export function renderSpectrogram(canvas, spec, opts: any = {}) {
+export function renderSpectrogram(canvas: SpecCanvas, spec: any, opts: any = {}) {
   const { frames, bins, sampleRate, data } = spec;
   if (!frames || !bins) {
     const ctx = canvas.getContext('2d');
@@ -643,7 +655,7 @@ export function renderSpectrogram(canvas, spec, opts: any = {}) {
 }
 
 // ---------- AXIS LABELS (for HTML overlays) ----------
-export function frequencyTicks(minHz, maxHz, scale) {
+export function frequencyTicks(minHz: number, maxHz: number, scale: string) {
   if (scale === 'log') {
     const ticks = [];
     const decades = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
@@ -660,7 +672,7 @@ export function frequencyTicks(minHz, maxHz, scale) {
   return ticks;
 }
 
-function niceStep(rough) {
+function niceStep(rough: number) {
   const exp = Math.floor(Math.log10(rough));
   const base = Math.pow(10, exp);
   const m = rough / base;
@@ -672,19 +684,19 @@ function niceStep(rough) {
   return nice * base;
 }
 
-export function timeTicks(durationSec) {
+export function timeTicks(durationSec: number) {
   const step = niceStep(durationSec / 6);
   const ticks = [];
   for (let t = 0; t <= durationSec + 1e-6; t += step) ticks.push(t);
   return ticks;
 }
 
-export function formatHz(hz) {
+export function formatHz(hz: number) {
   if (hz >= 1000) return (hz / 1000).toFixed(hz >= 10000 ? 0 : 1) + 'k';
   return Math.round(hz) + '';
 }
 
-export function formatTime(sec) {
+export function formatTime(sec: number) {
   if (sec < 60) return sec.toFixed(sec < 10 ? 2 : 1) + 's';
   const m = Math.floor(sec / 60);
   const s = sec - m * 60;

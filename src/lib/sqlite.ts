@@ -81,7 +81,7 @@ export async function sqliteSummary(file: File) {
 // and a small sample of the largest table. Returns a plain data object (no DOM)
 // or null on failure. The caller builds the UI from it.
 export async function sqliteAnalysis(file: File) {
-  let db = null;
+  let db: any = null;
   try {
     db = await sqliteQuery(file);
     if (!db) return null;
@@ -100,8 +100,8 @@ export async function sqliteAnalysis(file: File) {
     const master = exec(
       "SELECT type,name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY type,name"
     );
-    const objs = master ? master.values.map((v: any[]) => ({ type: v[0], name: v[1], sql: v[2] })) : [];
-    const q = (n) => '"' + String(n).replace(/"/g, '""') + '"';
+    const objs: any[] = master ? master.values.map((v: any[]) => ({ type: v[0], name: v[1], sql: v[2] })) : [];
+    const q = (n: unknown) => '"' + String(n).replace(/"/g, '""') + '"';
 
     const tables = [];
     for (const o of objs.filter((o) => o.type === 'table')) {
@@ -119,7 +119,7 @@ export async function sqliteAnalysis(file: File) {
 
     // Sample rows from the largest table.
     let sample = null;
-    const biggest = tables.filter((t) => t.rows).sort((a, b) => b.rows - a.rows)[0];
+    const biggest = tables.filter((t) => t.rows).sort((a, b) => b.rows! - a.rows!)[0];
     if (biggest) {
       const s = exec('SELECT * FROM ' + q(biggest.name) + ' LIMIT 5');
       if (s) sample = { table: biggest.name, columns: s.columns, rows: s.values };
