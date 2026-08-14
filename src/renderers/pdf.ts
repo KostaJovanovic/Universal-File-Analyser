@@ -1070,7 +1070,16 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
           });
           const wrap = el('div', { style: 'text-align:center;' }, [link]);
           const aBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', style: 'margin-top:4px;' }, 'Analyse');
-          aBtn.addEventListener('click', () => cv.toBlob((b: Blob|null) => { if (b && window._anrHandleFile) window._anrHandleFile(new File([b], 'pdf-image.png', { type: 'image/png' }), { nested: true }); }, 'image/png'));
+          // Analysing an extracted image replaces this PDF's results, so leave a
+          // Back-bar breadcrumb to the PDF first - same pattern as drilling into
+          // an archive or a folder.
+          aBtn.addEventListener('click', () => cv.toBlob((b: Blob|null) => {
+            if (!b || !window._anrHandleFile) return;
+            if (window._anrPushNav) {
+              window._anrPushNav(file.name || 'PDF', () => { if (window._anrHandleFile) window._anrHandleFile(file, {}); });
+            }
+            window._anrHandleFile(new File([b], 'pdf-image.png', { type: 'image/png' }), { nested: true });
+          }, 'image/png'));
           wrap.appendChild(aBtn);
           imgGrid.appendChild(wrap);
           if (found >= 300) break;

@@ -40,7 +40,8 @@ works". Make the change and hand it back.
 
 The one thing that *is* required now: **`src/` edits do nothing until `tsc`
 recompiles.** `server.bat` starts two watcher windows for this. To build once by
-hand: `npx tsc -p tsconfig.json && npx tsc -p tsconfig.worker.json`.
+hand: `npm run build` (`npx tsc -p tsconfig.json && npx tsc -p tsconfig.worker.json`);
+`npm run check` is the same pair with `--noEmit` when you only want the errors.
 (Two configs because `lib.dom` and `lib.webworker` can't share one program - the
 three module workers compile under `tsconfig.worker.json`.)
 
@@ -138,8 +139,20 @@ touches some part of this path:
    calls the same function so it renders to the same depth as a single-file
    analysis.
 
-Module-by-module detail lives in `web/assets/js/CLAUDE.md`, which loads
-automatically when you work in that tree.
+Module-by-module detail lives in `src/CLAUDE.md`, which loads automatically when
+you work in that tree.
+
+**The cross-module channel is `window._anr*`** (typed in `types/globals.d.ts`).
+Renderers are dynamic imports with no shared module scope, so app.js publishes
+the pipeline entry points on `window` and renderers call back through them:
+`_anrHandleFile(file, {nested})` re-enters `handleFile` (`nested: true` keeps the
+Back-bar stack and skips the stats ping), `_anrPushNav(label, restore)` /
+`_anrResetNav` drive the drill-down breadcrumb, `_anrClassify` /
+`_anrResolveContent` expose the routing decisions, and `_anrMediaStoppers`
+collects stop-callbacks for players that sound through raw Web Audio (an
+`<audio>` element detached by `innerHTML = ''` keeps playing, so anything not
+driven by a media element must register a stopper or it plays over the next
+file). Grep the channel before inventing a new global.
 
 ## Invariants
 
@@ -357,7 +370,6 @@ web/                — THE WEBSITE, served at "/" by Cloudflare (assets.directo
                         edit or add a module there; edit src/ instead.
                         analyser.css is the central stylesheet (docs.css layers
                         on it for /docs only); vendor/ is third-party code
-                        (exifr, ffmpeg, imagemagick, ...). Module-by-module JS
-                        inventory: web/assets/js/CLAUDE.md, which loads
-                        automatically when you work in that tree.
+                        (exifr, ffmpeg, imagemagick, ...). Module-by-module
+                        inventory: src/CLAUDE.md (the source tree, not this one).
 ```

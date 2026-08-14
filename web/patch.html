@@ -212,20 +212,60 @@
              ===================================================================== -->
 
         <div class="patch-entry">
-          <p class="patch-version">8.18</p>
+          <p class="patch-version">8.16 - 8.19</p>
           <p class="patch-name">No Loose Ends</p>
           <p class="patch-date">14 August 2026</p>
           <ul class="patch-list">
-            <li><strong>A full day&rsquo;s work with almost nothing to show for it, on purpose. Every one of the 176 files the app is built from is now checked far more strictly before it ships, and the checking turned up roughly 11,400 places where the code could have been handed something missing or the wrong shape. The app you use is deliberately unchanged.</strong></li>
+            <li><strong>Analysing a picture taken out of a PDF now leaves you a way back to the PDF. Everything else here was a full day&rsquo;s work with almost nothing to show for it, on purpose: every one of the 176 files the app is built from is now checked far more strictly before it ships, and the checking turned up roughly 11,400 places where the code could have been handed something missing or the wrong shape. The app you use is deliberately unchanged.</strong></li>
           </ul>
 
           <hr class="patch-rule">
-          <p class="patch-subhead">What actually changed</p>
+          <p class="patch-subhead">What you can see</p>
           <ul class="patch-list">
-            <li><strong>Nothing you can see - and that was the whole point.</strong> Analyser has no automated tests, so the only safe way to make a change this wide is to prove the shipped code came out identical afterwards. It did, bar a handful of spots checked one by one. Roughly nine hours went into that, and most of it was checking rather than typing.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A Back bar when you analyse an image from a PDF.</strong> Pressing <strong>Analyse</strong> under one of a PDF&rsquo;s embedded pictures swaps the PDF&rsquo;s analysis for the picture&rsquo;s, and there was no way back short of dropping the file in again. It now leaves the same breadcrumb you get when you open a file from inside an archive or a folder - one tap and you are back on the PDF.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">The strictness pass</p>
+          <ul class="patch-list">
+            <li><strong>Nothing else you can see - and that was the whole point.</strong> Analyser has no automated tests, so the only safe way to make a change this wide is to prove the shipped code came out identical afterwards. It did, bar a handful of spots checked one by one. Roughly nine hours went into that, and most of it was checking rather than typing.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>A document that fails to read one of its inner parts now still shows the rest.</strong> Word, OpenDocument and e-book files are really small archives of separate pieces; if one piece would not decode, everything already read from that file was thrown away and you got nothing. That piece is now simply skipped.</li>
             <li><strong>The checks are stricter about what an unfinished value means.</strong> Anywhere the app looked something up and carried on as if it had definitely found it, that assumption is now written down and enforced - so a future change that breaks it fails on the spot rather than in front of you.</li>
             <li><strong>Maintenance:</strong> one long-dead field in the AI separation tool, which had been sending nothing at all since the day it was written, is now recorded as such rather than quietly left to look intentional.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">8.12 - 8.15</p>
+          <p class="patch-name">Room to Breathe</p>
+          <p class="patch-date">13 August 2026</p>
+          <ul class="patch-list">
+            <li><strong>The AI sound tools now fit on an iPhone.</strong> Separating a track used to run the tab out of memory and take Safari down with it; it now uses a fraction of the memory, downloads a smaller AI engine on Apple devices, and its <strong>Download WAV</strong> buttons actually save a file. The old <u>lab.valjdakosta.com</u> address forwards you to the new one, and underneath, all 176 files the app is built from were rewritten in a language that checks the code as it is written.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Separation on a phone</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong>The tab no longer runs out of memory partway through.</strong> The model is now fetched and started <em>before</em> the song is copied for it, the downloaded model is released the moment the engine has taken it, the frequency workspace is reused rather than rebuilt for every window of audio, and the second output track is only set aside once the first pass has actually succeeded. Together those are the difference between a separation finishing and Safari reloading the page under you.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>A smaller AI engine on iPhone and iPad.</strong> Safari cannot use the graphics-card path at all, so it no longer downloads the version built for it - roughly 10 MB instead of 21 MB before anything can start.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Downloading a separated vocal or instrumental saves the file.</strong> On iPhone the button often opened a preview instead, or did nothing at all. The download now hangs off your own tap and is handed over as a file rather than as something to play.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The first pass says what it is doing.</strong> There is no percentage to show until the model returns its first window of audio, so it now reads <code>Starting first separation pass&hellip;</code> rather than sitting on a figure it cannot yet know. A first pass that genuinely will not finish on a phone gives up after two minutes instead of five.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>The blend and the per-part spectrograms are drawn without another full-length copy of the track.</strong> The mix is worked out slice by slice as it is analysed, which is what lets the results view survive on a phone at all.</li>
+            <li>A separation that crashes on an Apple device is no longer retried straight away. The retry exists for a graphics-card fault those devices cannot have, and going again immediately only made a second crash more likely.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Offline and addresses</p>
+          <ul class="patch-list">
+            <li><strong>The <a href="/about#where">Complete offline download</a> is now about 96 MB, up from 85 MB.</strong> It carries both AI engines - the graphics-card one and the plain one - so separation still works offline whichever browser you come back in.</li>
+            <li><strong><u>lab.valjdakosta.com</u> now forwards to <u>analyser.valjdakosta.com</u></strong>, keeping whatever page you asked for. It is a temporary forward on purpose, so it can be undone. If you installed Analyser from the old address, the count it sends still goes through, so none of that is lost.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Under the bonnet</p>
+          <ul class="patch-list">
+            <li><strong>The app was rewritten in a stricter language.</strong> Nothing about the site changed, and that was the requirement: the code that actually ships is generated from those files and was compared against the old one to prove it came out the same. It is the groundwork for the far stricter checking described in the update above.</li>
+            <li><strong>Maintenance:</strong> the previous update&rsquo;s notes and its entry in the <code>tl;dr</code> summary.</li>
           </ul>
         </div>
 
@@ -275,6 +315,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">8.08</p>
           <p class="patch-name">One at a Time</p>
@@ -284,9 +327,6 @@
             <li><span class="patch-tag is-fix">Fix</span>That preview also stays out of the shared volume control, so it cannot be un-muted by accident and echo the main player.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">8.07</p>
