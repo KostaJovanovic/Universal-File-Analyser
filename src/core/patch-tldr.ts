@@ -337,9 +337,19 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
-  { range: '8.18', notes: [
+  { range: '8.16 - 8.19', notes: [
+    'Analysing a picture pulled out of a **PDF** now leaves a **Back** bar to the PDF, the same breadcrumb you get when you open a file from inside an archive or a folder.',
     'Every one of the 176 files the app is built from is now **checked far more strictly** before it ships - about 11,400 places where something could have been missing or the wrong shape. The app itself is deliberately unchanged; the point was to make future mistakes fail early instead of in front of you.',
     'One real fix fell out of it: a **document that cannot read one of its inner parts now still shows the rest**, instead of throwing away everything it had already read.',
+  ] },
+  { range: '8.12 - 8.15', notes: [
+    'The on-device **AI separation** finally fits on an **iPhone** - the model is started before the song is copied for it, the frequency workspace is reused instead of rebuilt for every window, and the blend view no longer keeps another full-length copy of the track.',
+    'Apple devices download a **smaller AI engine** (about 10 MB instead of 21 MB), because Safari cannot use the graphics-card version at all.',
+    'Pressing **Download WAV** on a separated part now saves a file on iPhone, instead of opening a preview or doing nothing.',
+    'The first separation pass reads **Starting first separation pass** rather than a percentage it cannot know yet.',
+    'The **Complete offline download** grows to about 96 MB, carrying both AI engines so separation stays offline in any browser.',
+    'The old **lab.valjdakosta.com** address now forwards to **analyser.valjdakosta.com**, keeping the page you asked for.',
+    'Underneath, all **176 files** the app is built from were rewritten in a stricter language, with the shipped code proved identical afterwards.',
   ] },
   { range: '8.07 - 8.11', notes: [
     'The site **moved to analyser.valjdakosta.com** - the old lab.valjdakosta.com address still works and serves the same pages, so nothing saved or installed breaks.',
