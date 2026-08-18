@@ -86,7 +86,14 @@ js/
       embedded images out of a blob) - the stills twin of video-recover.js.
       sonify.js is the inverse of spectrogram.js (image → sound, oscillator-bank
       or Griffin-Lim) - not a top-level type but lazy-imported by photo.js's
-      "Sonify" button, so it lives in renderers/ and ships in sw.js SHELL
+      "Sonify" button, so it lives in renderers/ and ships in sw.js SHELL.
+      embedded-images.js is the shared grid for "this file contains pictures",
+      and it is no longer only an image-format thing: dwg.js (AutoCAD saved
+      preview), model3d.js (3MF package thumbnails, slicer plate renders,
+      textures), proprietary.js (.blend TEST-block thumbnail),
+      parsers-email.js (vCard PHOTO/LOGO) and parsers-image.js (EPS stored
+      preview) all feed it too. Its rgbaToPngBlob() export is there for the
+      previews stored as bare pixels rather than as an encoded image
     audio.js · audio-analysis.js · audio-codec.js · audio-player.js · spectrogram.js
       · media-reverse.js · audio-dsp.js/-client.js/-worker.js — audio playback,
       codec/loudness analysis, spectrogram; the audio-dsp trio runs the heavy

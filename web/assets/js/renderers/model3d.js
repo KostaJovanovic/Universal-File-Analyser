@@ -9,6 +9,8 @@ import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard } from '../cor
 import { inflate, ascii, latin1 } from '../core/binutil.js';
 import { buildViewerCard, startViewer, makeResult, buildGeoFromIndexed, geoStatsCard, meshIntegrityCard, renderPartsViewer, splitBodiesIndexed, subTris, geoSpan, bodyParts, BODY_SPLIT_CAP, } from './stl.js';
 import { parseStepHeader } from './proprietary.js';
+import { EMBEDDED_IMAGES_MAX } from '../core/limits.js';
+import { buildEmbeddedImagesCard } from './embedded-images.js';
 import { loadOcct } from '../lib/occt-loader.js';
 const FFLATE_URL = new URL('../../vendor/fflate.js', import.meta.url).href;
 let fflateLib = null;
@@ -451,6 +453,79 @@ function partName(obj, idx) {
     }
     return 'Part ' + idx;
 }
+// A 3MF package can carry pictures as well as geometry. The spec defines one: a
+// package thumbnail (conventionally Metadata/thumbnail.png) that a file browser
+// or print server can show without opening the model. Slicers add more - Bambu
+// Studio and OrcaSlicer write a rendered plate image per build plate, plus the
+// top-down and "pick" images their firmware uses on the printer's screen - and a
+// textured model keeps its texture maps under 3D/Textures. None of them are
+// reachable from the mesh viewer, so they are pulled out here.
+//
+// Sorted so the package thumbnail leads, then plates in natural order, then the
+// rest; capped (in limits.js, with every other enumeration ceiling), because a
+// heavily textured model can hold dozens.
+function thumbLabel(name) {
+    const base = (name.split('/').pop() || name);
+    if (/(^|\/)3D\/Textures\//i.test(name))
+        return 'Texture - ' + base;
+    if (/plate_\d+_small/i.test(base))
+        return 'Plate thumbnail - ' + base;
+    if (/^plate_\d+\./i.test(base))
+        return 'Plate preview - ' + base;
+    if (/^top_\d+\./i.test(base))
+        return 'Top view - ' + base;
+    if (/^pick_\d+\./i.test(base))
+        return 'Pick image - ' + base;
+    if (/thumbnail/i.test(base))
+        return 'Package thumbnail - ' + base;
+    return base;
+}
+// Rank for the sort above: lower sorts first.
+function thumbRank(name) {
+    const base = (name.split('/').pop() || name);
+    if (/thumbnail/i.test(base) && !/plate/i.test(base))
+        return 0;
+    if (/^plate_\d+\./i.test(base))
+        return 1;
+    if (/plate/i.test(base))
+        return 2;
+    if (/(^|\/)3D\/Textures\//i.test(name))
+        return 4;
+    return 3;
+}
+// Build the "Images in this package" card, or null when the 3MF holds none.
+// `data` is the whole file, already read for the geometry pass.
+function build3mfImagesCard(file, ffl, data, resultsEl) {
+    let unzipped;
+    try {
+        unzipped = ffl.unzipSync(data, { filter: (f) => /\.(png|jpe?g)$/i.test(f.name) && f.size > 0 });
+    }
+    catch (_) {
+        return null;
+    }
+    const names = Object.keys(unzipped).filter((n) => unzipped[n] && unzipped[n].length);
+    if (!names.length)
+        return null;
+    names.sort((a, b) => (thumbRank(a) - thumbRank(b)) || a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    const shown = names.slice(0, EMBEDDED_IMAGES_MAX);
+    const items = shown.map((n) => {
+        const bytes = unzipped[n];
+        const type = /\.png$/i.test(n) ? 'image/png' : 'image/jpeg';
+        const blob = new Blob([bytes], { type });
+        return {
+            label: thumbLabel(n), bytes: bytes.length,
+            viewBlob: blob, downloadBlob: blob, downloadName: (n.split('/').pop() || 'image'),
+        };
+    });
+    const more = names.length - shown.length;
+    return buildEmbeddedImagesCard({
+        title: 'Images in this package',
+        hint: 'Pictures stored inside the 3MF alongside the geometry' +
+            (more ? ' (the first ' + shown.length + ' of ' + names.length + ').' : '.'),
+        help: 'A 3MF is a ZIP package, and it can hold pictures as well as the model. The 3MF standard defines a package thumbnail so a file browser or print server can show the design without opening it; slicers such as Bambu Studio and OrcaSlicer add a rendered image of each build plate plus the small views the printer shows on its own screen; and a textured model keeps its texture maps here too. They are stored images, so they show what the slicer saw at the moment the file was written.',
+        items, resultsEl, sourceFile: file,
+    });
+}
 async function render3mf(file, resultsEl) {
     resultsEl.hidden = false;
     resultsEl.innerHTML = '';
@@ -538,6 +613,10 @@ async function render3mf(file, resultsEl) {
         metaCard, parts, format: '3MF mesh', zUp: true,
         unitLabel: model.unit === 'millimeter' ? 'mm' : (model.unit || 'units')
     });
+    // The package's own pictures, below the viewer that renderPartsViewer just built.
+    const imgCard = build3mfImagesCard(file, ffl, data, resultsEl);
+    if (imgCard)
+        resultsEl.appendChild(imgCard);
 }
 // No-mesh 3MF: red warning, then (if the archive carries a sliced G-code file, as
 // Bambu/Prusa project 3MFs do) a button to reconstruct it in the G-code viewer, then
@@ -583,6 +662,11 @@ async function render3mfNoModel(file, resultsEl, ffl, data, metaCard) {
         card.appendChild(host);
         resultsEl.appendChild(card);
     }
+    // With no mesh to view, the slicer's own plate renders are the only picture of
+    // this file there is, so they go above the metadata rather than below it.
+    const imgCard = build3mfImagesCard(file, ffl, data, resultsEl);
+    if (imgCard)
+        resultsEl.appendChild(imgCard);
     // Keep the document metadata and the archive browser visible under all of the above.
     if (metaCard)
         resultsEl.appendChild(metaCard);

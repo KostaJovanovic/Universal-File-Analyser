@@ -2,8 +2,48 @@
    - Boots photo + audio + video modules
    - Acts as the page-wide drop target (until the first file lands)
    - Classifies dropped files into photo / audio / video / unknown
-   - Renders a basic dump for unknown formats */
-const COMMIT_COUNT = 276;
+   - Renders a basic dump for unknown formats
+   ============================================================================
+   THE FILE-TYPE MACHINERY - WHERE EVERYTHING LIVES
+
+   This file is the spine, so the map starts here. Each of these carries its own
+   instructions in its header; read the one you are about to edit.
+
+     core/formats.ts              THE CATALOG. Routing extension sets, the
+                                  display/search rows, category mapping,
+                                  EXT_VARIANTS. Drives the overlay, the about
+                                  tables, search and the /formats pages.
+     core/classify.ts             classifyFile(): name/MIME -> a ROUTES key.
+                                  Deliberately does NO byte sniffing.
+     core/app.ts (here)           resolveKind() layers byte-level reroutes on
+                                  top; ROUTES maps a kind to a renderer;
+                                  handleFile() runs the pipeline;
+                                  renderFileExtras() wraps the shared cards.
+     core/file-sniff.ts           Magic-byte identification. What rescues a file
+                                  whose extension is missing or lying.
+     renderers/proprietary-formats.ts  The identification catalog (data only).
+     renderers/proprietary.ts     The identification renderer + the built-in
+                                  parser dispatch.
+     parsers/parsers-<chunk>.ts   Lazy metadata parsers, 15 domains. The parser
+                                  contract is in parsers/parser-util.ts.
+     core/limits.ts               EVERY size/memory/enumeration cap. Never
+                                  hardcode a new threshold outside it.
+
+   Which path does a change take?
+     - Another extension of an existing kind  -> formats.ts alone.
+     - Identify a format + read its header    -> formats.ts + proprietary-formats.ts
+                                                 + a parser in its chunk.
+     - It deserves its own viewer             -> formats.ts + classify.ts + the
+                                                 ROUTES checklist below.
+     - One extension, two unrelated formats   -> EXT_VARIANTS (formats.ts) +
+                                                 VARIANT_REROUTE (below).
+     - No extension, or the extension lies    -> file-sniff.ts.
+
+   Edit src/, never web/assets/js/ - that tree is tsc output and is overwritten
+   on every build, so an edit there is silently lost. src/ edits do nothing until
+   `npm run build` recompiles.
+   ============================================================================ */
+const COMMIT_COUNT = 277;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -69,6 +109,12 @@ function $(id) { return document.getElementById(id); }
 // fallback kind when the bytes prove a different variant: 'plaintext' for a
 // text/source variant, 'unknown' for a binary one (hex + identify). detectVariant()
 // (in formats.js) is the single source of truth for which variant the bytes are.
+// One extension, two unrelated formats. The variants themselves are declared in
+// EXT_VARIANTS in core/formats.ts (the single source of truth, which also drives
+// the /formats/<ext> page); this table is only the drop-time consequence: when
+// detectVariant() proves the file is NOT `primary` - the variant the default
+// route already handles - send it to `to` instead. Add the variant there first,
+// then a row here only if the wrong renderer would otherwise get the file.
 const VARIANT_REROUTE = {
     ts: { primary: 'MPEG transport stream', to: 'plaintext' }, // TypeScript source
     dts: { primary: 'DTS audio', to: 'plaintext' }, // Device Tree Source
@@ -219,7 +265,24 @@ async function renderFileExtras(file, container, kind) {
 // kind → how to route it. `results` names the container (the three media kinds
 // get their own section + nav flash + scroll; everything else funnels into
 // unknownResults). `nav`/`analysed` list the nav links and sections to mark.
-// Adding a file type means adding one row here plus a classifyFile() case.
+//
+// ADDING A NEW TOP-LEVEL KIND - the full checklist, in order:
+//   1. renderers/newtype.ts exporting
+//      `export async function renderNewtype(file: File, resultsEl: HTMLElement)`.
+//      Async, and it draws into the element it is handed. Nothing else.
+//   2. A classifyFile() case in core/classify.ts returning the new kind string.
+//      Read the ordering warning in that function first - a recognised extension
+//      with a real renderer must be matched BEFORE the generic image/ audio/
+//      video/ MIME shortcuts, or a vendor MIME hijacks the route.
+//   3. One row here: `newtype: { render: lazy('../renderers/newtype.js', 'renderNewtype') }`.
+//      Use lazy() - it keeps the module out of the initial graph.
+//   4. The EMITTED path in the SHELL array in web/sw.js
+//      ('assets/js/renderers/newtype.js', not the .ts source path). Missing from
+//      that list the module silently breaks offline use, and check-shell only
+//      reports it at commit time, non-fatally.
+//   5. A line in the inventory in src/CLAUDE.md - that file is the map the next
+//      session reads first, and it drifts silently otherwise.
+// Skipping 4 or 5 leaves no build-time error, which is exactly why they are here.
 // Each kind maps to a renderer. `results` names the on-page section the renderer
 // draws into; it defaults to 'unknown' (the generic #unknownResults block) in the
 // dispatch, so only photo/audio/video - which target their own sections and light

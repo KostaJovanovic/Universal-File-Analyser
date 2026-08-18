@@ -5,6 +5,19 @@
    so the scan's verdict can never drift from what actually opens. */
 import { fileExt } from './util.js';
 import { sniffGitObject } from '../renderers/gitobject.js';
+/* This file is the answer to "it analyses correctly when I name it .pdf, but not
+   when I drop it with no extension". classifyFile() never looks at bytes, so a
+   PDF called `download` is 'unknown' to it; resolveByContent() below is what
+   turns it back into a PDF.
+
+   To teach Analyser a new magic: add the signature to the table in
+   sniffFileType(), returning { kind, ext, label } where `kind` is a ROUTES key
+   and `ext` is what the proprietary/comic renderers key off.
+
+   THE TRAP: anything that routes a file WITHOUT going through resolveKind() in
+   app.js falls straight to the hex-dump renderer, because resolveKind is what
+   calls in here. That is the bug to look for when a file analyses fine on the
+   main page but comes out "unknown" somewhere else. */
 // ---------- true file-type sniffing ----------
 // Detect what a file ACTUALLY is from its leading bytes, independent of its name,
 // so a file with no extension (or an extension that lies) can still be analysed

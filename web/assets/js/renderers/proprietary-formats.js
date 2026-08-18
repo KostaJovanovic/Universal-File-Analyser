@@ -2,7 +2,32 @@
    The FORMATS table that proprietary.js / renderProprietary() drives: maps a
    lowercase extension to { app, parse?, zip?, chunk? }. Split out
    of proprietary.js so the 1000+ line catalog does not bury the parsing logic.
-   Pure data, no dependencies. */
+   Pure data, no dependencies.
+   ----------------------------------------------------------------------------
+   AN ENTRY HAS EXACTLY FOUR KEYS. There is no `icon`, no `magic`.
+
+     app     required. The display name, shown as the card title and the
+             "Application" row. A parser may override it at runtime by returning
+             `_app` when the bytes prove something more specific (a .cdp is
+             either Criterium DecisionPlus or CDP4/COMET - we name whichever the
+             bytes show, not both).
+     parse   a hint for the generic reader: 'text' | 'xml' | 'html'.
+     zip     the file is physically a ZIP, so offer the archive browser.
+     chunk   which lazy parser chunk holds its parser. One of:
+               gaming docs dev sci audio threed disk image
+               archive security video geodata email osmisc raw
+             The chunk is fetched only when a file of that domain is opened, so
+             the boot bundle stays flat as the catalog grows. `chunk` names WHERE
+             the parser lives; the parser itself is registered in that file's
+             PARSERS map, keyed by the same extension.
+
+   An entry with `app` alone is identification-only: it names the file and stops.
+   That is a complete, legitimate entry - most of this table is exactly that.
+
+   Adding a format here does NOT list it on the site. The catalog/display side is
+   core/formats.ts, and the two are deliberately separate: this is parsing wiring,
+   that is what users see. A format needs a row in both.
+   ---------------------------------------------------------------------------- */
 export const FORMATS = {
     // Adobe
     psd: { app: 'Adobe Photoshop' },

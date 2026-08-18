@@ -18,6 +18,7 @@
 
 import { el, row, rowHelp, h3help, fmtBytes, integrityCard } from '../core/util.js';
 import { openCfbf } from '../lib/cfbf.js';
+import { dibToBmp } from '../core/binutil.js';
 
 /** A preview image lifted out of the file: the bytes plus what they decode as. */
 interface SwPreview { bytes: Uint8Array; mime: string; }
@@ -45,28 +46,6 @@ function filetimeToDate(lo: number, hi: number) {
   const d = new Date(ms);
   if (isNaN(d.getTime()) || d.getUTCFullYear() < 1985 || d.getUTCFullYear() > 2100) return '';
   return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-// A clipboard DIB (BITMAPINFOHEADER + palette + pixels, no 14-byte file header)
-// needs that header prepended to be a viewable .bmp. Returns null if implausible.
-function dibToBmp(dib: Uint8Array | null | undefined) {
-  try {
-    if (!dib || dib.length < 44) return null;
-    const dv = new DataView(dib.buffer, dib.byteOffset, dib.byteLength);
-    const dibHeaderSize = dv.getUint32(0, true);
-    if (dibHeaderSize < 40 || dibHeaderSize > 124) return null;
-    const bpp = dv.getUint16(14, true);
-    let clrUsed = dv.getUint32(32, true);
-    let paletteSize = 0;
-    if (bpp <= 8) paletteSize = (clrUsed || (1 << bpp)) * 4;
-    const pixelOffset = 14 + dibHeaderSize + paletteSize;
-    const out = new Uint8Array(14 + dib.length);
-    out[0] = 0x42; out[1] = 0x4d;                          // 'BM'
-    new DataView(out.buffer).setUint32(2, out.length, true);
-    new DataView(out.buffer).setUint32(10, pixelOffset, true);
-    out.set(dib, 14);
-    return out;
-  } catch (_) { return null; }
 }
 
 // Decode the SummaryInformation property set: text fields, save/create dates, and
