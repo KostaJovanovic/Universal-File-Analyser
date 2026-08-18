@@ -6,6 +6,12 @@
    convention; centralising them keeps related formats consistent and makes the
    device-scaling policy legible in one place.
 
+   THE RULE: do not hardcode a size, memory or enumeration threshold in a parser
+   or a renderer. Add it here with a comment saying what it protects, then import
+   it. A number that lives at its use site is invisible to the next person tuning
+   the format next to it, and that is exactly how the scattered magic numbers this
+   module replaced came about.
+
    Device policy: a single RAM-based tier (high/mid/low) drives everything that
    should scale with available memory. `navigator.deviceMemory` is browser-clamped
    to 8 (anti-fingerprinting) so 8/16/32 GB all read as 8 -> `high`; it is absent
@@ -85,6 +91,12 @@ export const ANIM_PIXEL_BUDGET = byTier({ high: 240e6, mid: 120e6, low: 60e6 });
 export const ROW_PREVIEW = 500;            // rows shown in a table preview
 export const LIST_ENTRIES_MAX = 100000;    // max filesystem/archive entries enumerated
 export const PREVIEW_EDGE = 1024;          // decoded-preview longest edge (px)
+export const EMBEDDED_IMAGES_MAX = 24;     // pictures listed in an "embedded images" grid
+// Largest single preview carved out of a container that stores one (a DWG image
+// section, a DOS EPS TIFF preview, a Blender TEST block). A real one is tens to
+// hundreds of KB - this exists only to reject a corrupt or hostile length field
+// before it becomes an allocation, so it is deliberately flat and generous.
+export const PREVIEW_CARVE_MAX = 32 * MB;
 export const CONVERT_TIMEOUT_MS = 45000;   // per-file conversion timeout in a folder scan
 
 // ---- whole-file hashing ----

@@ -210,3 +210,22 @@ export function buildEmbeddedImagesCard({ title, hint, help, items, signal, resu
   card.appendChild(grid);
   return card;
 }
+
+// Wrap raw RGBA pixels as a PNG Blob, so a preview that is stored as bare pixels
+// rather than an encoded image (a Blender .blend thumbnail, an EPSI hex preview)
+// can still be handed to the card above, which only speaks Blob. Resolves null if
+// the canvas or the encoder refuses.
+export function rgbaToPngBlob(rgba: Uint8ClampedArray | Uint8Array, w: number, h: number): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    try {
+      if (!w || !h || rgba.length < w * h * 4) { resolve(null); return; }
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      // The copy is not defensive: ImageData insists on an ArrayBuffer-backed
+      // clamped array, and a subarray view of a file read is neither.
+      const px = new Uint8ClampedArray(rgba);
+      cv.getContext('2d')!.putImageData(new ImageData(px, w, h), 0, 0);
+      cv.toBlob((b) => resolve(b), 'image/png');
+    } catch (_) { resolve(null); }
+  });
+}

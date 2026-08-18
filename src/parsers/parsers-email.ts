@@ -18,6 +18,8 @@ import { findBytes, latin1, utf8, utf16, filetimeToDate } from '../core/binutil.
 import { parsePlist } from '../lib/plist.js';
 import { openCfbf } from '../lib/cfbf.js';
 import { openZip } from '../renderers/zip.js';
+import { buildEmbeddedImagesCard, type EmbeddedImageItem } from '../renderers/embedded-images.js';
+import { EMBEDDED_IMAGES_MAX } from '../core/limits.js';
 import type { Row, ParseFn } from '../core/types.js';
 import type { CfbfEntry } from '../lib/cfbf.js';
 
@@ -443,6 +445,62 @@ async function parseVcs(file: File) {
 }
 
 // ---------- vCard (.vcf .vcard) ----------
+
+/* A contact card can carry pictures: PHOTO for the person and LOGO for their
+   organisation, either as base64 inside the file or as a URL pointing somewhere
+   else. Only the inline ones are ours to show, and each spelling below is a real
+   vCard version rather than defensive guessing - 2.1 writes ENCODING=BASE64, 3.0
+   writes ENCODING=b, and 4.0 dropped the parameter and inlines a data: URI. */
+
+/** One picture pulled off a card, with the contact it belonged to. */
+interface VcardPhoto { bytes: Uint8Array; mime: string; who: string; prop: string }
+
+// What these bytes actually are. The TYPE/MEDIATYPE parameter is routinely wrong
+// or missing (a "TYPE=JPEG" holding a PNG is common in exports), so the magic
+// wins and the parameter is only the fallback.
+function imageMime(b: Uint8Array, declared: string) {
+  if (b.length > 3 && b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return 'image/jpeg';
+  if (b.length > 7 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return 'image/png';
+  if (b.length > 5 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return 'image/gif';
+  if (b.length > 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+      b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  if (b.length > 2 && b[0] === 0x42 && b[1] === 0x4D) return 'image/bmp';
+  const t = (declared || '').toLowerCase().replace(/^image\//, '');
+  return t ? 'image/' + t : 'image/jpeg';
+}
+
+const MIME_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif',
+  'image/webp': 'webp', 'image/bmp': 'bmp',
+};
+
+// Decode one PHOTO/LOGO property. Returns null for the URL form (nothing is
+// embedded to extract) and for anything that doesn't decode.
+function vcardImage(prop: IcalLine, who: string): VcardPhoto | null {
+  const raw = (prop.value || '').replace(/\s+/g, '');
+  if (!raw) return null;
+  let b64 = '', declared = String(prop.params.MEDIATYPE || prop.params.TYPE || '');
+  const dataUri = raw.match(/^data:([^;,]*)(;base64)?,(.*)$/i);
+  if (dataUri) {
+    if (!dataUri[2]) return null;                       // percent-encoded data: URI, not base64
+    if (dataUri[1]) declared = dataUri[1];
+    b64 = dataUri[3];
+  } else if (/^(https?|ftp|file|cid):/i.test(raw)) {
+    return null;                                        // a reference, not an embedded picture
+  } else if (prop.params.ENCODING && /^(b|base64)$/i.test(String(prop.params.ENCODING))) {
+    b64 = raw;
+  } else if (/^[A-Za-z0-9+/=]+$/.test(raw) && raw.length > 64) {
+    b64 = raw;                                          // ENCODING omitted, but plainly base64
+  } else return null;
+
+  try {
+    const bin = atob(b64);
+    if (bin.length < 16) return null;
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    return { bytes, mime: imageMime(bytes, declared), who, prop: prop.name };
+  } catch (_) { return null; }
+}
+
 async function parseVcf(file: File) {
   const text = await readText(file);
   if (!text || !/BEGIN:VCARD/i.test(text)) return null;
@@ -460,49 +518,65 @@ async function parseVcf(file: File) {
 
   const out: Row = { 'Format': 'vCard', 'Cards': cards.length };
 
-  // Detail the first few cards.
-  let photoDataUrl: string | null = null;
+  // Detail the first few cards, and collect the pictures from every card - an
+  // address-book export puts one contact per card, and the photo that matters is
+  // as likely to be on the fortieth as on the first.
+  const photos: VcardPhoto[] = [];
+  let linked = 0;
   const detail: string[] = [];
-  cards.slice(0, 5).forEach((card, idx) => {
+  cards.forEach((card, idx) => {
     const props = card.map(icalLine).filter(Boolean) as IcalLine[];
     const get = (n: string) => { const p = props.find((x) => x.name === n); return p ? p.value : ''; };
     const all = (n: string) => props.filter((x) => x.name === n);
     const fn = get('FN') || get('N').split(';').filter(Boolean).reverse().join(' ');
-    const bits = [(idx + 1) + '. ' + (fn || '(no name)')];
-    const ver = get('VERSION'); if (ver && idx === 0) out['vCard version'] = ver;
-    if (get('ORG')) bits.push('   org: ' + get('ORG').replace(/;+$/, ''));
-    for (const e of all('EMAIL')) bits.push('   email: ' + e.value);
-    for (const t of all('TEL')) bits.push('   tel: ' + t.value);
-    for (const a of all('ADR')) bits.push('   adr: ' + a.value.split(';').filter(Boolean).join(', '));
-    if (get('BDAY')) bits.push('   bday: ' + get('BDAY'));
-    detail.push(bits.join('\n'));
 
-    // First card PHOTO (base64) -> data URL preview.
-    if (idx === 0 && !photoDataUrl) {
-      const photo = props.find((x) => x.name === 'PHOTO');
-      if (photo) {
-        const b64 = (photo.params.ENCODING && /b|base64/i.test(photo.params.ENCODING)) ? photo.value.replace(/\s+/g, '') : null;
-        // vCard 4.0 may inline a data: URI directly.
-        if (/^data:/i.test(photo.value)) photoDataUrl = photo.value.replace(/\s+/g, '');
-        else if (b64) {
-          const type = (photo.params.TYPE || 'JPEG').toLowerCase();
-          const mime = type.indexOf('/') >= 0 ? type : 'image/' + type.replace('jpeg', 'jpeg');
-          photoDataUrl = 'data:' + mime + ';base64,' + b64;
-        }
-      }
+    if (idx < 5) {
+      const bits = [(idx + 1) + '. ' + (fn || '(no name)')];
+      if (get('ORG')) bits.push('   org: ' + get('ORG').replace(/;+$/, ''));
+      for (const e of all('EMAIL')) bits.push('   email: ' + e.value);
+      for (const t of all('TEL')) bits.push('   tel: ' + t.value);
+      for (const a of all('ADR')) bits.push('   adr: ' + a.value.split(';').filter(Boolean).join(', '));
+      if (get('BDAY')) bits.push('   bday: ' + get('BDAY'));
+      detail.push(bits.join('\n'));
+    }
+    const ver = get('VERSION'); if (ver && idx === 0) out['vCard version'] = ver;
+
+    for (const prop of props) {
+      if (prop.name !== 'PHOTO' && prop.name !== 'LOGO') continue;
+      if (photos.length >= EMBEDDED_IMAGES_MAX) break;
+      const img = vcardImage(prop, fn || 'card ' + (idx + 1));
+      if (img) photos.push(img); else linked++;
     }
   });
 
   out._sections = [{ title: 'First cards', node: preBlock(detail.join('\n\n')), open: true }];
 
-  if (photoDataUrl) {
+  if (photos.length) out['Embedded pictures'] = String(photos.length);
+  if (linked) out['Linked pictures'] = linked + ' (stored as a link, not inside this file)';
+
+  if (photos.length) {
     try {
-      const img = el('img', { src: photoDataUrl, alt: 'vCard photo', style: 'max-width:160px;max-height:160px;border-radius:6px;display:block;' });
-      out._previewNode = el('div', { style: 'margin:8px 0;' }, [
-        el('div', { style: 'font-size:12px;opacity:.7;margin-bottom:4px;' }, 'Embedded photo (first card)'),
-        img,
-      ]);
-    } catch (_) {}
+      const items: EmbeddedImageItem[] = photos.map((ph, i) => {
+        const blob = new Blob([ph.bytes as BlobPart], { type: ph.mime });
+        const kind = ph.prop === 'LOGO' ? 'Logo' : 'Photo';
+        return {
+          label: kind + ' - ' + ph.who, bytes: ph.bytes.length,
+          viewBlob: blob, downloadBlob: blob,
+          downloadName: (ph.who || 'contact').replace(/[^\w.-]+/g, '_').slice(0, 40) +
+            (photos.length > 1 ? '_' + (i + 1) : '') + '.' + (MIME_EXT[ph.mime] || 'jpg'),
+        };
+      });
+      const card = buildEmbeddedImagesCard({
+        title: photos.length > 1 ? 'Contact pictures' : 'Contact picture',
+        hint: photos.length > 1
+          ? photos.length + ' pictures are stored inside this file, one per contact that has one.'
+          : 'The picture stored inside this file for this contact.',
+        help: 'A vCard can carry the contact\u2019s photo (and their organisation\u2019s logo) inside the file itself, encoded as text, rather than linking to one elsewhere. Each is pulled back out here at full size, so you can see and save the original image the card was built with - which often carries its own metadata worth analysing.',
+        items,
+      });
+      card.style.marginBottom = '0';
+      out._previewNode = card;
+    } catch (_) { /* readout rows still stand */ }
   }
   return out;
 }

@@ -9,6 +9,8 @@ import { FORMATS } from './proprietary-formats.js';
 import { EXT_VARIANTS, detectVariant } from '../core/formats.js';
 import { parseNrbf } from '../lib/nrbf.js';
 import { safe } from '../parsers/parser-util.js';
+import { buildEmbeddedImagesCard, rgbaToPngBlob } from './embedded-images.js';
+import { PREVIEW_CARVE_MAX } from '../core/limits.js';
 // ---------- helpers ----------
 function extFromName(name) {
     const dot = name.lastIndexOf('.');
@@ -66,21 +68,116 @@ function parseDwg(buf) {
         return null;
     return { 'DWG version': ver, 'AutoCAD version': mapped };
 }
-// ---------- Blender header ----------
-function parseBlender(buf) {
-    const sig = ascii(buf, 0, 7);
-    if (sig !== 'BLENDER')
+// ---------- Blender ----------
+/* A .blend is a 12-byte header followed by a chain of blocks, each one a small
+   BHead record (a 4-character code, the data length, the address the data had in
+   memory when it was saved, and two DNA indices) and then that much data. Only
+   the header was read here before; walking the first few blocks costs nothing and
+   finds the file's own thumbnail.
+
+   Blender writes that thumbnail into a TEST block near the front of the file when
+   "Save Preview Images" is on, as two 32-bit ints (width, height) followed by raw
+   RGBA - no encoding, no compression, which is why it has to be repainted through
+   a canvas rather than handed straight to an <img>. It is the picture the file
+   browser shows, and it is what the scene actually looked like when it was saved,
+   so it survives even though nothing here can open the scene itself. */
+const BLEND_SCAN_BLOCKS = 8; // REND comes first and is tiny; TEST is right behind it
+// Walk the block chain looking for the TEST (thumbnail) block. `little` and
+// `ptr64` come from the file header, which is the only place they are recorded.
+// Every BHead is a fixed size, so this reads only the first few hundred bytes in
+// practice and gives up rather than following a chain into the scene proper.
+function blendThumbAt(buf, little, ptr64) {
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    const headLen = 4 + 4 + (ptr64 ? 8 : 4) + 4 + 4;
+    let p = 12;
+    for (let i = 0; i < BLEND_SCAN_BLOCKS && p + headLen <= buf.length; i++) {
+        const code = ascii(buf, p, 4);
+        const len = dv.getUint32(p + 4, little);
+        const data = p + headLen;
+        if (code === 'ENDB')
+            break;
+        if (code === 'TEST') {
+            if (len <= 8 || data + 8 > buf.length)
+                return null;
+            const w = dv.getUint32(data, little);
+            const h = dv.getUint32(data + 4, little);
+            if (w < 1 || h < 1 || w * h * 4 > PREVIEW_CARVE_MAX || w * h * 4 + 8 > len)
+                return null;
+            return { off: data + 8, w, h };
+        }
+        p = data + len;
+    }
+    return null;
+}
+// Blender stores the rows bottom-up (it copies its image buffers out as they sit
+// in memory, and those count y from the bottom), so they are turned over here.
+function flipRows(src, w, h) {
+    const stride = w * 4;
+    const out = new Uint8Array(h * stride);
+    for (let y = 0; y < h; y++)
+        out.set(src.subarray((h - 1 - y) * stride, (h - y) * stride), y * stride);
+    return out;
+}
+async function parseBlender(head, file) {
+    const sig = ascii(head, 0, 7);
+    if (sig !== 'BLENDER') {
+        // A saved-compressed .blend is a gzip or Zstandard stream wrapping the same
+        // file. Say so rather than falling through to the generic card, because it
+        // also explains why there is no version and no thumbnail to show.
+        const gz = head[0] === 0x1F && head[1] === 0x8B;
+        const zstd = head[0] === 0x28 && head[1] === 0xB5 && head[2] === 0x2F && head[3] === 0xFD;
+        if (gz || zstd) {
+            return {
+                'Format': 'Blender scene (compressed)',
+                'Compression': gz ? 'Gzip' : 'Zstandard',
+                'Note': 'This .blend was saved with compression on, so its header, version and saved preview sit inside the compressed stream. Re-save it from Blender with compression off to read them here.',
+            };
+        }
         return null;
-    const ptrSize = buf[7] === 0x5F ? '32-bit' : '64-bit';
-    const endian = buf[8] === 0x56 ? 'Little-endian' : 'Big-endian';
-    const version = ascii(buf, 9, 3);
+    }
+    const ptr64 = head[7] !== 0x5F;
+    const little = head[8] !== 0x56;
+    const version = ascii(head, 9, 3);
     const major = version[0];
     const minor = version.slice(1);
-    return {
+    const out = {
         'Blender version': major + '.' + minor,
-        'Pointer size': ptrSize,
-        'Endianness': endian
+        'Pointer size': ptr64 ? '64-bit' : '32-bit',
+        'Endianness': little ? 'Little-endian' : 'Big-endian',
     };
+    // The saved preview. The block headers are all inside `head` already; only the
+    // pixels need going back to the file for, and then only exactly those bytes.
+    try {
+        const at = blendThumbAt(head, little, ptr64);
+        if (at && at.off + at.w * at.h * 4 <= file.size) {
+            const raw = new Uint8Array(await file.slice(at.off, at.off + at.w * at.h * 4).arrayBuffer());
+            const thumb = { w: at.w, h: at.h, rgba: flipRows(raw, at.w, at.h) };
+            out['Saved preview'] = thumb.w + ' × ' + thumb.h + ' px';
+            const holder = el('div', {});
+            out._previewNode = holder;
+            // Encoding needs a canvas round-trip, so fill the placeholder once it lands.
+            (async () => {
+                const blob = await rgbaToPngBlob(thumb.rgba, thumb.w, thumb.h);
+                if (!blob)
+                    return;
+                const items = [{
+                        width: thumb.w, height: thumb.h, label: 'Saved preview', bytes: blob.size,
+                        viewBlob: blob, downloadBlob: blob,
+                        downloadName: (file.name || 'scene').replace(/\.[^/.]+$/, '') + '_preview.png',
+                    }];
+                const card = buildEmbeddedImagesCard({
+                    title: 'Saved preview',
+                    hint: 'The thumbnail Blender stored inside the scene when it was last saved.',
+                    help: 'Blender can save a small rendered picture of the scene inside the .blend itself, so file browsers and its own asset browser can show it without loading the scene. It is stored as bare pixels rather than as a PNG or JPEG, so it is repainted here to be viewable. Nothing in the browser can open the scene itself - this is what it looked like when it was saved.',
+                    items,
+                });
+                card.style.marginBottom = '0';
+                holder.appendChild(card);
+            })();
+        }
+    }
+    catch (_) { /* header rows still stand */ }
+    return out;
 }
 // ---------- FBX ----------
 function parseFbx(buf) {
@@ -4862,6 +4959,14 @@ async function parseVdf(file) {
 // Maps an extension to a metadata parser. Functions receive { head, file, ext }
 // and may be sync or async (the caller awaits the result). To add a format,
 // drop a line here rather than extending a branch chain.
+//
+// PREFER A CHUNK. This map ships in the boot bundle, so it is for parsers that
+// are small, hot, or needed before any chunk could load. Everything else belongs
+// in parsers/parsers-<chunk>.ts, registered in that file's PARSERS map and
+// pointed at by `chunk` in the FORMATS entry - the dispatch below falls through
+// to the chunk automatically. The contract is identical either way and is
+// documented in parsers/parser-util.ts; both maps are wrapped in safe(), so a
+// parser declines by returning null and never by throwing.
 const PARSERS = {
     vdf: c => parseVdf(c.file),
     acf: c => parseVdf(c.file),
@@ -4869,7 +4974,7 @@ const PARSERS = {
     psb: c => parsePsd(c.head),
     dwg: c => parseDwg(c.head),
     dwt: c => parseDwg(c.head),
-    blend: c => parseBlender(c.head),
+    blend: c => parseBlender(c.head, c.file),
     fbx: c => parseFbx(c.head),
     glb: c => parseGlb(c.head),
     stl: c => parseStl(c.head),

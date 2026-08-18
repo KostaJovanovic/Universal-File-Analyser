@@ -17,6 +17,8 @@
 
 import { el, row, fmtBytes, preBlock, loadScript, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, findBytes, latin1, hexByte } from '../core/binutil.js';
+import { buildEmbeddedImagesCard, rgbaToPngBlob, type EmbeddedImageItem } from '../renderers/embedded-images.js';
+import { SCAN_SMALL, PREVIEW_CARVE_MAX } from '../core/limits.js';
 import type { Row, ParseFn } from '../core/types.js';
 
 // ---------- shared helpers ----------
@@ -1346,8 +1348,84 @@ const JXR_PF: Record<string, string> = {
 };
 
 // =====================================================================
-//                   EPS / PostScript (metadata only)
+//                   EPS / PostScript
 // =====================================================================
+
+/* An EPS is meant to be placed inside another document by a layout program that
+   has no PostScript interpreter, so it carries a picture of itself for that
+   program to draw on screen. There are two mechanisms and a file uses one or the
+   other:
+
+   - DOS EPS (also called EPSF or TBCP) wraps the PostScript in a 30-byte binary
+     header. Three sections are located by absolute offset and length: the
+     PostScript itself, a Windows metafile preview, and a TIFF preview. The TIFF
+     is what nearly every Windows-authored EPS carries.
+   - Plain-text EPS has nowhere to put binary, so EPSI inlines the preview as
+     hexadecimal inside PostScript comments - a greyscale bitmap, 1, 2, 4 or 8
+     bits per pixel, written by ps2epsi and friends.
+
+   Both are worth extracting: the stored preview is what the *authoring* program
+   thought the file looked like, which is not always what rendering it produces. */
+
+/** The three sections a DOS EPS binary header points at, by absolute offset. */
+interface DosEps { wmfOff: number; wmfLen: number; tifOff: number; tifLen: number }
+
+function dosEpsHeader(head: Uint8Array): DosEps | null {
+  if (head.length < 30) return null;
+  if (!(head[0] === 0xc5 && head[1] === 0xd0 && head[2] === 0xd3 && head[3] === 0xc6)) return null;
+  const dv = new DataView(head.buffer, head.byteOffset, head.byteLength);
+  return {
+    wmfOff: dv.getUint32(12, true), wmfLen: dv.getUint32(16, true),
+    tifOff: dv.getUint32(20, true), tifLen: dv.getUint32(24, true),
+  };
+}
+
+/** The %%BeginPreview line's four numbers: pixel size, bits per pixel, and how
+    many comment lines of hex follow. */
+interface EpsiHead { w: number; h: number; depth: number; lines: number }
+
+function epsiHeader(txt: string): EpsiHead | null {
+  const m = txt.match(/^%%BeginPreview:[ \t]*(\d+)[ \t]+(\d+)[ \t]+(\d+)[ \t]+(\d+)/im);
+  if (!m) return null;
+  const w = +m[1], h = +m[2], depth = +m[3];
+  if (!w || !h || w > 8192 || h > 8192) return null;
+  if (depth !== 1 && depth !== 2 && depth !== 4 && depth !== 8) return null;
+  return { w, h, depth, lines: +m[4] };
+}
+
+// Unpack the hex body between %%BeginPreview and %%EndPreview into RGBA. The
+// stored values are grey levels in PostScript's own convention - 0 is black, all
+// bits set is white - and each scan line starts on a byte boundary.
+function decodeEpsi(text: string, hd: EpsiHead) {
+  const begin = text.search(/^%%BeginPreview:/im);
+  if (begin < 0) return null;
+  const bodyStart = text.indexOf('\n', begin);
+  const end = text.search(/^%%EndPreview/im);
+  if (bodyStart < 0 || end < 0 || end <= bodyStart) return null;
+
+  const hex = text.slice(bodyStart, end).replace(/[^0-9a-fA-F]/g, '');
+  const rowBytes = Math.ceil((hd.w * hd.depth) / 8);
+  const need = rowBytes * hd.h;
+  if (hex.length < need * 2) return null;
+  const bytes = new Uint8Array(need);
+  for (let i = 0; i < need; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+
+  const max = (1 << hd.depth) - 1;
+  const perByte = 8 / hd.depth;
+  const rgba = new Uint8ClampedArray(hd.w * hd.h * 4);
+  for (let y = 0; y < hd.h; y++) {
+    for (let x = 0; x < hd.w; x++) {
+      const b = bytes[y * rowBytes + Math.floor(x / perByte)];
+      const shift = 8 - hd.depth - (x % perByte) * hd.depth;
+      const g = Math.round(((b >> shift) & max) * 255 / max);
+      const o = (y * hd.w + x) * 4;
+      rgba[o] = rgba[o + 1] = rgba[o + 2] = g;
+      rgba[o + 3] = 255;
+    }
+  }
+  return rgba;
+}
+
 async function parseEps(file: File, ext: string) {
   const head = await readAll(file, 32 * 1024);
   let txt;
@@ -1377,8 +1455,13 @@ async function parseEps(file: File, ext: string) {
   const forr = dsc('For'); if (forr) out['Author'] = forr;
   const pages = dsc('Pages'); if (pages) out['Pages'] = pages;
   const llm = txt.match(/%%LanguageLevel:\s*(\d+)/i); if (llm) out['Language level'] = llm[1];
-  if (/%%BeginPreview/i.test(txt)) out['Embedded preview'] = 'EPSI (ASCII)';
-  else if (txt.includes('TIFF') && isEps) out['Embedded preview'] = 'TIFF/WMF (DOS EPS)';
+  // Stored preview - located properly rather than sniffed for the word "TIFF",
+  // so the size shown is the real section length and the bytes can be carved out.
+  const dos = dosEpsHeader(head);
+  const epsi = epsiHeader(txt);
+  if (epsi) out['Embedded preview'] = 'EPSI (ASCII), ' + epsi.w + ' × ' + epsi.h + ' px, ' + epsi.depth + '-bit grey';
+  else if (dos && dos.tifLen) out['Embedded preview'] = 'TIFF (DOS EPS), ' + fmtBytes(dos.tifLen) + (dos.wmfLen ? ' + WMF, ' + fmtBytes(dos.wmfLen) : '');
+  else if (dos && dos.wmfLen) out['Embedded preview'] = 'WMF (DOS EPS), ' + fmtBytes(dos.wmfLen);
   out['Note'] = 'PostScript vector graphics; the first page is rasterized with a bundled Ghostscript (WASM) interpreter.';
 
   // Rendered preview: build a placeholder synchronously (renderProprietary
@@ -1388,9 +1471,10 @@ async function parseEps(file: File, ext: string) {
   try {
     const stage = el('div', {
       class: 'anr-eps-stage',
-      style: 'min-height:48px;display:flex;align-items:center;justify-content:center;background:repeating-conic-gradient(#0000 0% 25%, rgba(127,127,127,.12) 0% 50%) 0 0/16px 16px;border-radius:8px;overflow:hidden;',
+      style: 'min-height:48px;display:flex;align-items:center;justify-content:center;background:repeating-conic-gradient(#0000 0% 25%, rgba(127,127,127,.12) 0% 50%) 0 0/16px 16px;overflow:hidden;',
     }, el('div', { style: 'font-size:11px;opacity:.6;padding:12px;' }, 'Rendering with Ghostscript…'));
-    const preview = el('div', { class: 'anr-img-preview' }, [stage]);
+    const stored = el('div', {});
+    const preview = el('div', { class: 'anr-img-preview' }, [stage, stored]);
     out._previewNode = preview;
     // Fire-and-forget; the placeholder is already in the DOM by the time this resolves.
     (async () => {
@@ -1415,9 +1499,71 @@ async function parseEps(file: File, ext: string) {
         try { stage.remove(); } catch (e) {}
       }
     })();
+    // The preview the authoring program stored, under the one we render - also
+    // fire-and-forget, and independent of whether Ghostscript got anywhere.
+    addStoredEpsPreview(file, stored, dos, epsi, txt);
   } catch (_) { /* no preview; metadata rows still returned */ }
 
   return out;
+}
+
+// Draw the stored preview into `host`, if the file has one. EPSI decodes here and
+// now (it is a bare bitmap in the text we already hold); a DOS EPS TIFF preview
+// needs a TIFF decoder, which no browser has, so it sits behind a button rather
+// than pulling ImageMagick down for every EPS that is opened.
+async function addStoredEpsPreview(file: File, host: HTMLElement, dos: DosEps | null, epsi: EpsiHead | null, txt: string) {
+  const baseName = (file.name || 'image').replace(/\.[^/.]+$/, '');
+  const show = (items: EmbeddedImageItem[], hint: string) => {
+    const card = buildEmbeddedImagesCard({
+      title: 'Stored preview', hint, items,
+      help: 'An EPS carries a small picture of itself so page-layout programs, which have no PostScript interpreter of their own, can show it on screen without drawing it. It was written by whatever program produced the file, so it shows what that program thought the artwork looked like - which is not always what rendering the PostScript produces.',
+    });
+    card.style.marginBottom = '0';
+    host.appendChild(card);
+  };
+
+  try {
+    if (epsi) {
+      // The hex body can easily run past the 32 KB header read; go back for more
+      // only when it does.
+      let text = txt;
+      if (!/^%%EndPreview/im.test(text)) {
+        text = latin1(await readAll(file, SCAN_SMALL));
+      }
+      const rgba = decodeEpsi(text, epsi);
+      if (!rgba) return;
+      const blob = await rgbaToPngBlob(rgba, epsi.w, epsi.h);
+      if (!blob) return;
+      show([{
+        width: epsi.w, height: epsi.h, label: epsi.depth + '-bit grey (EPSI)', bytes: blob.size,
+        viewBlob: blob, downloadBlob: blob, downloadName: baseName + '_preview.png',
+      }], 'The greyscale preview stored inside this EPS as hexadecimal text.');
+      return;
+    }
+
+    if (!dos || !dos.tifLen || dos.tifLen > PREVIEW_CARVE_MAX) return;
+    if (dos.tifOff + dos.tifLen > file.size) return;
+    const btn = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:10px;' }, 'Show stored preview');
+    const note = el('p', { class: 'anr-hint', style: 'margin:8px 0 0;' },
+      'This EPS stores a ' + fmtBytes(dos.tifLen) + ' TIFF preview of itself. Web browsers cannot show TIFF, so it is converted on demand.' +
+      (dos.wmfLen ? ' It also stores a Windows metafile preview, which cannot be shown here.' : ''));
+    host.appendChild(note);
+    host.appendChild(btn);
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const bytes = new Uint8Array(await file.slice(dos.tifOff, dos.tifOff + dos.tifLen).arrayBuffer());
+      const tif = new File([bytes as BlobPart], baseName + '_preview.tif', { type: 'image/tiff' });
+      const { readImagesAsPngs } = await import('../renderers/photo-convert.js');
+      const pages = await readImagesAsPngs(tif, host);
+      if (!pages.length) { btn.disabled = false; btn.textContent = 'Could not decode the stored preview'; return; }
+      btn.remove(); note.remove();
+      show(pages.map((r, i) => ({
+        width: r.width, height: r.height, label: 'TIFF preview' + (pages.length > 1 ? ' ' + (i + 1) : ''),
+        bytes: r.blob.size, viewBlob: r.blob, downloadBlob: r.blob,
+        downloadName: baseName + '_preview' + (pages.length > 1 ? '_' + (i + 1) : '') + '.png',
+      })), 'The TIFF preview stored inside this EPS, converted to PNG so a browser can show it.');
+    });
+  } catch (_) { /* the rendered preview above stands on its own */ }
 }
 
 // =====================================================================

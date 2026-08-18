@@ -244,4 +244,37 @@ export function fmtGuid(b, off = 0) {
     return (h(3) + h(2) + h(1) + h(0) + '-' + h(5) + h(4) + '-' + h(7) + h(6) + '-' +
         h(8) + h(9) + '-' + h(10) + h(11) + h(12) + h(13) + h(14) + h(15)).toUpperCase();
 }
+// A device-independent bitmap (BITMAPINFOHEADER + palette + pixels) as stored in a
+// clipboard blob, a DWG preview section or an OLE thumbnail: the same bytes a .bmp
+// holds *after* its 14-byte file header, with that header missing. Prepending one
+// is the whole job, but the pixel offset has to be computed rather than guessed -
+// it moves with the header size (40 for BITMAPINFOHEADER, up to 124 for V5) and
+// the palette that follows it at 8 bits per pixel or fewer. Returns null when the
+// bytes don't look like a DIB at all.
+export function dibToBmp(dib) {
+    try {
+        if (!dib || dib.length < 44)
+            return null;
+        const dv = new DataView(dib.buffer, dib.byteOffset, dib.byteLength);
+        const dibHeaderSize = dv.getUint32(0, true);
+        if (dibHeaderSize < 40 || dibHeaderSize > 124)
+            return null;
+        const bpp = dv.getUint16(14, true);
+        const clrUsed = dv.getUint32(32, true);
+        let paletteSize = 0;
+        if (bpp <= 8)
+            paletteSize = (clrUsed || (1 << bpp)) * 4;
+        const pixelOffset = 14 + dibHeaderSize + paletteSize;
+        const out = new Uint8Array(14 + dib.length);
+        out[0] = 0x42;
+        out[1] = 0x4d; // 'BM'
+        new DataView(out.buffer).setUint32(2, out.length, true);
+        new DataView(out.buffer).setUint32(10, pixelOffset, true);
+        out.set(dib, 14);
+        return out;
+    }
+    catch (_) {
+        return null;
+    }
+}
 //# sourceMappingURL=binutil.js.map

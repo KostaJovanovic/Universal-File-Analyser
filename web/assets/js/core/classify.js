@@ -3,7 +3,15 @@
    (extension / basename) and MIME type - no byte sniffing (that is the caller's
    job: resolveKind()/handleFile() in app.js layer content-based reroutes on top).
    The returned string must match a key in ROUTES (app.js). Exposed to the folder
-   scan and /compare as window._anrClassify by app.js. */
+   scan and /compare as window._anrClassify by app.js.
+
+   Adding a case here is step 2 of 5 when a format gets its own renderer - the
+   whole checklist is at the ROUTES table in app.js. Two rules hold in this file:
+   the returned kind MUST exist in ROUTES (a typo routes to the hex dump with no
+   error anywhere), and nothing here may read the file's bytes. Content-based
+   decisions belong in core/file-sniff.ts, which resolveKind() layers on top;
+   keeping this function synchronous and name-only is what lets the folder scan
+   classify thousands of entries without touching their contents. */
 import { fileExt } from './util.js';
 import { PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, CSV_EXTS, SVG_EXTS } from './formats.js';
 import { isProprietaryExt } from '../renderers/proprietary.js';
