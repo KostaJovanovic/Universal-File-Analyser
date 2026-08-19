@@ -334,6 +334,11 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+    { range: '8.20 - 8.22', notes: [
+            'Files that quietly carry a **picture of themselves** now show it - the snapshot **AutoCAD** saves inside a **DWG** drawing, the photo and company logo on a **.vcf contact card**, the build-plate renders **Bambu Studio** and **OrcaSlicer** write into a **3MF**, the thumbnail a **Blender** scene keeps, and the preview an **EPS** stores for the page layout it was meant for. Each is shown full size and can be saved.',
+            'A drawing too new or too damaged for the app to open still shows the picture stored inside it, because that picture is now pulled out before the drawing is read.',
+            'An **AVI** no longer looks like it has been analysing for hours - the **Decoding video** bar beside the results was never taken down once the reading finished, which took about a second.',
+        ] },
     { range: '8.16 - 8.19', notes: [
             'Analysing a picture pulled out of a **PDF** now leaves a **Back** bar to the PDF, the same breadcrumb you get when you open a file from inside an archive or a folder.',
             'Every one of the 176 files the app is built from is now **checked far more strictly** before it ships - about 11,400 places where something could have been missing or the wrong shape. The app itself is deliberately unchanged; the point was to make future mistakes fail early instead of in front of you.',

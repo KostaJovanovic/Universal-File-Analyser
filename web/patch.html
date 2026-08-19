@@ -212,6 +212,38 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">8.20 - 8.22</p>
+          <p class="patch-name">Hidden Pictures</p>
+          <p class="patch-date">19 August 2026</p>
+          <ul class="patch-list">
+            <li><strong>A surprising number of files quietly carry a picture of themselves that nothing ever shows you - the snapshot AutoCAD saves inside a drawing, the photo on a contact card, the plate a 3D-printing slicer rendered, the thumbnail Blender kept of a scene, the preview a piece of artwork stores for the layout program it was meant for. Analyser now finds each of them and shows it, full size and saveable. An AVI video that looked like it had been analysing for hours is fixed too.</strong></li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Pictures hidden inside files</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>An AutoCAD drawing shows the picture AutoCAD saved of it.</strong> Every <a href="/about#ext-dwg">DWG and DWT</a> keeps a snapshot of the drawing as it looked when it was last saved, so a file browser has a thumbnail to show. That snapshot is now pulled out and displayed - and pulled out <em>before</em> the drawing itself is read, because a drawing too new or too damaged to open is exactly the file where the stored picture is the only thing left to see.</li>
+            <li><span class="patch-tag">New</span><strong>Contact cards give up their photos.</strong> A <a href="/about#ext-vcf">.vcf</a> exported from a phone or an address book carries the contact&rsquo;s picture and their company logo inside it. Every one is now extracted at full size, shown, and saveable. A card that merely links to a picture elsewhere says so, since there is nothing in the file itself to show.</li>
+            <li><span class="patch-tag">New</span><strong>3D print packages show the plate, not just the mesh.</strong> A <a href="/about#ext-3mf">3MF</a> carries its own thumbnail, and slicers such as <strong>Bambu Studio</strong> and <strong>OrcaSlicer</strong> add a rendered image of each build plate alongside the pictures the printer puts on its own screen. Those, and any texture maps the model uses, now sit beside the 3D viewer - and when a package holds no mesh to view, they lead it, because they are the only picture of that file there is.</li>
+            <li><span class="patch-tag">New</span><strong>A Blender scene shows its thumbnail.</strong> A <a href="/about#ext-blend">.blend</a> saved with previews turned on stores a small render of the scene, so you can now see what it looked like without opening Blender. A <em>compressed</em> .blend now says that is what it is, rather than leaving you wondering why there is no version and no picture.</li>
+            <li><span class="patch-tag">New</span><strong>EPS artwork shows the preview it was given.</strong> An <a href="/about#ext-eps">EPS</a> is meant to be placed into a page layout, so it carries a low-resolution preview for the layout program to draw on the page. Analyser now locates that preview properly instead of guessing at it: the plain-text kind is decoded and drawn on the spot, and the other kind sits behind a button, because it needs a heavier decoder than is worth fetching for every file opened.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Video</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong>An AVI no longer looks like it is analysing for ever.</strong> No browser can play most <a href="/about#ext-avi">AVI</a> files, so Analyser reads them itself - and it finishes in about a second. The <code>Decoding video&hellip;</code> bar beside the results was never taken down afterwards, so a large AVI sat there apparently still working, for hours, with its finished analysis already on screen below it. The bar now clears on every route through, including the one taken for a file the browser cannot play at all.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>That loading bar stays inside its box.</strong> In the narrow column beside a video it was wider than the panel holding it and hung out past the edge; it now wraps onto a second line instead.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Under the bonnet</p>
+          <ul class="patch-list">
+            <li><strong>Maintenance:</strong> the previous update&rsquo;s notes, and a written map of how a file format is added to the app - which file does what, and which of them any given change has to touch - kept beside the code rather than in one person&rsquo;s head.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">8.16 - 8.19</p>
           <p class="patch-name">No Loose Ends</p>
           <p class="patch-date">14 August 2026</p>
@@ -269,6 +301,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">8.09 - 8.11</p>
           <p class="patch-name">Steady Hands</p>
@@ -314,9 +349,6 @@
             <li><strong>Maintenance:</strong> an unfinished four-way split (vocals, drums, bass and everything else) that was never switched on has been removed for good, along with its model files.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">8.08</p>

@@ -3939,6 +3939,13 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
   } catch (_) {
     probe.remove();
     resultsEl.innerHTML = '';
+    // Every route out of here - the AVI parser below, the visible-player fallback,
+    // the unplayable card - ends the render without ever mounting a preview, so the
+    // "Decoding video..." bar renderVideo dropped into #videoPreview would sit there
+    // for good and read as an analysis that never finishes (it was: a big non-MJPEG
+    // AVI renders its whole readout in a second and then spins forever). Clear it
+    // once, here, rather than in each of the three tails.
+    clearVideoPreviewBoot();
 
     let avi = null;
     try { avi = await parseAviHeader(file); } catch (_) {}
