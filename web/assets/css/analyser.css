@@ -3940,6 +3940,12 @@ audio { width: 100%; }
   align-items: center;
   gap: 12px;
   padding: 10px 0;
+  /* The label can't wrap and the ASCII bar can't shrink (see below), so in a
+     narrow host the row is wider than its box - in the 3-column section-meta
+     preview slot the "Decoding video..." loader spilled out past the card's
+     hairline. Wrapping drops the bar onto its own line instead. No effect
+     anywhere the row already fits. */
+  flex-wrap: wrap;
 }
 .anr-inline-loader-label {
   font-family: var(--font-mono);
