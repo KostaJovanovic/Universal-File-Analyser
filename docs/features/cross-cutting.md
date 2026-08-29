@@ -32,6 +32,32 @@ up-front would be slow (notably video), the hash is instead gated behind an
 explicit **Compute SHA-256** button rather than computed automatically -
 see [`video.md`](video.md).
 
+### Fuzzy hashing (ssdeep / CTPH)
+
+**What it does.** Answers a question no cryptographic hash can: not "are
+these two files identical" but "how much of them is the same". A fuzzy hash
+slides a 7-byte window along the file and cuts a block wherever a rolling
+hash of that window hits a trigger value, so the boundaries are decided by
+the content around them. Insert a byte and one boundary moves while the rest
+stay put - which is exactly what a fixed-block scheme cannot do, since there
+every boundary after the insertion shifts and every block hash changes.
+
+**How to reach it.** On [`/compare`](../pages.md), below the cryptographic
+hashes: a **Fuzzy hash** row with each file's signature and a **Similarity**
+row scoring them out of 100. Built in `lib/ssdeep.js`.
+
+**Notes / limits.** This is a from-scratch implementation of the published
+spamsum algorithm (Tridgell, 2002) as ssdeep standardised it - same rolling
+hash, same FNV block hash, same trigger rule, same scoring - so the strings
+are ordinary ssdeep signatures and can be compared against one from
+elsewhere. Two files can only be scored when their block sizes are equal or
+one is double the other, which is why every signature carries a second hash
+at double the block size; when they still don't line up the row says so
+rather than reporting 0 and implying dissimilarity. Files over
+`FUZZY_HASH_MAX` (256 MB) are skipped - it is a whole-file read that may run
+more than once. There is no corpus to match against: everything stays on the
+device, so this compares the two files in front of you and nothing else.
+
 ### OSINT network-indicator extraction
 
 **What it does.** Pulls URLs, IP addresses, domains and email addresses out

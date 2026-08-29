@@ -208,6 +208,11 @@ js/
                     read whole. Packing is what installers and commercial
                     software do as often as malware, so the readout lists
                     evidence and draws no conclusion) ·
+                    ssdeep (context-triggered piecewise hashing, from scratch -
+                    the published spamsum algorithm, so the strings interoperate
+                    with real ssdeep. Answers "how much of these two files is the
+                    same" where SHA-256 only answers "are they identical";
+                    /compare is the only consumer) ·
                     openmpt-loader (libopenmpt WASM, ~1.5 MB, Everything
                     tier - the vendored file is chiptune3's
                     libopenmpt.worklet.js, which despite the name registers no

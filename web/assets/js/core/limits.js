@@ -152,6 +152,11 @@ export const GEO_HEAT_POINTS = 400_000;
 // the remainder falls back to a single track line rather than putting thousands
 // of SVG paths on the map.
 export const GEO_PACE_RUNS = 4000;
+// Fuzzy hashing (ssdeep) reads the whole file into one array and may walk it more
+// than once - it halves the block size and starts over when the first pass gives
+// too short a signature. The work is cheap per byte, but it is a full read, so a
+// file past this ceiling reports "too large" rather than stalling /compare.
+export const FUZZY_HASH_MAX = 256 * MB;
 // Packer detection measures each PE section's entropy. Entropy is a property of
 // the byte distribution, so a sample settles to within a few hundredths of a bit
 // of the whole-section figure - reading a 200 MB section in full to learn the

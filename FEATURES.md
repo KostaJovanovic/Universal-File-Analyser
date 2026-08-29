@@ -406,6 +406,19 @@ can expand into prose. British spelling, no em-dashes (site house style).
 - SHA-256 hashes are computed and included; collapsed sections are expanded first
   so the export is complete.
 
+## Comparing two files
+
+- The **/compare** page takes two files and analyses both to the same depth as
+  the main page, then merges the results into one table with a column each. Rows
+  that differ are highlighted, and **Show differences** hides everything the two
+  files agree on.
+- Alongside the usual hashes it computes a **fuzzy hash** of each file and scores
+  how alike they are out of 100. An ordinary hash only tells you whether two
+  files are identical - change one byte and it changes completely. A fuzzy hash
+  is built from chunk boundaries chosen by the content itself, so two builds of
+  the same program, or a document before and after an edit, still produce two
+  similar fingerprints, and the score tells you how much they have in common.
+
 ## Smart detection
 
 - **Magic-byte sniffing** - it reads the file's actual leading bytes, so it can
