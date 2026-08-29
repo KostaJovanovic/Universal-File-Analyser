@@ -12,6 +12,7 @@ import { parseNrbf } from '../lib/nrbf.js';
 import { safe } from '../parsers/parser-util.js';
 import { buildEmbeddedImagesCard, rgbaToPngBlob, type EmbeddedImageItem } from './embedded-images.js';
 import { PREVIEW_CARVE_MAX } from '../core/limits.js';
+import type { PeSection } from '../lib/pe-packer.js';
 import type { Row, ParseFn, ParseCtx, RowSection } from '../core/types.js';
 
 /* One IMAGE_RESOURCE_DIRECTORY_ENTRY as read by extractPeIcon's `readDir`. */
@@ -331,7 +332,10 @@ const PE_HELP = {
   'Copyright': 'The legal copyright string from the version resource.',
   'Original filename': 'The name the file was built as, from the version resource - useful when a file has since been renamed.',
   'Internal name': 'The internal module name from the version resource.',
-  'Installer': 'The installer framework that produced this executable. Installer stubs are typically 32-bit even when they deploy 64-bit software.'
+  'Installer': 'The installer framework that produced this executable. Installer stubs are typically 32-bit even when they deploy 64-bit software.',
+  'Packing': 'Whether the real code appears to be compressed or encrypted inside the file and unpacked in memory when it starts. Ordinary software does this too - installers, commercial products and anti-cheat all ship packed - so it is a description, not an accusation. The full evidence is in the Packing and toolchain section.',
+  'Packed with': 'The packer or protector identified by name, from section names and internal markers the unpacking stub cannot easily do without.',
+  'Built with': 'The compiler, language runtime or bundler this binary appears to have been produced by.'
 };
 
 function parsePe(buf: Uint8Array): Row | null {
@@ -367,20 +371,30 @@ function parsePe(buf: Uint8Array): Row | null {
   if (characteristics & 0x0100) chFlags.push('32-bit-machine');
   if (chFlags.length) result['Characteristics'] = chFlags.join(', ');
 
-  // Section names (table starts after the optional header)
+  // Section table (starts after the optional header). The full row is kept, not
+  // just the name: lib/pe-packer.js needs each section's disk offset and both of
+  // its sizes to measure entropy and spot a section that unpacks into itself.
   const sizeOfOptHdr = view.getUint16(peOffset + 20, true);
   const secTableOff = peOffset + 24 + sizeOfOptHdr;
   const secNames: string[] = [];
-  for (let s = 0; s < numSections && secTableOff + s * 40 + 8 <= buf.length; s++) {
+  const secTable: PeSection[] = [];
+  for (let s = 0; s < numSections && secTableOff + s * 40 + 40 <= buf.length; s++) {
+    const base = secTableOff + s * 40;
     let nm = '';
     for (let b = 0; b < 8; b++) {
-      const ch = buf[secTableOff + s * 40 + b];
+      const ch = buf[base + b];
       if (!ch) break;
       if (ch >= 32 && ch < 127) nm += String.fromCharCode(ch);
     }
     if (nm) secNames.push(nm);
+    secTable.push({
+      name: nm, vsize: view.getUint32(base + 8, true), vaddr: view.getUint32(base + 12, true),
+      rawSize: view.getUint32(base + 16, true), rawOff: view.getUint32(base + 20, true),
+      flags: view.getUint32(base + 36, true),
+    });
   }
   if (secNames.length) result['Section names'] = secNames.join(', ');
+  if (secTable.length) result._peSections = secTable;
 
   // Installer-stub detection. Explains the common "win64 installer reads as
   // 32-bit" surprise: NSIS / Inno stubs are 32-bit even when the bundled
@@ -494,6 +508,15 @@ function parsePe(buf: Uint8Array): Row | null {
         }
       }
     }
+    // Header facts the packer analysis needs. `overlaySize` is left at 0 here -
+    // parsePe only sees the head of the file, so the caller, which has the real
+    // size, works out how much data sits past the last section.
+    result._peMeta = {
+      entry: entryOff + 4 <= buf.length ? view.getUint32(entryOff, true) : 0,
+      importDlls: Number(result['Imported DLLs'] || 0),
+      isDotNet: !!result['.NET'],
+      overlaySize: 0,
+    };
   } catch (_) {}
   return result;
 }
@@ -568,6 +591,71 @@ async function parseExe(c: ParseCtx) {
         if (val) result[label] = val;
       }
     } catch (_) {}
+  }
+
+  // ---- Packing / protector / toolchain analysis ----
+  const secTable = result._peSections;
+  const peMeta = result._peMeta;
+  delete result._peSections; delete result._peMeta;
+  if (secTable && secTable.length && peMeta && c.file) {
+    try {
+      // Anything past the end of the last section is an overlay: appended data the
+      // loader never maps. Installers and bundled runtimes keep their payload
+      // there, so how much of it there is counts as a signal.
+      let lastEnd = 0;
+      for (const s of secTable) if (s.rawOff && s.rawSize) lastEnd = Math.max(lastEnd, s.rawOff + s.rawSize);
+      peMeta.overlaySize = lastEnd && c.file.size > lastEnd ? c.file.size - lastEnd : 0;
+
+      const { analysePePacking } = await import('../lib/pe-packer.js');
+      const rep = await analysePePacking(c.file, secTable, peMeta);
+      if (rep) {
+        const named = rep.matches.filter((m) => m.kind === 'Packer' || m.kind === 'Protector');
+        const built = rep.matches.filter((m) => m.kind !== 'Packer' && m.kind !== 'Protector');
+        if (named.length) result['Packed with'] = named.map((m) => m.name).join(', ');
+        if (built.length) result['Built with'] = built.map((m) => m.name).join(', ');
+        result['Packing'] = rep.verdict;
+
+        const node = el('div', {});
+        node.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
+          'Packing means the real code is compressed or encrypted in the file and unpacked in memory at start-up. Perfectly ordinary software does it - installers, commercial products and anti-cheat all ship packed - and so does malware trying to defeat a signature scanner. What follows is the evidence, not a verdict on the file.'));
+        for (const m of rep.matches) {
+          node.appendChild(el('div', { class: 'anr-pack-signal' }, m.name + ' (' + m.kind.toLowerCase() + ') - identified by ' + m.why));
+        }
+        for (const s of rep.signals) node.appendChild(el('div', { class: 'anr-pack-signal' }, s));
+        if (!rep.matches.length && !rep.signals.length) {
+          node.appendChild(el('p', { class: 'anr-hint' }, 'Nothing stood out: the sections carry the entropy of ordinary compiled code and are named the way a linker names them.'));
+        }
+
+        const t = el('table', { class: 'anr-readout' });
+        t.appendChild(el('tr', {}, [
+          el('th', {}, 'Section'), el('th', {}, 'On disk'), el('th', {}, 'In memory'),
+          el('th', {}, 'Entropy'), el('th', {}, 'Flags'),
+        ]));
+        for (const s of rep.sections) {
+          const entCell = el('td', {});
+          if (s.entropy == null) entCell.appendChild(document.createTextNode('-'));
+          else {
+            entCell.appendChild(document.createTextNode(s.entropy.toFixed(2)));
+            const bar = el('span', { class: 'anr-ent-bar' + (s.entropy >= 7.2 ? ' is-high' : '') });
+            const fill = el('i', {});
+            fill.style.width = Math.max(2, Math.min(100, (s.entropy / 8) * 100)) + '%';
+            bar.appendChild(fill); entCell.appendChild(bar);
+          }
+          t.appendChild(el('tr', {}, [
+            el('td', {}, s.name + (s.atEntry ? ' (entry)' : '')),
+            el('td', {}, s.rawSize ? fmtBytes(s.rawSize) : 'none'),
+            el('td', {}, fmtBytes(s.vsize)),
+            entCell,
+            el('td', {}, s.flags.join(' ')),
+          ]));
+        }
+        node.appendChild(el('p', { class: 'anr-hint', style: 'margin:10px 0 4px;' },
+          'Entropy is how unpredictable a section’s bytes are, in bits per byte. Compiled code lands near 6; compressed or encrypted data pushes 8.'));
+        node.appendChild(t);
+
+        result._sections = (result._sections || []).concat([{ title: 'Packing and toolchain', node, open: !!named.length }]);
+      }
+    } catch (_) { /* the header readout stands on its own */ }
   }
   return result;
 }

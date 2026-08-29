@@ -169,6 +169,15 @@ export const GEO_HEAT_POINTS = 400_000;
 // of SVG paths on the map.
 export const GEO_PACE_RUNS = 4000;
 
+// Packer detection measures each PE section's entropy. Entropy is a property of
+// the byte distribution, so a sample settles to within a few hundredths of a bit
+// of the whole-section figure - reading a 200 MB section in full to learn the
+// same number would be the only expensive part of the analysis. The marker scan
+// reads this much from each END of the file: a packer stub sits near the entry
+// point at the front, and bundled runtimes leave their cookie in the overlay.
+export const PE_SECTION_SAMPLE = 512 * 1024;
+export const PE_PACKER_SCAN = 256 * 1024;
+
 // ---- compute-cost guards (bound main-thread work, not memory) ----
 // Above this size the pure-JS MD5 / CRC-32 in extraHashRows() are skipped: they
 // walk the file byte-by-byte (no crypto.subtle equivalent exists) and would freeze

@@ -128,6 +128,10 @@ export interface Row {
   _font?: any;
   /** Classic Mac resource-fork details. */
   _rsrc?: any;
+  /** PE section table (lib/pe-packer.js `PeSection[]`), stripped before printing. */
+  _peSections?: any;
+  /** PE header facts the packer analysis needs (lib/pe-packer.js `PeMeta`). */
+  _peMeta?: any;
   /** Archive/container member listing. */
   _fileList?: any;
   /** Index/TOC payload. */

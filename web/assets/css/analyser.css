@@ -6690,6 +6690,25 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 /* Shown once a statement has modified the in-memory copy. */
 .anr-sql-dirty { border-left: 2px solid var(--accent); padding-left: 8px; margin: 4px 0; }
 
+/* Per-section entropy bar in the PE packing readout. 0-8 bits per byte mapped to
+   the full width, so a packed section reads at a glance against a compiled one. */
+.anr-ent-bar {
+  display: inline-block;
+  width: 74px; height: 7px;
+  margin-left: 8px;
+  background: var(--surface);
+  border: var(--bd-hairline);
+  vertical-align: middle;
+}
+.anr-ent-bar i { display: block; height: 100%; background: var(--muted); }
+.anr-ent-bar.is-high i { background: var(--accent); }
+/* One finding in the packing readout - same left rule as the SQL "changed" note. */
+.anr-pack-signal {
+  border-left: 2px solid var(--muted);
+  padding-left: 8px; margin: 6px 0;
+  font-size: var(--t-small); color: var(--fg);
+}
+
 /* Byte-entropy heatmap: a 1px-tall canvas stretched full-width. image-rendering
    keeps the per-chunk colour columns crisp instead of blurred when scaled up. */
 .anr-entropy-map {
