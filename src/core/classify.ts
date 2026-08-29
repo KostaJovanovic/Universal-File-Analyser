@@ -46,6 +46,16 @@ const ML_MODEL_EXTS = new Set([
   'keras', 'h5', 'hdf5',
 ]);
 
+/* Chemical structures. `.ent` is the old PDB extension and `.pqr` a PDB with
+   charge and radius columns bolted on. `.gro` (GROMACS) is here too - it is a
+   coordinate file like the rest. `.xyz` is the risk in this list: it also names
+   a point-cloud export, but both are "one atom or point per line with three
+   coordinates", so the viewer draws either correctly. */
+const MOLECULE_EXTS = new Set([
+  'mol', 'sdf', 'sd', 'mol2', 'xyz', 'pdb', 'ent', 'pdb1', 'cif', 'mmcif',
+  'mcif', 'pqr', 'gro',
+]);
+
 // Tracker modules: a score plus sample bank, rendered to PCM by libopenmpt and
 // then analysed as ordinary audio. `.mod` also names a JVC camcorder video, which
 // VARIANT_REROUTE sends elsewhere on its bytes.
@@ -152,6 +162,10 @@ export function classifyFile(file: File) {
   // Keras). `.pt`/`.pth`/`.ckpt` are pickles, and the readout says what the
   // pickle would import without running any of it.
   if (ML_MODEL_EXTS.has(ext)) return 'mlmodel';
+  // Chemical structures: atoms with coordinates, drawn in 3D. `.cif` is shared
+  // with the Crystallographic Information File proper, which is the same syntax
+  // and the same viewer, so both land here.
+  if (MOLECULE_EXTS.has(ext)) return 'molecule';
   // DAW sessions with a readable arrangement: Ableton Live (gzipped XML) and
   // Reaper (plain text). FL Studio's .flp is a binary event stream and stays on
   // the metadata path in proprietary.js.

@@ -3962,6 +3962,24 @@ audio { width: 100%; }
 .anr-midi-list { margin: 0; padding-left: 20px; font-size: var(--t-small); line-height: 1.7; color: var(--fg); }
 .anr-midi-list li { word-break: break-word; }
 
+/* 3D molecular structure viewer (3Dmol.js). Always dark: the element colours are
+   a fixed convention built for a black background, and white carbon on a white
+   page is invisible. */
+.anr-mol-view {
+  position: relative;
+  width: 100%;
+  height: 440px;
+  border: var(--bd-hairline);
+  background: #14161a;
+  overflow: hidden;
+}
+.anr-mol-view canvas { display: block; }
+.anr-mol-view .anr-hint { padding: 16px; }
+.anr-mol-controls {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 4px 8px; margin: 0 0 8px;
+}
+
 /* ML computation graph. The SVG is drawn at its natural size and the wrapper
    scrolls, because a model graph is wide by nature and shrinking it to fit makes
    the op labels unreadable, which is the only thing the picture is for. */

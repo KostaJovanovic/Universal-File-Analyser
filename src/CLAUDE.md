@@ -168,6 +168,17 @@ js/
                     stays on parseFlp() in proprietary.js: its clip positions
                     live in data events whose layout varies by FL version
     midi.js · subtitles.js · lrc.js — MIDI score, SRT/VTT/ASS subs, LRC lyrics
+    molecule.js   — chemical structures (MOL/SDF/MOL2/XYZ/PDB/mmCIF/CIF/PQR/GRO)
+                    on the vendored 3Dmol.js (BSD-3, ~500 KB, lazy, Everything
+                    tier). The default style is chosen from the file rather than
+                    fixed: ball-and-stick for a small molecule, cartoon ribbons
+                    for anything with amino-acid or nucleotide residues, since
+                    ball-and-stick on 30k atoms is a hairball. Ligands are drawn
+                    as sticks over the cartoon or they would vanish with it.
+                    Formula and molecular weight are COMPUTED from the atoms
+                    present, not read from a label - most of these formats do
+                    not state them and the ones that do can disagree with their
+                    own atom list
     mlmodel.js    — machine-learning models, four different things behind one
                     renderer. GRAPHS: ONNX and frozen TensorFlow GraphDef, both
                     protobuf, decoded by lib/onnx.js and drawn as a layered DAG
