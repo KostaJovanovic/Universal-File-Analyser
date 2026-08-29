@@ -10,70 +10,29 @@
 
    Dependency-free. Formats with a simple pixel layout (TGA, QOI, Netpbm, PCX,
    farbfeld, WBMP, XBM, XPM, Sun raster, SGI) are fully decoded to a <canvas> in
-   pure JS. Formats needing a heavy codec (DDS/BCn, EXR, JPEG 2000, JPEG XR) are
-   read header-only and noted as decoder-gated. Anything rated rare AND hard
-   (PICT, FLIF, JBIG/JBIG2, CGM, CDR) is identification-only. No top-level side
-   effects. */
+   pure JS, as is DDS - its first mip level, through the shared BC1-BC5 decoder
+   in lib/bcn.js (BC6H/BC7 excepted, which the readout says). Formats needing a
+   heavy codec (EXR, JPEG 2000, JPEG XR) are read header-only and noted as
+   decoder-gated. Anything rated rare AND hard (PICT, FLIF, JBIG/JBIG2, CGM,
+   CDR) is identification-only. No top-level side effects.
+
+   The decoded preview itself is built by canvasFromRGBA() in parser-util.js -
+   shared, because parsers-gaming.js decodes Valve VTF the same way and the two
+   chunks load independently. */
 
 import { el, row, fmtBytes, preBlock, loadScript, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, findBytes, latin1, hexByte } from '../core/binutil.js';
 import { buildEmbeddedImagesCard, rgbaToPngBlob, type EmbeddedImageItem } from '../renderers/embedded-images.js';
 import { SCAN_SMALL, PREVIEW_CARVE_MAX } from '../core/limits.js';
+import { decodeBcn } from '../lib/bcn.js';
+import { canvasFromRGBA } from './parser-util.js';
 import type { Row, ParseFn } from '../core/types.js';
 
 // ---------- shared helpers ----------
 
-const MAX_EDGE = 1024;   // cap decoded preview's longest edge
 
 async function readAll(file: File, cap = 32 * 1024 * 1024) {
   return await readSlice(file, 0, cap);
-}
-
-// Build a <canvas> from an RGBA Uint8ClampedArray, scaling down so the longest
-// edge is <= MAX_EDGE (nearest-neighbour, cheap). Returns the canvas node or null.
-function canvasFromRGBA(rgba: Uint8ClampedArray, w: number, h: number) {
-  if (!w || !h || w < 1 || h < 1) return null;
-  if (rgba.length < w * h * 4) return null;
-  let dw = w, dh = h;
-  const longest = Math.max(w, h);
-  if (longest > MAX_EDGE) {
-    const s = MAX_EDGE / longest;
-    dw = Math.max(1, Math.round(w * s));
-    dh = Math.max(1, Math.round(h * s));
-  }
-  try {
-    if (dw === w && dh === h) {
-      const c = el('canvas');
-      c.width = w; c.height = h;
-      c.style.maxWidth = '100%'; c.style.height = 'auto'; c.style.imageRendering = 'auto';
-      const ctx = c.getContext('2d')!;
-      ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer as ArrayBuffer, rgba.byteOffset, w * h * 4), w, h), 0, 0);
-      return wrapPreview(c, w, h);
-    }
-    // Render full-res to an offscreen canvas, then draw scaled into the visible one.
-    const off = document.createElement('canvas');
-    off.width = w; off.height = h;
-    off.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer as ArrayBuffer, rgba.byteOffset, w * h * 4), w, h), 0, 0);
-    const c = el('canvas');
-    c.width = dw; c.height = dh;
-    c.style.maxWidth = '100%'; c.style.height = 'auto';
-    c.getContext('2d')!.drawImage(off, 0, 0, dw, dh);
-    return wrapPreview(c, w, h);
-  } catch (_) {
-    return null;
-  }
-}
-
-// Wrap a canvas with a checkerboard background (so transparency reads) + caption.
-function wrapPreview(canvas: HTMLCanvasElement, w: number, h: number) {
-  const wrap = el('div', { class: 'anr-img-preview', style: 'margin-top:12px;' });
-  const board = el('div', {
-    style: 'display:inline-block;background-image:linear-gradient(45deg,#bbb 25%,transparent 25%),linear-gradient(-45deg,#bbb 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#bbb 75%),linear-gradient(-45deg,transparent 75%,#bbb 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;border:1px solid var(--anr-border,#3a3a3a);max-width:100%;',
-  }, canvas);
-  wrap.appendChild(board);
-  wrap.appendChild(el('div', { style: 'font-size:11px;opacity:.6;margin-top:4px;' },
-    'Decoded preview · ' + w + ' × ' + h + (Math.max(w, h) > MAX_EDGE ? ' (scaled)' : '')));
-  return wrap;
 }
 
 // =====================================================================
@@ -988,133 +947,6 @@ function dxgiKind(n: number) {
 function dxgiName(n: number) {
   const M: Record<string, string> = { 71: ' (BC1/DXT1)', 72: ' (BC1 sRGB)', 74: ' (BC2/DXT3)', 75: ' (BC2 sRGB)', 77: ' (BC3/DXT5)', 78: ' (BC3 sRGB)', 80: ' (BC4)', 81: ' (BC4 SNORM)', 83: ' (BC5)', 84: ' (BC5 SNORM)', 95: ' (BC6H)', 96: ' (BC6H)', 98: ' (BC7)', 99: ' (BC7)', 28: ' (R8G8B8A8)', 87: ' (B8G8R8A8)' };
   return M[n] || '';
-}
-
-// ---------- BCn block decoders ----------
-
-// Decode the two RGB565 endpoints of a BC1 colour block into a 4-entry RGB
-// palette and write the 16 texels into `dst` (RGBA) at the block origin.
-// `writeAlpha` controls whether BC1's 1-bit punch-through alpha is honoured
-// (true for standalone BC1; false when BC2/BC3 supply their own alpha).
-function decodeColorBlock(b: Uint8Array, off: number, dst: Uint8ClampedArray, dstW: number, dstH: number, bx: number, by: number, writeAlpha: boolean, alphaOut: boolean | null) {
-  const c0 = b[off] | (b[off + 1] << 8);
-  const c1 = b[off + 2] | (b[off + 3] << 8);
-  const bits = b[off + 4] | (b[off + 5] << 8) | (b[off + 6] << 16) | (b[off + 7] << 24);
-  // Expand RGB565 -> RGB888.
-  const r0 = ((c0 >> 11) & 31), g0 = ((c0 >> 5) & 63), b0 = (c0 & 31);
-  const r1 = ((c1 >> 11) & 31), g1 = ((c1 >> 5) & 63), b1 = (c1 & 31);
-  const R0 = (r0 << 3) | (r0 >> 2), G0 = (g0 << 2) | (g0 >> 4), B0 = (b0 << 3) | (b0 >> 2);
-  const R1 = (r1 << 3) | (r1 >> 2), G1 = (g1 << 2) | (g1 >> 4), B1 = (b1 << 3) | (b1 >> 2);
-  const pal = new Int32Array(4 * 4); // r,g,b,a per entry
-  pal[0] = R0; pal[1] = G0; pal[2] = B0; pal[3] = 255;
-  pal[4] = R1; pal[5] = G1; pal[6] = B1; pal[7] = 255;
-  if (c0 > c1 || !writeAlpha) {     // 4-colour block (opaque)
-    pal[8] = (2 * R0 + R1 + 1) / 3 | 0; pal[9] = (2 * G0 + G1 + 1) / 3 | 0; pal[10] = (2 * B0 + B1 + 1) / 3 | 0; pal[11] = 255;
-    pal[12] = (R0 + 2 * R1 + 1) / 3 | 0; pal[13] = (G0 + 2 * G1 + 1) / 3 | 0; pal[14] = (B0 + 2 * B1 + 1) / 3 | 0; pal[15] = 255;
-  } else {                          // 3-colour + transparent black
-    pal[8] = (R0 + R1) >> 1; pal[9] = (G0 + G1) >> 1; pal[10] = (B0 + B1) >> 1; pal[11] = 255;
-    pal[12] = 0; pal[13] = 0; pal[14] = 0; pal[15] = 0;
-  }
-  for (let py = 0; py < 4; py++) {
-    const y = by + py; if (y >= dstH) continue;
-    for (let px = 0; px < 4; px++) {
-      const x = bx + px; if (x >= dstW) continue;
-      const idx = (bits >> (2 * (py * 4 + px))) & 3;
-      const d = (y * dstW + x) * 4;
-      dst[d] = pal[idx * 4]; dst[d + 1] = pal[idx * 4 + 1]; dst[d + 2] = pal[idx * 4 + 2];
-      if (writeAlpha) dst[d + 3] = pal[idx * 4 + 3];
-      else if (alphaOut == null) dst[d + 3] = 255;
-    }
-  }
-}
-
-// Decode a single BC4-style alpha/grayscale block (8 bytes): two 8-bit
-// endpoints + 16 × 3-bit indices. Calls `write(x,y,value)` for each texel.
-function decodeAlphaBlock(b: Uint8Array, off: number, bx: number, by: number, dstW: number, dstH: number, write: (x: number, y: number, v: number) => void) {
-  const a0 = b[off], a1 = b[off + 1];
-  const a = new Int32Array(8);
-  a[0] = a0; a[1] = a1;
-  if (a0 > a1) {
-    for (let i = 1; i < 7; i++) a[i + 1] = (((7 - i) * a0 + i * a1) / 7) | 0;
-  } else {
-    for (let i = 1; i < 5; i++) a[i + 1] = (((5 - i) * a0 + i * a1) / 5) | 0;
-    a[6] = 0; a[7] = 255;
-  }
-  // 48 bits of 3-bit indices, little-endian starting at byte off+2.
-  let lo = b[off + 2] | (b[off + 3] << 8) | (b[off + 4] << 16);
-  let hi = b[off + 5] | (b[off + 6] << 8) | (b[off + 7] << 16);
-  for (let py = 0; py < 4; py++) {
-    for (let px = 0; px < 4; px++) {
-      const t = py * 4 + px;
-      let idx;
-      if (t < 8) { idx = (lo >> (3 * t)) & 7; }
-      else { idx = (hi >> (3 * (t - 8))) & 7; }
-      const x = bx + px, y = by + py;
-      if (x < dstW && y < dstH) write(x, y, a[idx]);
-    }
-  }
-}
-
-// Decode a BCn-compressed surface (kind: bc1/bc2/bc3/bc4/bc5) into RGBA.
-function decodeBcn(b: Uint8Array, off: number, width: number, height: number, kind: string) {
-  const px = width * height;
-  if (px <= 0 || px > 64_000_000) return null;
-  const dst = new Uint8ClampedArray(px * 4);
-  const blocksX = (width + 3) >> 2;
-  const blocksY = (height + 3) >> 2;
-  const blockBytes = (kind === 'bc1' || kind === 'bc4') ? 8 : 16;
-  const need = blocksX * blocksY * blockBytes;
-  if (off + need > b.length) return null;
-
-  let p = off;
-  for (let byb = 0; byb < blocksY; byb++) {
-    for (let bxb = 0; bxb < blocksX; bxb++) {
-      const bx = bxb * 4, by = byb * 4;
-      if (kind === 'bc1') {
-        decodeColorBlock(b, p, dst, width, height, bx, by, true, null);
-        p += 8;
-      } else if (kind === 'bc2') {
-        // 8 bytes explicit 4-bit alpha, then a BC1 colour block.
-        for (let py = 0; py < 4; py++) {
-          const aRow = b[p + py * 2] | (b[p + py * 2 + 1] << 8);
-          for (let pxi = 0; pxi < 4; pxi++) {
-            const x = bx + pxi, y = by + py;
-            if (x < width && y < height) {
-              const a4 = (aRow >> (4 * pxi)) & 0x0f;
-              dst[(y * width + x) * 4 + 3] = (a4 << 4) | a4;
-            }
-          }
-        }
-        decodeColorBlock(b, p + 8, dst, width, height, bx, by, false, true);
-        p += 16;
-      } else if (kind === 'bc3') {
-        // BC4-style interpolated alpha, then a BC1 colour block.
-        decodeAlphaBlock(b, p, bx, by, width, height, (x, y, v) => { dst[(y * width + x) * 4 + 3] = v; });
-        decodeColorBlock(b, p + 8, dst, width, height, bx, by, false, true);
-        p += 16;
-      } else if (kind === 'bc4') {
-        // Single channel -> grayscale, opaque.
-        decodeAlphaBlock(b, p, bx, by, width, height, (x, y, v) => {
-          const d = (y * width + x) * 4; dst[d] = dst[d + 1] = dst[d + 2] = v; dst[d + 3] = 255;
-        });
-        p += 8;
-      } else if (kind === 'bc5') {
-        // Two channels (R then G); reconstruct B as a normal-map Z, opaque.
-        decodeAlphaBlock(b, p, bx, by, width, height, (x, y, v) => { dst[(y * width + x) * 4] = v; });
-        decodeAlphaBlock(b, p + 8, bx, by, width, height, (x, y, v) => {
-          const d = (y * width + x) * 4;
-          dst[d + 1] = v;
-          // Reconstruct Z assuming a unit normal: nz = sqrt(1 - nx^2 - ny^2).
-          const nx = dst[d] / 127.5 - 1, ny = v / 127.5 - 1;
-          const nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
-          dst[d + 2] = Math.round((nz * 0.5 + 0.5) * 255);
-          dst[d + 3] = 255;
-        });
-        p += 16;
-      }
-    }
-  }
-  return dst;
 }
 
 // Decode an uncompressed 32-bit RGBA/BGRA surface using the pixel-format masks.

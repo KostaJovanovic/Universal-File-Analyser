@@ -6,9 +6,11 @@
    `_sections: [{title, node, open?}]` for collapsible blocks and `_previewNode`
    for a decoded preview. Return null to fall back to the generic identification
    card. Dependency-free: only the shared toolkit + zip reader. */
-import { fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
-import { Reader, ascii, cleanAscii, findBytes, matchMagic, startsWithAscii, latin1, gunzip, hexBytes, hexU32 } from '../core/binutil.js';
+import { fmtBytes, preBlock, readSlice, readText, loadScript } from '../core/util.js';
+import { Reader, ascii, cleanAscii, findBytes, matchMagic, startsWithAscii, latin1, gunzip, inflate, hexBytes, hexU32 } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
+import { decodeBcn, bcnSurfaceBytes } from '../lib/bcn.js';
+import { canvasFromRGBA } from './parser-util.js';
 // ---------- small helpers ----------
 // CRC32 (IEEE) over a Uint8Array.
 let CRC_TABLE = null;
@@ -935,6 +937,44 @@ async function parseVpk(file) {
 }
 // ---------- Valve VTF ----------
 const VTF_FORMATS = { 0: 'RGBA8888', 1: 'ABGR8888', 2: 'RGB888', 3: 'BGR888', 4: 'RGB565', 12: 'BGRA8888', 13: 'DXT1', 14: 'DXT3', 15: 'DXT5', 24: 'RGBA16161616F' };
+// The formats the preview can decode, and how. The block-compressed ones go
+// through the shared BCn decoder (the same one DDS uses); the rest are plain
+// interleaved bytes described by a channel order.
+const VTF_BC = { 13: 'bc1', 14: 'bc2', 15: 'bc3' };
+// [bytes per pixel, r, g, b, a] - channel byte offsets, a = -1 for opaque.
+const VTF_RAW = {
+    0: [4, 0, 1, 2, 3], // RGBA8888
+    1: [4, 3, 2, 1, 0], // ABGR8888
+    2: [3, 0, 1, 2, -1], // RGB888
+    3: [3, 2, 1, 0, -1], // BGR888
+    12: [4, 2, 1, 0, 3], // BGRA8888
+};
+// Bytes one VTF surface of these dimensions occupies in the given format.
+function vtfSurfaceBytes(w, h, fmt) {
+    const bc = VTF_BC[fmt];
+    if (bc)
+        return bcnSurfaceBytes(w, h, bc);
+    const raw = VTF_RAW[fmt];
+    if (raw)
+        return w * h * raw[0];
+    return -1; // unknown: cannot walk the mip chain
+}
+// Decode an uncompressed VTF surface using its channel-order descriptor.
+function decodeVtfRaw(b, off, w, h, fmt) {
+    const [bpp, ri, gi, bi, ai] = VTF_RAW[fmt];
+    const px = w * h;
+    if (off + px * bpp > b.length)
+        return null;
+    const dst = new Uint8ClampedArray(px * 4);
+    for (let i = 0; i < px; i++) {
+        const s = off + i * bpp, d = i * 4;
+        dst[d] = b[s + ri];
+        dst[d + 1] = b[s + gi];
+        dst[d + 2] = b[s + bi];
+        dst[d + 3] = ai < 0 ? 255 : b[s + ai];
+    }
+    return dst;
+}
 async function parseVtf(file) {
     const head = await readSlice(file, 0, 64);
     if (!(head[0] === 0x56 && head[1] === 0x54 && head[2] === 0x46 && head[3] === 0x00))
@@ -950,13 +990,66 @@ async function parseVtf(file) {
     r.skip(4 + 12 + 4); // padding + reflectivity + padding
     const bumpScale = r.f32();
     const hiResFmt = r.i32();
+    // Straight after the high-res format: the mip count, then the low-res
+    // (thumbnail) surface's own format and dimensions, which have to be skipped
+    // to reach the real image data.
+    const mipCount = head[0x38] || 1;
+    const lowResFmt = new Reader(head, true).seek(0x39).i32();
+    const lowResW = head[0x3D], lowResH = head[0x3E];
+    const isEnvmap = !!(flags & 0x4000);
     const out = {
         'Format': 'Valve Texture (.vtf v' + vMaj + '.' + vMin + ')',
         'Dimensions': width + ' x ' + height,
         'Frames': frames,
         'Pixel format': VTF_FORMATS[hiResFmt] || ('format ' + hiResFmt),
+        'Mipmaps': mipCount,
         'Flags': '0x' + (flags >>> 0).toString(16),
     };
+    if (isEnvmap)
+        out['Type'] = 'cubemap (environment map)';
+    // ---- decode the largest mip level ----
+    // VTF stores mips SMALLEST first, so the full-size image is last: skip the
+    // thumbnail, then every smaller level (each one frames x faces surfaces),
+    // and what remains at that offset is mip 0, frame 0, face 0.
+    let why = null;
+    const decodable = VTF_BC[hiResFmt] || VTF_RAW[hiResFmt];
+    if (!decodable) {
+        why = (VTF_FORMATS[hiResFmt] || ('format ' + hiResFmt)) + ' not decoded';
+    }
+    else if (!width || !height || width > 16384 || height > 16384) {
+        why = 'implausible dimensions';
+    }
+    else {
+        try {
+            const faces = isEnvmap ? (vMaj === 7 && vMin < 5 ? 7 : 6) : 1;
+            const dataStart = headerSize;
+            let off = dataStart + (lowResW && lowResH ? Math.max(0, vtfSurfaceBytes(lowResW, lowResH, lowResFmt)) : 0);
+            // Mips are ordered smallest -> largest, so walk levels mipCount-1 .. 1.
+            for (let i = mipCount - 1; i >= 1; i--) {
+                const mw = Math.max(1, width >> i), mh = Math.max(1, height >> i);
+                off += vtfSurfaceBytes(mw, mh, hiResFmt) * frames * faces;
+            }
+            const need = vtfSurfaceBytes(width, height, hiResFmt);
+            const b = await readSlice(file, 0, Math.min(file.size, off + need));
+            const bc = VTF_BC[hiResFmt];
+            const rgba = bc ? decodeBcn(b, off, width, height, bc) : decodeVtfRaw(b, off, width, height, hiResFmt);
+            if (rgba) {
+                const preview = canvasFromRGBA(rgba, width, height);
+                if (preview)
+                    out._previewNode = preview;
+                else
+                    why = 'preview could not be built';
+            }
+            else {
+                why = 'image data truncated or invalid';
+            }
+        }
+        catch (_) {
+            why = 'decode failed';
+        }
+    }
+    if (why)
+        out['Preview'] = why;
     return out;
 }
 // ---------- Valve VMT ----------
@@ -980,6 +1073,76 @@ const KTX1 = [0xAB, 0x4B, 0x54, 0x58, 0x20, 0x31, 0x31, 0xBB, 0x0D, 0x0A, 0x1A, 
 const KTX2 = [0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A];
 const VK_FORMATS = { 0: 'UNDEFINED', 23: 'R8G8B8_UNORM', 37: 'R8G8B8A8_UNORM', 43: 'R8G8B8A8_SRGB', 131: 'BC1_RGB_UNORM', 137: 'BC3_UNORM', 145: 'BC7_UNORM', 147: 'BC7_SRGB', 157: 'ETC2_R8G8B8_UNORM', 184: 'ASTC_4x4_UNORM' };
 const KTX_SUPERCOMP = { 0: 'None', 1: 'BasisLZ', 2: 'Zstandard', 3: 'ZLIB' };
+// Vulkan formats (KTX2) the preview can decode: block-compressed ones go through
+// lib/bcn.js, the rest are plain interleaved bytes. BC6H (143/144) and BC7
+// (145/146) are deliberately absent - both need a far larger mode table, and the
+// readout says so rather than pretending.
+const VK_BC = {
+    131: 'bc1', 132: 'bc1', 133: 'bc1', 134: 'bc1',
+    135: 'bc2', 136: 'bc2', 137: 'bc3', 138: 'bc3',
+    139: 'bc4', 140: 'bc4', 141: 'bc5', 142: 'bc5',
+};
+// [bytes per pixel, r, g, b, a] - a = -1 for opaque.
+const VK_RAW = {
+    23: [3, 0, 1, 2, -1], 29: [3, 0, 1, 2, -1], // R8G8B8 UNORM / SRGB
+    30: [3, 2, 1, 0, -1], 36: [3, 2, 1, 0, -1], // B8G8R8 UNORM / SRGB
+    37: [4, 0, 1, 2, 3], 43: [4, 0, 1, 2, 3], // R8G8B8A8 UNORM / SRGB
+    44: [4, 2, 1, 0, 3], 50: [4, 2, 1, 0, 3], // B8G8R8A8 UNORM / SRGB
+};
+// GL internal formats (KTX1) - the S3TC and RGTC families.
+const GL_BC = {
+    0x83F0: 'bc1', 0x83F1: 'bc1', 0x83F2: 'bc2', 0x83F3: 'bc3',
+    0x8DBB: 'bc4', 0x8DBC: 'bc4', 0x8DBD: 'bc5', 0x8DBE: 'bc5',
+};
+const GL_RAW = {
+    0x8051: [3, 0, 1, 2, -1], // GL_RGB8
+    0x8058: [4, 0, 1, 2, 3], // GL_RGBA8
+    0x93A1: [4, 2, 1, 0, 3], // GL_BGRA8_EXT
+};
+// Decode an uncompressed surface from a [bpp, r, g, b, a] channel descriptor.
+function decodeRawSurface(b, off, w, h, desc) {
+    const [bpp, ri, gi, bi, ai] = desc;
+    const px = w * h;
+    if (px <= 0 || off + px * bpp > b.length)
+        return null;
+    const dst = new Uint8ClampedArray(px * 4);
+    for (let i = 0; i < px; i++) {
+        const s = off + i * bpp, d = i * 4;
+        dst[d] = b[s + ri];
+        dst[d + 1] = b[s + gi];
+        dst[d + 2] = b[s + bi];
+        dst[d + 3] = ai < 0 ? 255 : b[s + ai];
+    }
+    return dst;
+}
+// Undo a KTX2 level's supercompression. Basis/UASTC (scheme 1) is a transcode,
+// not a decompression, so it is declined by name.
+async function ktxDecompress(bytes, scheme) {
+    if (scheme === 0)
+        return bytes;
+    if (scheme === 3) {
+        try {
+            return await inflate(bytes, 'deflate');
+        }
+        catch (_) {
+            return null;
+        }
+    }
+    if (scheme === 2) {
+        try {
+            if (!(window.fzstd && window.fzstd.decompress))
+                await loadScript('assets/vendor/fzstd.js');
+            if (!(window.fzstd && window.fzstd.decompress))
+                return null;
+            const out = window.fzstd.decompress(bytes);
+            return out instanceof Uint8Array ? out : (out ? new Uint8Array(out) : null);
+        }
+        catch (_) {
+            return null;
+        }
+    }
+    return null;
+}
 async function parseKtx(file) {
     const head = await readSlice(file, 0, 80);
     if (matchMagic(head, KTX2)) {
@@ -990,7 +1153,7 @@ async function parseKtx(file) {
         const w = r.u32(), h = r.u32(), d = r.u32();
         const layers = r.u32(), faces = r.u32(), levels = r.u32();
         const sc = r.u32();
-        return {
+        const out = {
             'Format': 'KTX2 GPU texture',
             'Dimensions': w + ' x ' + (h || 1) + (d > 1 ? ' x ' + d : ''),
             'VkFormat': VK_FORMATS[vkFormat] || ('VK ' + vkFormat),
@@ -999,6 +1162,45 @@ async function parseKtx(file) {
             'Faces': faces + (faces === 6 ? ' (cubemap)' : ''),
             'Supercompression': KTX_SUPERCOMP[sc] || ('scheme ' + sc),
         };
+        // The level index sits straight after the 80-byte header: levelCount entries
+        // of {byteOffset, byteLength, uncompressedByteLength}, all u64, level 0
+        // (the largest mip) first - so the full-size image is one indexed read.
+        let why = null;
+        const bc = VK_BC[vkFormat], raw = VK_RAW[vkFormat];
+        if (!bc && !raw) {
+            why = (VK_FORMATS[vkFormat] || ('VkFormat ' + vkFormat)) + ' not decoded';
+        }
+        else if (sc === 1) {
+            why = 'BasisLZ supercompression needs a Basis transcoder';
+        }
+        else if (!w || !h || w > 16384 || h > 16384) {
+            why = 'implausible dimensions';
+        }
+        else {
+            try {
+                const idx = await readSlice(file, 80, 80 + Math.max(1, levels) * 24);
+                const iv = new DataView(idx.buffer, idx.byteOffset, idx.byteLength);
+                const off = Number(iv.getBigUint64(0, true));
+                const len = Number(iv.getBigUint64(8, true));
+                if (!len || off + len > file.size)
+                    throw new Error('level 0 out of range');
+                const payload = await ktxDecompress(await readSlice(file, off, off + len), sc);
+                if (!payload)
+                    throw new Error('supercompression not undone');
+                const rgba = bc ? decodeBcn(payload, 0, w, h, bc) : decodeRawSurface(payload, 0, w, h, raw);
+                const preview = rgba && canvasFromRGBA(rgba, w, h);
+                if (preview)
+                    out._previewNode = preview;
+                else
+                    why = 'image data truncated or invalid';
+            }
+            catch (_) {
+                why = 'level 0 could not be read';
+            }
+        }
+        if (why)
+            out['Preview'] = why;
+        return out;
     }
     if (matchMagic(head, KTX1)) {
         const r = new Reader(head, true);
@@ -1013,7 +1215,8 @@ async function parseKtx(file) {
         r.u32();
         const w = r.u32(), h = r.u32(), d = r.u32();
         const arrayElems = r.u32(), faces = r.u32(), levels = r.u32();
-        return {
+        const kvBytes = r.u32();
+        const out = {
             'Format': 'KTX GPU texture (v1)',
             'Dimensions': w + ' x ' + (h || 1) + (d > 1 ? ' x ' + d : ''),
             'GL internal format': '0x' + glInternalFormat.toString(16),
@@ -1021,6 +1224,43 @@ async function parseKtx(file) {
             'Array elements': arrayElems || 1,
             'Faces': faces + (faces === 6 ? ' (cubemap)' : ''),
         };
+        // KTX1 stores mips LARGEST first (the opposite of VTF), each preceded by its
+        // own u32 imageSize, after the key/value block - so level 0 is the first
+        // thing past the header and needs no mip-chain walk.
+        let why = null;
+        const bc = GL_BC[glInternalFormat], raw = GL_RAW[glInternalFormat];
+        if (!bc && !raw) {
+            why = 'GL format 0x' + glInternalFormat.toString(16) + ' not decoded';
+        }
+        else if (!little) {
+            why = 'big-endian KTX not decoded';
+        }
+        else if (!w || !h || w > 16384 || h > 16384) {
+            why = 'implausible dimensions';
+        }
+        else {
+            try {
+                const dataOff = 64 + kvBytes; // 64-byte header + key/value block
+                const sizeBuf = await readSlice(file, dataOff, dataOff + 4);
+                const imageSize = new DataView(sizeBuf.buffer, sizeBuf.byteOffset, 4).getUint32(0, true);
+                const px = dataOff + 4;
+                if (!imageSize || px + imageSize > file.size)
+                    throw new Error('level 0 out of range');
+                const payload = await readSlice(file, px, px + imageSize);
+                const rgba = bc ? decodeBcn(payload, 0, w, h, bc) : decodeRawSurface(payload, 0, w, h, raw);
+                const preview = rgba && canvasFromRGBA(rgba, w, h);
+                if (preview)
+                    out._previewNode = preview;
+                else
+                    why = 'image data truncated or invalid';
+            }
+            catch (_) {
+                why = 'level 0 could not be read';
+            }
+        }
+        if (why)
+            out['Preview'] = why;
+        return out;
     }
     return null;
 }

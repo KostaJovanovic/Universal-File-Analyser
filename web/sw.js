@@ -2,7 +2,7 @@
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v278';
+const VERSION = 'analyser-v279';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -113,6 +113,8 @@ const SHELL = [
   './assets/js/renderers/proprietary.js',
   './assets/js/renderers/proprietary-formats.js',
   './assets/js/core/binutil.js',
+  './assets/js/lib/bcn.js',
+  './assets/js/lib/cgbi.js',
   './assets/js/lib/plist.js',
   './assets/js/lib/cfbf.js',
   './assets/js/lib/sqlite.js',

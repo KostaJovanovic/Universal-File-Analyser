@@ -5,8 +5,8 @@
 import { makePlayer, renderAudio } from './audio.js';
 import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
 import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob, inlineLoader, yieldToMain, setPlayerFill } from '../core/util.js';
-import { HASH_FILE_MAX } from '../core/limits.js';
-import { parseAviHeader, extractAviData, encodeWav } from './video-avi.js';
+import { HASH_FILE_MAX, AVI_EXTRACT_MAX } from '../core/limits.js';
+import { parseAviHeader, openAviData, encodeWav } from './video-avi.js';
 import { appendSonyGyroCard } from './sony-rtmd.js';
 import { registerSyncedVideo, registerExclusiveVideo, setAudioCompanion } from '../core/video-sync.js';
 import { detectMoovlessMp4, extractMp4ParamSets, findInbandParamSets, carveAvccToAnnexB } from './video-recover.js';
@@ -4475,41 +4475,91 @@ export async function renderVideo(file, resultsEl, opts = {}) {
                 tbl.appendChild(row('Audio', `${avi.audioFormat.sampleRate} Hz, ${avi.audioFormat.bitsPerSample}-bit, ${avi.audioFormat.channels}ch`));
             infoCard.appendChild(tbl);
             // infoCard is appended AFTER the Frames card below, so frames lead.
+            // Over AVI_EXTRACT_MAX the file is opened STREAMED: openAviData indexes the
+            // movi chunk table and hands back a frame source that reads each JPEG off
+            // disk on demand, so a multi-GB AVI gets the same viewer as a small one
+            // instead of being declined. Indexing a file with no idx1 means a pass over
+            // it, so say what is happening while that runs.
+            const indexNote = el('p', { class: 'anr-hint' }, 'Indexing frames…');
+            if (file.size > AVI_EXTRACT_MAX)
+                resultsEl.appendChild(indexNote);
             let aviData = null;
             try {
-                aviData = await extractAviData(file, avi);
+                aviData = await openAviData(file, avi, (frac) => {
+                    indexNote.textContent = 'Indexing frames… ' + Math.round(frac * 100) + '%';
+                });
             }
             catch (_) { }
+            indexNote.remove();
+            const src = aviData && aviData.source;
+            const frameCount = src ? src.count : 0;
+            if (src)
+                renderSignal.addEventListener('abort', () => src.close());
             // MJPEG frame viewer. Only show it when the extracted chunks are genuine
             // JPEGs (SOI marker FF D8) - a non-MJPEG AVI (DV, etc.) yields raw chunks
             // that aren't displayable images, so skip the viewer and just show metadata.
-            const framesAreJpeg = aviData && aviData.videoFrames.length &&
-                new Uint8Array(aviData.videoFrames[0].slice(0, 2))[0] === 0xFF &&
-                new Uint8Array(aviData.videoFrames[0].slice(0, 2))[1] === 0xD8;
+            let firstFrame = null;
+            if (frameCount) {
+                try {
+                    firstFrame = await src.get(0);
+                }
+                catch (_) { }
+            }
+            const framesAreJpeg = !!firstFrame && firstFrame.byteLength > 2 &&
+                new Uint8Array(firstFrame.slice(0, 2))[0] === 0xFF &&
+                new Uint8Array(firstFrame.slice(0, 2))[1] === 0xD8;
+            // Streamed files trade "all in memory" for "a read per frame", and may have
+            // dropped the sound to stay inside the memory budget. Say so up front rather
+            // than letting a silent clip or a slower scrub look like a fault.
+            if (aviData && aviData.streamed) {
+                resultsEl.appendChild(el('div', { class: 'anr-info' }, '⚠ Large AVI (' + fmtBytes(file.size) + '). Its frames are indexed and read one at a time '
+                    + 'rather than loaded all at once, so it opens without exhausting memory - stepping and '
+                    + 'scrubbing read from disk as you go, which can feel slower than a small clip. '
+                    + (aviData.audioSkipped
+                        ? 'The sound track is too large to hold decoded, so the frames play silently here. ' : '')
+                    + (aviData.indexTruncated
+                        ? 'Only the first ' + frameCount.toLocaleString() + ' frames were indexed. ' : '')));
+            }
             if (framesAreJpeg) {
-                const frames = aviData.videoFrames;
                 const frameCard = el('div', { class: 'anr-card' });
                 frameCard.appendChild(el('h3', {}, 'Frames'));
-                frameCard.appendChild(el('p', { class: 'anr-hint' }, frames.length + ' MJPEG frame' + (frames.length > 1 ? 's' : '') + ' extracted'));
+                frameCard.appendChild(el('p', { class: 'anr-hint' }, frameCount + ' MJPEG frame' + (frameCount > 1 ? 's' : '')
+                    + (aviData.streamed ? ' indexed - read on demand' : ' extracted')));
                 const frameImg = el('img', {
                     style: 'max-width:100%; max-height:480px; display:block; border:1px solid var(--hairline); background:#0a0a0a;',
                     alt: 'Frame 1'
                 });
-                frameImg.src = URL.createObjectURL(new Blob([frames[0]], { type: 'image/jpeg' }));
+                frameImg.src = URL.createObjectURL(new Blob([firstFrame], { type: 'image/jpeg' }));
+                renderSignal.addEventListener('abort', () => { try {
+                    URL.revokeObjectURL(frameImg.src);
+                }
+                catch (_) { } });
                 frameCard.appendChild(frameImg);
                 let currentFrame = 0;
                 let onFrameShown = null; // set by the playback controls to sync the scrubber
-                const frameLabel = el('span', { class: 'anr-hint' }, `Frame 1 / ${frames.length}`);
+                const frameLabel = el('span', { class: 'anr-hint' }, `Frame 1 / ${frameCount}`);
+                // A frame arrives asynchronously (on the streamed path each one is a disk
+                // read), so a monotonic token drops stale frames: fast scrubbing paints
+                // only the newest rather than flickering through whatever resolves last.
+                // Same guard the GIF/WebP frame viewer uses.
+                let showToken = 0;
                 function showFrame(idx) {
                     currentFrame = idx;
-                    URL.revokeObjectURL(frameImg.src);
-                    frameImg.src = URL.createObjectURL(new Blob([frames[idx]], { type: 'image/jpeg' }));
-                    frameImg.alt = `Frame ${idx + 1}`;
-                    frameLabel.textContent = `Frame ${idx + 1} / ${frames.length}`;
+                    frameLabel.textContent = `Frame ${idx + 1} / ${frameCount}`;
                     if (onFrameShown)
                         onFrameShown(idx);
+                    const my = ++showToken;
+                    src.get(idx).then((buf) => {
+                        if (my !== showToken || renderSignal.aborted || !buf)
+                            return;
+                        const prev = frameImg.src;
+                        frameImg.src = URL.createObjectURL(new Blob([buf], { type: 'image/jpeg' }));
+                        frameImg.alt = `Frame ${idx + 1}`;
+                        if (prev)
+                            URL.revokeObjectURL(prev);
+                    }).catch(() => { });
                 }
-                const lastIdx = frames.length - 1;
+                const lastIdx = frameCount - 1;
                 const fps = (avi.fps && avi.fps > 0 && avi.fps <= 120) ? avi.fps : 15;
                 const frameMs = 1000 / fps;
                 const fmtTc = (sec) => formatDuration(sec);
@@ -4530,7 +4580,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
                     }
                     catch (_) { } URL.revokeObjectURL(wavUrl); });
                 }
-                const totalTime = hasAudio ? audioDur : frames.length / fps;
+                const totalTime = hasAudio ? audioDur : frameCount / fps;
                 // Timestamp of a frame. With sound we spread the frames evenly across the
                 // audio's real duration (so they stay synced even if the header frame rate
                 // is missing or wrong); silent clips use the nominal fps.
@@ -4553,8 +4603,11 @@ export async function renderVideo(file, resultsEl, opts = {}) {
                 };
                 const prevBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => seekToFrame(currentFrame - 1) }, '← Prev');
                 const nextBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => seekToFrame(currentFrame + 1) }, 'Next →');
-                const analyseBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
-                        const blob = new Blob([frames[currentFrame]], { type: 'image/jpeg' });
+                const analyseBtn = el('button', { type: 'button', class: 'anr-btn', onclick: async () => {
+                        const buf = await src.get(currentFrame);
+                        if (!buf)
+                            return;
+                        const blob = new Blob([buf], { type: 'image/jpeg' });
                         const frameFile = new File([blob], `frame_${currentFrame}.jpg`, { type: 'image/jpeg' });
                         const photoResults = vctx.photoTarget();
                         if (photoResults) {
@@ -4563,13 +4616,16 @@ export async function renderVideo(file, resultsEl, opts = {}) {
                         }
                     } }, 'Analyse frame');
                 // Frame grab: download the current JPEG frame as-is.
-                const grabBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
-                        downloadBlob((file.name || 'video').replace(/\.[^.]+$/, '') + `_frame_${currentFrame}.jpg`, new Blob([frames[currentFrame]], { type: 'image/jpeg' }));
+                const grabBtn = el('button', { type: 'button', class: 'anr-btn', onclick: async () => {
+                        const buf = await src.get(currentFrame);
+                        if (!buf)
+                            return;
+                        downloadBlob((file.name || 'video').replace(/\.[^.]+$/, '') + `_frame_${currentFrame}.jpg`, new Blob([buf], { type: 'image/jpeg' }));
                     } }, 'Frame grab');
                 // Contact sheet (>= 8 frames) - built here so it shares the action row.
                 let sheetBtn = null;
                 const sheetOut = el('div');
-                if (frames.length >= 8) {
+                if (frameCount >= 8) {
                     sheetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Generate contact sheet');
                     sheetBtn.addEventListener('click', async () => {
                         sheetBtn.disabled = true;
@@ -4585,9 +4641,12 @@ export async function renderVideo(file, resultsEl, opts = {}) {
                         ctx.fillStyle = '#111';
                         ctx.fillRect(0, 0, gridCanvas.width, gridCanvas.height);
                         for (let i = 0; i < total; i++) {
-                            const fi = Math.floor(i * (frames.length - 1) / (total - 1));
+                            const fi = Math.floor(i * (frameCount - 1) / (total - 1));
+                            const buf = await src.get(fi);
+                            if (!buf)
+                                continue;
                             const img = new Image();
-                            img.src = URL.createObjectURL(new Blob([frames[fi]], { type: 'image/jpeg' }));
+                            img.src = URL.createObjectURL(new Blob([buf], { type: 'image/jpeg' }));
                             await new Promise(r => { img.onload = r; img.onerror = r; });
                             const c = i % cols, r = Math.floor(i / cols);
                             ctx.drawImage(img, pad + c * (tw + pad), pad + r * (th + pad), tw, th);
@@ -4607,7 +4666,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
                 // A single still has nothing to play or scrub - just the action row.
                 // Multiple frames get a real transport (play / scrub / time) plus frame
                 // stepping, built below.
-                if (frames.length === 1) {
+                if (frameCount === 1) {
                     frameCard.appendChild(actionRow);
                 }
                 else {
@@ -4617,7 +4676,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
                     // timer and loop. Either way every tick decodes a full JPEG, so a big,
                     // fast, long clip can hit the CPU hard; warn when that's likely.
                     const mpPerSec = ((avi.width * avi.height) / 1_000_000) * fps;
-                    const heavy = mpPerSec > 120 || frames.length > 600;
+                    const heavy = mpPerSec > 120 || frameCount > 600;
                     // Reuse the site's stylised transport (.anr-player) - the same play
                     // button, draggable fill track and time readout the audio/video players
                     // use - driven by the frame index (and the audio clock when present).
@@ -4784,16 +4843,22 @@ export async function renderVideo(file, resultsEl, opts = {}) {
                 // The MJPEG frames + PCM are in memory, but a downloadable reversed video
                 // needs a real file, so re-encode the original AVI to a reversed H.264 MP4
                 // (picture + sound) with FFmpeg - same path as the normal player.
-                if (frames.length > 1)
+                // Reversing re-encodes the whole file through FFmpeg in memory, which is
+                // exactly what the streamed path exists to avoid - offer it only when the
+                // file was small enough to hold anyway.
+                if (frameCount > 1 && !aviData.streamed)
                     resultsEl.appendChild(buildReverseVideoCard(file, renderSignal));
                 // Current frame - gated behind an "Analyse photo" button. The frame is read
                 // at click time from wherever the frame viewer is parked (currentFrame), not
                 // fixed at frame 0.
                 const photoResultsEl = vctx.photoTarget();
                 if (photoResultsEl) {
-                    mountPhotoAnalyseButton(photoResultsEl, () => {
-                        const idx = Math.max(0, Math.min(currentFrame | 0, frames.length - 1));
-                        const blob = new Blob([frames[idx]], { type: 'image/jpeg' });
+                    mountPhotoAnalyseButton(photoResultsEl, async () => {
+                        const idx = Math.max(0, Math.min(currentFrame | 0, frameCount - 1));
+                        const buf = await src.get(idx);
+                        if (!buf)
+                            return;
+                        const blob = new Blob([buf], { type: 'image/jpeg' });
                         const frameFile = new File([blob], `frame_${idx}.jpg`, { type: 'image/jpeg' });
                         renderPhoto(frameFile, photoResultsEl, vctx.photoOpts({ sourceNote: 'Frame ' + idx + ' of ' + (file.name || 'the video') + '.' }));
                     });
