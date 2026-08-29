@@ -212,6 +212,50 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">8.23 - 8.30</p>
+          <p class="patch-name">Show and Tell</p>
+          <p class="patch-date">29 August 2026</p>
+          <ul class="patch-list">
+            <li><strong>A run of formats that Analyser could previously only put a name to now actually open. A GIMP image is assembled and shown, pixel-art sprites play their animation, tracker music from the Amiga and DOS eras plays and gets the full sound analysis, a Terraria save draws its world map, and game textures show a real picture instead of a list of numbers. Very large AVI videos open now too, rather than being turned away, and the iPhone app icons that no browser can display are repaired and shown.</strong></li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Pictures that were only a name</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>GIMP images open.</strong> A <a href="/about#ext-xcf">.xcf</a> is unusual: unlike a Photoshop file it stores no finished picture at all, only the separate layers it is built from. So Analyser assembles the image itself - decoding every layer, applying its mask and transparency, and blending it with the others exactly as GIMP would - and shows you the result, with the full layer list beside it and the picture saveable as a PNG.</li>
+            <li><span class="patch-tag">New</span><strong>Pixel-art sprites play.</strong> An <a href="/about#ext-aseprite">Aseprite</a> file holds a whole animation as layers and frames. Each frame is now put together and played back at the file&rsquo;s own timings - which vary frame by frame, so a fixed speed would play it wrong - with the layer list, the named animations the artist set up (walk, idle, attack) and a button to save any single frame.</li>
+            <li><span class="patch-tag">New</span><strong>Game textures show the texture.</strong> The image files inside a game - <a href="/about#ext-vtf">Valve&rsquo;s VTF</a> from Half-Life 2, Portal and Team Fortress 2, and the <a href="/about#ext-ktx">KTX and KTX2</a> files used across modern engines - are stored in a compressed form built for graphics cards rather than for browsers. They are now decoded and displayed, where before you only got their dimensions.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>iPhone app icons display.</strong> Every picture inside an <a href="/about#ext-ipa">.ipa</a> is rewritten by Apple&rsquo;s build tools into a private form of PNG that <em>no</em> browser will show - which meant that browsing an iPhone app and opening its icon gave you nothing. Analyser now recognises that form and rebuilds it into an ordinary picture, so the icons and artwork inside an app open like anything else.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Music from the demoscene</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Tracker music plays - about sixty formats of it.</strong> <a href="/about#ext-mod">MOD, XM, IT, S3M</a> and their many relatives are not recordings. They are sheet music plus a box of sounds: a grid saying which sound to play, on which channel, at which moment. Nothing but a tracker can turn that back into audio, so Analyser now performs the piece on your device and hands the result to the ordinary sound analysis - which means a 30-year-old Amiga tune gets the same waveform, spectrogram, player, loudness, key and tempo as any other music, and can be saved as a WAV.</li>
+            <li><strong>The parts a recording has no equivalent of are shown too:</strong> which tracker wrote the file, how many channels and patterns it uses, the free-text message many composers left inside, and the list of sample names - traditionally where authors tucked their greetings and credits.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Worlds and video</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>A Terraria save draws its map.</strong> Drop a <a href="/about#ext-wld">.wld</a> and the whole world is drawn, one pixel per tile, from the save&rsquo;s own data - terrain and ore veins in front, walls shaded behind them, and water, lava and honey in their own colours. The world name, the seed it grew from, its size and its difficulty are read out alongside, and the map saves as a PNG.</li>
+            <li><span class="patch-tag">New</span><strong>Very large AVI videos open.</strong> No browser plays most <a href="/about#ext-avi">AVI</a> files, so Analyser reads them itself - but past a certain size it used to give up rather than risk running out of memory. It now indexes the video instead and reads each frame off the disk as you reach it, so a multi-gigabyte AVI opens on an ordinary machine. Stepping and scrubbing are a little slower than on a small clip, and the viewer says so rather than leaving you wondering.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Two files that shared a name</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong>.wld and .ase each mean two unrelated things.</strong> A <code>.wld</code> is either a Terraria world or a small text file that pins a map image to real coordinates; an <code>.ase</code> is either an Aseprite sprite or an Adobe colour palette. Analyser now tells each pair apart by looking at the contents rather than the name, so neither gets opened as the wrong thing.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Under the bonnet</p>
+          <ul class="patch-list">
+            <li><strong>Maintenance:</strong> the picture decoder behind DDS textures was moved somewhere the other texture formats could share it rather than copied, which is most of why three of them arrived at once. <strong>Credit where it is due:</strong> the open-source converter <em>Convert to it!</em> was studied while working out which of these formats could be decoded in a browser at all - it is not part of the app, but it pointed the way, and it is now named in the credits at the foot of the page. These notes cover seven updates at once, written together after the fact.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">8.20 - 8.22</p>
           <p class="patch-name">Hidden Pictures</p>
           <p class="patch-date">19 August 2026</p>
@@ -267,6 +311,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">8.12 - 8.15</p>
           <p class="patch-name">Room to Breathe</p>
@@ -300,9 +347,6 @@
             <li><strong>Maintenance:</strong> the previous update&rsquo;s notes and its entry in the <code>tl;dr</code> summary.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">8.09 - 8.11</p>

@@ -334,6 +334,16 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+    { range: '8.23 - 8.30', notes: [
+            'A run of formats the app could only ever put a **name** to now actually open. A **GIMP .xcf** stores no finished picture at all, only its separate layers, so the image is assembled here - every layer decoded, masked, faded and blended as GIMP would - and shown with its layer list.',
+            '**Aseprite** pixel-art sprites play their animation at the file’s own per-frame timings, with the layer list, the named animations (walk, idle, attack) and any single frame saveable as a picture.',
+            '**Tracker music** plays - about sixty formats of it, from **MOD, XM, IT and S3M** to their many Amiga and DOS relatives. These are sheet music plus a box of sounds rather than recordings, so the piece is performed on your device and then gets the full sound analysis: waveform, spectrogram, player, loudness, key and tempo. The tracker that wrote it, the composer’s message and the sample names are shown alongside.',
+            'A **Terraria .wld** save draws its whole world map, one pixel per tile, with terrain, ore veins, walls and liquids, plus the world name, seed, size and difficulty.',
+            '**Game textures** show the actual texture: **Valve VTF** from Half-Life 2, Portal and Team Fortress 2, and **KTX / KTX2** from modern engines, all stored in a form built for graphics cards rather than browsers.',
+            'The **iPhone app icons** inside an **.ipa** display at last. Apple’s build tools rewrite every picture into a private form of PNG that no browser will show; it is now recognised and rebuilt into an ordinary image.',
+            '**Very large AVI videos** open instead of being turned away - the video is indexed and each frame read off the disk as you reach it, so a multi-gigabyte file works on an ordinary machine.',
+            'Two extensions that each name two unrelated things - **.wld** (Terraria world or map-positioning text file) and **.ase** (Aseprite sprite or Adobe colour palette) - are now told apart by their contents rather than their name.',
+        ] },
     { range: '8.20 - 8.22', notes: [
             'Files that quietly carry a **picture of themselves** now show it - the snapshot **AutoCAD** saves inside a **DWG** drawing, the photo and company logo on a **.vcf contact card**, the build-plate renders **Bambu Studio** and **OrcaSlicer** write into a **3MF**, the thumbnail a **Blender** scene keeps, and the preview an **EPS** stores for the page layout it was meant for. Each is shown full size and can be saved.',
             'A drawing too new or too damaged for the app to open still shows the picture stored inside it, because that picture is now pulled out before the drawing is read.',
