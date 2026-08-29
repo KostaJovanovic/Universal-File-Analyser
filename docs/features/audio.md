@@ -359,6 +359,29 @@ btn: Pause
 btn: Analyse last Ns
 ```
 
+### Tracker modules (MOD, XM, IT, S3M and ~60 more)
+
+**What it does.** A tracker module is a score, not a recording: a bank of
+instrument samples plus a pattern grid saying which sample to trigger, on
+which channel, at which row. Analyser renders the song to audio on your
+device with libopenmpt - the engine behind OpenMPT - and then treats the
+result as ordinary audio, so a `.mod` gets the entire Sound section:
+waveform, spectrogram, transport, loudness, key and BPM. Above it sits a
+tracker card with the tracker that wrote the file, the channel, pattern and
+order counts, the song message, and the sample and instrument name lists,
+which is traditionally where authors left their greetings. The rendered song
+downloads as a WAV.
+
+**How to reach it.** Drop any of the ~60 supported module extensions. Built
+in `tracker.js` on `lib/openmpt-loader.js`.
+
+**Notes / limits.** libopenmpt is ~1.5 MB and lazy-loaded, in the Everything
+offline tier. Rendering is bounded by output length rather than file size -
+a 40 KB `.it` can be a twelve-minute song, and a module written to loop has
+no end at all - so a very long or looping module is rendered up to the
+ceiling and the viewer says so. `.mod` also names a JVC camcorder video,
+which is routed away on its bytes.
+
 ### Cover art / tag extraction
 
 **What it does.** Reads ID3/MP4 tags, including embedded cover art, from
