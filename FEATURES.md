@@ -243,6 +243,28 @@ can expand into prose. British spelling, no em-dashes (site house style).
 - **Illustrator** (`.ai`) - modern PDF-based files open in the PDF viewer.
 - **Painting apps** - Krita (`.kra`), Procreate, Paint.NET (`.pdn`) - shows the
   merged preview and canvas info.
+- **GIMP** (`.xcf`) - a GIMP file stores no flattened image at all, only its
+  layers, so Analyser composites the picture itself: it decodes each layer's
+  tiles, applies that layer's mask, opacity and blend mode, and paints the stack
+  from the bottom up. Full layer list alongside it, and the result saves as a PNG.
+- **Pixel art** (`.aseprite`/`.ase`) - Aseprite and LibreSprite sprites, with
+  every frame composited from the layer stack and played back at the file's own
+  per-frame timings. Layer tree with blend modes, the named animation tags, and
+  any frame saveable as a PNG.
+- **Tracker music** - MOD, XM, IT, S3M and around sixty relatives from the
+  demoscene and the Amiga and DOS eras. These are scores rather than recordings,
+  so the song is rendered to audio on your device and then gets the whole Sound
+  section - waveform, spectrogram, player, loudness, key and BPM - plus the
+  tracker that wrote it, its channel and pattern counts, the song message, and
+  the sample and instrument names authors left their greetings in.
+- **Terraria worlds** (`.wld`) - the world map drawn one pixel per tile from the
+  save's own tile data, with terrain, ores, walls and liquids, plus the world
+  name, seed, size and difficulty. (The same extension is also the Esri world
+  file; the two are told apart by their bytes.)
+- **GPU textures** - Valve VTF and Khronos KTX/KTX2 textures now show a real
+  decoded preview rather than just a header readout.
+- **iPhone app icons** - the CgBI "optimised" PNGs inside an `.ipa`, which no
+  browser can display, are repaired and shown like any other image.
 - **Diagrams** - draw.io / diagrams.net rendered as SVG (handles compressed
   diagrams), with per-page shapes and edges.
 - **Colour LUTs** (`.cube`) - parses 1D/3D look-up tables and visualises them:
