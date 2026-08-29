@@ -337,6 +337,15 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+  { range: '8.31 - 8.43', notes: [
+    'The list of formats the app could name but not open is now empty. An **IFC building model** opens as a building: the spatial tree of project, site, building and storey is rebuilt from the relationships the file keeps instead of a hierarchy, and the building itself is drawn. Openings cut through walls need a solid-modelling engine, so those are counted and named rather than drawn wrong.',
+    '**Molecules** (.mol, .sdf, .pdb, .cif) come up in 3D. Small molecules as ball-and-stick; a protein of thirty thousand atoms as ribbons following each chain, since ball-and-stick on one of those is an unreadable tangle. Formula and molecular weight are worked out from the atoms present rather than copied from a label.',
+    '**AI models** open up. An **ONNX** network is drawn as a graph - each operation a box, each connection a line - and weight files (**GGUF**, **safetensors**) list their parameters, precision, architecture and context length. A **PyTorch .pt** is a program rather than a bag of numbers, so everything it would reach for on loading is listed without any of it being run.',
+    '**Sketch** design documents show their whole structure, which components are used and which nothing uses, all the writing, and the placed images. **Ableton Live** and **Reaper** sessions draw their arrangement, a row per track, and list the recordings a project points at but does not contain.',
+    '**Advanced subtitles** (.ass / .ssa) now play on a stage: lines land where their author placed them, move along their paths, and karaoke fills in syllable by syllable in step with the singing.',
+    'A **GPS track** gains two views - **pace**, colouring the line by speed with the bands set from the range of speeds in that track and pinning every stop, and **density**, shading how often the route comes back to the same spot.',
+    'Three tools for looking hard at a file: **/compare** scores how much of two files is genuinely the same content, which a checksum cannot; an **.exe** is checked for whether its code is packed and by what, naming UPX, VMProtect, Themida and around thirty others plus the language that built it; and the **SQLite** query box became a full console that runs anything, since what it queries is a copy in memory and the file is never written to.',
+  ] },
   { range: '8.23 - 8.30', notes: [
     'A run of formats the app could only ever put a **name** to now actually open. A **GIMP .xcf** stores no finished picture at all, only its separate layers, so the image is assembled here - every layer decoded, masked, faded and blended as GIMP would - and shown with its layer list.',
     '**Aseprite** pixel-art sprites play their animation at the file’s own per-frame timings, with the layer list, the named animations (walk, idle, attack) and any single frame saveable as a picture.',
