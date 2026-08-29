@@ -179,6 +179,8 @@ export function classifyFile(file: File) {
   // is shared with Adobe Swatch Exchange, so resolveKind() reroutes a palette
   // file away from here on its bytes (VARIANT_REROUTE / detectVariant).
   if (ext === 'aseprite' || ext === 'ase') return 'aseprite';
+  // GIMP: no baked composite, so the layer stack is composited in the browser.
+  if (ext === 'xcf') return 'xcf';
   // Illustrator: modern .ai is PDF-based, rendered with pdf.js.
   if (ext === 'ai') return 'ai';
   // Fonts: live FontFace specimen + opentype.js glyph grid.

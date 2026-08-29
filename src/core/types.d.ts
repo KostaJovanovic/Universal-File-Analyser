@@ -25,7 +25,7 @@ export type Kind =
   | 'lut' | 'xmp' | 'gcsv' | 'iwork'
   | 'stl' | 'model3d' | 'f3d' | 'solidworks' | 'gcode'
   | 'timeline' | 'lrc' | 'midi' | 'subtitles'
-  | 'geo' | 'markdown' | 'comic' | 'paint' | 'psd' | 'aseprite' | 'ai' | 'font'
+  | 'geo' | 'markdown' | 'comic' | 'paint' | 'psd' | 'aseprite' | 'xcf' | 'ai' | 'font'
   | 'djvu' | 'mdb' | 'mobi' | 'pdf'
   | 'zip' | 'diskimage' | 'svg' | 'lottie' | 'csv'
   | 'proprietary' | 'plaintext' | 'git-object'
