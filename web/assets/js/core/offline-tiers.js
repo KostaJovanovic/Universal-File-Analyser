@@ -215,6 +215,10 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
             // their ~60 relatives to PCM. Here rather than in Essentials so the
             // headline "whole app" download stays where it is.
             './assets/vendor/libopenmpt.js',
+            // 3Dmol.js (~500 KB): the WebGL renderer behind the chemical-structure
+            // viewer - ball-and-stick for small molecules, cartoon ribbons for
+            // proteins. Same reasoning as libopenmpt for putting it here.
+            './assets/vendor/3dmol/3Dmol-min.js',
             // Format-specific viewer libraries (lazy-loaded on demand when their file
             // type is opened): Photoshop (ag-psd), Excel binary (SheetJS), fonts
             // (opentype.js), DjVu, Kindle/MOBI (foliate-js) and Access (mdb-reader).

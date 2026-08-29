@@ -48,6 +48,7 @@ declare global {
     _anrSuppressSuggest?: any;
 
     /* --- UMD vendor globals injected via <script> tag --- */
+    $3Dmol?: any;        // vendor/3dmol/3Dmol-min.js
     DjVu?: any;          // vendor/djvu/djvu.js
     LZMA?: any;          // vendor/lzma/lzma-decode.js  (via lib/lzma-loader.js)
     MDBReader?: any;     // vendor/mdb/mdb.js

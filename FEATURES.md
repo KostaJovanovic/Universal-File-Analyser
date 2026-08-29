@@ -235,6 +235,23 @@ can expand into prose. British spelling, no em-dashes (site house style).
   controllers/materials/`.meta` files and shows a component breakdown and
   per-type fields.
 
+## Chemical structures
+
+- **Molecules are drawn, not listed.** Drop a `.mol`, `.sdf`, `.mol2`, `.xyz`,
+  `.pdb`, `.cif` or `.mmcif` and the structure comes up in a 3D viewer you can
+  rotate, zoom and restyle - ball-and-stick, sticks, spheres or wireframe.
+- **Proteins get a ribbon.** A structure with tens of thousands of atoms is
+  unreadable as balls and sticks, so anything made of amino acids or nucleotides
+  is drawn as a cartoon instead: each chain a ribbon following its backbone, with
+  helices and sheets picked out and any bound drug still shown as sticks.
+- **The composition is worked out from the atoms themselves** rather than read
+  off a label in the file: molecular formula, molecular weight, net charge and
+  element counts, plus - for a protein - its chains, residues, helix/sheet split
+  and everything that is not part of a chain (ligands, metal ions, water).
+- PDB files also give up their entry ID, title, experimental method and
+  resolution, and an SDF holding many molecules is stepped through one at a time
+  with each one's data fields read out.
+
 ## Design and graphics
 
 - **SVG** - safe preview (scripts and remote references stripped first); element

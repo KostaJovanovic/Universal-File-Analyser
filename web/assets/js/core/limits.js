@@ -152,6 +152,13 @@ export const GEO_HEAT_POINTS = 400_000;
 // the remainder falls back to a single track line rather than putting thousands
 // of SVG paths on the map.
 export const GEO_PACE_RUNS = 4000;
+// A structure file is parsed whole and turned into WebGL geometry, so the real
+// cost is the atom count rather than the bytes. A cryo-EM structure or an MD
+// trajectory frame set runs to hundreds of thousands of atoms; past the atom
+// ceiling the viewer switches to the cartoon, which draws one ribbon per chain
+// instead of a sphere and a cylinder per atom.
+export const MOLECULE_MAX = 128 * MB;
+export const MOLECULE_ATOM_MAX = 60_000;
 // A model graph is read from the whole file, because protobuf gives no index -
 // finding the GraphProto means walking past everything before it. Weight files
 // (safetensors, GGUF, PyTorch) are exempt: those are read through their headers
