@@ -2047,7 +2047,74 @@ function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
 // =====================================================================
 //                   dispatch
 // =====================================================================
+/* Figma (.fig) - container readout only, and deliberately so.
+
+   A .fig is not a document format anyone can read: it is a Kiwi message, and
+   Kiwi is a schema-driven binary encoding where the field names, their numbers
+   and their types all live in a schema that Figma ships INSIDE the file as its
+   first chunk. Without decoding that schema the second chunk is an untyped
+   stream of varints, and the schema itself changes with the version of Figma
+   that wrote it. So there is no stable node tree to walk, and no partial reading
+   that would not be guesswork.
+
+   What can be said honestly is what the container holds, which is what this
+   reports. Two shapes exist: the raw "fig-kiwi" stream, and the ZIP that
+   "Save local copy" produces, which wraps the same stream next to a thumbnail. */
+async function parseFig(file) {
+    const head = await readSlice(file, 0, 64);
+    if (!head || head.length < 12)
+        return null;
+    // The ZIP variant - detect it and let the generic archive path show the parts.
+    if (head[0] === 0x50 && head[1] === 0x4B) {
+        return {
+            'Format': 'Figma document (ZIP package)',
+            'Note': 'Saved by Figma as a package. The design itself is the Kiwi-encoded stream inside it; browse the archive below to see the parts.',
+            _app: 'Figma',
+        };
+    }
+    const magic = latin1(head.subarray(0, 8));
+    if (magic !== 'fig-kiwi' && magic !== 'fig-jam.')
+        return null;
+    const dv = new DataView(head.buffer, head.byteOffset, head.byteLength);
+    const version = dv.getUint32(8, true);
+    // Walk the chunk table: each chunk is a u32 length followed by that many bytes
+    // of deflate-compressed data. Chunk 0 is the schema, chunk 1 the document.
+    const scan = await readSlice(file, 0, Math.min(file.size, 1 << 20));
+    const sizes = [];
+    if (scan) {
+        const sv = new DataView(scan.buffer, scan.byteOffset, scan.byteLength);
+        let p = 12;
+        while (p + 4 <= scan.length && sizes.length < 16) {
+            const len = sv.getUint32(p, true);
+            if (!len || len > file.size)
+                break;
+            sizes.push(len);
+            p += 4 + len;
+            if (p > scan.length)
+                break; // chunk runs past what we read - stop cleanly
+        }
+    }
+    const out = {
+        'Format': magic === 'fig-jam.' ? 'FigJam board (Kiwi)' : 'Figma document (Kiwi)',
+        'Kiwi version': version,
+        _app: 'Figma',
+    };
+    if (sizes.length) {
+        out['Chunks'] = sizes.length + (sizes.length >= 16 ? '+' : '');
+        out['Schema chunk'] = fmtBytes(sizes[0]) + ' compressed';
+        if (sizes[1])
+            out['Document chunk'] = fmtBytes(sizes[1]) + ' compressed';
+    }
+    out['Note'] = 'Figma encodes the design with Kiwi, a schema-driven binary format whose schema ships inside the file and changes with the version of Figma that wrote it - so there is no stable structure to read out. The header above is what the container itself declares.';
+    out._help = {
+        'Kiwi version': 'The version of Figma’s own container format, not the version of the design.',
+        'Schema chunk': 'The first chunk describes every message type in the file. Kiwi stores no field names in the data itself, so this is the key that would be needed to read the rest.',
+        'Document chunk': 'The design: pages, frames, components and their properties, encoded against the schema above.',
+    };
+    return out;
+}
 export const PARSERS = {
+    fig: (c) => parseFig(c.file),
     // --- fully decoded (pure-JS) ---
     tga: (c) => parseTga(c.file),
     icb: (c) => parseTga(c.file),

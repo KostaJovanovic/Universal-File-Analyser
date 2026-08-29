@@ -154,7 +154,7 @@ export const FORMATS = {
   idea:    { app: 'Raise3D ideaMaker', chunk: 'threed' },
 
   // Figma (local)
-  fig:     { app: 'Figma' },
+  fig:     { app: 'Figma', chunk: 'image' },
 
   // Substance
   spp:     { app: 'Adobe Substance Painter' },

@@ -404,6 +404,36 @@ TIFF first walks the IFD chain in pure JS just to learn the page count and
 size (cheap, no decode) before deciding whether ImageMagick rendering is
 worth it.
 
+### Sketch component tree (.sketch)
+
+**What it does.** Opens a Sketch document and reads the design out of it. A
+`.sketch` is a ZIP of JSON - `meta.json`, `document.json` and one
+`pages/<uuid>.json` per page - so nothing has to be inferred. You get a
+browsable component tree of every page, artboard, group and layer with its
+type, child count and size in points; a **Components** table pairing each
+symbol master with the number of instances referencing it; every string in
+the document in one list with the page it sits on; the bitmaps placed into
+the design; and the preview Sketch saves inside the package.
+
+**How to reach it.** Drop a `.sketch`. Built in `sketch.js`.
+
+**Notes / limits.** The tree is stored back to front - a group's first child
+sits behind the ones after it - and it is shown in that order rather than
+reversed, because that is the document's own order. Nothing is rendered from
+the vector data; the picture shown is the one Sketch itself saved. The walk
+stops at `SKETCH_LAYER_MAX` (50,000 objects) and says so, since a design
+system file can hold far more than a browser will lay out. Instance counts
+are why the components table is worth having: a master with none is one
+nothing uses.
+
+**Figma is not the same story.** A `.fig` is a Kiwi message, and Kiwi keeps
+no field names in the data - they live in a schema that Figma ships as the
+first chunk of the file and changes with the app version. There is therefore
+no stable node tree to walk, so `parsers-image.js` reads out what the
+container declares (format, Kiwi version, chunk count and sizes, or the ZIP
+variant that "Save local copy" produces) and stops there rather than
+guessing.
+
 ### GIMP layer compositing (.xcf)
 
 **What it does.** A GIMP file stores no flattened image at all - unlike a

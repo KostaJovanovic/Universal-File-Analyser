@@ -43,7 +43,7 @@
    on every build, so an edit there is silently lost. src/ edits do nothing until
    `npm run build` recompiles.
    ============================================================================ */
-const COMMIT_COUNT = 292;
+const COMMIT_COUNT = 293;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -356,6 +356,7 @@ const ROUTES = {
     psd: { render: lazy('../renderers/psd.js', 'renderPsd') },
     aseprite: { render: lazy('../renderers/aseprite.js', 'renderAseprite') },
     xcf: { render: lazy('../renderers/xcf.js', 'renderXcf') },
+    sketch: { render: lazy('../renderers/sketch.js', 'renderSketch') },
     tracker: { render: lazy('../renderers/tracker.js', 'renderTrackerModule'), results: 'audio', nav: ['#audio'], analysed: ['audio'] },
     terraria: { render: lazy('../renderers/terraria.js', 'renderTerraria') },
     ai: { render: lazy('../renderers/illustrator.js', 'renderAi') },
