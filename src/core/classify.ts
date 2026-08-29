@@ -175,6 +175,10 @@ export function classifyFile(file: File) {
   if (ext === 'kra' || ext === 'procreate' || ext === 'pdn') return 'paint';
   // Photoshop: full composite render + layer tree via ag-psd.
   if (ext === 'psd' || ext === 'psb') return 'psd';
+  // Aseprite pixel art: composited frames + layer tree + animation tags. `.ase`
+  // is shared with Adobe Swatch Exchange, so resolveKind() reroutes a palette
+  // file away from here on its bytes (VARIANT_REROUTE / detectVariant).
+  if (ext === 'aseprite' || ext === 'ase') return 'aseprite';
   // Illustrator: modern .ai is PDF-based, rendered with pdf.js.
   if (ext === 'ai') return 'ai';
   // Fonts: live FontFace specimen + opentype.js glyph grid.
