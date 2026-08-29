@@ -394,6 +394,15 @@
             <span class="anr-legend-item"><span class="anr-legend-swatch" style="background:#30a46c"></span> Audio</span>
             <span class="anr-legend-item"><span class="anr-legend-swatch" style="background:#0091ff"></span> Video</span>
           </div>
+
+          <div class="tst-sub">Inline magnitude bar (.anr-ent-bar, .is-high past the threshold). Used for per-section entropy in the PE packing readout and for operation counts in the ML model graph.</div>
+          <table class="anr-readout">
+            <tr><th>.text</th><td>6.31<span class="anr-ent-bar"><i style="width:79%"></i></span></td></tr>
+            <tr><th>UPX1</th><td>7.94<span class="anr-ent-bar is-high"><i style="width:99%"></i></span></td></tr>
+          </table>
+
+          <div class="tst-sub">Finding row (.anr-pack-signal) - one piece of evidence, rule down the left. Used by the PE packing card and the PyTorch pickle report.</div>
+          <div class="anr-pack-signal">Section UPX0 takes up space in memory but holds no data on disk - the shape of a section a packer unpacks itself into at start-up.</div>
         </div>
       </div>
     </div>

@@ -5,20 +5,29 @@ app shell/UX, forensic/security). Effort: **S** = 1-2 days, **M** = 2-5 days,
 **L** = 1-2 weeks. Items are grouped by effort, with the renderer/module they
 touch in parentheses.
 
-Status key: `[x]` done · `[/]` partial - groundwork already in the code, only
-the remaining piece is listed · `[~]` deliberately skipped · `[ ]` not started.
-(Statuses re-verified against the code on **2026-07-24**. The 7.0 "X-Ray"
-forensic release and the work around it cleared most of the Medium tier -
-seventeen items moved to `[x]` in this pass - so the list below is now mostly
-the genuinely unbuilt work.)
+Status key: `[x]` done · `[~]` deliberately skipped · `[ ]` not started.
 
-Tip: what is actually left splits into three piles. **Unbuilt viewers for
-formats we only identify** (DAW projects, Figma/Sketch, IFC, ML graphs,
-molecules) - each self-contained, no shared plumbing needed. **One-off forensic
-gaps** (fuzzy hashing, PE packer heuristics, the GPX heatmap, a SQL box for
-SQLite). And **one shell-level feature** that touches the whole app: keeping
-more than one file's analysis on screen (batch drop). The cheapest remaining
-wins are the two `[/]` partials, where the hard part already ships.
+**This list is finished.** As of **2026-08-29** nothing is outstanding: 36 items
+built, 4 declined on purpose, none left open. The last pass cleared the whole
+remaining tier in one run - the GPX pace/density map, an unrestricted SQL
+console, PE packer identification, ssdeep fuzzy hashing on `/compare`, ASS/SSA
+positioning and karaoke, the Sketch component tree, Ableton and Reaper
+arrangements, the ML model inspector, the molecule viewer and the IFC browser.
+Each is described in place below, including what was deliberately left out of it
+and why.
+
+The four `[~]` items are decisions, not gaps, and each says who declined it:
+perceptual-hash similarity and a command palette (user), shareable report links
+(the zero-backend version caps out at ~6 KB, and the server version would mean
+analysis data leaving the device), and batch drop - the one feature here that
+would have touched the whole app shell.
+
+None of the new work has been in a browser. Every renderer compiles and its
+parsing is unit-checked where that was possible (ssdeep against constructed
+similarity cases, the ONNX decoder against a hand-built ModelProto, the STEP
+parser against a synthetic IFC), but the viewers themselves need real files: a
+`.sketch`, an `.als` and an `.rpp`, an `.onnx` and a `.gguf`, a `.pdb`, an
+`.ifc`, and an `.ass` with karaoke timing.
 
 ## Quick wins (S)
 
