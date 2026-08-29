@@ -17,6 +17,7 @@
    { classify, routes } from app.js so it reuses the real classifyFile()/ROUTES. */
 
 import { el, fmtBytes, sha256Hex, extraHashRows, crc32Hex, errorCard, type ElChild } from '../core/util.js';
+import { FUZZY_HASH_MAX } from '../core/limits.js';
 
 // Renderers that need { inline: true } to keep their output inside the panel.
 const MEDIA = new Set(['photo', 'audio', 'video']);
@@ -327,6 +328,41 @@ async function appendHashExtras(mergedRoot: HTMLDivElement, fileA: File, fileB: 
       table.appendChild(row);
     }
   } catch (_) { /* leave the SHA-256 row as-is */ }
+  await appendFuzzyRows(table, fileA, fileB);
+}
+
+// How alike are these two files? Every hash above answers only "identical or
+// not" - change one byte and SHA-256 changes completely - which is the wrong
+// question when you are holding two builds of the same program, a document
+// before and after an edit, or two files you suspect share an origin. A fuzzy
+// hash cuts each file at content-determined boundaries and compares the pattern
+// of cuts, so it can say 84 rather than just "different". Two files only get a
+// score when their block sizes line up; when they don't, that is reported as
+// "cannot compare" rather than dressed up as 0% alike.
+const FUZZY_HELP = 'A context-triggered piecewise hash (ssdeep). Unlike SHA-256, which changes completely if a single byte changes, this is built from content-determined chunk boundaries, so two versions of the same file produce two similar strings.';
+async function appendFuzzyRows(table: HTMLTableElement, fileA: File, fileB: File) {
+  try {
+    const { ssdeepFile, ssdeepCompare } = await import('../lib/ssdeep.js');
+    const [ha, hb] = await Promise.all([ssdeepFile(fileA, FUZZY_HASH_MAX), ssdeepFile(fileB, FUZZY_HASH_MAX)]);
+    const cell = (h: string|null) => h == null ? el('td', { class: 'anr-cmp-absent' }, 'too large') : el('td', {}, h);
+    const hashRow = el('tr', ha && hb && ha !== hb ? { class: 'is-diff' } : {});
+    hashRow.appendChild(el('th', { title: FUZZY_HELP }, 'Fuzzy hash'));
+    hashRow.appendChild(cell(ha));
+    hashRow.appendChild(cell(hb));
+    table.appendChild(hashRow);
+    if (!ha || !hb) return;
+
+    const score = ssdeepCompare(ha, hb);
+    const verdict = ha === hb ? 'Identical fuzzy hash - the two files are the same or differ only in ways too small for this to see.'
+      : score >= 90 ? score + ' / 100 - all but the same file.'
+      : score >= 50 ? score + ' / 100 - substantially the same content, edited or rebuilt.'
+      : score > 0 ? score + ' / 100 - some content in common.'
+      : 'Cannot compare - the two files are too far apart in size for their fuzzy hashes to line up, or they genuinely share nothing.';
+    const scoreRow = el('tr', score >= 50 ? {} : { class: 'is-diff' });
+    scoreRow.appendChild(el('th', { title: 'How much of the two files is the same, from 0 to 100. It is a measure of shared content, not a probability, and it says nothing about which parts are shared.' }, 'Similarity'));
+    scoreRow.appendChild(el('td', { colspan: '2' }, verdict));
+    table.appendChild(scoreRow);
+  } catch (_) { /* the cryptographic hashes above stand on their own */ }
 }
 
 // Which layout section a file's blocks belong to, mirroring the normal page.
