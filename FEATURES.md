@@ -329,7 +329,10 @@ can expand into prose. British spelling, no em-dashes (site house style).
   there's no audio playback - browsers can't synthesise it).
 - **Maps/geodata** (GPX, KML, GeoJSON) - tracks/routes/waypoints on an
   OpenStreetMap map, with distance, elevation profile, ascent/descent, moving
-  time, and heart-rate/cadence averages.
+  time, and heart-rate/cadence averages. The map has three views: the plain
+  track, a **pace** view that colours the line by how fast you were moving and
+  pins every stop, and a **density** view showing how often the track comes back
+  to the same place.
 - **Visual Studio solutions** (`.sln`/`.slnx`) - projects and build configurations.
 
 ## Recognising the long tail (identification)
