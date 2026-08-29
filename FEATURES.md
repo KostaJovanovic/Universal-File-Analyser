@@ -325,7 +325,11 @@ can expand into prose. British spelling, no em-dashes (site house style).
   Received hops), decodes encoded subjects, shows a sanitised HTML body, lists
   attachments, and reports SPF/DKIM/DMARC authentication results.
 - **Subtitles** (SRT, WebVTT, ASS/SSA, MicroDVD, SubViewer) - cue list with timing,
-  stats and frame-rate handling; flags image-based VobSub.
+  stats and frame-rate handling; flags image-based VobSub. ASS and SSA files also
+  **play**: the subtitles are drawn on a stage where the file actually places
+  them, so a sign translated in the corner appears in the corner, lines slide
+  along their movement paths, and karaoke lyrics fill in syllable by syllable in
+  time with the singing.
 - **Lyrics** (`.lrc`) - timed lyric lines and ID tags, including word-level timing.
 - **MIDI** - reads the score: tempo map, time/key signature, track and instrument
   names, General MIDI instruments, note count, drum detection (it's a score, so

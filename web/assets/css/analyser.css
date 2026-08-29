@@ -6673,6 +6673,45 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-ass-stage .anr-lrc-time { color: #8a8f98; }
 .anr-ass-line { white-space: pre-wrap; }
 
+/* The playable ASS/SSA stage: a frame in the script's own PlayRes coordinate
+   system, scaled to the card width by a single transform on .anr-ass-frame. The
+   wrapper carries the aspect ratio; the frame is sized in script units and never
+   changes, so positions and stacking stay exact at any width. Always dark - it
+   stands in for video, and the file's own colours assume that. */
+.anr-ass-stage-wrap {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: #14161a;
+  border: var(--bd-hairline);
+  margin-top: 8px;
+}
+.anr-ass-frame {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: 0 0;
+}
+.anr-ass-cue {
+  position: absolute;
+  line-height: 1.15;
+  color: #fff;
+  white-space: pre-wrap;
+  text-align: center;
+  /* A cue is placed by its own anchor point, so it must not stretch. */
+  width: max-content;
+  max-width: 100%;
+}
+.anr-ass-cue[hidden] { display: none; }
+.anr-ass-controls { display: flex; align-items: center; gap: 10px; margin: 8px 0 0; }
+.anr-ass-clock {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--muted);
+  min-width: 52px;
+  text-align: right;
+}
+
 /* SQLite SQL console. */
 .anr-sql-input {
   width: 100%;
