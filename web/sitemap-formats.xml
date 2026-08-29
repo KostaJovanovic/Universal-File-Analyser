@@ -326,6 +326,7 @@
   <url><loc>https://analyser.valjdakosta.com/formats/wav</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/webm</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/webp</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://analyser.valjdakosta.com/formats/wld</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/wma</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/wmv</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/woff</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
@@ -1356,7 +1357,6 @@
   <url><loc>https://analyser.valjdakosta.com/formats/id/whl</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/wim</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/wings</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://analyser.valjdakosta.com/formats/id/wld</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/wmf</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/wpd</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/wpl</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>

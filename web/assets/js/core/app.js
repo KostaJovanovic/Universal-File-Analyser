@@ -43,7 +43,7 @@
    on every build, so an edit there is silently lost. src/ edits do nothing until
    `npm run build` recompiles.
    ============================================================================ */
-const COMMIT_COUNT = 282;
+const COMMIT_COUNT = 283;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -125,6 +125,7 @@ const VARIANT_REROUTE = {
     mat: { primary: 'Unity material', to: 'unknown' }, // MATLAB MAT-file (binary)
     mod: { primary: 'Tracker module', to: 'unknown' }, // JVC camcorder video (MPEG-2)
     ase: { primary: 'Aseprite sprite', to: 'proprietary' }, // Adobe Swatch Exchange
+    wld: { primary: 'Esri world file', to: 'terraria' }, // Terraria world save
 };
 // A dotenv secrets file: `.env` or any `.env.<environment>` sibling
 // (.env.local, .env.production, …). These routinely hold API keys, database
@@ -356,6 +357,7 @@ const ROUTES = {
     aseprite: { render: lazy('../renderers/aseprite.js', 'renderAseprite') },
     xcf: { render: lazy('../renderers/xcf.js', 'renderXcf') },
     tracker: { render: lazy('../renderers/tracker.js', 'renderTrackerModule'), results: 'audio', nav: ['#audio'], analysed: ['audio'] },
+    terraria: { render: lazy('../renderers/terraria.js', 'renderTerraria') },
     ai: { render: lazy('../renderers/illustrator.js', 'renderAi') },
     font: { render: lazy('../renderers/font.js', 'renderFont') },
     djvu: { render: lazy('../renderers/djvu.js', 'renderDjvu') },

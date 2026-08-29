@@ -150,6 +150,11 @@ export const CGBI_REPAIR_MAX = 64 * MB;
 export const TRACKER_RENDER_MAX = 600;          // seconds of audio
 export const TRACKER_SAMPLE_RATE = 48000;
 
+// A large Terraria world is 8400x2400 tiles - 20 million pixels, ~80 MB of RGBA
+// at one pixel per tile. The map is sampled down to this budget instead, which
+// still resolves individual ore veins on a large world and keeps a phone in play.
+export const TERRARIA_MAP_MAX_PX = 6_000_000;
+
 // ---- compute-cost guards (bound main-thread work, not memory) ----
 // Above this size the pure-JS MD5 / CRC-32 in extraHashRows() are skipped: they
 // walk the file byte-by-byte (no crypto.subtle equivalent exists) and would freeze

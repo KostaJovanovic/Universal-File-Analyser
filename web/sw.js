@@ -2,7 +2,7 @@
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v282';
+const VERSION = 'analyser-v283';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -172,6 +172,7 @@ const SHELL = [
   './assets/js/renderers/aseprite.js',
   './assets/js/renderers/xcf.js',
   './assets/js/renderers/tracker.js',
+  './assets/js/renderers/terraria.js',
   './assets/js/lib/openmpt-loader.js',
   './assets/js/renderers/xlsb.js',
   './assets/js/renderers/font.js',
