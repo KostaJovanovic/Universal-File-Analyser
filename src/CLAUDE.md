@@ -168,6 +168,20 @@ js/
                     stays on parseFlp() in proprietary.js: its clip positions
                     live in data events whose layout varies by FL version
     midi.js · subtitles.js · lrc.js — MIDI score, SRT/VTT/ASS subs, LRC lyrics
+    ifc.js        — IFC / BIM building models. Hand-written STEP (ISO 10303-21)
+                    parser, index-based rather than token-allocating (a 200 MB
+                    model would otherwise be all GC). An IFC stores NO hierarchy:
+                    the spatial tree is assembled by following IfcRelAggregates
+                    and IfcRelContainedInSpatialStructure, which point at both
+                    ends. Geometry reuses stl.js's viewer via
+                    buildGeoFromIndexed/buildViewerCard/startViewer and draws
+                    three kinds - extruded area solids (ear-clipped caps, so a
+                    concave slab is right), explicit meshes, and MAPPED ITEMS
+                    (without which every window and door vanishes, since a type's
+                    shape is defined once and placed per instance). Placement
+                    chains compose as 4x4 matrices and are cached per ref.
+                    Boolean results are counted and NAMED, never evaluated:
+                    drawing the first operand would show a wall with no window
     molecule.js   — chemical structures (MOL/SDF/MOL2/XYZ/PDB/mmCIF/CIF/PQR/GRO)
                     on the vendored 3Dmol.js (BSD-3, ~500 KB, lazy, Everything
                     tier). The default style is chosen from the file rather than

@@ -152,6 +152,15 @@ export const GEO_HEAT_POINTS = 400_000;
 // the remainder falls back to a single track line rather than putting thousands
 // of SVG paths on the map.
 export const GEO_PACE_RUNS = 4000;
+// An IFC is a graph of cross-referencing instances, so it has to be held whole -
+// there is no way to follow a reference in a file you have only partly read. A
+// large federated model runs to hundreds of megabytes of text; past this it is
+// declined rather than allowed to exhaust the tab. The entity and triangle
+// ceilings bound the two things that grow inside that: the instance map, and the
+// geometry handed to WebGL.
+export const IFC_MAX = 320 * MB;
+export const IFC_ENTITY_MAX = 4_000_000;
+export const IFC_TRI_MAX = 3_000_000;
 // A structure file is parsed whole and turned into WebGL geometry, so the real
 // cost is the atom count rather than the bytes. A cryo-EM structure or an MD
 // trajectory frame set runs to hundreds of thousands of atoms; past the atom

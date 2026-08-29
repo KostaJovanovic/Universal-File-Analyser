@@ -235,6 +235,24 @@ can expand into prose. British spelling, no em-dashes (site house style).
   controllers/materials/`.meta` files and shows a component breakdown and
   per-type fields.
 
+## Buildings (IFC / BIM)
+
+- **An IFC model opens as the building it describes.** IFC records a building as
+  objects with properties - this is a wall, it is external, it sits on that
+  storey - and stores no hierarchy at all: what contains what is kept in separate
+  relationship objects. Analyser follows those and rebuilds the tree, from
+  project down through site, building and storey to the elements on each floor,
+  grouped by type with their property sets.
+- **The building is drawn too.** Walls, slabs and columns are usually a flat
+  outline pushed along a direction, and those are built and shown in the same 3D
+  viewer as any other model, along with explicit meshes and the shared shapes
+  that place every window and door.
+- Shapes that need a solid-modelling engine to work out - a wall with an opening
+  cut through it - are **counted and named rather than drawn wrong**, because
+  drawing the uncut shape would show you a wall with no window in it.
+- The header names the tool and exporter that wrote the file, which matters: how
+  much a model really contains depends heavily on which program produced it.
+
 ## Chemical structures
 
 - **Molecules are drawn, not listed.** Drop a `.mol`, `.sdf`, `.mol2`, `.xyz`,

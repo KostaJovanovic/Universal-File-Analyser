@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>.IFC file - what it is and how to identify it online - Analyser</title>
-  <meta name="description" content="IFC (Industry Foundation Classes) is the open standard for sharing building-information models. Used across BIM tools. Identify a .IFC file online in your…">
+  <meta name="description" content="IFC - Industry Foundation Classes - is the open standard for handing a whole building between BIM tools. It describes a building as objects with properties…">
   <link rel="canonical" href="https://analyser.valjdakosta.com/formats/id/ifc">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
@@ -12,7 +12,7 @@
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
   <meta property="og:title" content=".IFC file - what it is and how to identify it online - Analyser">
-  <meta property="og:description" content="IFC (Industry Foundation Classes) is the open standard for sharing building-information models. Used across BIM tools. Identify a .IFC file online in your browser with Analyser - free, private, nothing uploaded.">
+  <meta property="og:description" content="IFC - Industry Foundation Classes - is the open standard for handing a whole building between BIM tools. It describes a building as objects with properties rather than as drawn lines: this is a wall, it is external, it is made of these layers, and it sits on that storey. Identify a .IFC file online in your browser with Analyser - free, private, nothing uploaded.">
   <meta property="og:url" content="https://analyser.valjdakosta.com/formats/id/ifc">
   <meta property="og:image" content="https://analyser.valjdakosta.com/assets/img/banner.jpg">
   <meta property="og:image:width" content="1200">
@@ -20,7 +20,7 @@
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content=".IFC file - what it is and how to identify it online - Analyser">
-  <meta name="twitter:description" content="IFC (Industry Foundation Classes) is the open standard for sharing building-information models. Used across BIM tools. Identify a .IFC file online in your browser with Analyser - free, private, nothing uploaded.">
+  <meta name="twitter:description" content="IFC - Industry Foundation Classes - is the open standard for handing a whole building between BIM tools. It describes a building as objects with properties rather than as drawn lines: this is a wall, it is external, it is made of these layers, and it sits on that storey. Identify a .IFC file online in your browser with Analyser - free, private, nothing uploaded.">
   <meta name="twitter:image" content="https://analyser.valjdakosta.com/assets/img/banner.jpg">
   <meta name="twitter:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <link rel="icon" href="/assets/img/favicon.png" type="image/png">
@@ -28,7 +28,7 @@
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .IFC file?","acceptedAnswer":{"@type":"Answer","text":"IFC (Industry Foundation Classes) is the open standard for sharing building-information models. Used across BIM tools. IFC lets architecture and engineering software exchange whole building models, regardless of vendor. IFC was created by buildingSMART, the body once known as the International Alliance for Interoperability, and is published as ISO standard 16739. IFC models are usually written in the STEP physical file format, the same plain-text encoding used by mechanical CAD exchange files."}},{"@type":"Question","name":"How do I open a .IFC file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .IFC file onto Analyser at https://analyser.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Header and metadata extraction for 3D meshes, voxels, BIM, point clouds and Gaussian splats: MagicaVoxel VOX, COLLADA DAE/ZAE, USD crate, X3D/VRML, LightWave LWO/LWS, Quake MD2/MD3/MDL, VRM avatars, Siemens JT, LAS/LAZ/PCD/PTS/E57 LiDAR clouds, IFC BIM, and .splat/.spz - vertex/face/point counts, bounding boxes, units and authoring tool. glTF/GLB now open in a full 3D viewer - see the 3D model section."}},{"@type":"Question","name":"Can I open a .IFC file online for free?","acceptedAnswer":{"@type":"Answer","text":"Yes. Analyser is a free online .IFC identifier that runs entirely in your browser - your .IFC file never leaves your device, so there is nothing to upload and no software to install. It even works offline once installed."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .IFC file?","acceptedAnswer":{"@type":"Answer","text":"IFC - Industry Foundation Classes - is the open standard for handing a whole building between BIM tools. It describes a building as objects with properties rather than as drawn lines: this is a wall, it is external, it is made of these layers, and it sits on that storey. An IFC file stores no hierarchy at all. Which storey a wall belongs to is recorded in a separate relationship object pointing at both of them, so the building's structure has to be reassembled by following those links. IFC was created by buildingSMART, the body once known as the International Alliance for Interoperability, and is published as ISO standard 16739. IFC models are usually written in the STEP physical file format, the same plain-text encoding used by mechanical CAD exchange files."}},{"@type":"Question","name":"How do I open a .IFC file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .IFC file onto Analyser at https://analyser.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Open an IFC building model and see how it is put together. IFC describes a building as a graph of objects - walls, doors, spaces, each with properties - and stores no hierarchy at all: what contains what lives in separate relationship objects, so the spatial tree of project, site, building, storey and elements is assembled by following them. That tree is shown in full, with the elements on each storey grouped by type and the property sets attached to each one. The building is also drawn: shapes that are a 2D profile extruded along a direction (which is what most walls, columns and slabs are), explicit meshes, and the mapped items that place a type's shape at each window and door. Shapes that need a solid-modelling kernel to evaluate - a wall with an opening cut through it - are counted and named rather than drawn wrong. Alongside, the header names the authoring tool and exporter that wrote the file, which matters more than it sounds: how much a model actually contains depends heavily on which program produced it."}},{"@type":"Question","name":"Can I open a .IFC file online for free?","acceptedAnswer":{"@type":"Answer","text":"Yes. Analyser is a free online .IFC identifier that runs entirely in your browser - your .IFC file never leaves your device, so there is nothing to upload and no software to install. It even works offline once installed."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"HowTo","name":"How to open a .IFC file","description":"Open a .IFC file online in your browser with Analyser - no upload and no install.","totalTime":"PT1M","tool":[{"@type":"HowToTool","name":"Analyser (any modern web browser)"}],"step":[{"@type":"HowToStep","position":1,"name":"Open Analyser","text":"Go to https://analyser.valjdakosta.com/ in any web browser. There is nothing to install.","url":"https://analyser.valjdakosta.com/"},{"@type":"HowToStep","position":2,"name":"Add your file","text":"Drag your .IFC file onto the page, or tap to choose one. The file stays on your device - nothing is uploaded."},{"@type":"HowToStep","position":3,"name":"Identify it","text":"Analyser identifies the .IFC file and reads the metadata in its header instantly, on your device."}]}
@@ -54,7 +54,7 @@
 <header class="site-header">
   <div class="grid">
     <div class="site-mark site-mark--format">
-      <span class="site-kicker">3D / CAD / engineering</span>
+      <span class="site-kicker">System &amp; disk</span>
       <h1 class="site-title">.IFC</h1>
       <p class="site-byline"><a href="/" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
       <p class="site-sub">IFC building model</p>
@@ -83,9 +83,9 @@
 </header>
 
 <nav class="site-nav format-nav" aria-label="Browse file types">
-  <a href="/formats/id/e57" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <a href="/formats/id/bk" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
   <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
-  <a href="/formats/id/ifczip" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+  <a href="/formats/id/trx" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
 </nav>
 
 <main class="site-main about-page patch-page format-page">
@@ -98,15 +98,15 @@
       <div class="section-content">
         <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.IFC</span><span class="fmt-item-badge format-crumb-badge is-id" title="Identified + header metadata">ID</span></p>
         <h2 class="section-head">What is a .IFC file?</h2>
-        <p class="section-lede">IFC (Industry Foundation Classes) is the open standard for sharing building-information models. Used across BIM tools.</p>
+        <p class="section-lede">IFC - Industry Foundation Classes - is the open standard for handing a whole building between BIM tools. It describes a building as objects with properties rather than as drawn lines: this is a wall, it is external, it is made of these layers, and it sits on that storey.</p>
 
         <div class="about-block">
           <dl class="about-caps">
-            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>IFC lets architecture and engineering software exchange whole building models, regardless of vendor.</li><li>IFC was created by buildingSMART, the body once known as the International Alliance for Interoperability, and is published as ISO standard 16739.</li><li>IFC models are usually written in the STEP physical file format, the same plain-text encoding used by mechanical CAD exchange files.</li></ul></dd></div>
-            <div><dt>What Analyser reads</dt><dd>Header and metadata extraction for 3D meshes, voxels, BIM, point clouds and Gaussian splats: MagicaVoxel VOX, COLLADA DAE/ZAE, USD crate, X3D/VRML, LightWave LWO/LWS, Quake MD2/MD3/MDL, VRM avatars, Siemens JT, LAS/LAZ/PCD/PTS/E57 LiDAR clouds, IFC BIM, and .splat/.spz - vertex/face/point counts, bounding boxes, units and authoring tool. glTF/GLB now open in a full 3D viewer - see the 3D model section.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>An IFC file stores no hierarchy at all. Which storey a wall belongs to is recorded in a separate relationship object pointing at both of them, so the building's structure has to be reassembled by following those links.</li><li>IFC was created by buildingSMART, the body once known as the International Alliance for Interoperability, and is published as ISO standard 16739.</li><li>IFC models are usually written in the STEP physical file format, the same plain-text encoding used by mechanical CAD exchange files.</li></ul></dd></div>
+            <div><dt>What Analyser reads</dt><dd>Open an IFC building model and see how it is put together. IFC describes a building as a graph of objects - walls, doors, spaces, each with properties - and stores no hierarchy at all: what contains what lives in separate relationship objects, so the spatial tree of project, site, building, storey and elements is assembled by following them. That tree is shown in full, with the elements on each storey grouped by type and the property sets attached to each one. The building is also drawn: shapes that are a 2D profile extruded along a direction (which is what most walls, columns and slabs are), explicit meshes, and the mapped items that place a type's shape at each window and door. Shapes that need a solid-modelling kernel to evaluate - a wall with an opening cut through it - are counted and named rather than drawn wrong. Alongside, the header names the authoring tool and exporter that wrote the file, which matters more than it sounds: how much a model actually contains depends heavily on which program produced it.</dd></div>
             <div><dt>Depth of analysis</dt><dd>.IFC is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .IFC file</dt><dd>Drag a .IFC file onto <a href="/">the Analyser home page</a> (or tap to pick one). It is identified entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
-            <div><dt>Related formats</dt><dd><a href="/formats/id/vox">.VOX</a> &middot; <a href="/formats/id/dae">.DAE</a> &middot; <a href="/formats/id/zae">.ZAE</a> &middot; <a href="/formats/id/usdc">.USDC</a> &middot; <a href="/formats/id/x3d">.X3D</a> &middot; <a href="/formats/id/wrl">.WRL</a> &middot; <a href="/formats/id/vrml">.VRML</a> &middot; <a href="/formats/id/lwo">.LWO</a> &middot; <a href="/formats/id/lws">.LWS</a> &middot; <a href="/formats/id/md2">.MD2</a> &middot; <a href="/formats/id/md3">.MD3</a> &middot; <a href="/formats/id/mdl">.MDL</a> &middot; <a href="/formats/id/vrm">.VRM</a> &middot; <a href="/formats/id/jt">.JT</a> &middot; <a href="/formats/id/las">.LAS</a> &middot; <a href="/formats/id/laz">.LAZ</a> &middot; <a href="/formats/id/pcd">.PCD</a> &middot; <a href="/formats/id/pts">.PTS</a> and <a href="/formats">more</a>. See <a href="/formats">all supported file types</a>.</dd></div>
+            <div><dt>Related formats</dt><dd>Browse the <a href="/formats">full list of supported file types</a>.</dd></div>
           </dl>
         </div>
       </div>
