@@ -137,6 +137,10 @@ export function classifyFile(file: File) {
   // Sony / MAGIX VEGAS Pro project: read the RIFF-GUID container's embedded
   // metadata, plugin ids and title text.
   if (ext === 'veg' || ext === 'vf') return 'vegas';
+  // DAW sessions with a readable arrangement: Ableton Live (gzipped XML) and
+  // Reaper (plain text). FL Studio's .flp is a binary event stream and stays on
+  // the metadata path in proprietary.js.
+  if (ext === 'als' || ext === 'alp' || ext === 'rpp' || ext === 'rpp-bak') return 'daw';
   // Unity assets - the engine's YAML object stream (scenes, prefabs, animator
   // controllers, animations, materials, .meta importer records, …).
   if (UNITY_EXTS.has(ext)) return 'unity';

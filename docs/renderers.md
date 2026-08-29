@@ -117,6 +117,7 @@ kinds). For full usage detail (buttons, controls, options), see the
 | `premiere.js` | Adobe Premiere Pro project (.prproj/.prel) viewer | Gzip-compressed XML object graph (ObjectID/ObjectUID references) rebuilt into sequences |
 | `davinci.js` | DaVinci Resolve project (.drp/.drt) viewer | ZIP of exported XML documents; rebuilds each timeline's track/clip layout |
 | `vegas.js` | Sony/MAGIX VEGAS Pro project (.veg/.vf) viewer | RIFF-GUID container; per-event/track layout keyed by undocumented GUIDs, so recoverable metadata is surfaced rather than a full timeline |
+| `daw.js` | DAW sessions (Ableton `.als`/`.alp`, Reaper `.rpp`/`.rpp-bak`) | Draws the arrangement: one lane per track, clips positioned in percentages of the project length (so it reflows and the zoom is just the inner strip's width). Live is gzipped XML timed in BEATS - the tempo is what makes a real clock possible, and without one the ruler says so; Reaper is nested plain text already in seconds. Arrangement clips only for Live: session-view clips have no timeline position. FL Studio's `.flp` deliberately stays on `parseFlp()` in `proprietary.js` - its clip positions live in version-varying data events |
 | `timeline.js` | Editing-timeline viewer (EDL/FCPXML/OTIO) | Normalises the standard NLE interchange formats into one visual tracks×time clip view |
 
 ## Data / archive
