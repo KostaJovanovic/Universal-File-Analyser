@@ -162,6 +162,12 @@ js/
     archive.js · zip.js · folder.js · treemap.js · folder-archive-shared.js · comic.js
       — archive/folder browsing + treemap breakdown + comic (CBZ/CBR) reader
     vssolution.js · geo.js — VS solution manifests, GPX/KML/GeoJSON maps
+    terraria.js   — Terraria .wld worlds: header readout + a map drawn one pixel
+                    per tile from the RLE tile stream. Only the header fields up
+                    to maxTilesX are parsed - the rest is skipped by seeking to
+                    the tile SECTION POINTER, which is what makes this tractable
+                    across versions. `.wld` is also the Esri world file, so
+                    VARIANT_REROUTE routes on the 'relogic' magic
     photo-forensics.js · video-forensics.js · audio-forensics.js · timeline-forensic.js
       · c2pa.js · ai-signals.js · xmp.js · scrub.js — cross-cutting forensic
       modules, mostly UI-free computation the type renderers mount as cards:
