@@ -204,7 +204,10 @@ can expand into prose. British spelling, no em-dashes (site house style).
   shows sample rows.
 - **Access-/SQLite-backed apps** - reads SQLite databases directly (tables, row
   counts, schema, sample data) - this also covers GeoPackage, MBTiles, Audacity
-  projects and anything else built on SQLite.
+  projects and anything else built on SQLite. There is a full **SQL console**
+  too: any statement you like, including writes, run against a copy of the
+  database held in memory. The copy is discarded when you leave and the file on
+  your device is never written to.
 
 ## Presentations
 
@@ -359,7 +362,8 @@ can expand into prose. British spelling, no em-dashes (site house style).
 
 ## Binary containers it can crack open
 
-- **SQLite** databases (via WebAssembly) - tables, schema, sample rows.
+- **SQLite** databases (via WebAssembly) - tables, schema, sample rows and a SQL
+  console for querying them yourself.
 - **7-Zip** archives - lists and extracts even large solid archives.
 - **OLE2 / Compound File** (the container behind old Office, Outlook `.msg`, MSI,
   `Thumbs.db`).
