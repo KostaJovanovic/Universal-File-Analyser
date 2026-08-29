@@ -268,6 +268,29 @@ btn: Copy
 btn: Cancel
 ```
 
+### Terraria world map (.wld)
+
+**What it does.** Reads a Terraria world save and draws its map, one pixel
+per tile, straight from the world's own tile data: terrain and ore veins in
+the foreground, walls shaded behind them, and water, lava and honey in their
+own colours. Alongside it, the world name, the seed it was generated from,
+its size and difficulty (Classic, Expert, Master or Journey) and the game
+version that last saved it. The map saves as a PNG.
+
+**How to reach it.** Drop a `.wld`. Built in `terraria.js`.
+
+**Notes / limits.** Two things make this tractable rather than enormous. The
+file begins with a table of section pointers, so only the handful of header
+fields before `maxTilesX` need parsing and the rest is skipped by seeking to
+the tile section - the alternative is tracking dozens of version-gated
+fields across every release. And the tile grid is run-length encoded, so a
+large world (8400 x 2400 tiles, about 20 million of them) is a few megabytes.
+Worlds from Terraria 1.3 and 1.4 are drawn; anything outside that range is
+identified and its header read, but not drawn rather than drawn wrong. The
+colour table is representative rather than an exact copy of the in-game map.
+The `.wld` extension is shared with the Esri world file - six lines of text
+that georeference an image - and the two are told apart by their bytes.
+
 ### Comic book archive viewer (CBZ/CBR/CBT/CB7)
 
 **What it does.** Mirrors the PDF viewer's UX: a metadata card, a

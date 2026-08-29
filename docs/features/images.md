@@ -404,11 +404,77 @@ TIFF first walks the IFD chain in pure JS just to learn the page count and
 size (cheap, no decode) before deciding whether ImageMagick rendering is
 worth it.
 
+### GIMP layer compositing (.xcf)
+
+**What it does.** A GIMP file stores no flattened image at all - unlike a
+PSD, an XCF is only its layer stack - so showing the picture means building
+it. Analyser decodes each layer's 64x64 tiles (uncompressed, RLE or zlib),
+applies that layer's mask, opacity and blend mode, and paints the stack from
+the bottom up. The composite can be saved as a PNG, and the full layer list
+is shown with each layer's mode, opacity, size, offset and mask.
+
+**How to reach it.** Drop a `.xcf`. Built in `xcf.js`.
+
+**Notes / limits.** 8-bit precision only; GIMP 2.10 can also store 16- and
+32-bit integer and float channels, and those files are described rather than
+drawn. The four non-separable blend modes (hue, saturation, colour, value)
+are named on the layer row but composited as Normal. Pointers are 32-bit
+below XCF v11 and 64-bit from v11 - the single easiest thing to get wrong
+when reading one of these.
+
+### Aseprite pixel-art sprites (.aseprite / .ase)
+
+**What it does.** Opens Aseprite and LibreSprite sprites: every frame is
+composited from the layer stack and the animation plays at the file's own
+per-frame durations rather than one frame rate. Shows the layer tree with
+blend mode, opacity and visibility, and the named animation tags with their
+loop direction; any frame saves as a PNG.
+
+**How to reach it.** Drop a `.aseprite` or `.ase`. Built in `aseprite.js`.
+
+**Notes / limits.** Frames store only the cels that changed, plus links back
+to earlier frames, so a frame is assembled rather than read. RGBA, grayscale
+and indexed sprites are all decoded; tilemap cels are skipped rather than
+drawn wrong. `.ase` is shared with Adobe Swatch Exchange, an unrelated
+palette format, so the two are told apart by magic number before routing.
+
+### iOS CgBI PNG repair
+
+**What it does.** Xcode rewrites every PNG shipped inside an `.ipa` into
+Apple's private CgBI variant, which **no browser can decode**: the IDAT
+stream is raw deflate with the zlib wrapper stripped, the pixels are BGRA
+with premultiplied alpha, and the CRCs are left wrong. Analyser detects one
+and rebuilds it into a real PNG, so it displays like any other image.
+
+**How to reach it.** Automatic, wherever an image is analysed - dropped
+directly, clicked inside a browsed `.ipa` or ZIP, or on `/compare`. Built in
+`lib/cgbi.js`, applied at the top of `renderPhoto()`.
+
+**Notes / limits.** Interlaced (Adam7) CgBI files are declined rather than
+guessed at, since Xcode does not produce them. This is why "repair the CRC"
+advice never works on these: the bytes underneath are a different encoding,
+not a corrupted PNG.
+
+### GPU texture previews (VTF, KTX, KTX2, DDS)
+
+**What it does.** Block-compressed GPU textures are decoded to a real
+picture rather than a header readout: Valve's VTF (Source engine), the
+Khronos KTX and KTX2 containers, and DDS all share one BC1-BC5 / DXT decoder.
+
+**How to reach it.** Drop a `.vtf`, `.ktx`, `.ktx2` or `.dds`, or click one
+inside a browsed game archive. Built in `lib/bcn.js` with the container
+parsers in `parsers-gaming.js` and `parsers-image.js`.
+
+**Notes / limits.** BC6H and BC7 need a much larger mode table and are named
+rather than drawn, as is KTX2's BasisLZ supercompression (a transcode, not a
+decompression). KTX2 with no supercompression, or with ZLIB or Zstandard, is
+decoded. A VTF stores its mipmaps smallest-first, so the full-size image is
+at the end of the file - after the low-res thumbnail and every smaller level.
+
 ### Browser-undecodable image formats
 
 **What it does.** For image formats no browser can decode (JPEG XL, TIFF,
-JPEG 2000, TGA, DDS, OpenEXR, Radiance HDR, PCX, SGI, Sun Raster, GIMP XCF,
-CorelDRAW, WMF/EMF, farbfeld, and PSD/PSB when not otherwise handled),
+JPEG 2000, TGA, OpenEXR, Radiance HDR, PCX, SGI, Sun Raster, CorelDRAW, WMF/EMF, farbfeld, and PSD/PSB when not otherwise handled),
 Analyser shows a clear "browser limitation" banner plus whatever
 EXIF/IPTC/XMP/ICC metadata exifr can still read from the raw bytes, rather
 than a bare decode error.
