@@ -6673,7 +6673,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-ass-stage .anr-lrc-time { color: #8a8f98; }
 .anr-ass-line { white-space: pre-wrap; }
 
-/* SQLite read-only query box. */
+/* SQLite SQL console. */
 .anr-sql-input {
   width: 100%;
   box-sizing: border-box;
@@ -6687,6 +6687,8 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 }
 .anr-sql-input:focus { outline: none; border-color: var(--accent); }
 .anr-sql-result { margin-top: 6px; }
+/* Shown once a statement has modified the in-memory copy. */
+.anr-sql-dirty { border-left: 2px solid var(--accent); padding-left: 8px; margin: 4px 0; }
 
 /* Byte-entropy heatmap: a 1px-tall canvas stretched full-width. image-rendering
    keeps the per-chunk colour columns crisp instead of blurred when scaled up. */

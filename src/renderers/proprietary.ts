@@ -1195,16 +1195,22 @@ async function parseSqlite(buf: Uint8Array, file: File) {
           wrap.appendChild(st);
           sections.push({ title: 'Sample data - ' + a.sample.table + ' (first 5 rows)', node: wrap });
         }
-        // Interactive read-only query box. Opens its own copy of the DB lazily on
-        // the first run and reuses it; runs entirely in the browser (sql.js WASM),
-        // and is restricted to a single SELECT/WITH/PRAGMA/EXPLAIN statement.
+        // Interactive SQL console. sql.js copies the database into the WASM heap,
+        // so what you are querying is a scratch copy that exists only for this tab:
+        // ANY statement is allowed, writes and schema changes included, and nothing
+        // is ever written back to the file on disk. That is also why Reset works -
+        // it just drops the copy and re-reads the original bytes.
         {
           const firstTable = a.tables[0] ? a.tables[0].name : null;
-          const ta = el('textarea', { class: 'anr-sql-input', spellcheck: 'false', rows: '3' });
+          const ta = el('textarea', { class: 'anr-sql-input', spellcheck: 'false', rows: '4' }) as HTMLTextAreaElement;
           ta.value = firstTable
             ? 'SELECT * FROM "' + firstTable.replace(/"/g, '""') + '" LIMIT 50;'
             : 'SELECT name FROM sqlite_master;';
-          const runBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Run query');
+          const runBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Run') as HTMLButtonElement;
+          const resetBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Reset to file') as HTMLButtonElement;
+          resetBtn.hidden = true;
+          const dirtyNote = el('p', { class: 'anr-hint anr-sql-dirty' }, 'This copy has been changed. The file on your device is untouched.');
+          dirtyNote.hidden = true;
           const resultEl = el('div', { class: 'anr-sql-result' });
           let qdb: any = null, opening: Promise<any> | null = null;
           const ensureDb = async () => {
@@ -1212,44 +1218,75 @@ async function parseSqlite(buf: Uint8Array, file: File) {
             if (!opening) { const { sqliteQuery } = await import('../lib/sqlite.js'); opening = sqliteQuery(file); }
             qdb = await opening; return qdb;
           };
+          // Anything that can change the copy. Used only to decide whether to offer
+          // Reset and show the "changed" note - it never gates the statement.
+          const WRITES = /\b(insert|update|delete|replace|create|drop|alter|truncate|vacuum|reindex|attach|detach|begin|commit|rollback)\b/i;
+
+          const resultTable = (columns: any[], values: any[][]) => {
+            const wrap = el('div', { class: 'anr-table-wrap' });
+            const t = el('table', { class: 'anr-readout anr-table-data' });
+            const hr = el('tr', {});
+            for (const c of columns) hr.appendChild(el('th', {}, String(c)));
+            t.appendChild(hr);
+            for (const r of values.slice(0, 1000)) {
+              const tr = el('tr', {});
+              for (const cell of r) tr.appendChild(el('td', {}, cell == null ? 'NULL' : String(cell).slice(0, 300)));
+              t.appendChild(tr);
+            }
+            wrap.appendChild(t);
+            return wrap;
+          };
           const run = async () => {
-            const sql = ta.value.trim().replace(/;+\s*$/, '');
+            const sql = ta.value.trim();
             resultEl.innerHTML = '';
             if (!sql) return;
-            if (/;/.test(sql) || !/^(?:select|with|pragma|explain)\b/i.test(sql)) {
-              resultEl.appendChild(el('p', { class: 'anr-hint anr-syn-error' }, 'Only a single read-only statement (SELECT, WITH, PRAGMA or EXPLAIN) is allowed.'));
-              return;
-            }
             runBtn.disabled = true; runBtn.textContent = 'Running…';
             try {
               const db = await ensureDb();
               if (!db) { resultEl.appendChild(el('p', { class: 'anr-hint anr-syn-error' }, 'Could not open the database engine.')); return; }
               let res;
+              // exec() runs every statement in the box and returns one result set
+              // per statement that produced rows, so a script of several statements
+              // works as written.
               try { res = db.exec(sql); } catch (e) { resultEl.appendChild(el('p', { class: 'anr-hint anr-syn-error' }, 'SQL error: ' + (e && e.message))); return; }
-              if (!res || !res[0]) { resultEl.appendChild(el('p', { class: 'anr-hint' }, 'Query ran - no rows returned.')); return; }
-              const { columns, values } = res[0];
-              resultEl.appendChild(el('p', { class: 'anr-hint' }, values.length + ' row' + (values.length === 1 ? '' : 's') + (values.length > 1000 ? ' (showing first 1000)' : '')));
-              const wrap = el('div', { class: 'anr-table-wrap' });
-              const t = el('table', { class: 'anr-readout anr-table-data' });
-              const hr = el('tr', {});
-              for (const c of columns) hr.appendChild(el('th', {}, String(c)));
-              t.appendChild(hr);
-              for (const r of values.slice(0, 1000)) {
-                const tr = el('tr', {});
-                for (const cell of r) tr.appendChild(el('td', {}, cell == null ? 'NULL' : String(cell).slice(0, 300)));
-                t.appendChild(tr);
+              if (WRITES.test(sql)) {
+                dirtyNote.hidden = false; resetBtn.hidden = false;
               }
-              wrap.appendChild(t); resultEl.appendChild(wrap);
-            } finally { runBtn.disabled = false; runBtn.textContent = 'Run query'; }
+              if (!res || !res.length) {
+                let changed = 0;
+                try { changed = db.getRowsModified(); } catch (_) { changed = 0; }
+                resultEl.appendChild(el('p', { class: 'anr-hint' }, changed
+                  ? 'Done - ' + changed.toLocaleString() + ' row' + (changed === 1 ? '' : 's') + ' changed in the copy.'
+                  : 'Done - no rows returned.'));
+                return;
+              }
+              res.forEach((r: any, i: number) => {
+                const n = r.values.length;
+                resultEl.appendChild(el('p', { class: 'anr-hint' },
+                  (res.length > 1 ? 'Statement ' + (i + 1) + ' - ' : '') +
+                  n.toLocaleString() + ' row' + (n === 1 ? '' : 's') + (n > 1000 ? ' (showing first 1000)' : '')));
+                resultEl.appendChild(resultTable(r.columns, r.values));
+              });
+            } finally { runBtn.disabled = false; runBtn.textContent = 'Run'; }
+          };
+          const reset = () => {
+            if (qdb) { try { qdb.close(); } catch (_) {} }
+            qdb = null; opening = null;
+            dirtyNote.hidden = true; resetBtn.hidden = true;
+            resultEl.innerHTML = '';
+            resultEl.appendChild(el('p', { class: 'anr-hint' }, 'Reloaded from the file. Every change to the copy has been discarded.'));
           };
           runBtn.addEventListener('click', run);
+          resetBtn.addEventListener('click', reset);
           ta.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); } });
           const qnode = el('div', {});
-          qnode.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 6px;' }, 'Run a read-only SQL query against a copy of this database, entirely in your browser. Ctrl/Cmd+Enter to run.'));
+          qnode.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 6px;' },
+            'Runs against a copy of this database held in memory, entirely in your browser. Any SQL works, writes and schema changes included - the copy is thrown away when you leave, and the file on your device is never written to. Ctrl/Cmd+Enter to run.'));
           qnode.appendChild(ta);
-          qnode.appendChild(el('div', { class: 'anr-btn-row', style: 'margin:6px 0;' }, [runBtn]));
+          qnode.appendChild(el('div', { class: 'anr-btn-row', style: 'margin:6px 0;' }, [runBtn, resetBtn]));
+          qnode.appendChild(dirtyNote);
           qnode.appendChild(resultEl);
-          sections.push({ title: 'Run SQL query', node: qnode });
+          sections.push({ title: 'SQL console', node: qnode });
         }
         if (sections.length) out._sections = sections;
       }
