@@ -324,7 +324,15 @@ browsers can't decode it directly. No interactive controls, a readout only.
 ### Subtitle files (SRT/WebVTT/ASS/SSA/MicroDVD/SubViewer)
 
 **What it does.** Parses cues into a timed list and reports counts,
-timing, and styling info.
+timing, and styling info. ASS and SSA additionally get a **playable
+preview**: a stage built in the script's own PlayResX x PlayResY
+coordinate system, where every line is drawn where the file actually puts
+it - `\pos` coordinates, `\move` paths interpolated over their own time
+range, `\an` (and legacy SSA `\a`) alignment, and per-line or per-style
+margins - with a transport to scrub through it. Simultaneous lines stack
+away from the edge they are anchored to rather than overprinting.
+**Karaoke** timing is honoured: `\k` switches a syllable to the primary
+colour when its turn comes and `\kf`/`\K` sweeps the colour across it.
 
 **How to reach it.** Drop a `.srt`/`.vtt`/`.ass`/`.ssa`/`.sub`. Built in
 `subtitles.js`.
@@ -332,8 +340,17 @@ timing, and styling info.
 **Notes / limits.** The `.sub` extension is overloaded - it carries text
 (MicroDVD frame-based or SubViewer time-based) as well as the unrelated
 binary VobSub bitmap subtitle format, so the module sniffs which one a
-given `.sub` actually is before parsing. No interactive controls, a
-readout only.
+given `.sub` actually is before parsing. On the ASS stage, the whole layer
+is scaled by one CSS transform on the frame rather than by per-element
+arithmetic, which is what keeps positions exact at any card width (layout
+metrics are unaffected by a transform, so the stacking measurement still
+works in script units). The outline is drawn with `-webkit-text-stroke`
+and `paint-order` rather than a stack of text shadows, because a `\kf`
+sweep needs a transparent fill with a gradient behind it and a shadow
+shows through that. `Alignment` means different things in SSA v4 and ASS
+v4.00+, so `ScriptType` decides how to read it. Not drawn: `\p` vector
+drawing commands, rotation and blur - such a line shows as its text. The
+other subtitle formats are a readout only.
 
 ### LRC timed lyrics
 
