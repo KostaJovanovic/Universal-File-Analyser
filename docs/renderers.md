@@ -138,7 +138,7 @@ kinds). For full usage detail (buttons, controls, options), see the
 | `midi.js` | Standard MIDI File (.mid/.midi) reader | Hand-written SMF parser: tempo map, time/key signature, track names, GM instruments, note counts - no playback |
 | `subtitles.js` | Subtitle files (SRT/WebVTT/ASS/SSA/MicroDVD/SubViewer) | Parses cues into a timed list with counts/timing/styling; sniffs which format an overloaded `.sub` actually is |
 | `lrc.js` | LRC timed-lyric files | Parses ID tags and timestamped lines, including word-level enhanced tags |
-| `geo.js` | Geospatial files (GPX/KML/GeoJSON) | Tracks/placemarks/features with distance/bounds/time span; plotted on lazy-loaded Leaflet/OSM |
+| `geo.js` | Geospatial files (GPX/KML/GeoJSON) | Tracks/placemarks/features with distance/bounds/time span; plotted on lazy-loaded Leaflet/OSM, with Track / Pace / Density map views |
 | `tablekit.js` | Table-analysis workbench | Mounted below CSV/XLSX/XLSB/ODS analyses: virtualised grid, stats bar, hand-drawn chart builder, PNG/JSON/CSV export |
 | `vssolution.js` | Visual Studio solution (.sln/.slnx) manifest viewer | Line-based text parser for projects + build configurations |
 

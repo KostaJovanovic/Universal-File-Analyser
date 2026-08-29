@@ -3,6 +3,7 @@
    time span, and plots the geometry on a Leaflet/OpenStreetMap map (lazy-loaded,
    same as the photo GPS map). */
 import { el, row, rowHelp, h3help, errorCard, fmtBytes, loadCss, loadScript } from '../core/util.js';
+import { GEO_HEAT_POINTS, GEO_PACE_RUNS } from '../core/limits.js';
 const LEAFLET_CSS = 'assets/vendor/leaflet/leaflet.css';
 const LEAFLET_JS = 'assets/vendor/leaflet/leaflet.js';
 function haversine(a, b) {
@@ -130,6 +131,199 @@ function elevationProfileCanvas(profile) {
     ctx.fillText('0', x(0), H - padB + 4);
     ctx.fillText(fmtDist(maxD), x(maxD), H - padB + 4);
     return cv;
+}
+/* ---- Map overlays: pace shading and revisit density ----
+
+   Two extra ways to read the same track. Pace colours the line by how fast you
+   were moving and pins the places you stopped; density answers "how often does
+   this track come back to the same spot", which is what turns a year of commutes
+   into a picture of where you actually go. Both are drawn from the points
+   already parsed - nothing extra is read, and nothing leaves the device. */
+const PACE_RAMP = [
+    [58, 100, 168], // slowest band
+    [46, 156, 176],
+    [78, 172, 104],
+    [216, 162, 56],
+    [198, 70, 56], // fastest band
+];
+const STOP_SPEED = 1.2; // km/h under which a point counts as stationary
+const STOP_MIN = 45; // seconds a stationary run must last to be marked
+const PACE_SMOOTH = 5; // segments in the speed-smoothing window
+function rgba(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')'; }
+function rgb(c) { return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
+function fmtSpeed(kmh) { return kmh >= 10 ? Math.round(kmh) + ' km/h' : kmh.toFixed(1) + ' km/h'; }
+// Segment speeds -> five colour bands, with consecutive same-band segments merged
+// into one polyline. The band edges are QUANTILES of this track's own speeds
+// rather than fixed km/h thresholds, so the same five colours read correctly for
+// a walk, a bike ride and a flight - any fixed scale collapses two of the three
+// into one colour. Speeds are smoothed over a short window first: raw GPS speed
+// is jittery enough that unsmoothed bands would change every few points and put
+// thousands of separate paths on the map.
+function paceData(tracks) {
+    const segs = [];
+    const stops = [];
+    for (const pts of tracks) {
+        let stallSec = 0, stallAt = null;
+        for (let i = 1; i < pts.length; i++) {
+            const p = pts[i - 1], q = pts[i];
+            if (!isFinite(p.time) || !isFinite(q.time))
+                continue;
+            const dt = (q.time - p.time) / 1000;
+            if (dt <= 0)
+                continue;
+            const d = haversine([p.lat, p.lon], [q.lat, q.lon]);
+            const kmh = (d / 1000) / (dt / 3600);
+            segs.push({ a: [p.lat, p.lon], b: [q.lat, q.lon], kmh });
+            // A stop is either standing still or a gap in the recording - both mean
+            // "nothing happened here for a while", which is what you want pinned.
+            if (kmh < STOP_SPEED || dt > 60) {
+                stallSec += dt;
+                if (!stallAt)
+                    stallAt = p;
+            }
+            else {
+                if (stallSec >= STOP_MIN && stallAt)
+                    stops.push({ lat: stallAt.lat, lon: stallAt.lon, sec: stallSec });
+                stallSec = 0;
+                stallAt = null;
+            }
+        }
+        if (stallSec >= STOP_MIN && stallAt)
+            stops.push({ lat: stallAt.lat, lon: stallAt.lon, sec: stallSec });
+    }
+    if (segs.length < 4)
+        return null;
+    const smooth = [];
+    const half = PACE_SMOOTH >> 1;
+    for (let i = 0; i < segs.length; i++) {
+        let sum = 0, n = 0;
+        for (let j = Math.max(0, i - half); j <= Math.min(segs.length - 1, i + half); j++) {
+            sum += segs[j].kmh;
+            n++;
+        }
+        smooth.push(sum / n);
+    }
+    const sorted = smooth.slice().sort((a, b) => a - b);
+    const q = (f) => sorted[Math.min(sorted.length - 1, Math.floor(f * sorted.length))];
+    const bands = [q(0.2), q(0.4), q(0.6), q(0.8)];
+    const runs = [];
+    let cur = null;
+    for (let i = 0; i < segs.length; i++) {
+        const s = segs[i];
+        let band = 0;
+        for (const t of bands)
+            if (smooth[i] > t)
+                band++;
+        const tail = cur ? cur.pts[cur.pts.length - 1] : null;
+        if (cur && cur.band === band && tail[0] === s.a[0] && tail[1] === s.a[1])
+            cur.pts.push(s.b);
+        else {
+            cur = { pts: [s.a, s.b], band };
+            runs.push(cur);
+        }
+    }
+    if (runs.length > GEO_PACE_RUNS)
+        return null;
+    return { runs, stops, bands };
+}
+// Every point the file holds, thinned to a fixed budget for the density grid.
+function heatPoints(g) {
+    const all = [];
+    for (const line of g.lines)
+        for (const p of line)
+            all.push(p);
+    for (const m of g.markers)
+        all.push([m.lat, m.lon]);
+    if (all.length <= GEO_HEAT_POINTS)
+        return all;
+    const stride = Math.ceil(all.length / GEO_HEAT_POINTS);
+    const out = [];
+    for (let i = 0; i < all.length; i += stride)
+        out.push(all[i]);
+    return out;
+}
+// Colour ramp for the density grid: cool and nearly transparent where the track
+// passes once, warm and solid where it passes again and again.
+function heatColour(t) {
+    const seg = Math.min(PACE_RAMP.length - 2, Math.floor(t * (PACE_RAMP.length - 1)));
+    const f = t * (PACE_RAMP.length - 1) - seg;
+    const a = PACE_RAMP[seg], b = PACE_RAMP[seg + 1];
+    const mix = [0, 1, 2].map((i) => Math.round(a[i] + (b[i] - a[i]) * f));
+    return rgba(mix, 0.22 + 0.62 * t);
+}
+// A revisit-density overlay on a plain canvas in the map's overlay pane.
+// Leaflet.heat is not vendored and a blurred kernel would be the wrong answer
+// anyway: the question here is "how many times", so points are binned into fixed
+// screen-space cells and the count drives the colour. Binning is what keeps the
+// cost tied to the canvas rather than to the length of the track.
+function densityOverlay(map, pts) {
+    const CELL = 6; // screen pixels per density cell
+    const canvas = el('canvas');
+    canvas.className = 'anr-geo-heat';
+    const ctx = canvas.getContext('2d');
+    let on = false;
+    const draw = () => {
+        const size = map.getSize();
+        L.DomUtil.setPosition(canvas, map.containerPointToLayerPoint([0, 0]));
+        canvas.width = size.x;
+        canvas.height = size.y;
+        canvas.style.width = size.x + 'px';
+        canvas.style.height = size.y + 'px';
+        const cols = Math.ceil(size.x / CELL) + 1, rows = Math.ceil(size.y / CELL) + 1;
+        const bins = new Uint32Array(cols * rows);
+        let peak = 0;
+        for (const p of pts) {
+            const q = map.latLngToContainerPoint([p[0], p[1]]);
+            if (q.x < 0 || q.y < 0 || q.x >= size.x || q.y >= size.y)
+                continue;
+            const v = ++bins[((q.y / CELL) | 0) * cols + ((q.x / CELL) | 0)];
+            if (v > peak)
+                peak = v;
+        }
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!peak)
+            return;
+        // Square root, not linear: one long rest stop can hold hundreds of points in
+        // a single cell, and on a linear scale that flattens the whole rest of the
+        // track to the bottom of the ramp.
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const v = bins[r * cols + c];
+                if (!v)
+                    continue;
+                ctx.fillStyle = heatColour(Math.sqrt(v / peak));
+                ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
+            }
+        }
+    };
+    // Panning fires `move` continuously. Re-binding the canvas position each time
+    // is cheap and keeps what is already drawn glued to the ground; the re-bin that
+    // fills in the newly revealed edge waits for the gesture to end. A zoom rescales
+    // the whole raster, so there the canvas hides until the new level settles.
+    const reposition = () => L.DomUtil.setPosition(canvas, map.containerPointToLayerPoint([0, 0]));
+    const hide = () => { canvas.style.visibility = 'hidden'; };
+    const settle = () => { canvas.style.visibility = ''; draw(); };
+    return {
+        add() {
+            if (on)
+                return;
+            on = true;
+            map.getPanes().overlayPane.appendChild(canvas);
+            map.on('move', reposition);
+            map.on('zoomstart', hide);
+            map.on('moveend zoomend resize', settle);
+            draw();
+        },
+        remove() {
+            if (!on)
+                return;
+            on = false;
+            map.off('move', reposition);
+            map.off('zoomstart', hide);
+            map.off('moveend zoomend resize', settle);
+            canvas.remove();
+        },
+    };
 }
 // Accumulates geometry into a common shape used for stats + the map.
 // `tracks` keeps per-point detail (lat/lon/ele/time/hr/cad/temp) for the lines
@@ -505,11 +699,35 @@ export async function renderGeo(file, resultsEl) {
         return;
     }
     // ---- Map ----
+    // Which of the three views this file can support. Pace needs per-point
+    // timestamps; density only becomes a picture once there are enough points for
+    // one cell to be busier than another.
+    let pace = null;
+    try {
+        if (ts && ts.hasTime && g.tracks.length)
+            pace = paceData(g.tracks);
+    }
+    catch (e) {
+        pace = null;
+    }
+    const heat = g.pointCount >= 200 ? heatPoints(g) : null;
     const mapCard = el('div', { class: 'anr-card' });
-    mapCard.appendChild(el('h3', {}, 'Map'));
+    let mapHelp = 'The shapes and coordinates in the file drawn on an OpenStreetMap map. Tiles come from openstreetmap.org - the file itself is never sent anywhere.';
+    if (pace)
+        mapHelp += ' Pace colours the line by how fast you were moving, with the five colours split evenly across the range of speeds in this track rather than across fixed thresholds, and pins the places you stayed put.';
+    if (heat)
+        mapHelp += ' Density shades how often the track comes back to the same spot, so a route walked every day stands out from one walked once.';
+    const [mh, mhelp] = h3help('Map', mapHelp);
+    mapCard.appendChild(mh);
+    mapCard.appendChild(mhelp);
+    const modeStrip = el('div', { class: 'anr-geo-modes' });
+    if (pace || heat)
+        mapCard.appendChild(modeStrip);
     const mapEl = el('div', { class: 'anr-geo-map' });
     mapEl.appendChild(el('p', { class: 'anr-hint' }, 'Loading map…'));
     mapCard.appendChild(mapEl);
+    const legend = el('div', { class: 'anr-geo-legend' });
+    mapCard.appendChild(legend);
     resultsEl.insertBefore(mapCard, _renderAnchor);
     try {
         await loadCss(LEAFLET_CSS);
@@ -523,15 +741,100 @@ export async function renderGeo(file, resultsEl) {
     mapEl.innerHTML = '';
     const map = L.map(mapEl);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+    // The plain track, its pace-coloured twin and the stop pins each live in their
+    // own layer group so switching view is an add/remove rather than a rebuild.
+    const trackLayer = L.layerGroup();
     for (const line of g.lines)
         if (line.length > 1)
-            L.polyline(line, { color: '#445f74', weight: 3 }).addTo(map);
+            L.polyline(line, { color: '#445f74', weight: 3 }).addTo(trackLayer);
+    const paceLayer = L.layerGroup();
+    const stopLayer = L.layerGroup();
+    if (pace) {
+        for (const r of pace.runs)
+            L.polyline(r.pts, { color: rgb(PACE_RAMP[r.band]), weight: 4, opacity: 0.9 }).addTo(paceLayer);
+        for (const s of pace.stops.slice(0, 400)) {
+            L.circleMarker([s.lat, s.lon], {
+                radius: Math.min(11, 4 + Math.sqrt(s.sec) / 3), color: '#1d232a', weight: 1.5,
+                fillColor: '#f0f2f4', fillOpacity: 0.85,
+            }).addTo(stopLayer).bindPopup(el('div', {}, 'Stopped for ' + fmtDuration(s.sec)));
+        }
+    }
+    // A faint version of the track under the density grid, so an area the heat map
+    // barely registers still shows you where the route went.
+    const ghostLayer = L.layerGroup();
+    if (heat)
+        for (const line of g.lines)
+            if (line.length > 1)
+                L.polyline(line, { color: '#445f74', weight: 1, opacity: 0.35 }).addTo(ghostLayer);
+    const density = heat ? densityOverlay(map, heat) : null;
     // Cap markers so a huge waypoint set doesn't lock up the page.
     // Pass a DOM node (not a string) to bindPopup: the string overload sets the
     // popup content via innerHTML, which would execute markup in an untrusted
     // KML/GPX/GeoJSON <name>.
     for (const m of g.markers.slice(0, 500))
         L.marker([m.lat, m.lon]).addTo(map).bindPopup(el('div', {}, m.name || (m.lat.toFixed(5) + ', ' + m.lon.toFixed(5))));
+    const swatch = (colour, label) => {
+        const item = el('span', { class: 'anr-legend-item' });
+        const sw = el('span', { class: 'anr-legend-swatch' });
+        sw.style.background = colour;
+        item.appendChild(sw);
+        item.appendChild(document.createTextNode(label));
+        return item;
+    };
+    const setMode = (mode) => {
+        map.removeLayer(trackLayer);
+        map.removeLayer(paceLayer);
+        map.removeLayer(stopLayer);
+        map.removeLayer(ghostLayer);
+        if (density)
+            density.remove();
+        legend.innerHTML = '';
+        if (mode === 'pace' && pace) {
+            paceLayer.addTo(map);
+            stopLayer.addTo(map);
+            const edges = pace.bands;
+            const labels = [
+                'under ' + fmtSpeed(edges[0]),
+                fmtSpeed(edges[0]) + ' - ' + fmtSpeed(edges[1]),
+                fmtSpeed(edges[1]) + ' - ' + fmtSpeed(edges[2]),
+                fmtSpeed(edges[2]) + ' - ' + fmtSpeed(edges[3]),
+                'over ' + fmtSpeed(edges[3]),
+            ];
+            labels.forEach((lab, i) => legend.appendChild(swatch(rgb(PACE_RAMP[i]), lab)));
+            if (pace.stops.length)
+                legend.appendChild(swatch('#f0f2f4', pace.stops.length + (pace.stops.length === 1 ? ' stop' : ' stops')));
+        }
+        else if (mode === 'density' && density) {
+            ghostLayer.addTo(map);
+            density.add();
+            const bar = el('span', { class: 'anr-geo-heatbar' });
+            bar.style.background = 'linear-gradient(to right, ' + PACE_RAMP.map((c) => rgb(c)).join(', ') + ')';
+            const item = el('span', { class: 'anr-legend-item' });
+            item.appendChild(document.createTextNode('Passed once'));
+            item.appendChild(bar);
+            item.appendChild(document.createTextNode('Passed often'));
+            legend.appendChild(item);
+        }
+        else {
+            trackLayer.addTo(map);
+        }
+        for (const b of modeStrip.children)
+            b.classList.toggle('is-active', b.dataset.mode === mode);
+    };
+    const addMode = (mode, label) => {
+        const b = el('button', { class: 'anr-seg-btn', type: 'button' }, label);
+        b.dataset.mode = mode;
+        b.addEventListener('click', () => setMode(mode));
+        modeStrip.appendChild(b);
+    };
+    if (pace || heat) {
+        addMode('track', 'Track');
+        if (pace)
+            addMode('pace', 'Pace');
+        if (heat)
+            addMode('density', 'Density');
+    }
+    setMode('track');
     map.fitBounds([[minLat, minLon], [maxLat, maxLon]], { padding: [20, 20], maxZoom: 16 });
     setTimeout(() => map.invalidateSize(), 60);
 }

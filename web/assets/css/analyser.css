@@ -3965,6 +3965,13 @@ audio { width: 100%; }
 /* GPX/KML/GeoJSON map */
 .anr-geo-map { width: 100%; height: 380px; border: var(--bd-hairline); background: var(--surface); }
 .anr-geo-map .anr-hint { padding: 16px; }
+/* Track / Pace / Density view picker and its legend. */
+.anr-geo-modes { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 8px; }
+.anr-geo-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin-top: 8px; }
+.anr-geo-legend:empty { display: none; }
+/* Revisit-density canvas, positioned by Leaflet inside the overlay pane. */
+.anr-geo-heat { position: absolute; pointer-events: none; }
+.anr-geo-heatbar { display: inline-block; width: 96px; height: 8px; margin: 0 2px; }
 
 /* LRC timed-lyrics list */
 .anr-lrc-list { max-height: 460px; overflow: auto; font-size: var(--t-small); line-height: 1.5; }

@@ -155,6 +155,20 @@ export const TRACKER_SAMPLE_RATE = 48000;
 // still resolves individual ore veins on a large world and keeps a phone in play.
 export const TERRARIA_MAP_MAX_PX = 6_000_000;
 
+// A GPS export can hold years of activity - a full Strava or Google Location
+// History dump runs to millions of points. The density overlay bins into a
+// screen-space grid, so its DRAW cost is bounded by the canvas rather than the
+// track, but the binning pass still touches every point on every redraw. Past
+// this ceiling the track is sampled at an even stride instead, which changes
+// nothing visible: at the zoom levels a track is read at, consecutive points are
+// already well under a pixel apart.
+export const GEO_HEAT_POINTS = 400_000;
+// The pace overlay draws one polyline per run of constant speed band. A noisy
+// recording alternates bands every few points, so the run count is capped and
+// the remainder falls back to a single track line rather than putting thousands
+// of SVG paths on the map.
+export const GEO_PACE_RUNS = 4000;
+
 // ---- compute-cost guards (bound main-thread work, not memory) ----
 // Above this size the pure-JS MD5 / CRC-32 in extraHashRows() are skipped: they
 // walk the file byte-by-byte (no crypto.subtle equivalent exists) and would freeze
