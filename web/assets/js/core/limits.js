@@ -152,6 +152,11 @@ export const GEO_HEAT_POINTS = 400_000;
 // the remainder falls back to a single track line rather than putting thousands
 // of SVG paths on the map.
 export const GEO_PACE_RUNS = 4000;
+// A Sketch document's layer tree is JSON with no depth or breadth limit of its
+// own - a design system file can hold hundreds of thousands of objects, and each
+// one becomes a DOM row. The walk stops here and says so, rather than building a
+// tree the browser cannot lay out.
+export const SKETCH_LAYER_MAX = 50_000;
 // Fuzzy hashing (ssdeep) reads the whole file into one array and may walk it more
 // than once - it halves the block size and starts over when the first pass gives
 // too short a signature. The work is cheap per byte, but it is a full read, so a

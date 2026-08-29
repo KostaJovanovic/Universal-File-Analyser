@@ -125,7 +125,7 @@ js/
       · iwork.js · epub.js · mobi.js · mdb.js · notebook.js · markdown.js
       — office/document/e-book/notebook viewers
     svg.js · illustrator.js · psd.js · paint.js · aseprite.js · xcf.js ·
-      diagram.js · lut.js · font.js
+      sketch.js · diagram.js · lut.js · font.js
       — vector/raster design files, colour LUTs, font specimens.
       aseprite.js decodes .aseprite/.ase pixel art: every frame is COMPOSITED
       from the layer stack (frames store only changed cels, and a cel may link
@@ -137,7 +137,15 @@ js/
       is built by decoding each layer's 64x64 tiles (raw / RLE / zlib) and
       blending them with mask, opacity and blend mode. 8-bit precision only;
       16/32-bit files are described rather than drawn. Pointers are 32-bit
-      below XCF v11 and 64-bit from v11 - the easiest thing to get wrong
+      below XCF v11 and 64-bit from v11 - the easiest thing to get wrong.
+      sketch.js reads .sketch, which is a ZIP of JSON and therefore fully
+      readable: pages/<uuid>.json holds each page's layer tree, every object
+      carrying a `_class` and a `frame`. Beyond the tree it pulls out the two
+      things a design review needs - symbolMaster/symbolInstance counts (which
+      components the design actually rests on) and every string in the document.
+      Figma's .fig is NOT here on purpose: it is a Kiwi message whose schema
+      ships inside the file and changes per Figma version, so parsers-image.js
+      reads out the container and stops rather than guessing
     stl.js · model3d.js · gcode.js · unity.js — 3D viewers + G-code toolpath + Unity assets
     dwg.js · model3d.js · solidworks.js · f3d.js — CAD (DWG 2D drawing; STEP/IGES/BREP
       via OpenCASCADE; SolidWorks .sldprt/.sldasm/.slddrw - OLE2 preview+metadata

@@ -192,6 +192,8 @@ export function classifyFile(file: File) {
   if (ext === 'aseprite' || ext === 'ase') return 'aseprite';
   // GIMP: no baked composite, so the layer stack is composited in the browser.
   if (ext === 'xcf') return 'xcf';
+  // Sketch: a ZIP of JSON, so the whole component tree is readable.
+  if (ext === 'sketch') return 'sketch';
   if (TRACKER_EXTS.has(ext)) return 'tracker';
   // Illustrator: modern .ai is PDF-based, rendered with pdf.js.
   if (ext === 'ai') return 'ai';

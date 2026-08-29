@@ -244,6 +244,14 @@ can expand into prose. British spelling, no em-dashes (site house style).
   modes, opacity, visibility, per-layer thumbnails); falls back to the embedded
   preview for CMYK/16-bit/huge files; always memory-safe.
 - **Illustrator** (`.ai`) - modern PDF-based files open in the PDF viewer.
+- **Sketch** (`.sketch`) - the whole design opens: a browsable tree of every page,
+  artboard, group and layer; a components list showing how many instances each
+  one has, so you can see which parts of a design system carry the work and which
+  nothing uses; all the copy in the document in one readable list; the images
+  placed into the design; and the preview Sketch saves in the file. (Figma's
+  `.fig` gets its container read out but not its contents - Figma encodes a
+  design against a schema that ships inside each file and changes with the app
+  version, so there is nothing stable to read.)
 - **Painting apps** - Krita (`.kra`), Procreate, Paint.NET (`.pdn`) - shows the
   merged preview and canvas info.
 - **GIMP** (`.xcf`) - a GIMP file stores no flattened image at all, only its
