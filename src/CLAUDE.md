@@ -199,6 +199,15 @@ js/
                     raw-deflate IDATs, BGRA, premultiplied alpha - which NO
                     browser decodes; photo.js repairs one to a real PNG at the
                     top of renderPhoto, so every .ipa icon works) ·
+                    pe-packer (PE packer / protector / toolchain identification
+                    behind proprietary.js's .exe path. Two halves that answer
+                    different questions: a signature table that NAMES things
+                    (UPX, VMProtect, Themida, PyInstaller, Go, Rust) and
+                    heuristics that MEASURE - chiefly per-section entropy,
+                    sampled through limits.js's PE_SECTION_SAMPLE rather than
+                    read whole. Packing is what installers and commercial
+                    software do as often as malware, so the readout lists
+                    evidence and draws no conclusion) ·
                     openmpt-loader (libopenmpt WASM, ~1.5 MB, Everything
                     tier - the vendored file is chiptune3's
                     libopenmpt.worklet.js, which despite the name registers no

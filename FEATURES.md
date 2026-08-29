@@ -353,7 +353,13 @@ can expand into prose. British spelling, no em-dashes (site house style).
   - **Disk images** (ISO, VHD/VHDX, VMDK, qcow2, VDI).
   - **Executables/packages** (Windows EXE/DLL/MSI, Android APK, iOS IPA, macOS DMG,
     Linux AppImage), plus deep PE analysis (architecture, compile date, sections,
-    security mitigations like ASLR/DEP/CFG, imported DLLs, version info).
+    security mitigations like ASLR/DEP/CFG, imported DLLs, version info). It also
+    works out **what built the file and whether it is packed** - naming UPX,
+    VMProtect, Themida, PyInstaller, Go, Rust and around thirty others from their
+    fingerprints, and measuring each section's randomness to spot compressed or
+    encrypted code even when the packer is one it doesn't know. Packing is what
+    installers and commercial software do as often as malware, so the card shows
+    the evidence and leaves the conclusion to you.
   - **ML/data-science** (Safetensors, GGUF models, NumPy arrays, WebAssembly, Java
     bytecode, Protocol Buffers, SQL dumps, source maps).
   - **Configs and scripts** across dozens of languages and build tools.
