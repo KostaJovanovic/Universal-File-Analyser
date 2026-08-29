@@ -3962,6 +3962,31 @@ audio { width: 100%; }
 .anr-midi-list { margin: 0; padding-left: 20px; font-size: var(--t-small); line-height: 1.7; color: var(--fg); }
 .anr-midi-list li { word-break: break-word; }
 
+/* ML computation graph. The SVG is drawn at its natural size and the wrapper
+   scrolls, because a model graph is wide by nature and shrinking it to fit makes
+   the op labels unreadable, which is the only thing the picture is for. */
+.anr-mlgraph {
+  overflow: auto;
+  max-height: 520px;
+  border: var(--bd-hairline);
+  background: var(--surface);
+}
+.anr-mlgraph-svg { display: block; }
+.anr-mlgraph-edges path { fill: none; stroke: var(--muted); stroke-width: 1; opacity: 0.6; }
+.anr-mlgraph-node rect {
+  fill: var(--bg);
+  stroke: var(--fg);
+  stroke-width: 1;
+}
+.anr-mlgraph-node text {
+  fill: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-anchor: middle;
+}
+.anr-mlgraph-node:hover rect { fill: var(--accent); }
+.anr-mlgraph-node:hover text { fill: var(--bg); }
+
 /* DAW arrangement (Ableton .als / Reaper .rpp).
    A fixed name column beside a scrolling strip of lanes. Clips are positioned in
    percentages of the project length, so the whole thing reflows with the card and

@@ -299,6 +299,26 @@ can expand into prose. British spelling, no em-dashes (site house style).
 - **Interchange timelines** - EDL (CMX3600), Final Cut Pro X FCPXML, and
   OpenTimelineIO (OTIO) all rendered to the same visual timeline.
 
+## AI models
+
+- **ONNX models and frozen TensorFlow graphs are drawn as a graph** - every
+  operation a box, every tensor flowing between them a line, laid out left to
+  right so parallel branches sit side by side and merge where they rejoin.
+  Neither format actually stores the connections: one operation follows another
+  because they name the same tensor, so the wiring is reassembled from those
+  names. Alongside it: the mix of operations, which fingerprints the
+  architecture; the input and output shapes, including the ones a model leaves
+  open; every weight tensor; and the total parameter count.
+- **Safetensors and GGUF** weight files list every tensor with its shape and
+  precision, the parameter count, and how many bits per parameter the file
+  actually spends - the honest measure of how hard a model has been quantised. A
+  GGUF also declares its architecture, context length, layer count and tokenizer.
+- **PyTorch checkpoints** (`.pt`/`.pth`/`.ckpt`) are Python pickles, which are
+  programs rather than documents - loading one runs whatever it says to. Nothing
+  here is run. The file is read as bytes, every module it would import is
+  listed, and anything a file of numbers has no reason to touch is flagged.
+- **Keras models** have their layer list read out of the architecture JSON.
+
 ## Music-production sessions
 
 - **Ableton Live** (`.als`/`.alp`) and **Reaper** (`.rpp`) sessions **draw their
@@ -386,8 +406,8 @@ can expand into prose. British spelling, no em-dashes (site house style).
     encrypted code even when the packer is one it doesn't know. Packing is what
     installers and commercial software do as often as malware, so the card shows
     the evidence and leaves the conclusion to you.
-  - **ML/data-science** (Safetensors, GGUF models, NumPy arrays, WebAssembly, Java
-    bytecode, Protocol Buffers, SQL dumps, source maps).
+  - **Data-science** (NumPy arrays, WebAssembly, Java bytecode, Protocol
+    Buffers, SQL dumps, source maps). AI models get a full viewer - see below.
   - **Configs and scripts** across dozens of languages and build tools.
 - **Header decoders** for many of these read out real detail - e.g. Blender
   version and bitness, FBX/glTF version, SWF compression, DWG release year.

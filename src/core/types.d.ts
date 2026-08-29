@@ -27,7 +27,7 @@ export type Kind =
   | 'timeline' | 'lrc' | 'midi' | 'subtitles'
   | 'geo' | 'markdown' | 'comic' | 'paint' | 'psd' | 'aseprite' | 'xcf' | 'sketch' | 'tracker' | 'terraria' | 'ai' | 'font'
   | 'djvu' | 'mdb' | 'mobi' | 'pdf'
-  | 'zip' | 'diskimage' | 'svg' | 'lottie' | 'csv'
+  | 'zip' | 'diskimage' | 'svg' | 'lottie' | 'csv' | 'mlmodel'
   | 'proprietary' | 'plaintext' | 'git-object'
   | 'unknown' | 'extensionless';
 

@@ -152,6 +152,19 @@ export const GEO_HEAT_POINTS = 400_000;
 // the remainder falls back to a single track line rather than putting thousands
 // of SVG paths on the map.
 export const GEO_PACE_RUNS = 4000;
+// A model graph is read from the whole file, because protobuf gives no index -
+// finding the GraphProto means walking past everything before it. Weight files
+// (safetensors, GGUF, PyTorch) are exempt: those are read through their headers
+// and never pulled into memory whole, which is why a 40 GB GGUF still opens.
+export const ML_MODEL_MAX = 2 * GB;
+// Drawing more boxes than this produces a picture nobody can read, and the
+// tables below the diagram cover every node anyway.
+export const ML_GRAPH_NODES = 400;
+// Structural ceiling on the protobuf walk itself.
+export const ML_NODE_MAX = 50_000;
+// A GGUF's metadata block holds the tokenizer vocabulary, so it is megabytes
+// rather than kilobytes, and it must be read in one piece to walk it.
+export const GGUF_HEADER_MAX = byTier({ high: 64 * MB, mid: 32 * MB, low: 8 * MB });
 // A DAW project holds no audio - it is an edit list - so a session that has run
 // past a few tens of megabytes is not a session, and the whole file is read into
 // memory (Ableton's is gzipped XML that expands severalfold). The clip ceiling

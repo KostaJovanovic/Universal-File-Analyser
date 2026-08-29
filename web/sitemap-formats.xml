@@ -42,6 +42,7 @@
   <url><loc>https://analyser.valjdakosta.com/formats/brep</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/bz2</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/c67</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://analyser.valjdakosta.com/formats/ckpt</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/cmd</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/cnc</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/controller</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
@@ -106,6 +107,9 @@
   <url><loc>https://analyser.valjdakosta.com/formats/gcsv</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/gdm</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/geojson</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://analyser.valjdakosta.com/formats/ggjt</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://analyser.valjdakosta.com/formats/ggml</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://analyser.valjdakosta.com/formats/gguf</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/gif</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/glb</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/gltf</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
@@ -117,7 +121,9 @@
   <url><loc>https://analyser.valjdakosta.com/formats/gz</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/h264</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/h265</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://analyser.valjdakosta.com/formats/h5</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/har</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://analyser.valjdakosta.com/formats/hdf5</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/heic</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/heif</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/hevc</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
@@ -149,6 +155,7 @@
   <url><loc>https://analyser.valjdakosta.com/formats/jsx</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/jxl</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/kdc</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://analyser.valjdakosta.com/formats/keras</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/keynote</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/kicad_mod</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/kicad_pcb</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
@@ -219,6 +226,7 @@
   <url><loc>https://analyser.valjdakosta.com/formats/ogg</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/ogv</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/okt</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://analyser.valjdakosta.com/formats/onnx</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/opus</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/orf</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/org</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
@@ -259,7 +267,9 @@
   <url><loc>https://analyser.valjdakosta.com/formats/psd</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/psd1</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/psm1</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://analyser.valjdakosta.com/formats/pt</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/pt36</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://analyser.valjdakosta.com/formats/pth</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/ptm</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/puma</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/raf</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
@@ -274,6 +284,7 @@
   <url><loc>https://analyser.valjdakosta.com/formats/rw2</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/rwl</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/s3m</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://analyser.valjdakosta.com/formats/safetensors</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/schdoc</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/schlib</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/sfx</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
@@ -676,7 +687,6 @@
   <url><loc>https://analyser.valjdakosta.com/formats/id/gen</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/geom</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/gg</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://analyser.valjdakosta.com/formats/id/gguf</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/gh</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/ghx</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/gi</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
@@ -954,7 +964,6 @@
   <url><loc>https://analyser.valjdakosta.com/formats/id/ogm</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/old</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/olm</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://analyser.valjdakosta.com/formats/id/onnx</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/opml</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/opvault</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/orc</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
@@ -1119,7 +1128,6 @@
   <url><loc>https://analyser.valjdakosta.com/formats/id/s19</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/s28</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/s37</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://analyser.valjdakosta.com/formats/id/safetensors</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/sam</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/sample</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://analyser.valjdakosta.com/formats/id/sap</loc><lastmod>2026-08-29</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
