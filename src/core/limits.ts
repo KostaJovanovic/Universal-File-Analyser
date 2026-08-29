@@ -142,6 +142,14 @@ export const AVI_FRAME_CACHE = byTier({ high: 96 * MB, mid: 64 * MB, low: 32 * M
 // 20000x20000 canvas from being decoded on a phone.
 export const CGBI_REPAIR_MAX = 64 * MB;
 
+// A tracker module is a score, not a recording: a 40 KB .it can be a
+// twelve-minute song, and one written to loop has no end at all. Rendering is
+// therefore bounded by OUTPUT seconds rather than input size. At 48 kHz stereo
+// float this ceiling is ~110 MB of PCM, in line with what the audio renderer
+// already holds for a long WAV; past it the render stops and the viewer says so.
+export const TRACKER_RENDER_MAX = 600;          // seconds of audio
+export const TRACKER_SAMPLE_RATE = 48000;
+
 // ---- compute-cost guards (bound main-thread work, not memory) ----
 // Above this size the pure-JS MD5 / CRC-32 in extraHashRows() are skipped: they
 // walk the file byte-by-byte (no crypto.subtle equivalent exists) and would freeze

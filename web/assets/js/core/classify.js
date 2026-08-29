@@ -31,6 +31,16 @@ const UNITY_EXTS = new Set([
 // G-code from 3D-print slicers and CNC/CAM toolpaths - reconstructed in the
 // gcode viewer (extruded moves drawn as the printed shape, or cut moves for CNC).
 const GCODE_EXTS = new Set(['gcode', 'gco', 'g', 'ngc', 'nc', 'tap', 'cnc']);
+// Tracker modules: a score plus sample bank, rendered to PCM by libopenmpt and
+// then analysed as ordinary audio. `.mod` also names a JVC camcorder video, which
+// VARIANT_REROUTE sends elsewhere on its bytes.
+const TRACKER_EXTS = new Set([
+    'mod', 'xm', 'it', 's3m', 'mptm', 'mtm', 'stm', '669', '667', 'far', 'okt', 'med', 'umx',
+    'mo3', 'ams', 'c67', 'dbm', 'digi', 'dmf', 'dtm', 'etx', 'fc', 'fc13', 'fc14', 'fmt',
+    'fst', 'ftm', 'gdm', 'gmc', 'gtk', 'gt2', 'ice', 'imf', 'ims', 'j2b', 'm15', 'mmcmp',
+    'mms', 'mt2', 'mus', 'nst', 'oxm', 'plm', 'pt36', 'ptm', 'puma', 'rtm', 'sfx', 'sfx2',
+    'smod', 'st26', 'stk', 'stx', 'symmod', 'tcb', 'ult', 'unic', 'wow', 'xmf', 'xpk',
+]);
 export function classifyFile(file) {
     const t = (file.type || '').toLowerCase();
     const ext = fileExt(file.name);
@@ -244,6 +254,8 @@ export function classifyFile(file) {
     // GIMP: no baked composite, so the layer stack is composited in the browser.
     if (ext === 'xcf')
         return 'xcf';
+    if (TRACKER_EXTS.has(ext))
+        return 'tracker';
     // Illustrator: modern .ai is PDF-based, rendered with pdf.js.
     if (ext === 'ai')
         return 'ai';
