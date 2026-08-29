@@ -118,14 +118,20 @@ js/
     docx.js · xlsx.js · xlsb.js · pptx.js · odf.js · legacy-office.js · textdoc.js
       · iwork.js · epub.js · mobi.js · mdb.js · notebook.js · markdown.js
       — office/document/e-book/notebook viewers
-    svg.js · illustrator.js · psd.js · paint.js · aseprite.js · diagram.js ·
-      lut.js · font.js
+    svg.js · illustrator.js · psd.js · paint.js · aseprite.js · xcf.js ·
+      diagram.js · lut.js · font.js
       — vector/raster design files, colour LUTs, font specimens.
       aseprite.js decodes .aseprite/.ase pixel art: every frame is COMPOSITED
       from the layer stack (frames store only changed cels, and a cel may link
       back to an earlier frame), then played at each frame's own duration.
       `.ase` collides with Adobe Swatch Exchange, so VARIANT_REROUTE +
-      detectVariant send a palette file to proprietary.js on its magic instead
+      detectVariant send a palette file to proprietary.js on its magic instead.
+      xcf.js is the same shape for GIMP, and is the one viewer here that MUST
+      composite: an XCF contains no flattened image, only layers, so the picture
+      is built by decoding each layer's 64x64 tiles (raw / RLE / zlib) and
+      blending them with mask, opacity and blend mode. 8-bit precision only;
+      16/32-bit files are described rather than drawn. Pointers are 32-bit
+      below XCF v11 and 64-bit from v11 - the easiest thing to get wrong
     stl.js · model3d.js · gcode.js · unity.js — 3D viewers + G-code toolpath + Unity assets
     dwg.js · model3d.js · solidworks.js · f3d.js — CAD (DWG 2D drawing; STEP/IGES/BREP
       via OpenCASCADE; SolidWorks .sldprt/.sldasm/.slddrw - OLE2 preview+metadata
