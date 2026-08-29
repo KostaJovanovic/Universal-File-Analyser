@@ -211,6 +211,10 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
             './assets/vendor/openjpeg/openjpegwasm.js',
             './assets/vendor/openjpeg/openjpegwasm.wasm',
             './assets/vendor/xzwasm/xzwasm.min.js',
+            // libopenmpt (~1.5 MB): the tracker engine that renders MOD/XM/IT/S3M and
+            // their ~60 relatives to PCM. Here rather than in Essentials so the
+            // headline "whole app" download stays where it is.
+            './assets/vendor/libopenmpt.js',
             // Format-specific viewer libraries (lazy-loaded on demand when their file
             // type is opened): Photoshop (ag-psd), Excel binary (SheetJS), fonts
             // (opentype.js), DjVu, Kindle/MOBI (foliate-js) and Access (mdb-reader).

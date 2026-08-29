@@ -94,6 +94,12 @@ js/
       parsers-email.js (vCard PHOTO/LOGO) and parsers-image.js (EPS stored
       preview) all feed it too. Its rgbaToPngBlob() export is there for the
       previews stored as bare pixels rather than as an encoded image
+    tracker.js — MOD/XM/IT/S3M and ~60 relatives. A module is a SCORE (samples +
+      pattern grid), not recorded audio, so lib/openmpt-loader.js renders it to
+      PCM with libopenmpt offline and hands the buffer to renderAudio() - the
+      whole Sound section then works unchanged. The tracker card above it carries
+      what a WAV has no equivalent of: tracker, channels, patterns, song message
+      and the sample/instrument name lists
     audio.js · audio-analysis.js · audio-codec.js · audio-player.js · spectrogram.js
       · media-reverse.js · audio-dsp.js/-client.js/-worker.js — audio playback,
       codec/loudness analysis, spectrogram; the audio-dsp trio runs the heavy
@@ -187,6 +193,10 @@ js/
                     raw-deflate IDATs, BGRA, premultiplied alpha - which NO
                     browser decodes; photo.js repairs one to a real PNG at the
                     top of renderPhoto, so every .ipa icon works) ·
+                    openmpt-loader (libopenmpt WASM, ~1.5 MB, Everything
+                    tier - the vendored file is chiptune3's
+                    libopenmpt.worklet.js, which despite the name registers no
+                    AudioWorkletProcessor and runs fine on the main thread) ·
                     plist · cfbf · nrbf ·
                     sqlite · legacy-decompress · *-loader (libarchive, xz, lzma,
                     occt, ghostscript, openjpeg) · table-stats.js (DOM-free
