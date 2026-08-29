@@ -31,6 +31,15 @@ const UNITY_EXTS = new Set([
 // G-code from 3D-print slicers and CNC/CAM toolpaths - reconstructed in the
 // gcode viewer (extruded moves drawn as the printed shape, or cut moves for CNC).
 const GCODE_EXTS = new Set(['gcode', 'gco', 'g', 'ngc', 'nc', 'tap', 'cnc']);
+/* Machine-learning models. `.bin` is deliberately absent: it names far more
+   things than it names model weights, and a wrong route there would swallow
+   every unidentified binary. `.h5`/`.hdf5` are here because in practice a
+   dropped one is a Keras model; a scientific HDF5 dataset falls back to the
+   header readout, which is what it got before. */
+const ML_MODEL_EXTS = new Set([
+    'onnx', 'safetensors', 'gguf', 'ggml', 'ggjt', 'pt', 'pth', 'ckpt',
+    'keras', 'h5', 'hdf5',
+]);
 // Tracker modules: a score plus sample bank, rendered to PCM by libopenmpt and
 // then analysed as ordinary audio. `.mod` also names a JVC camcorder video, which
 // VARIANT_REROUTE sends elsewhere on its bytes.
@@ -173,6 +182,12 @@ export function classifyFile(file) {
     // metadata, plugin ids and title text.
     if (ext === 'veg' || ext === 'vf')
         return 'vegas';
+    // Machine-learning models. Two different things behind one renderer: graphs
+    // (ONNX, frozen TensorFlow) and weight files (safetensors, GGUF, PyTorch,
+    // Keras). `.pt`/`.pth`/`.ckpt` are pickles, and the readout says what the
+    // pickle would import without running any of it.
+    if (ML_MODEL_EXTS.has(ext))
+        return 'mlmodel';
     // DAW sessions with a readable arrangement: Ableton Live (gzipped XML) and
     // Reaper (plain text). FL Studio's .flp is a binary event stream and stays on
     // the metadata path in proprietary.js.

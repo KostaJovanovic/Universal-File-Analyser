@@ -168,6 +168,21 @@ js/
                     stays on parseFlp() in proprietary.js: its clip positions
                     live in data events whose layout varies by FL version
     midi.js · subtitles.js · lrc.js — MIDI score, SRT/VTT/ASS subs, LRC lyrics
+    mlmodel.js    — machine-learning models, four different things behind one
+                    renderer. GRAPHS: ONNX and frozen TensorFlow GraphDef, both
+                    protobuf, decoded by lib/onnx.js and drawn as a layered DAG
+                    (a node's column is one past the DEEPEST of its producers -
+                    longest path, so a skip connection doesn't drag a late node
+                    forward). Protobuf stores no edge list; edges are recovered
+                    by matching output names to input names. WEIGHTS:
+                    safetensors (JSON header) and GGUF (self-describing KV
+                    header + tensor table, read through GGUF_HEADER_MAX so a
+                    40 GB model still opens). PICKLES: .pt/.pth/.ckpt - the
+                    GLOBAL opcodes are read AS BYTES and never executed, and
+                    anything outside the set a tensor file has reason to import
+                    is flagged. KERAS: .keras config.json, or the model_config
+                    JSON located in a legacy .h5's bytes (parsing HDF5 properly
+                    would be a large job for one string stored verbatim)
     csv.js · gcsv.js · tablekit.js · dataview.js · gitobject.js · email.js —
       tabular/IMU/data/git/email; tablekit.js is the table workbench (virtualised
       grid, stats bar, group-by, charts) mounted below any CSV/XLSX/XLSB/ODS analysis
@@ -226,6 +241,11 @@ js/
                     read whole. Packing is what installers and commercial
                     software do as often as malware, so the readout lists
                     evidence and draws no conclusion) ·
+                    onnx (protobuf wire reader + the ONNX and TF GraphDef field
+                    numbers. Hand-decoded on purpose: protobuf.js alone cannot
+                    read an ONNX file - it also needs the compiled schema - and
+                    between them that is ~500 KB to recover a field mapping that
+                    is thirty stable numbers long) ·
                     ssdeep (context-triggered piecewise hashing, from scratch -
                     the published spamsum algorithm, so the strings interoperate
                     with real ssdeep. Answers "how much of these two files is the

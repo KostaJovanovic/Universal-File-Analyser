@@ -44,7 +44,7 @@
    `npm run build` recompiles.
    ============================================================================ */
 
-const COMMIT_COUNT = 294;
+const COMMIT_COUNT = 295;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -321,6 +321,7 @@ const ROUTES: RouteTable = {
   davinci:     { render: lazy('../renderers/davinci.js', 'renderDavinci') },
   vegas:       { render: lazy('../renderers/vegas.js', 'renderVegas') },
   daw:         { render: lazy('../renderers/daw.js', 'renderDaw') },
+  mlmodel:     { render: lazy('../renderers/mlmodel.js', 'renderMlModel') },
   unity:       { render: lazy('../renderers/unity.js', 'renderUnity') },
   vssolution:  { render: lazy('../renderers/vssolution.js', 'renderVsSolution') },
   lut:         { render: lazy('../renderers/lut.js', 'renderLut') },
