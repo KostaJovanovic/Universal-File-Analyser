@@ -23,7 +23,7 @@ export type Kind =
   | 'drawio' | 'dxf' | 'dwg' | 'altium' | 'kicad' | 'spice' | 'ipcnet'
   | 'aep' | 'premiere' | 'davinci' | 'vegas' | 'daw' | 'unity' | 'vssolution'
   | 'lut' | 'xmp' | 'gcsv' | 'iwork'
-  | 'stl' | 'model3d' | 'f3d' | 'solidworks' | 'gcode' | 'molecule'
+  | 'stl' | 'model3d' | 'f3d' | 'solidworks' | 'gcode' | 'molecule' | 'ifc'
   | 'timeline' | 'lrc' | 'midi' | 'subtitles'
   | 'geo' | 'markdown' | 'comic' | 'paint' | 'psd' | 'aseprite' | 'xcf' | 'sketch' | 'tracker' | 'terraria' | 'ai' | 'font'
   | 'djvu' | 'mdb' | 'mobi' | 'pdf'

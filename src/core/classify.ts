@@ -166,6 +166,11 @@ export function classifyFile(file: File) {
   // with the Crystallographic Information File proper, which is the same syntax
   // and the same viewer, so both land here.
   if (MOLECULE_EXTS.has(ext)) return 'molecule';
+  // IFC / BIM: a building as a graph of objects, in STEP syntax. The spatial
+  // tree is assembled from relationship objects, not stored. Only the STEP
+  // spelling - .ifcxml is the same model in XML and a different parse, and
+  // .ifczip is a ZIP the archive browser already opens.
+  if (ext === 'ifc') return 'ifc';
   // DAW sessions with a readable arrangement: Ableton Live (gzipped XML) and
   // Reaper (plain text). FL Studio's .flp is a binary event stream and stays on
   // the metadata path in proprietary.js.
