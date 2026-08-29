@@ -152,6 +152,12 @@ export const GEO_HEAT_POINTS = 400_000;
 // the remainder falls back to a single track line rather than putting thousands
 // of SVG paths on the map.
 export const GEO_PACE_RUNS = 4000;
+// A DAW project holds no audio - it is an edit list - so a session that has run
+// past a few tens of megabytes is not a session, and the whole file is read into
+// memory (Ableton's is gzipped XML that expands severalfold). The clip ceiling
+// bounds the DOM instead: each clip is an element on the arrangement.
+export const DAW_PROJECT_MAX = 64 * MB;
+export const DAW_CLIP_MAX = 20_000;
 // A Sketch document's layer tree is JSON with no depth or breadth limit of its
 // own - a design system file can hold hundreds of thousands of objects, and each
 // one becomes a DOM row. The walk stops here and says so, rather than building a

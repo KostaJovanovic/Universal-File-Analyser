@@ -43,7 +43,7 @@
    on every build, so an edit there is silently lost. src/ edits do nothing until
    `npm run build` recompiles.
    ============================================================================ */
-const COMMIT_COUNT = 293;
+const COMMIT_COUNT = 294;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -334,6 +334,7 @@ const ROUTES = {
     premiere: { render: lazy('../renderers/premiere.js', 'renderPremiere') },
     davinci: { render: lazy('../renderers/davinci.js', 'renderDavinci') },
     vegas: { render: lazy('../renderers/vegas.js', 'renderVegas') },
+    daw: { render: lazy('../renderers/daw.js', 'renderDaw') },
     unity: { render: lazy('../renderers/unity.js', 'renderUnity') },
     vssolution: { render: lazy('../renderers/vssolution.js', 'renderVsSolution') },
     lut: { render: lazy('../renderers/lut.js', 'renderLut') },

@@ -299,6 +299,18 @@ can expand into prose. British spelling, no em-dashes (site house style).
 - **Interchange timelines** - EDL (CMX3600), Final Cut Pro X FCPXML, and
   OpenTimelineIO (OTIO) all rendered to the same visual timeline.
 
+## Music-production sessions
+
+- **Ableton Live** (`.als`/`.alp`) and **Reaper** (`.rpp`) sessions **draw their
+  arrangement**: one row per track, every clip where the project puts it, on a
+  real clock with a zoom for busy sections. A project file holds no audio at all
+  - it is an edit list - so this is read from the same numbers the DAW lays the
+  session out with.
+- Alongside it: tempo and time signature, each track's type, clip count and
+  plugins, and the **media files the project points at but does not contain** -
+  which is how you check whether a session that has been moved or handed over
+  will still open complete.
+
 ## Camera motion data
 
 - **Sony gyro/accelerometer track** - extracts the per-frame IMU data embedded in
@@ -359,8 +371,10 @@ can expand into prose. British spelling, no em-dashes (site house style).
     sidecars).
   - **CAD/engineering** (SolidWorks, Fusion 360, Inventor, CATIA, Creo/Pro-E,
     Rhino, SketchUp, 3ds Max, Maya, Cinema 4D, Houdini, ZBrush, Parasolid, SAT).
-  - **Audio production** (Ableton, FL Studio, Reaper, Logic, Pro Tools, Cubase,
-    GarageBand).
+  - **Audio production** (Logic, Pro Tools, Cubase, GarageBand). FL Studio
+    projects also give up their tempo, patterns, channels, plugins and samples.
+    Ableton Live and Reaper sessions go further and **draw the arrangement** -
+    see below.
   - **Game engines** (Godot, Unreal, Unity, Bink video).
   - **Disk images** (ISO, VHD/VHDX, VMDK, qcow2, VDI).
   - **Executables/packages** (Windows EXE/DLL/MSI, Android APK, iOS IPA, macOS DMG,

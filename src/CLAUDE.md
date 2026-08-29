@@ -157,6 +157,16 @@ js/
       pan/zoom/fit/layer-toggle SVG viewer used by both board renderers
     aftereffects.js · premiere.js · davinci.js · vegas.js · sony-rtmd.js · timeline.js
       — NLE/VFX project files (AE/Premiere/Resolve/VEGAS) + EDL/FCPXML/OTIO timelines
+    daw.js        — DAW sessions with a readable arrangement: Ableton Live
+                    (.als/.alp - gunzip, then LiveSet XML) and Reaper
+                    (.rpp/.rpp-bak - nested plain text). Live times clips in
+                    BEATS, Reaper in seconds, so the tempo is what makes an
+                    Ableton timeline a real clock; with no tempo the ruler says
+                    "in beats" rather than guessing. Arrangement clips only for
+                    Live - session-view clips have no timeline position, so
+                    placing them on one would be an invention. FL Studio's .flp
+                    stays on parseFlp() in proprietary.js: its clip positions
+                    live in data events whose layout varies by FL version
     midi.js · subtitles.js · lrc.js — MIDI score, SRT/VTT/ASS subs, LRC lyrics
     csv.js · gcsv.js · tablekit.js · dataview.js · gitobject.js · email.js —
       tabular/IMU/data/git/email; tablekit.js is the table workbench (virtualised

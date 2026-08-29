@@ -1145,8 +1145,11 @@ async function parseFlp(file: File) {
   const end = Math.min(buf.length, pos + dataLen);
 
   const channelNames: string[] = [];
+  const patternNames: string[] = [];
+  const samples = new Set<string>();
   const plugins = new Set<string>();
   let title, comment, version, tempo, genre, author;
+  let maxPattern = 0;
 
   while (pos < end) {
     const id = buf[pos++];
@@ -1154,6 +1157,9 @@ async function parseFlp(file: File) {
       pos += 1;
     } else if (id < 0x80) {                  // WORD event
       if (id === 0x42 && pos + 2 <= end) tempo = view.getUint16(pos, true); // legacy Tempo
+      // NewPat selects the pattern subsequent events belong to, so the highest
+      // index it ever names is how many patterns the project has.
+      if (id === 0x41 && pos + 2 <= end) maxPattern = Math.max(maxPattern, view.getUint16(pos, true));
       pos += 2;
     } else if (id < 0xC0) {                  // DWORD event
       if (id === 0x9C && pos + 4 <= end) tempo = view.getUint32(pos, true) / 1000; // FineTempo
@@ -1170,6 +1176,8 @@ async function parseFlp(file: File) {
         case 206: genre = decodeFlpText(data); break;          // Genre
         case 207: author = decodeFlpText(data); break;         // Author
         case 192: { const n = decodeFlpText(data); if (n) channelNames.push(n); break; } // ChanName
+        case 193: { const n = decodeFlpText(data); if (n) patternNames.push(n); break; } // PatName
+        case 196: { const n = decodeFlpText(data); if (n) samples.add(n); break; }       // SampleFileName
         case 201: case 203: {                                   // DefPluginName / PluginName
           const n = decodeFlpText(data); if (n && /[a-zA-Z]/.test(n)) plugins.add(n); break;
         }
@@ -1183,8 +1191,20 @@ async function parseFlp(file: File) {
   if (author) fields['Author'] = author;
   if (genre) fields['Genre'] = genre;
   if (comment) fields['Comment'] = comment.slice(0, 300);
+  if (maxPattern) fields['Patterns'] = maxPattern;
   if (channelNames.length) fields['Named channels'] = channelNames.slice(0, 30).join(', ');
+  if (patternNames.length) fields['Named patterns'] = patternNames.slice(0, 30).join(', ');
   if (plugins.size) fields['Plugins'] = [...plugins].slice(0, 40).join(', ');
+  if (samples.size) fields['Samples referenced'] = samples.size;
+  // Clip positions are not read: they live in the pattern-note and playlist DATA
+  // events, whose layout varies between FL versions, and a walk that guesses at
+  // one would put clips in the wrong place rather than fail visibly. Ableton and
+  // Reaper projects, whose formats are readable, get a drawn timeline in daw.js.
+  const secs: RowSection[] = [];
+  if (samples.size) {
+    secs.push({ title: 'Samples referenced (' + samples.size + ')', node: preBlock([...samples].slice(0, 500).join('\n')) });
+  }
+  if (secs.length) fields._sections = secs;
   return fields;
 }
 

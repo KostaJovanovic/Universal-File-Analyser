@@ -3962,6 +3962,95 @@ audio { width: 100%; }
 .anr-midi-list { margin: 0; padding-left: 20px; font-size: var(--t-small); line-height: 1.7; color: var(--fg); }
 .anr-midi-list li { word-break: break-word; }
 
+/* DAW arrangement (Ableton .als / Reaper .rpp).
+   A fixed name column beside a scrolling strip of lanes. Clips are positioned in
+   percentages of the project length, so the whole thing reflows with the card and
+   the zoom control is just the inner strip's width. */
+.anr-daw {
+  display: flex;
+  align-items: stretch;
+  border: var(--bd-hairline);
+  max-height: 460px;
+  overflow-y: auto;
+}
+.anr-daw-names {
+  flex: 0 0 148px;
+  border-right: var(--bd-hairline);
+  background: var(--surface);
+}
+.anr-daw-nameruler { height: 18px; border-bottom: var(--bd-hairline); }
+.anr-daw-name {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  font-size: var(--t-tiny);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: var(--bd-hairline);
+}
+.anr-daw-name.is-muted, .anr-daw-lane.is-muted { opacity: 0.45; }
+.anr-daw-namekind {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.anr-daw-scroll { flex: 1 1 auto; overflow-x: auto; }
+.anr-daw-strip { width: 100%; min-width: 100%; }
+.anr-daw-ruler {
+  position: relative;
+  height: 18px;
+  border-bottom: var(--bd-hairline);
+}
+.anr-daw-mark {
+  position: absolute;
+  top: 3px;
+  padding-left: 3px;
+  border-left: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.anr-daw-lane {
+  position: relative;
+  height: 22px;
+  border-bottom: var(--bd-hairline);
+}
+.anr-daw-clip {
+  position: absolute;
+  top: 3px;
+  height: 16px;
+  min-width: 2px;
+  box-sizing: border-box;
+  background: var(--accent);
+  border: 1px solid var(--fg);
+  overflow: hidden;
+}
+.anr-daw-cliplabel {
+  display: block;
+  padding: 0 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 14px;
+  color: var(--bg);
+  white-space: nowrap;
+}
+.anr-daw-controls { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.anr-daw-zoomlabel {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
 /* GPX/KML/GeoJSON map */
 .anr-geo-map { width: 100%; height: 380px; border: var(--bd-hairline); background: var(--surface); }
 .anr-geo-map .anr-hint { padding: 16px; }

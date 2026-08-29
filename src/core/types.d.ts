@@ -21,7 +21,7 @@ export type Kind =
   | 'notebook' | 'har' | 'jsondata' | 'nfo'
   | 'eml' | 'mbox'
   | 'drawio' | 'dxf' | 'dwg' | 'altium' | 'kicad' | 'spice' | 'ipcnet'
-  | 'aep' | 'premiere' | 'davinci' | 'vegas' | 'unity' | 'vssolution'
+  | 'aep' | 'premiere' | 'davinci' | 'vegas' | 'daw' | 'unity' | 'vssolution'
   | 'lut' | 'xmp' | 'gcsv' | 'iwork'
   | 'stl' | 'model3d' | 'f3d' | 'solidworks' | 'gcode'
   | 'timeline' | 'lrc' | 'midi' | 'subtitles'
