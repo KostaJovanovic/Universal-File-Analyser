@@ -148,7 +148,9 @@ can expand into prose. British spelling, no em-dashes (site house style).
 - **Reverse video** - re-encodes the clip backwards (chunked so it doesn't run out
   of memory) and lets you download it.
 - **AVI / MPEG-TS specifics** - Motion-JPEG and PCM extraction, timestamp repair
-  for AVCHD `.mts`/`.m2ts`.
+  for AVCHD `.mts`/`.m2ts`. A very large AVI (over 500 MB) is indexed rather than
+  loaded: its frames are read one at a time as you step or scrub, so it opens on
+  an ordinary machine instead of being turned away.
 - **Camera gyro data** - reads Sony's per-frame gyroscope/accelerometer track when
   present (see Camera motion data).
 

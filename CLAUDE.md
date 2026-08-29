@@ -103,8 +103,22 @@ stale relative to `src/`. Type errors are reported loudly but don't block.
   a generator — it writes nothing and just reports offline-manifest gaps
   (a module missing from `sw.js` `SHELL`, or a precached module importing one
   that isn't). Non-fatal, but a report there means something is broken offline.
+  It also lists precached modules that sit outside the Essentials tier in
+  `offline-tiers.js` — that one is informational, not a fault.
 - **Deploy**: pushing to `main` ships via Cloudflare (config in
-  `wrangler.jsonc`). No manual deploy step.
+  `wrangler.jsonc`). No manual deploy step. The static site and the stats Worker
+  are **one** Cloudflare service, not two: `wrangler.jsonc` sets both
+  `assets.directory = "web"` and `main = "worker/index.js"`, plus the D1 binding
+  (`analyser-stats`), the `/api/analysed` rate-limit binding and the `IP_SALT`
+  secret. Its comment header holds the one-time D1 setup steps.
+  **`server.bat` runs no Worker** — `serve.py` mocks `/api/*`, so `/stats` renders
+  against fake numbers locally. Only `wrangler dev` exercises the real Worker + D1.
+- **Several files are far too big to read whole.** `src/core/formats.ts` (~120 KB),
+  `src/core/app.ts` (~100 KB), `src/core/util.ts` (~75 KB), `src/core/patch-tldr.ts`
+  and `src/core/offline-tiers.ts` (~48 KB each), and `tools/format-page-content.mjs`
+  (~300 KB) — plus the generated `web/formats.html` / `patch*.html`. Grep for the
+  symbol and read the surrounding range; a whole-file read burns context for no
+  gain.
 
 ## The analysis pipeline
 
@@ -168,7 +182,9 @@ file). Grep the channel before inventing a new global.
 - **Every new module under `src/` must be added to `SHELL` in `web/sw.js`.**
   That list enumerates the precached shell by path — a module missing from it
   silently breaks offline use, and `check-shell` only reports the gap at commit
-  time (non-fatally). List it by its **emitted** path (`assets/js/<...>.js`), not
+  time (non-fatally) — run `node tools/check-shell.mjs` yourself after adding a
+  module; alongside `npm run check` it is the only runnable verification this
+  repo has. List it by its **emitted** path (`assets/js/<...>.js`), not
   its `.ts` source path: `sw.js`, `offline-tiers.js` and `check-shell.mjs` all
   operate on the compiled output. Add it to the inventory in `src/CLAUDE.md` in
   the same pass — that file is the map the next session reads first, and it
@@ -289,7 +305,9 @@ package.json        — dev-only; ONE devDependency (typescript). MUST keep
                       browser ESM as CommonJS and every generator that imports
                       core/formats.js dies with a syntax error.
 node_modules/       — gitignored; exists only so tsc can run
-wrangler.jsonc      — Cloudflare static-asset deploy config (assets.directory = "web")
+wrangler.jsonc      — Cloudflare deploy config: static assets (assets.directory
+                      = "web") AND the stats Worker (main = "worker/index.js")
+                      in one service, with the D1 + rate-limit bindings
 README.md           — public GitHub readme (visitor-facing overview; this
                       file is the real working guidance)
 AGENTS.md           — condensed agent guidance for other tools. Overlaps this
@@ -299,10 +317,20 @@ FEATURES.md         — plain-language inventory of everything the app does
 FEATURE-IDEAS.md    — backlog checklist of unbuilt ideas with effort estimates
 docs/               — project reference docs (Markdown). SOURCE for the public
                       /docs site - see "The docs site" above. Never edit the
-                      generated web/docs*.html; edit these.
+                      generated web/docs*.html; edit these. Publication is
+                      opt-in: only files listed in the NAV array of
+                      tools/build-docs-html.mjs become /docs/<slug> pages, so a
+                      new docs/*.md emits nothing until you add it there.
+                      Currently NAV covers all of them - the 13 top-level pages,
+                      the 9 under features/, plus FEATURE-INVENTORY.md
+                      (/docs/feature-inventory) and PROGRESS.md (/docs/progress).
 research/           — gitignored. Working notes, plans and reverse-engineering
                       scratch go HERE, not in a temp dir - they're worth keeping
                       across sessions but are not part of the shipped site.
+                      .gitignore also excludes research2/, minimal/ (a standalone
+                      build destined for its own repo), DOCS_PLAN.md,
+                      *-RESEARCH.md, "README TEMP/" and graphify-out/ - if one of
+                      those exists locally it is deliberate, not stray.
 .claude/            — Claude Code skills (add-file-format, format-seo-pages,
                       shared-partials, version-numbering, docs-site,
                       compare-page) - these ARE checked in, deliberately.

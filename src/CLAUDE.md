@@ -99,7 +99,11 @@ js/
       codec/loudness analysis, spectrogram; the audio-dsp trio runs the heavy
       forensic pass sequence off the main thread
     video.js · video-avi.js · video-bitstream.js · video-recover.js · video-telemetry.js
-      — video player + per-frame/stream analysis; video-bitstream.js is the DOM-free
+      — video player + per-frame/stream analysis; video-avi.js parses the RIFF
+      container browsers can't play and has two paths behind one interface -
+      whole-file below AVI_EXTRACT_MAX, and above it an indexed/streamed one
+      (openAviData) that reads each MJPEG frame off disk on demand, so a
+      multi-GB AVI opens instead of being declined; video-bitstream.js is the DOM-free
       metadata layer below the container: H.264/H.265 SPS parsing (profile, tier,
       level, geometry, bit depth, chroma, VUI colour + frame rate), the avcC/hvcC
       config records MP4 and Matroska both wrap an SPS in, and the Matroska/WebM
@@ -159,8 +163,19 @@ js/
   parsers/        — parsers-<domain>.js, lazy metadata parser chunks dispatched
                     by proprietary.js (audio, video, image, raw, docs, dev,
                     archive, gaming, threed, geodata, sci, security, email,
-                    disk, osmisc) + parser-util.js shared helpers
-  lib/            — shared binary + WASM loader helpers: plist · cfbf · nrbf ·
+                    disk, osmisc) + parser-util.js shared helpers. Chunks are
+                    loaded independently, so anything two of them need lives
+                    OUTSIDE both: parser-util.js holds canvasFromRGBA (the
+                    checkerboard-backed, size-capped decoded preview every
+                    pixel-decoding parser returns as _previewNode), and
+                    lib/bcn.js holds the block decoder below.
+  lib/            — shared binary + WASM loader helpers: bcn (BC1-BC5 / DXT
+                    block decoding for DDS in parsers-image.js and Valve VTF +
+                    KTX/KTX2 in parsers-gaming.js) · cgbi (Apple's CgBI PNG -
+                    raw-deflate IDATs, BGRA, premultiplied alpha - which NO
+                    browser decodes; photo.js repairs one to a real PNG at the
+                    top of renderPhoto, so every .ipa icon works) ·
+                    plist · cfbf · nrbf ·
                     sqlite · legacy-decompress · *-loader (libarchive, xz, lzma,
                     occt, ghostscript, openjpeg) · table-stats.js (DOM-free
                     column typing + numeric stats shared by csv.js and

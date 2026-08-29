@@ -110,10 +110,37 @@ export const HASH_FILE_MAX = 500 * MB;
 
 // ---- full in-memory reads ----
 // extractAviData() pulls an entire AVI into an ArrayBuffer to carve its MJPEG
-// frames and PCM audio, so it declines above this. Deliberately flat, NOT tiered:
-// this is the historical wall, and dropping it to WALL_PARSE's low tier would stop
+// frames and PCM audio, so it stops there. Above this size openAviData() does NOT
+// decline the file: it switches to the streamed path, indexing the movi chunk
+// table (offsets and sizes only) and reading each JPEG frame off disk on demand -
+// the same trade gif-frames.js makes when it composites a large GIF lazily rather
+// than materialising every frame. Deliberately flat, NOT tiered: this is the
+// historical eager ceiling, and dropping it to WALL_PARSE's low tier would stop
 // low-memory devices opening AVIs they handle fine today.
 export const AVI_EXTRACT_MAX = 500 * MB;
+// Streamed path only. Total PCM bytes worth pulling off disk and holding as a
+// decoded AudioBuffer: past this the sound is skipped (the frames still play, and
+// the viewer says so) rather than trading a multi-hundred-MB allocation - the one
+// thing the streamed path exists to avoid - for a soundtrack.
+export const AVI_AUDIO_PCM_MAX = 150 * MB;
+// Streamed path only. Sliding window for the chunk-header walk and the audio
+// gather - the most of the file resident at once while indexing.
+export const AVI_STREAM_WINDOW = 8 * MB;
+// Streamed path only. Ceiling on indexed movi chunks (12 bytes each across the
+// offset/size typed arrays, so ~12 MB at the cap, and already hours of MJPEG).
+// Past it the tail is left unindexed rather than letting the index grow unbounded.
+export const AVI_INDEX_MAX = 1_000_000;
+// Streamed path only. Retained decoded-frame cache: the LRU of JPEG frames read
+// back off disk, so scrubbing backwards doesn't re-read every step. The streamed
+// counterpart of ANIM_PIXEL_BUDGET (compressed bytes here, not RGBA pixels).
+export const AVI_FRAME_CACHE = byTier({ high: 96 * MB, mid: 64 * MB, low: 32 * MB });
+
+// Repairing an iOS CgBI PNG (lib/cgbi.js) reads the whole file, inflates it and
+// builds an RGBA buffer, so it holds roughly 6x the file in memory at the peak.
+// These are app icons and UI assets out of an .ipa - kilobytes, not megabytes -
+// so a modest ceiling costs nothing real and stops a hostile "PNG" claiming a
+// 20000x20000 canvas from being decoded on a phone.
+export const CGBI_REPAIR_MAX = 64 * MB;
 
 // ---- compute-cost guards (bound main-thread work, not memory) ----
 // Above this size the pure-JS MD5 / CRC-32 in extraHashRows() are skipped: they

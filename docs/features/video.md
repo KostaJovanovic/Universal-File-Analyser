@@ -430,7 +430,26 @@ a WAV the browser can play.
 **How to reach it.** Automatic fallback when the native `<video>` path
 fails on an `.avi`. Built in `video-avi.js`, used by `video.js`.
 
+**Large AVIs stream instead of loading.** Reading the whole file to carve
+its frames only works while the whole file fits in memory, so past
+`AVI_EXTRACT_MAX` (500 MB, in `core/limits.js`) the file is opened a second
+way rather than declined: `openAviData()` indexes the `movi` chunk table -
+offsets and sizes only, taken from the `idx1` index when the muxer wrote
+one, otherwise from a windowed walk of the chunk headers - and hands the
+viewer a frame source whose `get(idx)` reads that one JPEG off disk. It is
+the same trade the animated-GIF viewer makes: index eagerly, decode lazily,
+keep a bounded cache (`AVI_FRAME_CACHE`) so scrubbing backwards is cheap.
+Files over 4 GB (OpenDML, several `RIFF`/`AVIX` segments) are indexed across
+every segment. A streamed file says so on screen, since it behaves slightly
+differently: each step is a read, so scrubbing is a little slower.
+
 **Notes / limits.** Pure parsing, no DOM or cross-module dependencies.
+Sound is the one part that cannot be paged off disk - an `AudioBuffer` is
+resident by definition - so on the streamed path the PCM is only decoded
+when it is under `AVI_AUDIO_PCM_MAX` (150 MB); past that the frames play
+silently and the viewer says so. Reversed video is also hidden for a
+streamed file: re-encoding runs the whole file through FFmpeg in memory,
+which is exactly what streaming avoids.
 
 ### Multi-player sync
 

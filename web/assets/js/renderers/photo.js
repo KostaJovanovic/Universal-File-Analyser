@@ -12,7 +12,8 @@ import { convertHeic, extractRawPreview, convertWithImageMagick, demosaicRaw, ex
 import { ascii, latin1, utf8, inflate, findBytes, hexByte, hexBytes } from '../core/binutil.js';
 import { decodeGifFrames } from './gif-frames.js';
 import { decodeWebpFrames } from './webp-frames.js';
-import { ANIM_PIXEL_BUDGET } from '../core/limits.js';
+import { ANIM_PIXEL_BUDGET, CGBI_REPAIR_MAX } from '../core/limits.js';
+import { isCgbiPng, cgbiToPngBlob } from '../lib/cgbi.js';
 import { encodeAnimatedGif } from './gif-encode.js';
 import { buildIcoImagesCard } from './ico.js';
 import { buildMpoImagesCard } from './mpo.js';
@@ -65,6 +66,27 @@ function rawUndecodableBanner() {
 // reference photo, or carve embedded images out of an unrecognised blob. The
 // recovered picture is shown, downloadable, and can be re-run through the full
 // photo analysis (opts.salvaged stops that re-render from looping back here).
+// Apple's CgBI "optimised" PNG - what Xcode writes for every PNG inside an .ipa -
+// is undecodable in every browser, so an app icon opened out of a browsed archive
+// would otherwise land in the salvage path as a broken image. Rebuild it into a
+// real PNG once, at the top of renderPhoto, and every stage below (preview,
+// histogram, dominant colours, OCR, forensics) sees an ordinary file. Returns
+// null for anything that isn't CgBI, which is the overwhelmingly common case and
+// costs one 64-byte read. See lib/cgbi.js for what is actually different.
+async function repairCgbiFile(file) {
+    try {
+        if (file.size < 16 || file.size > CGBI_REPAIR_MAX)
+            return null;
+        const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
+        if (!isCgbiPng(head))
+            return null;
+        const blob = await cgbiToPngBlob(new Uint8Array(await file.arrayBuffer()));
+        return blob ? new File([blob], file.name, { type: 'image/png' }) : null;
+    }
+    catch (_) {
+        return null;
+    }
+}
 // Probe whether a Blob/File decodes as an image in this browser (resolves boolean).
 function imageDecodes(url) {
     return new Promise((res) => { const im = new Image(); im.onload = () => res(true); im.onerror = () => res(false); im.src = url; });
@@ -3258,6 +3280,11 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
         photoRenderAbort = new AbortController();
         renderSignal = photoRenderAbort.signal;
     }
+    // Swap an iOS CgBI PNG for a real one before anything reads the bytes, so the
+    // whole analysis below runs on a file the browser can actually decode.
+    const cgbiRepaired = await repairCgbiFile(file);
+    if (cgbiRepaired)
+        file = cgbiRepaired;
     // Inline mode (e.g. embedded cover art analysed inside the audio section):
     // the preview, histogram, and OCR normally target fixed photo-section slots
     // (#photoPreview / #photoHistSlot / #photoOcrSlot). When rendering inline,
