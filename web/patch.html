@@ -212,6 +212,53 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">8.31 - 8.43</p>
+          <p class="patch-name">Open House</p>
+          <p class="patch-date">29 August 2026</p>
+          <ul class="patch-list">
+            <li><strong>There was a list of things Analyser could put a name to but not open. That list is now empty. Buildings, molecules, AI models, design documents and music sessions all open properly. Subtitles appear where their author put them and karaoke sings along. Maps show how you moved, not just where. And three tools for looking hard at a file - a similarity score, packer detection, and a proper database console - arrived alongside them.</strong></li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Things that used to be just a name</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>A building opens as a building.</strong> An <a href="/about#ext-ifc">.ifc</a> file is how architects and engineers hand a whole building between programs. It is not a drawing but a list of things - this is a wall, it is external, it stands on the second floor - and it records no structure at all: which storey a wall belongs to is kept in a separate note pointing at both. Analyser follows those and rebuilds the building: project, site, building, storey, and everything on each floor grouped by type with its properties. Then it draws it. Openings cut through walls need a solid-modelling engine to work out, so those are counted and named rather than drawn wrong - showing you a wall with no window in it would be worse than saying so.</li>
+            <li><span class="patch-tag">New</span><strong>Molecules are drawn rather than described.</strong> Drop a <a href="/about#ext-mol">.mol</a>, <a href="/about#ext-sdf">.sdf</a>, <a href="/about#ext-pdb">.pdb</a> or <a href="/about#ext-cif">.cif</a> and the structure comes up in 3D to rotate and zoom. A small molecule appears as the ball-and-stick model a chemist expects; a protein of thirty thousand atoms would be an unreadable tangle that way, so those are drawn as ribbons following each chain instead, with any bound drug still shown beside them. The formula and molecular weight are worked out from the atoms actually in the file rather than copied from a label, which can disagree with them.</li>
+            <li><span class="patch-tag">New</span><strong>AI models open up.</strong> An <a href="/about#ext-onnx">.onnx</a> model is a network of operations, and it is now drawn as one - each step a box, each connection a line, laid out so parallel branches sit side by side and meet where they rejoin. Weight files say what is inside them: how many parameters, stored at what precision, and for a local language model (<a href="/about#ext-gguf">.gguf</a>) its architecture and how much text it can hold in mind at once.</li>
+            <li><span class="patch-tag">New</span><strong>A warning worth having on AI checkpoints.</strong> A PyTorch <a href="/about#ext-pt">.pt</a> file is not a bag of numbers - it is a small program, and loading one runs whatever it says to run. That is a real way people have been caught out by models downloaded from strangers. Analyser reads the file without running any part of it and lists everything it would reach for, flagging anything a file of numbers has no business touching.</li>
+            <li><span class="patch-tag">New</span><strong>Design documents open.</strong> A <a href="/about#ext-sketch">.sketch</a> file now shows its whole structure - every page, artboard, group and layer - along with which of its components are actually used and which nothing uses at all, every word of writing in the design, and the pictures placed into it.</li>
+            <li><span class="patch-tag">New</span><strong>Music sessions draw their arrangement.</strong> <a href="/about#ext-als">Ableton Live</a> and <a href="/about#ext-rpp">Reaper</a> projects lay out as the session itself: a row for each track and every clip exactly where the project puts it. A project file holds no audio whatsoever, so it also lists the recordings it points at but does not contain - which is how you check whether a session someone has sent you will open complete or with silent tracks.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Subtitles that behave like subtitles</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>They appear where they were put, and karaoke sings.</strong> Advanced subtitle files (<a href="/about#ext-ass">.ass</a> and .ssa) do far more than write text along the bottom: a translated shop sign belongs in the corner where the sign is, captions slide across the frame, and karaoke lyrics fill in one syllable at a time in step with the singing. All of that now plays on a stage you can scrub through, instead of being flattened into a list of lines.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Two subtitle faults found while building it.</strong> Karaoke timings were being swallowed into the name of the instruction that carried them and thrown away entirely, and the sweeping highlight was being treated as the plain one that switches all at once. Both are fixed.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Maps that show how you moved</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Pace and density on a GPS track.</strong> A <a href="/about#ext-gpx">.gpx</a> map has two new views. <em>Pace</em> colours the line by how fast you were moving and pins every place you stopped, with the five colours spread across the range of speeds in your own track - so a walk and a bike ride each read properly, instead of one of them coming out a single flat colour. <em>Density</em> shades how often the track comes back to the same spot, which turns a year of commutes into a picture of where you actually go.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">For looking hard at a file</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>How alike are these two files?</strong> An ordinary checksum only answers &ldquo;identical or not&rdquo; - change one byte and it changes completely. <a href="/compare">Compare</a> now also works out how much of two files is genuinely the same content and scores it out of 100. That is the question you actually have when holding two builds of a program, or a document before and after an edit.</li>
+            <li><span class="patch-tag">New</span><strong>Windows programs say what made them.</strong> Drop an <a href="/about#ext-exe">.exe</a> and Analyser works out whether the real code is compressed or encrypted inside the file and unpacked when it starts, names the tool that did it where it recognises one - UPX, VMProtect, Themida and around thirty others - and says what built it, whether that is Go, Rust, Delphi or a Python bundler. Packing is what installers and commercial software do as often as anything suspicious, so the card sets out what it found and leaves the conclusion to you.</li>
+            <li><span class="patch-tag">New</span><strong>A real database console.</strong> The query box on a <a href="/about#ext-sqlite">SQLite</a> file allowed one read-only question at a time. It now runs anything you care to type, changes included, because what you are querying is a copy held in memory - the file on your device is never written to, and a button reloads the copy from it whenever you want to start again.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Under the bonnet</p>
+          <ul class="patch-list">
+            <li><strong>Credit where it is due:</strong> the molecule viewer is drawn by the open-source <em>3Dmol.js</em>, now named in the credits at the foot of the page alongside the other libraries the site leans on. <strong>One deliberate gap:</strong> <a href="/about#ext-fig">Figma files</a> have their outer details read out but not their contents. Figma writes a design against a private description of itself that travels inside each file and changes with the version of the app, so there is nothing dependable to read - and saying so seemed better than guessing.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">8.23 - 8.30</p>
           <p class="patch-name">Show and Tell</p>
           <p class="patch-date">29 August 2026</p>
@@ -287,6 +334,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">8.16 - 8.19</p>
           <p class="patch-name">No Loose Ends</p>
@@ -310,9 +360,6 @@
             <li><strong>Maintenance:</strong> one long-dead field in the AI separation tool, which had been sending nothing at all since the day it was written, is now recorded as such rather than quietly left to look intentional.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">8.12 - 8.15</p>
