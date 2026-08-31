@@ -15,7 +15,8 @@ File dropped/selected
             -> SPICE .raw disambiguation  (sniffSpiceRaw, for ext === 'raw')
             -> VARIANT_REROUTE check      (ambiguous extensions, e.g. .ts)
             -> resolveByContent(file)     (file-sniff.js) only if kind is
-                                           'unknown'/'extensionless'
+                                           'unknown'/'extensionless', or the
+                                           ext is in SNIFF_FIRST (.bin/.out)
        -> ROUTES[kind]                   (app.js) -> lazy-loaded renderer
        -> renderer(file, container)      draws the result cards
 ```
@@ -43,12 +44,16 @@ caller). It is a long if-chain, roughly in this precedence order:
    `video/*` -> `video`.
 4. `PHOTO_EXTS`/`AUDIO_EXTS`/`VIDEO_EXTS` (from `formats.js`) as an
    extension-only fallback for files with no informative MIME.
-5. `isProprietaryExt(ext)` (from `proprietary.js`'s `FORMATS` table) -> `proprietary`.
-6. Licence/marker files with no real extension (`LICENSE`, `COPYING`,
+5. `.bin` -> `binary`. The extension names no format at all (disc images, ROM
+   dumps, firmware and app blobs all use it), so it gets the byte-level
+   inspector rather than an identification card that could only repeat the
+   extension back.
+6. `isProprietaryExt(ext)` (from `proprietary.js`'s `FORMATS` table) -> `proprietary`.
+7. Licence/marker files with no real extension (`LICENSE`, `COPYING`,
    `py.typed`, `CACHEDIR.TAG`) -> `plaintext`.
-7. No extension and nothing else matched -> `extensionless` (treated as text
+8. No extension and nothing else matched -> `extensionless` (treated as text
    with a hex fallback, not flagged "unknown").
-8. Otherwise -> `unknown`.
+9. Otherwise -> `unknown`.
 
 `classifyFile` is also exposed as `window._anrClassify` for the folder scan
 and the `/compare` page.
@@ -83,6 +88,14 @@ doesn't produce a wrong or "unknown" result. Three exports:
 `resolveKind()` in `app.js` (`web/assets/js/core/app.js:120`) only calls
 `resolveByContent` when `classifyFile` returned `'unknown'` or
 `'extensionless'` - a recognised extension is trusted and never re-sniffed.
+
+The exception is `SNIFF_FIRST` (`app.js`), currently `.bin` and `.out`. Those
+two suffixes name no format, only "some bytes", so the kind `classifyFile` gives
+them is a home rather than an identification and must not pre-empt the sniff:
+`resolveByContent` runs for them too, and a `.bin` that is really a ZIP, a PDF or
+a Unity Addressables catalog still opens as one. `handleFile` keeps its own copy
+of the same condition - if the two drift, `/compare` and the folder scan route a
+`.bin` differently from the main page.
 
 ## Ambiguous-extension reroutes
 
@@ -146,7 +159,15 @@ fallback. See [`parsers-and-libs.md`](parsers-and-libs.md) for the chunk/lib inv
 
 `web/assets/js/renderers/unknown.js` is the last resort for a `'unknown'` or
 `'extensionless'` kind (and is also reused as the generic "identify this
-blob" helper elsewhere, e.g. carved/recovered files). `guessFormat(bytes)`
+blob" helper elsewhere, e.g. carved/recovered files). It takes an options bag
+that selects one of three framings of the same inspector: the default
+"unrecognised" one, `{ extensionless: true }` (the content is the point, so the
+text preview leads and the hex dump drops below it), and `{ binary: true }` for
+the `binary` kind - a `.bin`, where the byte-level readout IS the analysis. In
+binary mode it reads 512 bytes instead of 128 and runs `detectVariant('bin', …,
+{ specificOnly: true })`, so a raw BIN/CUE disc image (sector sync pattern) or a
+Mega Drive cartridge dump (`SEGA` at 0x100) names itself and anything else stays
+honestly generic. `guessFormat(bytes)`
 independently re-checks a similar magic-number table (PDF, PNG, JPEG, GIF,
 WAV/WebP/AVI via RIFF, Ogg, FLAC, ID3/MPEG audio, `ftyp`-brand MP4/MOV/M4A,
 ZIP, 7z, gzip, RAR, ELF, `MZ` EXE/DLL, XML, SQLite, BMP, ICO, TIFF, Matroska,

@@ -29,7 +29,7 @@ export type Kind =
   | 'djvu' | 'mdb' | 'mobi' | 'pdf'
   | 'zip' | 'diskimage' | 'svg' | 'lottie' | 'csv' | 'mlmodel'
   | 'proprietary' | 'plaintext' | 'git-object'
-  | 'unknown' | 'extensionless';
+  | 'unknown' | 'extensionless' | 'binary';
 
 /** The page sections a renderer can target. Only the three media kinds set
     `results`; everything else falls through to #unknownResults. */
@@ -43,6 +43,8 @@ export interface RenderOpts {
   sidecarXmp?: File | null;
   /** unknown.js: frame the file as an expected extensionless file, not "unrecognised". */
   extensionless?: boolean;
+  /** unknown.js: frame the file as a recognised raw-binary container (.bin), not "unrecognised". */
+  binary?: boolean;
   [k: string]: unknown;
 }
 

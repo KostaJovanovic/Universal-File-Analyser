@@ -30,7 +30,11 @@ const UNITY_EXTS = new Set([
 ]);
 // G-code from 3D-print slicers and CNC/CAM toolpaths - reconstructed in the
 // gcode viewer (extruded moves drawn as the printed shape, or cut moves for CNC).
-const GCODE_EXTS = new Set(['gcode', 'gco', 'g', 'ngc', 'nc', 'tap', 'cnc']);
+// .din is a CNC part program written to DIN 66025 (the German standard behind
+// ISO 6983) - the ISO output Heidenhain and Sinumerik posts write. Same G/M-word
+// text as every other dialect here, so it reads through the same viewer; a .din
+// that isn't G-code is caught by renderGcode's own "does not look like G-code".
+const GCODE_EXTS = new Set(['gcode', 'gco', 'g', 'ngc', 'nc', 'tap', 'cnc', 'din']);
 /* Machine-learning models. `.bin` is deliberately absent: it names far more
    things than it names model weights, and a wrong route there would swallow
    every unidentified binary. `.h5`/`.hdf5` are here because in practice a
@@ -350,6 +354,13 @@ export function classifyFile(file) {
         return 'audio';
     if (VIDEO_EXTS.has(ext))
         return 'video';
+    // .bin names no format at all - it is the generic "raw binary" suffix shared by
+    // disc images, ROM dumps, firmware and application blobs. The bytes are the only
+    // evidence, so it gets the raw-binary inspector (hex/ASCII dump, magic guess,
+    // entropy) rather than a hollow identification card. resolveKind() sniffs it
+    // first (SNIFF_FIRST in app.js), so a .bin that IS a real format still routes there.
+    if (ext === 'bin')
+        return 'binary';
     if (isProprietaryExt(ext))
         return 'proprietary';
     // Licence/marker files whose suffix isn't a real extension (LICENSE.APACHE,

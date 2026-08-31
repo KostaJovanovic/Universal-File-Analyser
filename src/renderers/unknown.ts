@@ -1,8 +1,15 @@
 /* Analyser - unknown-file inspector
    Magic-byte format guess, hex/ASCII dump, SHA-256, and enhanced
-   previews for plain text, JSON, and XML. */
+   previews for plain text, JSON, and XML.
+
+   Three framings, one inspector (opts): the default "unknown" one, the
+   `extensionless` one (the content IS the point, so text leads and the hex drops
+   below it), and `binary` for a .bin - a recognised container that happens to
+   name no format, so the byte-level readout it already produces IS the analysis
+   rather than a fallback. */
 
 import { SCAN_MED, SCAN_LARGE } from '../core/limits.js';
+import { EXT_VARIANTS, detectVariant } from '../core/formats.js';
 import { el, row, rowHelp, h3help, fmtBytes, fileExt, errorCard } from '../core/util.js';
 import { entropyProfile, hexBytes } from '../core/binutil.js';
 import { buildOsintCard } from '../core/osint.js';
@@ -214,13 +221,21 @@ export async function renderUnknown(file: File, resultsEl: HTMLElement, opts?: a
   // hex fallback for binary) instead of "unrecognised". handleFile still pops the
   // "this looks like a X - open as X" suggestion when the bytes match a pattern.
   const extensionless = !!opts.extensionless;
+  // "Binary" mode: a .bin. Not unrecognised - recognised as the generic raw-binary
+  // container it is, and named more precisely below when its bytes prove one of
+  // the real formats that hide behind the suffix.
+  const binary = !!opts.binary;
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Inspecting "${file.name}"…`));
 
-  let headBytes;
+  let headBytes, sniffBytes;
   try {
-    headBytes = new Uint8Array(await file.slice(0, 128).arrayBuffer());
+    // 512 bytes in binary mode: the .bin variant rules reach past the first 128
+    // (a Mega Drive cartridge carries its SEGA marker at 0x100). The hex dump
+    // below still shows 128.
+    sniffBytes = new Uint8Array(await file.slice(0, binary ? 512 : 128).arrayBuffer());
+    headBytes = sniffBytes.length > 128 ? sniffBytes.subarray(0, 128) : sniffBytes;
   } catch (e) {
     resultsEl.innerHTML = '';
     resultsEl.appendChild(errorCard('Could not read this file: ' + (e && e.message)));
@@ -232,15 +247,28 @@ export async function renderUnknown(file: File, resultsEl: HTMLElement, opts?: a
   const ascii = Array.from<number>(headBytes).map((b) => (b >= 0x20 && b <= 0x7E) ? String.fromCharCode(b) : '.').join('');
   const guess = guessFormat(headBytes);
 
+  // In binary mode, let the bytes name the file: the EXT_VARIANTS rules for .bin
+  // pick out a raw BIN/CUE disc image or a Mega Drive cartridge dump. specificOnly
+  // means only a rule that actually matched can rename it - otherwise it stays
+  // honestly generic instead of guessing one of the dozen things a .bin can be.
+  const variant = binary ? detectVariant('bin', sniffBytes, null, { specificOnly: true }) : null;
+  const binaryName = binary ? (variant || 'Binary data file') : null;
+
   resultsEl.innerHTML = '';
 
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, extensionless
     ? 'Extensionless file - shown as text'
-    : 'Unknown file - best-effort inspection'));
+    : binary
+      ? binaryName + ' - byte-level inspection'
+      : 'Unknown file - best-effort inspection'));
 
   const tbl = el('table', { class: 'anr-readout' });
-  tbl.appendChild(row('Application', extensionless ? 'Extensionless (no file extension)' : 'Unknown'));
+  tbl.appendChild(row('Application', extensionless ? 'Extensionless (no file extension)' : binary ? binaryName! : 'Unknown'));
+  if (variant) {
+    const v = EXT_VARIANTS.bin.variants.find((x) => x.name === variant);
+    if (v && v.tell) tbl.appendChild(rowHelp('Detected as', variant, v.tell));
+  }
   tbl.appendChild(row('Name',     file.name));
   tbl.appendChild(row('Size',     `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
   tbl.appendChild(rowHelp('MIME',     file.type || '-', "A MIME type is a standard label for a file's format, such as image/jpeg or audio/mpeg. Your browser works it out from the file's extension or from the operating system, so it is only a hint at the format, not proof."));

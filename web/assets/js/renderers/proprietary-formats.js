@@ -169,7 +169,8 @@ export const FORMATS = {
     vf: { app: 'VEGAS Pro Project Backup' },
     // Wondershare Filmora
     wfp: { app: 'Wondershare Filmora Project' },
-    wsp: { app: 'Wondershare Filmora Sub-project' },
+    // SharePoint solution package (a renamed CAB, not a Filmora project)
+    wsp: { app: 'SharePoint Solution Package', chunk: 'archive' },
     // Music production
     als: { app: 'Ableton Live Set' },
     alp: { app: 'Ableton Live Pack' },
@@ -220,6 +221,10 @@ export const FORMATS = {
     ssa: { app: 'SubStation Alpha', parse: 'text' },
     sub: { app: 'MicroDVD / VobSub Subtitle', parse: 'text' },
     // Database
+    // .dcb is ambiguous (see EXT_VARIANTS in core/formats.ts): the Concordance
+    // litigation database is the one that is still met in the wild, and the card
+    // renames itself when the bytes prove one of the others.
+    dcb: { app: 'Concordance Database' },
     sqlite: { app: 'SQLite Database' },
     sqlite3: { app: 'SQLite Database' },
     db3: { app: 'SQLite Database' },
@@ -247,6 +252,11 @@ export const FORMATS = {
     godot: { app: 'Godot Project', parse: 'text' },
     tscn: { app: 'Godot Scene', parse: 'text' },
     tres: { app: 'Godot Resource', parse: 'text' },
+    // .scn is shared by Godot's BINARY scene (RSRC magic), several strategy games'
+    // scenarios and a couple of plain-text scene formats - so no parse hint here,
+    // and EXT_VARIANTS names whichever the bytes prove.
+    scn: { app: 'Scene / Scenario File' },
+    cpmmodel: { app: 'Custom Player Models Model' },
     // Torrent
     torrent: { app: 'BitTorrent Metainfo' },
     // CNC / 3D printing
@@ -581,6 +591,7 @@ export const FORMATS = {
     // Cross-platform binaries, ML & misc (lazy chunk parsers-dev.js). citationcff
     // is a virtual key: .cff is content-gated (YAML citation vs binary CFF font).
     onnx: { app: 'ONNX neural-network model', chunk: 'dev' },
+    trt: { app: 'NVIDIA TensorRT engine' },
     node: { app: 'Native add-on module (.node)', chunk: 'dev' },
     dylib: { app: 'macOS dynamic library', chunk: 'dev' },
     ldb: { app: 'LevelDB table', chunk: 'dev' },
@@ -704,6 +715,11 @@ export const FORMATS = {
     axf: { app: 'ARM ELF Image', chunk: 'disk' },
     o: { app: 'ELF Object File', chunk: 'disk' },
     so: { app: 'ELF Shared Object', chunk: 'disk' },
+    // .out is either the text a batch job dumped or the a.out an ELF toolchain
+    // left behind. This entry covers the text case; the ELF case never reaches it -
+    // SNIFF_FIRST in app.js sniffs .out first and routes a real ELF to the `elf`
+    // entry above, with its full header parse.
+    out: { app: 'Program output / compiled executable', parse: 'text' },
     dtb: { app: 'Device Tree Blob', chunk: 'disk' },
     dtbo: { app: 'Device Tree Overlay', chunk: 'disk' },
     uimage: { app: 'U-Boot uImage', chunk: 'disk' },

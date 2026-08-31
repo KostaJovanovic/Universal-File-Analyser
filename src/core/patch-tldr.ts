@@ -337,6 +337,12 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+  { range: '8.44 - 8.45', notes: [
+    'Two extensions name no format at all - a **.bin** is equally a disc image, a cartridge dump, router firmware or plain application data, and a **.out** is equally a compiled program or the log one dumped - so neither is taken at its word any more: the contents are read first, and a .bin that is really a ZIP, a PDF or a picture opens as that.',
+    'A **.bin** that is nothing else gets a byte-level inspector rather than a label repeating the extension back - the format guessed from the opening bytes, how random the contents are, and the bytes themselves - and it names a raw disc image or a **Mega Drive cartridge** when the evidence is there.',
+    '**CNC programs written to the German standard** (.din) that Heidenhain and Siemens controls speak are the same G-code as every other dialect, so they now draw their toolpath in the viewer instead of arriving unrecognised.',
+    'Five more formats are recognised on sight - **Godot scenes and the strategy scenarios** that share .scn, **Concordance** legal-review databases, **NVIDIA TensorRT** engines and Minecraft **Custom Player Models** avatars - and a **.wsp**, long blamed on Wondershare Filmora, is a SharePoint solution package and now opens as the archive it is.',
+  ] },
   { range: '8.31 - 8.43', notes: [
     'The list of formats the app could name but not open is now empty. An **IFC building model** opens as a building: the spatial tree of project, site, building and storey is rebuilt from the relationships the file keeps instead of a hierarchy, and the building itself is drawn. Openings cut through walls need a solid-modelling engine, so those are counted and named rather than drawn wrong.',
     '**Molecules** (.mol, .sdf, .pdb, .cif) come up in 3D. Small molecules as ball-and-stick; a protein of thirty thousand atoms as ribbons following each chain, since ball-and-stick on one of those is an unreadable tangle. Formula and molecular weight are worked out from the atoms present rather than copied from a label.',

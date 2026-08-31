@@ -212,49 +212,81 @@
              ===================================================================== -->
 
         <div class="patch-entry">
-          <p class="patch-version">8.31 - 8.43</p>
-          <p class="patch-name">Open House</p>
-          <p class="patch-date">29 August 2026</p>
+          <p class="patch-version">8.44 - 8.45</p>
+          <p class="patch-name">Nameless</p>
+          <p class="patch-date">31 August 2026</p>
           <ul class="patch-list">
-            <li><strong>There was a list of things Analyser could put a name to but not open. That list is now empty. Buildings, molecules, AI models, design documents and music sessions all open properly. Subtitles appear where their author put them and karaoke sings along. Maps show how you moved, not just where. And three tools for looking hard at a file - a similarity score, packer detection, and a proper database console - arrived alongside them.</strong></li>
+            <li><strong>Most extensions name a format. <code>.bin</code> and <code>.out</code> name nothing at all - one means &ldquo;some bytes&rdquo;, the other &ldquo;whatever the program left behind&rdquo; - so Analyser stops taking their word for it and reads them instead. CNC programs written in the German dialect now draw their toolpath, five more formats are recognised on sight, and one file type that had been blamed on the wrong program for a long time is put right.</strong></li>
           </ul>
 
           <hr class="patch-rule">
-          <p class="patch-subhead">Things that used to be just a name</p>
+          <p class="patch-subhead">Two extensions that name nothing</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>A building opens as a building.</strong> An <a href="/about#ext-ifc">.ifc</a> file is how architects and engineers hand a whole building between programs. It is not a drawing but a list of things - this is a wall, it is external, it stands on the second floor - and it records no structure at all: which storey a wall belongs to is kept in a separate note pointing at both. Analyser follows those and rebuilds the building: project, site, building, storey, and everything on each floor grouped by type with its properties. Then it draws it. Openings cut through walls need a solid-modelling engine to work out, so those are counted and named rather than drawn wrong - showing you a wall with no window in it would be worse than saying so.</li>
-            <li><span class="patch-tag">New</span><strong>Molecules are drawn rather than described.</strong> Drop a <a href="/about#ext-mol">.mol</a>, <a href="/about#ext-sdf">.sdf</a>, <a href="/about#ext-pdb">.pdb</a> or <a href="/about#ext-cif">.cif</a> and the structure comes up in 3D to rotate and zoom. A small molecule appears as the ball-and-stick model a chemist expects; a protein of thirty thousand atoms would be an unreadable tangle that way, so those are drawn as ribbons following each chain instead, with any bound drug still shown beside them. The formula and molecular weight are worked out from the atoms actually in the file rather than copied from a label, which can disagree with them.</li>
-            <li><span class="patch-tag">New</span><strong>AI models open up.</strong> An <a href="/about#ext-onnx">.onnx</a> model is a network of operations, and it is now drawn as one - each step a box, each connection a line, laid out so parallel branches sit side by side and meet where they rejoin. Weight files say what is inside them: how many parameters, stored at what precision, and for a local language model (<a href="/about#ext-gguf">.gguf</a>) its architecture and how much text it can hold in mind at once.</li>
-            <li><span class="patch-tag">New</span><strong>A warning worth having on AI checkpoints.</strong> A PyTorch <a href="/about#ext-pt">.pt</a> file is not a bag of numbers - it is a small program, and loading one runs whatever it says to run. That is a real way people have been caught out by models downloaded from strangers. Analyser reads the file without running any part of it and lists everything it would reach for, flagging anything a file of numbers has no business touching.</li>
-            <li><span class="patch-tag">New</span><strong>Design documents open.</strong> A <a href="/about#ext-sketch">.sketch</a> file now shows its whole structure - every page, artboard, group and layer - along with which of its components are actually used and which nothing uses at all, every word of writing in the design, and the pictures placed into it.</li>
-            <li><span class="patch-tag">New</span><strong>Music sessions draw their arrangement.</strong> <a href="/about#ext-als">Ableton Live</a> and <a href="/about#ext-rpp">Reaper</a> projects lay out as the session itself: a row for each track and every clip exactly where the project puts it. A project file holds no audio whatsoever, so it also lists the recordings it points at but does not contain - which is how you check whether a session someone has sent you will open complete or with silent tracks.</li>
+            <li><span class="patch-tag">New</span><strong>A <a href="/about#ext-bin">.bin</a> is examined rather than labelled.</strong> Disc images, cartridge dumps, router firmware and plain application data all wear the same suffix, so there is nothing honest to say about the name. It opens in a byte-level inspector instead - a guess at the format from the opening bytes, how random the contents are, and the bytes themselves - and names itself where the evidence allows: a raw disc image by its sector pattern, a Mega Drive cartridge by the word SEGA sitting exactly where Sega put it.</li>
+            <li><span class="patch-tag">New</span><strong>And it is still allowed to be something else.</strong> A real extension settles the question, but these two do not, so the contents are consulted first: a <code>.bin</code> that is really a ZIP, a PDF or a picture opens as that, with everything that normally comes with it.</li>
+            <li><span class="patch-tag">New</span><strong>A <a href="/about#ext-out">.out</a> is either a program or a program&rsquo;s output.</strong> It is the name a compiler gives a finished executable when nobody chose one, and equally the name given to a log some script tipped into a file. The two look nothing alike inside, so each now opens as what it actually is.</li>
           </ul>
 
           <hr class="patch-rule">
-          <p class="patch-subhead">Subtitles that behave like subtitles</p>
+          <p class="patch-subhead">More formats recognised</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>They appear where they were put, and karaoke sings.</strong> Advanced subtitle files (<a href="/about#ext-ass">.ass</a> and .ssa) do far more than write text along the bottom: a translated shop sign belongs in the corner where the sign is, captions slide across the frame, and karaoke lyrics fill in one syllable at a time in step with the singing. All of that now plays on a stage you can scrub through, instead of being flattened into a list of lines.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Two subtitle faults found while building it.</strong> Karaoke timings were being swallowed into the name of the instruction that carried them and thrown away entirely, and the sweeping highlight was being treated as the plain one that switches all at once. Both are fixed.</li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Maps that show how you moved</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>Pace and density on a GPS track.</strong> A <a href="/about#ext-gpx">.gpx</a> map has two new views. <em>Pace</em> colours the line by how fast you were moving and pins every place you stopped, with the five colours spread across the range of speeds in your own track - so a walk and a bike ride each read properly, instead of one of them coming out a single flat colour. <em>Density</em> shades how often the track comes back to the same spot, which turns a year of commutes into a picture of where you actually go.</li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">For looking hard at a file</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>How alike are these two files?</strong> An ordinary checksum only answers &ldquo;identical or not&rdquo; - change one byte and it changes completely. <a href="/compare">Compare</a> now also works out how much of two files is genuinely the same content and scores it out of 100. That is the question you actually have when holding two builds of a program, or a document before and after an edit.</li>
-            <li><span class="patch-tag">New</span><strong>Windows programs say what made them.</strong> Drop an <a href="/about#ext-exe">.exe</a> and Analyser works out whether the real code is compressed or encrypted inside the file and unpacked when it starts, names the tool that did it where it recognises one - UPX, VMProtect, Themida and around thirty others - and says what built it, whether that is Go, Rust, Delphi or a Python bundler. Packing is what installers and commercial software do as often as anything suspicious, so the card sets out what it found and leaves the conclusion to you.</li>
-            <li><span class="patch-tag">New</span><strong>A real database console.</strong> The query box on a <a href="/about#ext-sqlite">SQLite</a> file allowed one read-only question at a time. It now runs anything you care to type, changes included, because what you are querying is a copy held in memory - the file on your device is never written to, and a button reloads the copy from it whenever you want to start again.</li>
+            <li><span class="patch-tag">New</span><strong>CNC programs in the German dialect draw their toolpath.</strong> A <a href="/about#ext-din">.din</a> is a machining program written to the standard that Heidenhain and Siemens controls speak, which is the same G-code as every other dialect - so it goes to the toolpath viewer and shows the part, instead of arriving as an unrecognised file.</li>
+            <li><span class="patch-tag">New</span><strong>Three unrelated programs, one <a href="/about#ext-scn">.scn</a>.</strong> A Godot game scene, a strategy scenario for OpenTTD, Age of Empires or SimCity 2000, and the plain-text scenes an Orbiter simulation or a Behringer mixer writes all claim the extension. They are told apart by their contents now, not by the name.</li>
+            <li><span class="patch-tag">New</span><strong>Three more known on sight:</strong> the <a href="/about#ext-dcb">Concordance</a> databases used in legal document review, <a href="/about#ext-trt">NVIDIA TensorRT</a> engines - an AI model compiled for one particular graphics card, which is why it will not load on any other - and <a href="/about#ext-cpmmodel">Custom Player Models</a> avatars from Minecraft.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A <a href="/about#ext-wsp">.wsp</a> was blamed on the wrong program.</strong> Analyser called it a Wondershare Filmora sub-project. It is a SharePoint solution package, and because that is a Windows cabinet archive underneath, it now opens and lists everything inside it.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Under the bonnet</p>
           <ul class="patch-list">
-            <li><strong>Credit where it is due:</strong> the molecule viewer is drawn by the open-source <em>3Dmol.js</em>, now named in the credits at the foot of the page alongside the other libraries the site leans on. <strong>One deliberate gap:</strong> <a href="/about#ext-fig">Figma files</a> have their outer details read out but not their contents. Figma writes a design against a private description of itself that travels inside each file and changes with the version of the app, so there is nothing dependable to read - and saying so seemed better than guessing.</li>
+            <li><strong>Maintenance:</strong> one of these two updates carried nothing but refreshed sitemaps for search engines. These notes cover both, written together.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">8.31 - 8.43</p>
+          <p class="patch-name">Open House</p>
+          <p class="patch-date">29 August 2026</p>
+          <ul class="patch-list">
+            <li><strong>Everything Analyser could name but not open now opens: buildings, molecules, AI models, design documents and music sessions. Subtitles play where their author put them, GPS tracks gain pace and density maps, and three new tools arrive for looking hard at a file.</strong></li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Things that used to be just a name</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>A building opens as a building.</strong> An <a href="/about#ext-ifc">.ifc</a> is a list of things rather than a drawing, so Analyser rebuilds the structure - project, site, building, storey, everything on each floor by type - and draws it. Openings cut through walls are counted and named rather than drawn wrong.</li>
+            <li><span class="patch-tag">New</span><strong>Molecules are drawn, not described.</strong> A <a href="/about#ext-mol">.mol</a>, <a href="/about#ext-sdf">.sdf</a>, <a href="/about#ext-pdb">.pdb</a> or <a href="/about#ext-cif">.cif</a> comes up in 3D - ball-and-stick for a small molecule, ribbons for a protein - with formula and weight worked out from the atoms actually in the file.</li>
+            <li><span class="patch-tag">New</span><strong>AI models open up.</strong> An <a href="/about#ext-onnx">.onnx</a> network is drawn as a graph, each step a box; weight files report their parameter count and precision, and a local language model (<a href="/about#ext-gguf">.gguf</a>) its architecture and how much text it can hold at once.</li>
+            <li><span class="patch-tag">New</span><strong>A warning worth having on AI checkpoints.</strong> A PyTorch <a href="/about#ext-pt">.pt</a> is a small program, not a bag of numbers, so Analyser lists everything it would reach for on loading without running any of it.</li>
+            <li><span class="patch-tag">New</span><strong>Design documents open.</strong> A <a href="/about#ext-sketch">.sketch</a> shows every page, artboard, group and layer, which of its components nothing uses, all the writing, and the pictures placed into it.</li>
+            <li><span class="patch-tag">New</span><strong>Music sessions draw their arrangement.</strong> <a href="/about#ext-als">Ableton Live</a> and <a href="/about#ext-rpp">Reaper</a> projects lay out a row per track with every clip in place, and list the recordings they point at but do not contain - which is how you check a session will open complete.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Subtitles that behave like subtitles</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>They appear where they were put, and karaoke sings.</strong> <a href="/about#ext-ass">.ass</a> and .ssa subtitles now play on a stage you can scrub through - signs in the corner, captions sliding across the frame, karaoke filling in a syllable at a time - rather than being flattened into a list of lines.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Two subtitle faults found while building it.</strong> Karaoke timings were being swallowed into the name of the instruction carrying them, and the sweeping highlight was treated as the plain one.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Maps that show how you moved</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Pace and density on a GPS track.</strong> A <a href="/about#ext-gpx">.gpx</a> map gains <em>pace</em>, colouring the line by speed against the range in your own track and pinning every stop, and <em>density</em>, shading how often you come back to the same spot.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">For looking hard at a file</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>How alike are these two files?</strong> A checksum only answers &ldquo;identical or not&rdquo;; <a href="/compare">Compare</a> now scores how much of two files is genuinely the same content out of 100.</li>
+            <li><span class="patch-tag">New</span><strong>Windows programs say what made them.</strong> An <a href="/about#ext-exe">.exe</a> is checked for whether its code is packed, naming UPX, VMProtect, Themida and around thirty others, plus the language that built it. Packing is as often an installer as anything suspicious, so the card reports rather than concludes.</li>
+            <li><span class="patch-tag">New</span><strong>A real database console.</strong> The query box on a <a href="/about#ext-sqlite">SQLite</a> file now runs anything you type, changes included, because what you are querying is a copy held in memory - the file on your device is never written to.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Under the bonnet</p>
+          <ul class="patch-list">
+            <li><strong>Credit where it is due:</strong> the molecule viewer is drawn by the open-source <em>3Dmol.js</em>, now in the credits. <strong>One deliberate gap:</strong> <a href="/about#ext-fig">Figma files</a> read out their outer details but not their contents - Figma describes itself differently in every version, so there is nothing dependable to read.</li>
           </ul>
         </div>
 
@@ -263,74 +295,42 @@
           <p class="patch-name">Show and Tell</p>
           <p class="patch-date">29 August 2026</p>
           <ul class="patch-list">
-            <li><strong>A run of formats that Analyser could previously only put a name to now actually open. A GIMP image is assembled and shown, pixel-art sprites play their animation, tracker music from the Amiga and DOS eras plays and gets the full sound analysis, a Terraria save draws its world map, and game textures show a real picture instead of a list of numbers. Very large AVI videos open now too, rather than being turned away, and the iPhone app icons that no browser can display are repaired and shown.</strong></li>
+            <li><strong>More formats that could only be named now open: GIMP images, pixel-art sprites, tracker music from the Amiga and DOS eras, Terraria world maps and game textures. Very large AVI videos open too, and the iPhone app icons no browser can display are repaired and shown.</strong></li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Pictures that were only a name</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>GIMP images open.</strong> A <a href="/about#ext-xcf">.xcf</a> is unusual: unlike a Photoshop file it stores no finished picture at all, only the separate layers it is built from. So Analyser assembles the image itself - decoding every layer, applying its mask and transparency, and blending it with the others exactly as GIMP would - and shows you the result, with the full layer list beside it and the picture saveable as a PNG.</li>
-            <li><span class="patch-tag">New</span><strong>Pixel-art sprites play.</strong> An <a href="/about#ext-aseprite">Aseprite</a> file holds a whole animation as layers and frames. Each frame is now put together and played back at the file&rsquo;s own timings - which vary frame by frame, so a fixed speed would play it wrong - with the layer list, the named animations the artist set up (walk, idle, attack) and a button to save any single frame.</li>
-            <li><span class="patch-tag">New</span><strong>Game textures show the texture.</strong> The image files inside a game - <a href="/about#ext-vtf">Valve&rsquo;s VTF</a> from Half-Life 2, Portal and Team Fortress 2, and the <a href="/about#ext-ktx">KTX and KTX2</a> files used across modern engines - are stored in a compressed form built for graphics cards rather than for browsers. They are now decoded and displayed, where before you only got their dimensions.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>iPhone app icons display.</strong> Every picture inside an <a href="/about#ext-ipa">.ipa</a> is rewritten by Apple&rsquo;s build tools into a private form of PNG that <em>no</em> browser will show - which meant that browsing an iPhone app and opening its icon gave you nothing. Analyser now recognises that form and rebuilds it into an ordinary picture, so the icons and artwork inside an app open like anything else.</li>
+            <li><span class="patch-tag">New</span><strong>GIMP images open.</strong> A <a href="/about#ext-xcf">.xcf</a> stores no finished picture, only its layers, so Analyser assembles the image itself - every layer decoded, masked, faded and blended as GIMP would - and shows it with the layer list, saveable as a PNG.</li>
+            <li><span class="patch-tag">New</span><strong>Pixel-art sprites play.</strong> An <a href="/about#ext-aseprite">Aseprite</a> animation plays at the file&rsquo;s own per-frame timings, with the layer list, the named animations (walk, idle, attack) and any single frame saveable.</li>
+            <li><span class="patch-tag">New</span><strong>Game textures show the texture.</strong> <a href="/about#ext-vtf">Valve&rsquo;s VTF</a> and the <a href="/about#ext-ktx">KTX and KTX2</a> files used across modern engines store their pictures in a form built for graphics cards, not browsers; they are decoded and displayed now, where before you got only their dimensions.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>iPhone app icons display.</strong> Every picture inside an <a href="/about#ext-ipa">.ipa</a> is rewritten by Apple&rsquo;s build tools into a private form of PNG that <em>no</em> browser will show; Analyser recognises it and rebuilds an ordinary picture.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Music from the demoscene</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>Tracker music plays - about sixty formats of it.</strong> <a href="/about#ext-mod">MOD, XM, IT, S3M</a> and their many relatives are not recordings. They are sheet music plus a box of sounds: a grid saying which sound to play, on which channel, at which moment. Nothing but a tracker can turn that back into audio, so Analyser now performs the piece on your device and hands the result to the ordinary sound analysis - which means a 30-year-old Amiga tune gets the same waveform, spectrogram, player, loudness, key and tempo as any other music, and can be saved as a WAV.</li>
-            <li><strong>The parts a recording has no equivalent of are shown too:</strong> which tracker wrote the file, how many channels and patterns it uses, the free-text message many composers left inside, and the list of sample names - traditionally where authors tucked their greetings and credits.</li>
+            <li><span class="patch-tag">New</span><strong>Tracker music plays - about sixty formats of it.</strong> <a href="/about#ext-mod">MOD, XM, IT, S3M</a> and their relatives are sheet music plus a box of sounds rather than recordings, so the piece is performed on your device and then gets the full sound analysis: waveform, spectrogram, player, loudness, key and tempo, saveable as a WAV.</li>
+            <li><strong>The parts a recording has no equivalent of are shown too:</strong> the tracker that wrote the file, its channels and patterns, the composer&rsquo;s free-text message, and the sample names - traditionally where authors tucked their greetings.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Worlds and video</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>A Terraria save draws its map.</strong> Drop a <a href="/about#ext-wld">.wld</a> and the whole world is drawn, one pixel per tile, from the save&rsquo;s own data - terrain and ore veins in front, walls shaded behind them, and water, lava and honey in their own colours. The world name, the seed it grew from, its size and its difficulty are read out alongside, and the map saves as a PNG.</li>
-            <li><span class="patch-tag">New</span><strong>Very large AVI videos open.</strong> No browser plays most <a href="/about#ext-avi">AVI</a> files, so Analyser reads them itself - but past a certain size it used to give up rather than risk running out of memory. It now indexes the video instead and reads each frame off the disk as you reach it, so a multi-gigabyte AVI opens on an ordinary machine. Stepping and scrubbing are a little slower than on a small clip, and the viewer says so rather than leaving you wondering.</li>
+            <li><span class="patch-tag">New</span><strong>A Terraria save draws its map.</strong> A <a href="/about#ext-wld">.wld</a> is drawn one pixel per tile - terrain and ore in front, walls shaded behind, water, lava and honey in their own colours - with the world name, seed, size and difficulty alongside, saveable as a PNG.</li>
+            <li><span class="patch-tag">New</span><strong>Very large AVI videos open.</strong> No browser plays most <a href="/about#ext-avi">AVI</a> files and Analyser used to give up past a certain size; it now indexes the video and reads each frame off the disk as you reach it, so a multi-gigabyte file opens on an ordinary machine.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Two files that shared a name</p>
           <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>.wld and .ase each mean two unrelated things.</strong> A <code>.wld</code> is either a Terraria world or a small text file that pins a map image to real coordinates; an <code>.ase</code> is either an Aseprite sprite or an Adobe colour palette. Analyser now tells each pair apart by looking at the contents rather than the name, so neither gets opened as the wrong thing.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>.wld and .ase each mean two unrelated things.</strong> A <code>.wld</code> is a Terraria world or a map-positioning text file; an <code>.ase</code> is an Aseprite sprite or an Adobe colour palette. Each pair is told apart by contents now, not by name.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Under the bonnet</p>
           <ul class="patch-list">
-            <li><strong>Maintenance:</strong> the picture decoder behind DDS textures was moved somewhere the other texture formats could share it rather than copied, which is most of why three of them arrived at once. <strong>Credit where it is due:</strong> the open-source converter <em>Convert to it!</em> was studied while working out which of these formats could be decoded in a browser at all - it is not part of the app, but it pointed the way, and it is now named in the credits at the foot of the page. These notes cover seven updates at once, written together after the fact.</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry">
-          <p class="patch-version">8.20 - 8.22</p>
-          <p class="patch-name">Hidden Pictures</p>
-          <p class="patch-date">19 August 2026</p>
-          <ul class="patch-list">
-            <li><strong>A surprising number of files quietly carry a picture of themselves that nothing ever shows you - the snapshot AutoCAD saves inside a drawing, the photo on a contact card, the plate a 3D-printing slicer rendered, the thumbnail Blender kept of a scene, the preview a piece of artwork stores for the layout program it was meant for. Analyser now finds each of them and shows it, full size and saveable. An AVI video that looked like it had been analysing for hours is fixed too.</strong></li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Pictures hidden inside files</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>An AutoCAD drawing shows the picture AutoCAD saved of it.</strong> Every <a href="/about#ext-dwg">DWG and DWT</a> keeps a snapshot of the drawing as it looked when it was last saved, so a file browser has a thumbnail to show. That snapshot is now pulled out and displayed - and pulled out <em>before</em> the drawing itself is read, because a drawing too new or too damaged to open is exactly the file where the stored picture is the only thing left to see.</li>
-            <li><span class="patch-tag">New</span><strong>Contact cards give up their photos.</strong> A <a href="/about#ext-vcf">.vcf</a> exported from a phone or an address book carries the contact&rsquo;s picture and their company logo inside it. Every one is now extracted at full size, shown, and saveable. A card that merely links to a picture elsewhere says so, since there is nothing in the file itself to show.</li>
-            <li><span class="patch-tag">New</span><strong>3D print packages show the plate, not just the mesh.</strong> A <a href="/about#ext-3mf">3MF</a> carries its own thumbnail, and slicers such as <strong>Bambu Studio</strong> and <strong>OrcaSlicer</strong> add a rendered image of each build plate alongside the pictures the printer puts on its own screen. Those, and any texture maps the model uses, now sit beside the 3D viewer - and when a package holds no mesh to view, they lead it, because they are the only picture of that file there is.</li>
-            <li><span class="patch-tag">New</span><strong>A Blender scene shows its thumbnail.</strong> A <a href="/about#ext-blend">.blend</a> saved with previews turned on stores a small render of the scene, so you can now see what it looked like without opening Blender. A <em>compressed</em> .blend now says that is what it is, rather than leaving you wondering why there is no version and no picture.</li>
-            <li><span class="patch-tag">New</span><strong>EPS artwork shows the preview it was given.</strong> An <a href="/about#ext-eps">EPS</a> is meant to be placed into a page layout, so it carries a low-resolution preview for the layout program to draw on the page. Analyser now locates that preview properly instead of guessing at it: the plain-text kind is decoded and drawn on the spot, and the other kind sits behind a button, because it needs a heavier decoder than is worth fetching for every file opened.</li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Video</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>An AVI no longer looks like it is analysing for ever.</strong> No browser can play most <a href="/about#ext-avi">AVI</a> files, so Analyser reads them itself - and it finishes in about a second. The <code>Decoding video&hellip;</code> bar beside the results was never taken down afterwards, so a large AVI sat there apparently still working, for hours, with its finished analysis already on screen below it. The bar now clears on every route through, including the one taken for a file the browser cannot play at all.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>That loading bar stays inside its box.</strong> In the narrow column beside a video it was wider than the panel holding it and hung out past the edge; it now wraps onto a second line instead.</li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Under the bonnet</p>
-          <ul class="patch-list">
-            <li><strong>Maintenance:</strong> the previous update&rsquo;s notes, and a written map of how a file format is added to the app - which file does what, and which of them any given change has to touch - kept beside the code rather than in one person&rsquo;s head.</li>
+            <li><strong>Maintenance:</strong> the picture decoder behind DDS textures moved somewhere the other texture formats could share it, which is most of why three arrived at once. <strong>Credit where it is due:</strong> the open-source <em>Convert to it!</em> pointed the way on what could be decoded in a browser at all, and is now in the credits. These notes cover seven updates, written together after the fact.</li>
           </ul>
         </div>
 
@@ -338,26 +338,58 @@
           <summary>Older updates</summary>
 
         <div class="patch-entry">
+          <p class="patch-version">8.20 - 8.22</p>
+          <p class="patch-name">Hidden Pictures</p>
+          <p class="patch-date">19 August 2026</p>
+          <ul class="patch-list">
+            <li><strong>A surprising number of files quietly carry a picture of themselves that nothing ever shows you - the snapshot inside an AutoCAD drawing, the photo on a contact card, a slicer&rsquo;s build plate, a Blender thumbnail, the preview inside EPS artwork. Analyser now finds each and shows it, full size and saveable. An AVI that looked like it had been analysing for hours is fixed too.</strong></li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Pictures hidden inside files</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>An AutoCAD drawing shows the picture AutoCAD saved of it.</strong> Every <a href="/about#ext-dwg">DWG and DWT</a> keeps a snapshot of how it last looked, and it is pulled out <em>before</em> the drawing is read - because a file too new or too damaged to open is exactly where that picture is all there is.</li>
+            <li><span class="patch-tag">New</span><strong>Contact cards give up their photos.</strong> The picture and company logo inside a <a href="/about#ext-vcf">.vcf</a> are extracted at full size, shown and saveable; a card that merely links to one says so.</li>
+            <li><span class="patch-tag">New</span><strong>3D print packages show the plate, not just the mesh.</strong> A <a href="/about#ext-3mf">3MF</a> thumbnail, the build-plate renders <strong>Bambu Studio</strong> and <strong>OrcaSlicer</strong> add, and any texture maps now sit beside the 3D viewer - and lead it when there is no mesh to view.</li>
+            <li><span class="patch-tag">New</span><strong>A Blender scene shows its thumbnail.</strong> A <a href="/about#ext-blend">.blend</a> saved with previews on stores a small render of the scene; a <em>compressed</em> .blend now says so, rather than leaving you wondering why there is no version and no picture.</li>
+            <li><span class="patch-tag">New</span><strong>EPS artwork shows the preview it was given.</strong> An <a href="/about#ext-eps">EPS</a> carries a low-resolution preview for the layout program that will place it: the plain-text kind is drawn on the spot, the other behind a button, since it needs a heavier decoder than every file should fetch.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Video</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong>An AVI no longer looks like it is analysing for ever.</strong> Analyser reads most <a href="/about#ext-avi">AVI</a> files itself in about a second, but the <code>Decoding video&hellip;</code> bar was never taken down afterwards, leaving a large one apparently still working with its finished analysis on screen below. It clears on every route through now.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>That loading bar stays inside its box.</strong> In the narrow column beside a video it was wider than its panel and hung past the edge; it wraps onto a second line now.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Under the bonnet</p>
+          <ul class="patch-list">
+            <li><strong>Maintenance:</strong> the previous update&rsquo;s notes, and a written map of how a file format is added to the app, kept beside the code rather than in one person&rsquo;s head.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">8.16 - 8.19</p>
           <p class="patch-name">No Loose Ends</p>
           <p class="patch-date">14 August 2026</p>
           <ul class="patch-list">
-            <li><strong>Analysing a picture taken out of a PDF now leaves you a way back to the PDF. Everything else here was a full day&rsquo;s work with almost nothing to show for it, on purpose: every one of the 176 files the app is built from is now checked far more strictly before it ships, and the checking turned up roughly 11,400 places where the code could have been handed something missing or the wrong shape. The app you use is deliberately unchanged.</strong></li>
+            <li><strong>Analysing a picture taken out of a PDF now leaves you a way back to the PDF. Everything else was deliberate invisible work: all 176 files the app is built from are now checked far more strictly before they ship, which turned up roughly 11,400 places the code could have been handed something missing or the wrong shape.</strong></li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">What you can see</p>
           <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>A Back bar when you analyse an image from a PDF.</strong> Pressing <strong>Analyse</strong> under one of a PDF&rsquo;s embedded pictures swaps the PDF&rsquo;s analysis for the picture&rsquo;s, and there was no way back short of dropping the file in again. It now leaves the same breadcrumb you get when you open a file from inside an archive or a folder - one tap and you are back on the PDF.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A Back bar when you analyse an image from a PDF.</strong> Pressing <strong>Analyse</strong> under an embedded picture used to leave no way back short of dropping the file in again; it now leaves the same breadcrumb you get opening a file from inside an archive.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">The strictness pass</p>
           <ul class="patch-list">
-            <li><strong>Nothing else you can see - and that was the whole point.</strong> Analyser has no automated tests, so the only safe way to make a change this wide is to prove the shipped code came out identical afterwards. It did, bar a handful of spots checked one by one. Roughly nine hours went into that, and most of it was checking rather than typing.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>A document that fails to read one of its inner parts now still shows the rest.</strong> Word, OpenDocument and e-book files are really small archives of separate pieces; if one piece would not decode, everything already read from that file was thrown away and you got nothing. That piece is now simply skipped.</li>
-            <li><strong>The checks are stricter about what an unfinished value means.</strong> Anywhere the app looked something up and carried on as if it had definitely found it, that assumption is now written down and enforced - so a future change that breaks it fails on the spot rather than in front of you.</li>
-            <li><strong>Maintenance:</strong> one long-dead field in the AI separation tool, which had been sending nothing at all since the day it was written, is now recorded as such rather than quietly left to look intentional.</li>
+            <li><strong>Nothing else you can see - and that was the whole point.</strong> Analyser has no automated tests, so the only safe way to make a change this wide was to prove the shipped code came out identical afterwards. It did.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A document that fails to read one of its inner parts now still shows the rest.</strong> Word, OpenDocument and e-book files are small archives of pieces, and one piece that would not decode used to throw away everything already read. It is simply skipped now.</li>
+            <li><strong>The checks are stricter about what an unfinished value means</strong> - every place the app carried on as if a lookup had definitely succeeded now says so and is enforced, so a future change that breaks it fails on the spot.</li>
+            <li><strong>Maintenance:</strong> one long-dead field in the AI separation tool, sending nothing since the day it was written, is now recorded as such.</li>
           </ul>
         </div>
 
@@ -366,31 +398,31 @@
           <p class="patch-name">Room to Breathe</p>
           <p class="patch-date">13 August 2026</p>
           <ul class="patch-list">
-            <li><strong>The AI sound tools now fit on an iPhone.</strong> Separating a track used to run the tab out of memory and take Safari down with it; it now uses a fraction of the memory, downloads a smaller AI engine on Apple devices, and its <strong>Download WAV</strong> buttons actually save a file. The old <u>lab.valjdakosta.com</u> address forwards you to the new one, and underneath, all 176 files the app is built from were rewritten in a language that checks the code as it is written.</li>
+            <li><strong>The AI sound tools now fit on an iPhone.</strong> Separating a track used to run the tab out of memory and take Safari down with it; it now uses a fraction of the memory, downloads a smaller AI engine on Apple devices, and its <strong>Download WAV</strong> buttons actually save a file. The old <u>lab.valjdakosta.com</u> address forwards to the new one, and underneath, all 176 files the app is built from were rewritten in a language that checks the code as it is written.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Separation on a phone</p>
           <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>The tab no longer runs out of memory partway through.</strong> The model is now fetched and started <em>before</em> the song is copied for it, the downloaded model is released the moment the engine has taken it, the frequency workspace is reused rather than rebuilt for every window of audio, and the second output track is only set aside once the first pass has actually succeeded. Together those are the difference between a separation finishing and Safari reloading the page under you.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The tab no longer runs out of memory partway through.</strong> The model is fetched and started <em>before</em> the song is copied for it and released once the engine has taken it, the frequency workspace is reused rather than rebuilt for every window, and the second output track is set aside only once the first pass has succeeded.</li>
             <li><span class="patch-tag is-faster">Faster</span><strong>A smaller AI engine on iPhone and iPad.</strong> Safari cannot use the graphics-card path at all, so it no longer downloads the version built for it - roughly 10 MB instead of 21 MB before anything can start.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Downloading a separated vocal or instrumental saves the file.</strong> On iPhone the button often opened a preview instead, or did nothing at all. The download now hangs off your own tap and is handed over as a file rather than as something to play.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>The first pass says what it is doing.</strong> There is no percentage to show until the model returns its first window of audio, so it now reads <code>Starting first separation pass&hellip;</code> rather than sitting on a figure it cannot yet know. A first pass that genuinely will not finish on a phone gives up after two minutes instead of five.</li>
-            <li><span class="patch-tag is-faster">Faster</span><strong>The blend and the per-part spectrograms are drawn without another full-length copy of the track.</strong> The mix is worked out slice by slice as it is analysed, which is what lets the results view survive on a phone at all.</li>
-            <li>A separation that crashes on an Apple device is no longer retried straight away. The retry exists for a graphics-card fault those devices cannot have, and going again immediately only made a second crash more likely.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Downloading a separated vocal or instrumental saves the file.</strong> On iPhone the button often opened a preview or did nothing; the download now hangs off your own tap and is handed over as a file.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The first pass says what it is doing.</strong> With no percentage to show until the model returns its first window of audio, it reads <code>Starting first separation pass&hellip;</code> rather than sitting on a figure it cannot know, and gives up after two minutes instead of five.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>The blend and the per-part spectrograms are drawn without another full-length copy of the track</strong>, working the mix out slice by slice - which is what lets the results view survive on a phone.</li>
+            <li>A separation that crashes on an Apple device is no longer retried straight away: the retry exists for a graphics-card fault those devices cannot have.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Offline and addresses</p>
           <ul class="patch-list">
             <li><strong>The <a href="/about#where">Complete offline download</a> is now about 96 MB, up from 85 MB.</strong> It carries both AI engines - the graphics-card one and the plain one - so separation still works offline whichever browser you come back in.</li>
-            <li><strong><u>lab.valjdakosta.com</u> now forwards to <u>analyser.valjdakosta.com</u></strong>, keeping whatever page you asked for. It is a temporary forward on purpose, so it can be undone. If you installed Analyser from the old address, the count it sends still goes through, so none of that is lost.</li>
+            <li><strong><u>lab.valjdakosta.com</u> now forwards to <u>analyser.valjdakosta.com</u></strong>, keeping whatever page you asked for. It is a temporary forward on purpose, so it can be undone, and a copy installed from the old address keeps working.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Under the bonnet</p>
           <ul class="patch-list">
-            <li><strong>The app was rewritten in a stricter language.</strong> Nothing about the site changed, and that was the requirement: the code that actually ships is generated from those files and was compared against the old one to prove it came out the same. It is the groundwork for the far stricter checking described in the update above.</li>
+            <li><strong>The app was rewritten in a stricter language.</strong> Nothing about the site changed, and that was the requirement: the shipped code was compared against the old to prove it came out the same - groundwork for the stricter checking in the update above.</li>
             <li><strong>Maintenance:</strong> the previous update&rsquo;s notes and its entry in the <code>tl;dr</code> summary.</li>
           </ul>
         </div>
@@ -2036,7 +2068,7 @@
       <div><dt>UI font</dt><dd><a href="https://github.com/vercel/geist-font" target="_blank" rel="noopener">Geist and Geist Mono</a> <a class="dep-lic" href="https://github.com/vercel/geist-font/blob/main/LICENSE.txt" target="_blank" rel="noopener">licence</a> by Vercel are the interface and monospace typefaces, used under the SIL Open Font License.</dd></div>
       <div><dt>PDF</dt><dd><a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a> <a class="dep-lic" href="https://github.com/mozilla/pdf.js/blob/master/LICENSE" target="_blank" rel="noopener">licence</a> by Mozilla. Renders PDF pages, extracts text, and supports OCR scanning of image-only pages via Tesseract. Loaded only for PDF files.</dd></div>
       <div><dt>DWG</dt><dd><a href="https://github.com/LibreDWG/libredwg" target="_blank" rel="noopener">LibreDWG</a> <a class="dep-lic" href="https://github.com/LibreDWG/libredwg/blob/master/COPYING" target="_blank" rel="noopener">licence</a> compiled to WASM. Parses AutoCAD <code>.dwg</code> / <code>.dwt</code> drawings and renders them to SVG. ~7 MB, in the Everything download.</dd></div>
-      <div><dt>File ID</dt><dd>Built-in identification for 1421+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
+      <div><dt>File ID</dt><dd>Built-in identification for 1428+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Tracker music</dt><dd><a href="https://lib.openmpt.org/libopenmpt/" target="_blank" rel="noopener">libopenmpt</a> <a class="dep-lic" href="https://github.com/OpenMPT/openmpt/blob/master/LICENSE" target="_blank" rel="noopener">licence</a> by the OpenMPT project, compiled to WASM (packaged by <a href="https://github.com/DrSnuggles/chiptune" target="_blank" rel="noopener">chiptune3</a> <a class="dep-lic" href="/assets/vendor/libopenmpt-LICENSE.txt" target="_blank" rel="noopener">licence</a>). Renders MOD, XM, IT, S3M and around sixty other tracker modules to audio on your device, so they get the full Sound section. ~1.5 MB, in the Everything download.</dd></div>
       <div><dt>Molecules</dt><dd><a href="https://3dmol.csb.pitt.edu/" target="_blank" rel="noopener">3Dmol.js</a> <a class="dep-lic" href="/assets/vendor/3dmol/LICENSE.txt" target="_blank" rel="noopener">licence</a> from the University of Pittsburgh. Draws chemical structures - <code>.mol</code>, <code>.sdf</code>, <code>.pdb</code>, <code>.cif</code> and the rest - as ball-and-stick models, or as ribbon cartoons for proteins. ~500 KB, in the Everything download.</dd></div>
       <div><dt>Format research</dt><dd>With thanks to <a href="https://github.com/p2r3/convert" target="_blank" rel="noopener">Convert to it!</a> <a class="dep-lic" href="https://github.com/p2r3/convert/blob/master/LICENSE" target="_blank" rel="noopener">licence</a>, an open-source browser-only file converter, whose handlers we studied when working out which formats can be decoded on-device and how - it is not bundled or used as a dependency.</dd></div>

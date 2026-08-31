@@ -43,7 +43,7 @@
    on every build, so an edit there is silently lost. src/ edits do nothing until
    `npm run build` recompiles.
    ============================================================================ */
-const COMMIT_COUNT = 300;
+const COMMIT_COUNT = 301;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -153,13 +153,21 @@ function envSecretWarning(file) {
     ]));
     return box;
 }
+// Extensions that name no format at all, only "some bytes": a .bin is equally a
+// disc image, a ROM dump, firmware or an app blob, and a .out is equally an ELF
+// binary or a text log. classifyFile gives each of them a home so they aren't
+// reported as unrecognised, but that home must not pre-empt the sniff the way a
+// real extension does - so resolveByContent runs for these too, and a .bin that
+// is really a ZIP or a PDF still opens as one.
+const SNIFF_FIRST = new Set(['bin', 'out']);
 // The full routing resolution handleFile performs, minus the DOM work: start from
 // classifyFile (extension/MIME), then the same byte-sniffing reroutes - the SPICE
 // .raw disambiguation, the ambiguous-extension VARIANT_REROUTE, and (crucially)
-// resolveByContent for 'unknown'/'extensionless', which is what turns a PDF/ZIP/
-// image with no recognised extension into its real kind. classifyFile alone
-// returns 'unknown' for a .pdf, so anything that routes without this (e.g. the
-// compare view) would fall to the hex-dump renderer. Async; returns a kind key.
+// resolveByContent for 'unknown'/'extensionless' (plus SNIFF_FIRST above), which
+// is what turns a PDF/ZIP/image with no recognised extension into its real kind.
+// classifyFile alone returns 'unknown' for a .pdf, so anything that routes without
+// this (e.g. the compare view) would fall to the hex-dump renderer. Async;
+// returns a kind key.
 async function resolveKind(file) {
     let kind = classifyFile(file);
     if (kind === 'photo' && fileExt(file.name) === 'raw') {
@@ -182,7 +190,7 @@ async function resolveKind(file) {
         }
         catch (_) { }
     }
-    if (kind === 'unknown' || kind === 'extensionless') {
+    if (kind === 'unknown' || kind === 'extensionless' || SNIFF_FIRST.has(fileExt(file.name))) {
         try {
             const r = await resolveByContent(file);
             if (r.kind && r.kind !== 'unknown')
@@ -384,6 +392,11 @@ const ROUTES = {
     // Extensionless files: same inspector as 'unknown' but framed as an expected
     // category (shown as text, hex fallback for binary) rather than "unrecognised".
     extensionless: { render: (f, r) => renderUnknown(f, r, { extensionless: true }) },
+    // .bin: the same inspector again, framed as the recognised raw-binary container
+    // it is. The bytes ARE the analysis for a generic blob, so this keeps the hex
+    // dump, entropy profile and magic guess rather than swapping them for an
+    // identification card that could only repeat the extension back.
+    binary: { render: (f, r) => renderUnknown(f, r, { binary: true }) },
 };
 // ---------- page-wide drag-drop ----------
 function hasFiles(e) {
@@ -737,12 +750,15 @@ function boot() {
             }
             catch (_) { }
         }
-        // For files classified as 'unknown' or 'extensionless', resolve the true type
+        // For files classified as 'unknown' or 'extensionless' - and for the generic
+        // suffixes in SNIFF_FIRST, which name no format either - resolve the true type
         // from the bytes (PDF/ZIP/image/git/CSV/the niche game+dev magics) via the
         // shared resolver, so a recognised type auto-routes even with no (or a wrong)
         // extension. Nothing recognised: keep the original kind - 'extensionless'
-        // still renders as text below, 'unknown' as a hex dump.
-        if (!force && (kind === 'unknown' || kind === 'extensionless')) {
+        // still renders as text below, 'unknown' and 'binary' as a hex dump.
+        // Kept in step with resolveKind() above, or /compare and the folder scan would
+        // route a .bin differently from the main page.
+        if (!force && (kind === 'unknown' || kind === 'extensionless' || SNIFF_FIRST.has(fileExt(file.name)))) {
             const r = await resolveByContent(file);
             if (token.cancelled)
                 return;

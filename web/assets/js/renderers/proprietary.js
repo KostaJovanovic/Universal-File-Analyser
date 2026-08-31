@@ -3725,16 +3725,16 @@ async function parseDrp(file, ext) {
         return null;
     }
 }
-// ---------- Wondershare Filmora project (.wfp / .wsp) ----------
+// ---------- Wondershare Filmora project (.wfp) ----------
 // Newer Filmora projects are JSON (or wrap a JSON project model); older .wfp are
 // binary. Detect JSON vs binary and extract version/resolution/duration/tracks
 // for JSON; for binary, ID + any embedded version.
-async function parseFilmora(file, ext) {
+async function parseFilmora(file) {
     try {
         const cap = Math.min(file.size, 6 * 1024 * 1024);
         const buf = new Uint8Array(await file.slice(0, cap).arrayBuffer());
         const fields = { 'Application': 'Wondershare Filmora' };
-        fields['Kind'] = ext === 'wsp' ? 'Sub-project (.wsp)' : 'Project (.wfp)';
+        fields['Kind'] = 'Project (.wfp)';
         // Is there a JSON document (whole-file or embedded)? Find the first '{' that
         // begins a plausible Filmora model.
         let jsonText = null;
@@ -5188,8 +5188,7 @@ const PARSERS = {
     vf: c => parseVeg(c.file),
     drp: c => parseDrp(c.file, c.ext),
     drt: c => parseDrp(c.file, c.ext),
-    wfp: c => parseFilmora(c.file, c.ext),
-    wsp: c => parseFilmora(c.file, c.ext),
+    wfp: c => parseFilmora(c.file),
     json: c => parseCapcut(c.file),
     gcode: c => parseGcode(c.file),
     gco: c => parseGcode(c.file),
