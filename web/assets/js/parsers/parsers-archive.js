@@ -1780,6 +1780,7 @@ export const PARSERS = {
     gem: (c) => parseGem(c.file),
     cab: (c) => parseCab(c.file),
     msu: (c) => parseCab(c.file), // MS Update Standalone is a CAB
+    wsp: (c) => parseCab(c.file), // SharePoint solution package is a CAB
     xar: (c) => parseXar(c.file, c.ext),
     pkg: (c) => parsePkg(c.file, c.ext, c.head), // macOS XAR installer or Bungie Tiger package
     mpkg: (c) => parsePkg(c.file, c.ext, c.head), // macOS meta-installer (XAR)
