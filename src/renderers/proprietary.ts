@@ -4371,6 +4371,24 @@ const PARSERS: Record<string, ParseFn> = {
   rec:   c => parseRec(c.file),
 };
 
+// Which FORMATS entry the 'plaintext' route should render a file under.
+//
+// A file reaching that route is text, but it is not necessarily anonymous text.
+// Two paths lead there: a LICENSE/COPYING marker file, which has no extension
+// and is a .txt in every way that matters; and VARIANT_REROUTE, which sends a
+// TypeScript .ts here because the extension it shares with an MPEG transport
+// stream aimed classifyFile at the video player. Flattening the second to 'txt'
+// titled the card "Plain Text" and put the .ts parser out of reach.
+//
+// So: keep the file's own extension where FORMATS calls that extension a text
+// format, and fall back to 'txt' for everything else - which is what keeps a
+// PEM .key routed here from being read as the Keynote deck FORMATS.key names.
+export function plaintextExt(name: string) {
+  const ext = extFromName(name);
+  const fmt = (FORMATS as Record<string, any>)[ext];
+  return fmt && fmt.parse === 'text' ? ext : 'txt';
+}
+
 // ---------- main render ----------
 export async function renderProprietary(file: File, container: HTMLElement, extOverride?: string) {
   const ext = extOverride || extFromName(file.name);

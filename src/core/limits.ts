@@ -81,6 +81,23 @@ export const SCAN_MED = 64 * MB;
 export const SCAN_LARGE = 128 * MB;
 export const SCAN_XL = 256 * MB;
 
+// Source text a structure parser reads whole (parsers-dev.ts's TypeScript pass,
+// which walks the file character by character to strip comments and strings).
+// Hand-written source is tens of KB; 4 MB is well past the largest module anyone
+// writes and keeps that walk off a multi-GB file that merely carries a source
+// extension. Past it the readout says so rather than quietly counting half.
+export const SOURCE_SCAN_MAX = 4 * MB;
+
+// c2pa: bytes read from EACH END of a container c2pa.js can't unpack structurally
+// (MP4/MOV/HEIF/AVIF/WebP), when hunting the JUMBF manifest store by signature.
+// Both ends, because the box is top-level and near ftyp/moov in practice but some
+// writers append it. A manifest is ~10-100 KB, so this is already generous - it
+// exists to stop a multi-GB video being read whole for a card that needs 6 KB.
+export const C2PA_SCAN_EDGE = 8 * MB;
+// Largest single embedded manifest store parsed (a signed C2PA store with a full
+// cert chain runs a few hundred KB; past this it isn't a manifest).
+export const C2PA_MANIFEST_MAX = 8 * MB;
+
 // ---- animation ----
 // Total decoded-RGBA budget for animated GIF/WebP. On the eager path it caps the
 // frame count (floor(budget / (w*h))); on a lazy frame-source it is the retained

@@ -190,7 +190,7 @@ export const FULL_ANALYSIS = [
   { label: 'Subtitles', exts: 'SRT VTT ASS SSA SUB', tags: 'subtitle caption closed captions srt webvtt substation alpha timed text cues microdvd subviewer frame based vobsub', desc: 'Parse subtitle cues and timing from SubRip (SRT), WebVTT, ASS/SSA, MicroDVD and SubViewer (.sub): cue count, on-screen time, and a full timed cue list. MicroDVD frame timings are converted to time using the declared or assumed frame rate; binary VobSub .sub image subtitles are identified.' },
   { label: 'MIDI',      exts: 'MID MIDI', tags: 'midi music score sequencer general gm synthesizer notes tempo instruments', desc: 'Parse Standard MIDI Files: format, tempo (BPM), time signature, General MIDI instruments, track names, note counts, and duration.' },
   { label: 'Map data',  exts: 'GPX KML GeoJSON', tags: 'gps track waypoint route geojson kml google earth strava garmin map coordinates location gis', desc: 'Parse GPX tracks, KML placemarks, and GeoJSON features - counts, distance, elevation, time span, and bounds - plotted on an OpenStreetMap map.' },
-  { label: 'Web / code', exts: 'HTML CSS JS TS TSX JSX JSON YAML XML MD HTM MJS YML TXT PS1 PSM1 PSD1 BAT CMD', tags: 'programming development website htm html mjs es module yml yaml txt plain text react typescript javascript node powershell ps1 psm1 psd1 script module manifest windows automation cmdlet sysadmin shell batch bat cmd command prompt dos launcher', desc: 'Preview and inspect HTML, CSS, JavaScript, TypeScript, JSON, YAML, XML and Markdown source files, plus Windows scripts - PowerShell (PS1, PSM1, PSD1), reading their comment-based help synopsis, #Requires directives, function and parameter counts, CmdletBinding and Authenticode signing; and batch/command scripts (BAT, CMD), reading the echo state, labels, variables set and the external tools they invoke - all alongside the source.' },
+  { label: 'Web / code', exts: 'HTML CSS JS TS MTS TSX JSX JSON YAML XML MD HTM MJS YML TXT PS1 PSM1 PSD1 BAT CMD', tags: 'programming development website htm html mjs es module yml yaml txt plain text react typescript javascript node tsc type annotations interfaces declaration file d.ts mts esm powershell ps1 psm1 psd1 script module manifest windows automation cmdlet sysadmin shell batch bat cmd command prompt dos launcher', desc: 'Preview and inspect HTML, CSS, JavaScript, TypeScript, JSON, YAML, XML and Markdown source files, plus Windows scripts. TypeScript (TS, MTS, and .d.ts declaration files) gets a structure readout beside the source: the modules it imports (packages against local files, and which are type-only), the names it exports, what it declares - interfaces, type aliases, enums, classes, functions - a code/comment/blank line breakdown, and how often it steps around the type system with any, as casts, non-null assertions and @ts- suppressions. PowerShell (PS1, PSM1, PSD1) is read for its comment-based help synopsis, #Requires directives, function and parameter counts, CmdletBinding and Authenticode signing; batch/command scripts (BAT, CMD) for the echo state, labels, variables set and the external tools they invoke.' },
   { label: 'Git objects', exts: 'PACK IDX', tags: 'git object loose blob tree commit tag packfile pack idx index version control repository sha1 sha-1 zlib github gitlab bitbucket .git objects content addressable', desc: 'Open git repository internals with no git binary: loose objects (the zlib-compressed blob, tree, commit and tag files under .git/objects), pack files (.pack) and pack indexes (.idx). Inflates and parses each object - showing its type, size and SHA-1, rendering commit and tag messages, listing tree entries, and handing blob contents to the analyser.' },
 ];
 
@@ -290,6 +290,7 @@ export const IDENTIFICATION = [...IDENTIFICATION_CORE, ...IDENTIFICATION_EXTENDE
 //               { textStarts: '-----BEGIN' } trimmed text begins with (case-insens.)
 //               { textIncludes: ['LUT_3D_SIZE','LUT_1D_SIZE'] }  any substring present
 //               { tsSync: true }             MPEG-TS 0x47 sync at offsets 0/188/376
+//               { m2tsSync: true }           the same at the 192-byte BDAV stride (.mts)
 //               { default: true }            fallback when nothing else matched
 export const EXT_VARIANTS: Record<string, { summary: string; variants: { name: string; desc: string; tell: string; detect?: any }[] }> = {
   // ---- Tier 1: clear collisions ----
@@ -297,7 +298,14 @@ export const EXT_VARIANTS: Record<string, { summary: string; variants: { name: s
     summary: 'The .ts extension names two unrelated things: TypeScript source code and an MPEG transport stream video.',
     variants: [
       { name: 'MPEG transport stream', desc: 'An MPEG-2 Transport Stream - the 188-byte-packet container used for digital broadcast (DVB/ATSC), Blu-ray and AVCHD camcorder video. Analyser reads the container, codec, resolution and streams and plays it back.', tell: 'A transport stream is binary and repeats the 0x47 sync byte every 188 bytes; TypeScript is UTF-8 text.', detect: { tsSync: true } },
-      { name: 'TypeScript source', desc: 'Microsoft TypeScript source - JavaScript with static types, compiled by tsc. Analyser opens it as text with a source preview, line count and metadata.', tell: 'TypeScript is human-readable text.', detect: { default: true } },
+      { name: 'TypeScript source', desc: 'Microsoft TypeScript source - JavaScript with static types, compiled by tsc. Analyser reads the shape of the module alongside the source preview: the modules it imports (packages against local files, and which are type-only), the names it exports, what it declares (interfaces, type aliases, enums, classes, functions), a code/comment/blank line breakdown, and how often it steps around the type system with any, as casts, non-null assertions and @ts- suppressions. Declaration files (.d.ts) are named as such.', tell: 'TypeScript is human-readable text.', detect: { default: true } },
+    ],
+  },
+  mts: {
+    summary: 'The .mts extension names two unrelated things: AVCHD camcorder video and a TypeScript ES module.',
+    variants: [
+      { name: 'AVCHD video', desc: 'An AVCHD camcorder recording - the BDAV transport stream Sony, Panasonic and Canon camcorders write to card, carrying H.264 video with AC-3 or LPCM audio. Analyser reads the container, codec, resolution and streams and plays it back.', tell: 'AVCHD is binary and repeats the 0x47 sync byte every 192 bytes, four bytes into each packet; TypeScript is UTF-8 text.', detect: { m2tsSync: true } },
+      { name: 'TypeScript ES module', desc: 'A TypeScript source file that is always an ES module, whatever the surrounding package.json says (.cts is its CommonJS twin). Analyser reads the shape of the module alongside the source preview: the modules it imports, the names it exports, what it declares, a line breakdown and how often it steps around the type system.', tell: 'TypeScript is human-readable text.', detect: { default: true } },
     ],
   },
   ase: {
@@ -544,6 +552,11 @@ export function detectVariant(ext: string, bytes: Uint8Array, text: string|null,
   // three in a row (offsets 0, 188, 376) so a text file that merely starts with 'G'
   // (0x47) is not mistaken for a transport stream.
   const tsSync = () => b.length > 376 && b[0] === 0x47 && b[188] === 0x47 && b[376] === 0x47;
+  // AVCHD (.mts / .m2ts) is the same stream at the BDAV stride: each 188-byte packet
+  // is prefixed with a 4-byte arrival timestamp, so the sync byte sits at 4, 196, 388.
+  // Some camcorders and every remux write plain 188-byte packets instead, so accept
+  // either layout - the point is to tell a transport stream from TypeScript text.
+  const m2tsSync = () => tsSync() || (b.length > 388 && b[4] === 0x47 && b[196] === 0x47 && b[388] === 0x47);
   const head = text != null ? text.slice(0, 4096).replace(/^﻿/, '').trimStart().toLowerCase() : null;
   let fallback = null;
   for (const v of entry.variants) {
@@ -554,6 +567,7 @@ export function detectVariant(ext: string, bytes: Uint8Array, text: string|null,
     if (d.hex && hexAt(0, d.hex)) return v.name;
     if (d.hexAt && hexAt(d.hexAt[0], d.hexAt[1])) return v.name;
     if (d.tsSync && tsSync()) return v.name;
+    if (d.m2tsSync && m2tsSync()) return v.name;
     if (head != null && d.textStarts && ([] as any[]).concat(d.textStarts).some((p) => head.startsWith(p.toLowerCase()))) return v.name;
     if (head != null && d.textIncludes && ([] as any[]).concat(d.textIncludes).some((p) => head.includes(p.toLowerCase()))) return v.name;
   }

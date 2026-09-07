@@ -172,7 +172,7 @@ export const EXT_PAGES = {
   '3g2':{ name: '3G2 mobile video', blurb: '3G2 is a mobile video container used on CDMA phones, related to 3GP.', fact: '3G2 is the version of 3GP made for CDMA mobile networks.' },
   mpg:  { name: 'MPEG video', blurb: 'MPG (MPEG) is an early standard video format using MPEG-1/2 compression.', fact: 'The MPEG-1 standard behind MPG arrived in 1993 and gave us the Video CD.' },
   mpeg: { name: 'MPEG video', blurb: 'MPEG is an early standard video format using MPEG-1/2 compression.', fact: 'MPEG-1’s Layer II audio found a long second life in broadcasting: the original DAB digital radio standard adopted it, and many stations still transmit in it today.' },
-  mts:  { name: 'AVCHD video', blurb: 'MTS is the AVCHD video format used by camcorders, holding H.264 video.' },
+  mts:  { name: 'AVCHD video / TypeScript module', blurb: 'MTS has two unrelated uses: the AVCHD video a camcorder writes to card, holding H.264 video, and a TypeScript source file that is always an ES module. Analyser tells them apart by their contents.', fact: 'The same .mts suffix means a Sony camcorder recording from 2006 and, since Node 12, a TypeScript file that is always an ES module.' },
   m2ts: { name: 'AVCHD video (M2TS)', blurb: 'M2TS is the AVCHD/Blu-ray transport-stream video format used by camcorders.' },
   ts:   { name: 'Transport stream / TypeScript', blurb: 'TS has two unrelated uses: an MPEG-2 transport-stream video file (broadcast and recordings), and TypeScript source code. Analyser tells them apart by their contents.', fact: 'Confusingly, .ts is both an MPEG transport stream (from 1995) and TypeScript code (from 2012).' },
   vob:  { name: 'DVD video', blurb: 'VOB is the video format used on DVD-Video discs.', fact: 'VOB is the container on every DVD-Video disc, a format launched in 1996.' },
@@ -1528,6 +1528,18 @@ export const VARIANT_FACTS = {
       "TypeScript was designed at Microsoft by Anders Hejlsberg, who had earlier created Turbo Pascal, Delphi and C#.",
       "TypeScript was first shown publicly in October 2012 as version 0.8, after two years of internal development at Microsoft.",
       "Every TypeScript type is erased at compile time, so a .ts file always compiles down to plain JavaScript that adds nothing at runtime.",
+    ],
+  },
+  mts: {
+    'AVCHD video': [
+      "AVCHD wraps each 188-byte transport packet in an extra four-byte arrival timestamp, which is the only thing separating a camcorder's .mts from an ordinary broadcast stream.",
+      "AVCHD was announced jointly by Sony and Panasonic in 2006 so tape-free camcorders could record HD onto DVDs, hard discs and memory cards.",
+      "A camcorder splits its recording into roughly 2 GB .mts files so the clips stay within the FAT32 file-size limit the cards were formatted with.",
+    ],
+    'TypeScript ES module': [
+      "The .mts suffix exists because Node needed a way to say 'this file is an ES module' that no package.json setting could override.",
+      "Compiling a .mts emits a .mjs, and its CommonJS twin .cts emits a .cjs, so the module system survives the trip through the compiler.",
+      "Every TypeScript type is erased at compile time, so a .mts file always compiles down to plain JavaScript that adds nothing at runtime.",
     ],
   },
   key: {
