@@ -212,6 +212,47 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">8.46</p>
+          <p class="patch-name">Who Made This</p>
+          <p class="patch-date">7 September 2026</p>
+          <ul class="patch-list">
+            <li><strong>Two ways of asking what made a file. Video now gets the provenance reading photos have had for a while: if a clip was made or edited by a tool that signs its work - Veo, Sora and the rest of the video generators - Analyser lays out the record sealed inside it, with the AI-generation indicators beside it. And two source-code extensions that a camcorder also uses stop being mistaken for camcorder footage: a TypeScript file is now recognised as one and actually read, rather than shown as anonymous text.</strong></li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Provenance for video</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>A video&rsquo;s Content Credentials open.</strong> Some cameras and most generative video tools seal a signed history into the file: what made it, what was done to it afterwards, and what it was built from. An <a href="/about#ext-mp4">MP4</a> or <a href="/about#ext-mov">MOV</a> lays that history out the way a photo does - the signing tool, each edit in order, the ingredients, and the certificate&rsquo;s subject, issuer and dates.</li>
+            <li><span class="patch-tag">New</span><strong>The AI-generation card comes with it.</strong> Below the history sits the same summary a photo gets, gathering the indicators on their own: the standard &ldquo;made by a model&rdquo; marker, a generator named in the metadata, or a plain sentence like &ldquo;Created by Google Generative AI&rdquo;. Both cards appear only when there is something to show, so a camera original renders neither.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Found in more places</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Credentials are read from far more containers.</strong> Video and the modern picture formats - MP4, MOV, <a href="/about#ext-heic">HEIC</a>, <a href="/about#ext-avif">AVIF</a> and <a href="/about#ext-webp">WebP</a> - where before only JPEG and PNG were unpacked. Where a container cannot be opened structurally, the standard marker is still looked for in the bytes themselves.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Files written by the current version of the standard read properly.</strong> C2PA 2.x numbers its parts (<code>c2pa.actions.v2</code>, <code>c2pa.claim.v2</code>) and Analyser had been looking only for the original names, so a recent file could come up empty or arrive without its edit history.</li>
+            <li><span class="patch-tag">New</span><strong>The newer generators are known by name</strong> - Veo, Sora, Kling, Pika, Hailuo, MiniMax, Seedance, Luma&rsquo;s Dream Machine, Runway, Gemini and its &ldquo;Nano Banana&rdquo;, Grok, Seedream, Ideogram, Firefly and SynthID among them. Names that are ordinary words elsewhere only count with their maker or version beside them, so a caption mentioning a runway or a pika is not mistaken for one.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Honest about what this is</p>
+          <ul class="patch-list">
+            <li><strong>It reads the record; it does not check the signature.</strong> Nothing here is verified against a list of trusted signers, and this kind of metadata can be stripped, re-encoded away or forged outright. Treat what these cards show as what the file says about itself - useful evidence, never a verdict.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>A long video is not read end to end to find it.</strong> The record is a few tens of kilobytes and sits at one end of the file, so only the first and last few megabytes are read - a multi-gigabyte clip costs about what a photo does.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">TypeScript, read rather than displayed</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>A <a href="/about#ext-ts">.ts</a> file is now taken apart, not just shown.</strong> Beside the source sits what the file actually is: the things it brings in, split into outside packages and its own neighbouring files and marked where an import is only for types; the names it hands out; what it declares - interfaces, type aliases, enums, classes, functions; and how its lines divide into code, comment and blank, with the comment share given as a percentage.</li>
+            <li><span class="patch-tag">New</span><strong>It counts the ways out of the type system.</strong> TypeScript exists to check a program, and every language of its kind offers ways to tell it to stop asking. Analyser counts them - <code>any</code>, forced casts, non-null marks and outright suppressions - so the effort a file makes to stay honest is visible at a glance rather than something you would have to read it to learn. A file that uses none says so.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>TypeScript was being labelled &ldquo;Plain Text&rdquo;.</strong> A <code>.ts</code> shares its extension with a broadcast video stream, so Analyser starts by pointing it at the video player and turns it back when the contents prove it is text - and that turn had been dropping the file&rsquo;s identity on the way. It now arrives named, which is also what puts the new reading within reach of it.</li>
+            <li><span class="patch-tag">New</span><strong>An <a href="/about#ext-mts">.mts</a> is no longer assumed to be camcorder footage.</strong> The extension belongs both to AVCHD - what a Sony or Panasonic camcorder writes to its card - and to a kind of TypeScript file. They are told apart by their contents, which needed care: AVCHD tags every packet with an arrival time, so its telltale byte sits four places further along than in an ordinary broadcast stream, and looking in the usual place found nothing at all.</li>
+            <li><strong>Declaration files are named as such,</strong> and each of these extensions now has its own page explaining both of the things it can be.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">8.44 - 8.45</p>
           <p class="patch-name">Nameless</p>
           <p class="patch-date">31 August 2026</p>
@@ -290,6 +331,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">8.23 - 8.30</p>
           <p class="patch-name">Show and Tell</p>
@@ -333,9 +377,6 @@
             <li><strong>Maintenance:</strong> the picture decoder behind DDS textures moved somewhere the other texture formats could share it, which is most of why three arrived at once. <strong>Credit where it is due:</strong> the open-source <em>Convert to it!</em> pointed the way on what could be decoded in a browser at all, and is now in the credits. These notes cover seven updates, written together after the fact.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">8.20 - 8.22</p>

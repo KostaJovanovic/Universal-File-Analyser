@@ -8,7 +8,7 @@
 
 import { el, row, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
 import { Reader, ascii } from '../core/binutil.js';
-import { SCAN_SMALL } from '../core/limits.js';
+import { SCAN_SMALL, SOURCE_SCAN_MAX } from '../core/limits.js';
 import { parsePlist } from '../lib/plist.js';
 import { openZip } from '../renderers/zip.js';
 import type { Row, RowSection, ParseFn } from '../core/types.js';
@@ -1205,6 +1205,265 @@ async function parseBatch(file: File, ext: string) {
   return out;
 }
 
+// ---------- TypeScript source (.ts) ----------
+// A .ts is text, so the generic view already shows the source. What it cannot say
+// is what the source *is*: what the module pulls in, what it hands out, what it
+// declares, and how often it steps around the type system (`any`, `as`, `!`,
+// `@ts-ignore`) - which is the figure somebody reading unfamiliar TypeScript
+// actually wants, and the one a preview will never give them.
+//
+// Every count runs over a comment- and string-stripped copy rather than the raw
+// text. `// import` in a comment and 'export' in a string are the two things that
+// make a naive regex count on source code wrong, and both are ordinary. The
+// stripping in turn has to tell a regex literal from a division: read /['"]/ as a
+// division and the leftover quote swallows the rest of the file as a string.
+
+// A `/` opens a regex literal when the last significant character before it
+// cannot end an expression. The standard heuristic, wrong only on things like
+// `i++ /re/`. `<` and `>` are deliberately absent from the set even though an
+// expression cannot end with them: keeping them would read the `/` of a JSX
+// closing tag as a regex, and a mis-scanned `</div>` costs more than the
+// vanishingly rare `a < /re/.test(b)` it would buy.
+const PRE_REGEX = '(,=:[!&|?{};+-*%~^';
+const PRE_REGEX_WORD = /\b(return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await)$/;
+
+/** One pass over a source file, in the two forms the counting below needs. */
+interface StrippedSource {
+  /** Comments blanked, string literals left whole - module specifiers survive. */
+  code: string;
+  /** The same with string bodies emptied too - safe to count keywords in. */
+  bare: string;
+  /** `/** ... *\/` blocks, counted while passing over them. */
+  docBlocks: number;
+}
+
+// Blanking keeps every newline, so both copies stay line-for-line aligned with
+// the original - that alignment is what lets a line be called comment or code.
+function stripSource(text: string): StrippedSource {
+  const code: string[] = [];
+  const bare: string[] = [];
+  const blank = (s: string) => s.replace(/[^\n]/g, ' ');
+  const n = text.length;
+  let i = 0, run = 0, docBlocks = 0, tail = '';
+
+  // Everything from `run` to `i` is ordinary code: it goes to both copies whole.
+  const flushRun = () => {
+    if (i <= run) return;
+    const s = text.slice(run, i);
+    code.push(s); bare.push(s);
+    tail = (tail + s).slice(-32);
+  };
+  // The last significant characters of emitted code, for the regex decision. The
+  // pending run has not been flushed yet, so it is stitched on here; a comment
+  // contributes nothing and is correctly invisible to this.
+  const lookback = () => {
+    const pending = text.slice(Math.max(run, i - 32), i);
+    return (pending.length >= 32 ? pending : tail + pending).replace(/\s+$/, '');
+  };
+  const opensRegex = () => {
+    const t = lookback();
+    return !t || PRE_REGEX.includes(t[t.length - 1]) || PRE_REGEX_WORD.test(t);
+  };
+
+  while (i < n) {
+    const c = text[i];
+    if (c !== '/' && c !== '"' && c !== "'" && c !== '`') { i++; continue; }
+
+    if (c === '/' && text[i + 1] === '/') {                      // line comment
+      flushRun();
+      let j = i;
+      while (j < n && text[j] !== '\n') j++;
+      const s = blank(text.slice(i, j));
+      code.push(s); bare.push(s);
+      i = j; run = i; continue;
+    }
+
+    if (c === '/' && text[i + 1] === '*') {                      // block comment
+      flushRun();
+      if (text[i + 2] === '*') docBlocks++;
+      const close = text.indexOf('*/', i + 2);
+      const j = close < 0 ? n : close + 2;
+      const s = blank(text.slice(i, j));
+      code.push(s); bare.push(s);
+      i = j; run = i; continue;
+    }
+
+    if (c === '/') {                                             // regex literal
+      if (!opensRegex()) { i++; continue; }
+      let j = i + 1, inClass = false, closed = false;
+      while (j < n) {
+        const d = text[j];
+        if (d === '\\') { j += 2; continue; }
+        if (d === '\n') break;                    // a regex cannot span a line
+        if (d === '[') inClass = true;
+        else if (d === ']') inClass = false;
+        else if (d === '/' && !inClass) { j++; closed = true; break; }
+        j++;
+      }
+      if (!closed) { i++; continue; }             // a division after all
+      flushRun();
+      const body = '/' + blank(text.slice(i + 1, j - 1)) + '/';
+      code.push(body); bare.push(body);
+      tail = (tail + '//').slice(-32);
+      i = j; run = i; continue;
+    }
+
+    // String or template literal. A quote left open at end of line is taken as
+    // ending there rather than running on: it is a typo or an apostrophe in JSX
+    // text, and either way losing one line beats losing the rest of the file.
+    flushRun();
+    let j = i + 1;
+    while (j < n) {
+      const d = text[j];
+      if (d === '\\') { j += 2; continue; }
+      if (d === c) { j++; break; }
+      if (d === '\n' && c !== '`') break;
+      j++;
+    }
+    j = Math.min(j, n);
+    const lit = text.slice(i, j);
+    const shut = lit.length > 1 && lit.endsWith(c);
+    code.push(lit);
+    bare.push(c + blank(shut ? lit.slice(1, -1) : lit.slice(1)) + (shut ? c : ''));
+    tail = (tail + (shut ? c + c : c)).slice(-32);
+    i = j; run = i;
+  }
+  flushRun();
+  return { code: code.join(''), bare: bare.join(''), docBlocks };
+}
+
+const plural = (n: number, one: string, many = one + 's') => n + ' ' + (n === 1 ? one : many);
+
+// A module specifier as it was written, plus how it was brought in.
+interface SpecUse { mod: string; how: string; }
+
+async function parseTypeScript(file: File, ext: string) {
+  const text = await readText(file, SOURCE_SCAN_MAX);
+  const { code, bare, docBlocks } = stripSource(text);
+  const base = (file.name || '').toLowerCase().replace(/^.*[\\/]/, '');
+  const out: any = {};
+
+  out['Format'] = /\.d\.[cm]?ts$/.test(base)
+    ? 'TypeScript declaration file (.d.ts) - types only, no emitted code'
+    : ext === 'mts'
+      ? 'TypeScript ES module (.mts) - always an ES module, whatever package.json says'
+      : 'TypeScript source';
+  if (file.size > text.length) out['Read'] = 'First ' + fmtBytes(text.length) + ' of ' + fmtBytes(file.size) + ' - counts below cover that much';
+
+  // The header comment, where there is one, as the file's own description.
+  const lead = text.match(/^\s*\/\/[ \t]*(\S[^\r\n]*)/)
+    || text.match(/^\s*\/\*+[ \t]*\r?\n?[ \t]*\*?[ \t]*(\S[^\r\n*]*)/);
+  if (lead) { const d = lead[1].trim(); out['Description'] = d.length > 160 ? d.slice(0, 160) + '…' : d; }
+
+  // Lines. The generic text view below prints the total; this is what the total
+  // is made of, which is the half that says something about the file.
+  const rawLines = text.split(/\r?\n/);
+  const bareLines = bare.split(/\r?\n/);
+  let blankL = 0, commentL = 0;
+  for (let k = 0; k < rawLines.length; k++) {
+    if (!rawLines[k].trim()) blankL++;
+    else if (!(bareLines[k] || '').trim()) commentL++;
+  }
+  const codeL = rawLines.length - blankL - commentL;
+  const pct = codeL + commentL ? Math.round((commentL / (codeL + commentL)) * 100) : 0;
+  out['Line breakdown'] = codeL + ' code, ' + commentL + ' comment (' + pct + '% of written lines), ' + blankL + ' blank';
+
+  const count = (re: RegExp) => (bare.match(re) || []).length;
+
+  // Module system. `export`/`import` at the head of a line rather than anywhere,
+  // so a `.import` property access does not make a script into a module.
+  const esm = /(^|\n)\s*(?:import|export)\b/.test(bare);
+  const cjs = /\brequire\s*\(/.test(bare) || /\bmodule\.exports\b/.test(bare) || /\bexports\.[A-Za-z_$]/.test(bare);
+  out['Module system'] = esm && cjs ? 'ES modules and CommonJS' : esm ? 'ES modules' : cjs ? 'CommonJS' : 'None (plain script)';
+
+  // What it pulls in. Read from `code`, the copy that still has its strings -
+  // the specifier IS a string literal. `[^;]` stops a match crossing a statement
+  // while still spanning the newlines of a multi-line brace list.
+  const uses: SpecUse[] = [];
+  const seen = new Set<string>();
+  const add = (mod: string, how: string) => {
+    if (!mod || seen.has(how + ' ' + mod)) return;
+    seen.add(how + ' ' + mod);
+    uses.push({ mod, how });
+  };
+  for (const m of code.matchAll(/\bimport\s+(type\s+)?(?:[^;]*?\bfrom\s+)?(['"])([^'"\r\n]+)\2/g)) add(m[3], m[1] ? 'type' : 'import');
+  for (const m of code.matchAll(/\bexport\s+(type\s+)?(?:[^;]*?\bfrom\s+)?(['"])([^'"\r\n]+)\2/g)) add(m[3], 're-export');
+  for (const m of code.matchAll(/\bimport\s*\(\s*(['"])([^'"\r\n]+)\1/g)) add(m[2], 'dynamic');
+  for (const m of code.matchAll(/\brequire\s*\(\s*(['"])([^'"\r\n]+)\1/g)) add(m[2], 'require');
+  if (uses.length) {
+    const local = uses.filter((u) => /^[./]/.test(u.mod)).length;
+    const typeOnly = uses.filter((u) => u.how === 'type').length;
+    const bits = [plural(uses.length - local, 'package'), local + ' local'];
+    if (typeOnly) bits.push(typeOnly + ' type-only');
+    out['Imports'] = bits.join(', ');
+  }
+
+  // What it hands out. Declaration exports carry their name; a bare `export {}`
+  // list is read for the name each entry lands under (`a as b` exports `b`).
+  const exported: string[] = [];
+  for (const m of bare.matchAll(/\bexport\s+(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\s*\*?|class|const|let|var|interface|type|enum|namespace|module)\s+([A-Za-z_$][\w$]*)/g)) exported.push(m[1]);
+  for (const m of bare.matchAll(/\bexport\s*\{([^}]*)\}/g)) {
+    for (const part of m[1].split(',')) {
+      const nm = part.trim().split(/\s+as\s+/).pop();
+      if (nm && /^[A-Za-z_$][\w$]*$/.test(nm) && nm !== 'default') exported.push(nm);
+    }
+  }
+  const names = [...new Set(exported)];
+  const stars = count(/\bexport\s*\*/g);
+  const hasDefault = /\bexport\s+default\b/.test(bare);
+  if (names.length || stars || hasDefault) {
+    const bits = [plural(names.length, 'name')];
+    if (hasDefault) bits.push('a default');
+    if (stars) bits.push(plural(stars, 'wildcard re-export'));
+    out['Exports'] = bits.join(', ');
+  }
+
+  // What it declares, exported or not.
+  const declKinds: [number, string, string][] = [
+    [count(/\binterface\s+[A-Za-z_$]/g), 'interface', 'interfaces'],
+    [count(/\btype\s+[A-Za-z_$][\w$]*\s*(?:<[^=<>]*>)?\s*=/g), 'type alias', 'type aliases'],
+    [count(/\benum\s+[A-Za-z_$]/g), 'enum', 'enums'],
+    [count(/\bclass\s+[A-Za-z_$]/g), 'class', 'classes'],
+    [count(/\bfunction\s*\*?\s*[A-Za-z_$]/g), 'function', 'functions'],
+    [count(/=>/g), 'arrow function', 'arrow functions'],
+  ];
+  const decls = declKinds.filter((d) => d[0] > 0);
+  if (decls.length) out['Declares'] = decls.map(([n, s, p]) => plural(n, s, p)).join(', ');
+
+  const asyncs = count(/\basync\b/g), awaits = count(/\bawait\b/g);
+  if (asyncs || awaits) out['Asynchronous'] = asyncs + ' async, ' + awaits + ' await';
+
+  // The escape hatches. Counted plainly and left uninterpreted: a cast is
+  // sometimes the only correct answer, and this is a readout, not a review.
+  const anys = count(/\bany\b/g);
+  const casts = count(/\bas\s+(?:const\b|[A-Za-z_$])/g);
+  const bangs = (bare.match(/[\w$)\]]!(?=[.,;:)\]}[(]|\s*$)/gm) || []).length;
+  const suppress = (text.match(/@ts-(?:ignore|expect-error|nocheck)\b/g) || []).length;
+  const esc: string[] = [];
+  if (anys) esc.push(plural(anys, 'any'));
+  if (casts) esc.push(plural(casts, '`as` cast'));
+  if (bangs) esc.push(plural(bangs, 'non-null `!`'));
+  if (suppress) esc.push(plural(suppress, '@ts- suppression'));
+  out['Type escapes'] = esc.length ? esc.join(', ') : 'None found';
+
+  if (docBlocks) out['Doc comments'] = plural(docBlocks, 'JSDoc block');
+  const decorators = count(/(^|\n)\s*@[A-Za-z_$][\w$]*\s*[(\r\n]/g);
+  if (decorators) out['Decorators'] = String(decorators);
+  const marks = (text.match(/\b(?:TODO|FIXME|HACK|XXX)\b/g) || []).length;
+  if (marks) out['Markers'] = plural(marks, 'TODO / FIXME / HACK note');
+
+  const sections: RowSection[] = [];
+  if (uses.length) {
+    sections.push({
+      title: `Imports (${uses.length})`,
+      node: preBlock(uses.map((u) => u.mod + (u.how === 'import' ? '' : '   [' + u.how + ']')).join('\n')),
+    });
+  }
+  if (names.length) sections.push({ title: `Exported names (${names.length})`, node: preBlock(names.join('\n')) });
+  if (sections.length) out._sections = sections;
+  return out;
+}
+
 // ---------- ONNX model (.onnx) ----------
 // ONNX models are protobuf-encoded ModelProto messages. Without the schema we
 // scan the top-level fields we care about: ir_version (1, varint), producer_name
@@ -1429,6 +1688,8 @@ export const PARSERS: Record<string, ParseFn> = {
   psd1: (c) => parsePowerShell(c.file, c.ext),
   bat: (c) => parseBatch(c.file, c.ext),
   cmd: (c) => parseBatch(c.file, c.ext),
+  ts: (c) => parseTypeScript(c.file, c.ext),
+  mts: (c) => parseTypeScript(c.file, c.ext),
   jwt: (c) => parseJwt(c.file),
   har: (c) => parseHar(c.file),
   ipynb: (c) => parseIpynb(c.file),

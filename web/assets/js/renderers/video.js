@@ -12,6 +12,8 @@ import { registerSyncedVideo, registerExclusiveVideo, setAudioCompanion } from '
 import { detectMoovlessMp4, extractMp4ParamSets, findInbandParamSets, carveAvccToAnnexB } from './video-recover.js';
 import { analyzeMp4Structure, analyzeBitstream, BOX_GLOSS } from './video-forensics.js';
 import { appendTelemetryCards } from './video-telemetry.js';
+import { readC2pa, buildC2paCard } from './c2pa.js';
+import { buildAiSignalsCard } from './ai-signals.js';
 import { parseHvcC, parseAvcC, parseAnnexBStreamInfo, parseMatroskaTracks, COLOUR_PRIMARIES, TRANSFER_CHARS, MATRIX_COEFFS, isSpecifiedColourCode } from './video-bitstream.js';
 // iOS (iPhone/iPad) detection. On iOS the custom scrubber's touch handling is
 // unreliable, so we show the native <video> controls there; everywhere else the
@@ -3861,6 +3863,29 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
     // ---- Reverse playback (re-encode the video backwards, on demand) ----
     // Sits just above Integrity, below the scene-change card.
     resultsEl.appendChild(buildReverseVideoCard(file, signal));
+    // ---- Content Credentials + AI-generation signals ----
+    // The same pair photo.js mounts, and for the same reason: a generative video
+    // tool (Veo, Sora, ...) signs a C2PA manifest into a top-level uuid box saying
+    // what made the file. Both cards read that manifest, so parse it once here and
+    // share it rather than reading and re-parsing twice. readC2pa reads only the
+    // file's two ends above C2PA_SCAN_EDGE, so this stays cheap on a large video.
+    // Both are best-effort: no manifest and no indicators means no card.
+    await yieldToMain();
+    {
+        const c2paManifests = await readC2pa(file).catch(() => null);
+        try {
+            const c2paCard = await buildC2paCard(file, c2paManifests);
+            if (c2paCard && !signal.aborted)
+                resultsEl.appendChild(c2paCard);
+        }
+        catch (_) { /* no C2PA / unparsable - show nothing */ }
+        try {
+            const aiCard = await buildAiSignalsCard(file, null, c2paManifests);
+            if (aiCard && !signal.aborted)
+                resultsEl.appendChild(aiCard);
+        }
+        catch (_) { /* no AI indicators - show nothing */ }
+    }
     // SHA-256
     if (file.size <= HASH_FILE_MAX) {
         resultsEl.appendChild(integrityCard(file));

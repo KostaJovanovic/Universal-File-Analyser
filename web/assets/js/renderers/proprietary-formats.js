@@ -289,7 +289,11 @@ export const FORMATS = {
     css: { app: 'CSS Stylesheet', parse: 'text' },
     js: { app: 'JavaScript', parse: 'text' },
     mjs: { app: 'JavaScript Module', parse: 'text' },
-    ts: { app: 'TypeScript', parse: 'text' },
+    ts: { app: 'TypeScript', parse: 'text', chunk: 'dev' },
+    // .mts is an AVCHD recording far more often than it is TypeScript, so it stays
+    // in VIDEO_EXTS and reaches this table only when VARIANT_REROUTE has already
+    // proved the bytes are text. See EXT_VARIANTS.mts in core/formats.ts.
+    mts: { app: 'TypeScript ES Module', parse: 'text', chunk: 'dev' },
     tsx: { app: 'TypeScript JSX', parse: 'text' },
     jsx: { app: 'React JSX', parse: 'text' },
     json: { app: 'JSON', parse: 'text' },

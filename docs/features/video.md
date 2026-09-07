@@ -74,8 +74,9 @@ card, in this order:
   or colour re-tag when the two disagree; the **x264/x265 encoder
   fingerprint** carved from the first frame's unregistered SEI (exact build +
   encode settings); **HDR** mastering-display (`mdcv`) and content-light
-  (`clli`) values plus Dolby Vision config; and detection of a **C2PA /
-  Content Credentials** manifest. Built on `analyzeBitstream()`, over the
+  (`clli`) values plus Dolby Vision config; and a one-line note that a **C2PA /
+  Content Credentials** manifest is present (the manifest itself is decoded in
+  its own card - see below). Built on `analyzeBitstream()`, over the
   shared SPS parsers in `video-bitstream.js` - which is what lets the
   consistency verdict work for HEVC as well as H.264, since an H.265 SPS
   only reaches its VUI past the short-term reference picture sets.
@@ -92,6 +93,30 @@ panel is collapsed by default.
 loads into memory; `mdat` is never read for structure (only a 4-byte
 timecode sample). Single identity edit lists - standard in most MP4s - are
 deliberately not flagged as edits.
+
+### Content Credentials (C2PA) and AI-generation signals
+
+**What it does.** The same two cards a photo gets, for video. A generative
+video tool (Veo, Sora and the rest) seals a **C2PA manifest** into the file
+saying what made it, and the Content Credentials card lays that record out:
+the signing tool, each edit action with its IPTC digital source type, the
+ingredients, and the signing certificate's subject, issuer and validity. The
+**AI-generation signals** card sits below it and collects the indicators on
+their own - the standard `trainedAlgorithmicMedia` marker, a generator named
+in the metadata, prose like "Created by Google Generative AI."
+
+**How to reach it.** Automatic. Both cards appear only when there is
+something to show, so a camera original renders neither.
+
+**Notes / limits.** This **decodes, it does not verify** - the signature is
+never checked against a trust list, so everything shown is what the file
+claims about itself. Metadata is also removable: a stripped or re-encoded AI
+video shows nothing here, and a match can be forged, so treat a hit as
+evidence rather than a verdict. In video the manifest lives in a top-level
+`uuid` box; only the file's two ends are read (`C2PA_SCAN_EDGE`), never the
+whole clip. Google's SynthID pixel watermark survives re-encoding where the
+manifest does not, but reading it needs Google's detector and is out of scope
+here.
 
 ### Telemetry (GoPro / CAMM / container GPS)
 

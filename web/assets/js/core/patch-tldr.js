@@ -334,6 +334,11 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+    { range: '8.46', notes: [
+            'Video now gets the same **provenance** reading photos do: a clip signed by its camera or by a generative tool - **Veo, Sora, Kling, Runway** and the rest - lays out the sealed record of what made it, what was done to it since and what it was built from, with the **AI-generation** indicators gathered beside it.',
+            'That record is found in far more files than before (**MP4, MOV, HEIC, AVIF and WebP**, where only JPEG and PNG were opened), read properly when written to the current **C2PA 2.x** standard, and taken out of a multi-gigabyte video by reading only its two ends - and it stays what the file says about itself, since the signature is read rather than checked against anyone.',
+            '**TypeScript** is read instead of merely shown: a **.ts** or **.mts** now reports what it imports, what it exports, what it declares and how its lines divide between code and comment, along with how often it steps around its own type checking - and neither extension is mistaken for the broadcast stream or the **AVCHD** camcorder footage that share it.',
+        ] },
     { range: '8.44 - 8.45', notes: [
             'Two extensions name no format at all - a **.bin** is equally a disc image, a cartridge dump, router firmware or plain application data, and a **.out** is equally a compiled program or the log one dumped - so neither is taken at its word any more: the contents are read first, and a .bin that is really a ZIP, a PDF or a picture opens as that.',
             'A **.bin** that is nothing else gets a byte-level inspector rather than a label repeating the extension back - the format guessed from the opening bytes, how random the contents are, and the bytes themselves - and it names a raw disc image or a **Mega Drive cartridge** when the evidence is there.',

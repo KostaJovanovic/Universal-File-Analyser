@@ -15,7 +15,24 @@
    whose x5chain header carries the signer's DER certificate(s). */
 
 import { el, row, rowHelp, wireInfoToggle } from '../core/util.js';
-import { ascii, utf8 } from '../core/binutil.js';
+import { ascii, utf8, findBytes } from '../core/binutil.js';
+import { C2PA_SCAN_EDGE, C2PA_MANIFEST_MAX } from '../core/limits.js';
+
+// The IPTC "Digital Source Type" newscodes that mean "a model made this". Shared
+// with ai-signals.js so the two cards can never disagree about what counts.
+export const DIGITAL_SOURCE_AI = /(trainedAlgorithmicMedia|compositeWithTrainedAlgorithmicMedia|algorithmicMedia|compositeSyntheticMedia|syntheticMedia)/i;
+// Prose that names a generative tool. C2PA writers often put the only AI tell in
+// an action's description or softwareAgent ("Opened by Google Generative AI.")
+// and leave digitalSourceType off that action entirely.
+// The video generators are here too: a text-to-video tool signs the same kind of
+// manifest, and its name is just as often the only tell. Several need qualifying
+// because the bare word is ordinary language elsewhere - this list is also run
+// over EXIF/XMP description fields by ai-signals.js, where a caption is prose:
+// "runway" is an aviation noun, "veo" is Spanish for "I see", "pika" is a real
+// animal, "minimax" is a search algorithm, and "Kling" is a surname that turns up
+// in an Artist or credit line. Requiring the version number or the vendor word
+// keeps the product and drops the coincidence.
+export const AI_WORDING = /(generative\s?ai|\bgen\s?ai\b|gemini|nano\s?bana+n+a|firefly|dall[\s.·-]?e\b|midjourney|stable\s?diffusion|imagen\b|ideogram|\bsora\b|\bgrok\b|flux\.1|seedream|copilot\s?designer|\bveo\s?\d\b|google\s?veo|kling\s?(ai|\d)|pika\s?(labs|art|\d)|hailuo|minimax\s?(ai|video)|seedance|dream\s?machine|luma\s?(ai|labs)|runwayml|runway\s?gen-?\d|synthid)/i;
 
 /** One JUMBF box as parseBoxes/interpretBox return it: either a superbox with
  *  children, its 'jumd' description, or a leaf data box holding raw payload. */
@@ -88,11 +105,71 @@ function looksLikeJumbf(b: Uint8Array) {
   return b.length > 8 && ascii(b, 4, 4) === 'jumb';
 }
 
+// The C2PA usertype of an ISOBMFF `uuid` box, as bytes.
+const BMFF_C2PA_UUID = [0xD8, 0xFE, 0xC3, 0xD6, 0x1B, 0x0E, 0x48, 0x3C, 0x92, 0x97, 0x58, 0x28, 0x87, 0x7E, 0xC4, 0x81];
+
+// Locate a manifest store by its OWN signature: a 'jumb' superbox whose first
+// child is a 'jumd' description carrying the 'c2pa' type UUID. That triple is
+// specific enough to find the store inside any wrapper without parsing the
+// wrapper, which is what lets one scan serve WebP, HEIF/AVIF, a uuid-box payload
+// whose purpose/Merkle-offset preamble varies by writer, and anything else that
+// embeds the store verbatim.
+function findJumbfStore(b: Uint8Array, from: number, to: number) {
+  const JUMB = [0x6A, 0x75, 0x6D, 0x62]; // "jumb"
+  let at = from;
+  for (;;) {
+    at = findBytes(b, JUMB, at);
+    if (at < 0 || at >= to) return null;
+    if (at >= 4 && ascii(b, at + 8, 4) === 'jumd' && ascii(b, at + 12, 4) === 'c2pa') {
+      const start = at - 4;                 // back up over the superbox LBox
+      const len = (b[start] << 24 | b[start + 1] << 16 | b[start + 2] << 8 | b[start + 3]) >>> 0;
+      const end = (len >= 8 && len <= C2PA_MANIFEST_MAX) ? start + len : to;
+      return b.subarray(start, Math.min(end, b.length));
+    }
+    at += 4;
+  }
+}
+
+// ISOBMFF (MP4/MOV/HEIF/AVIF): the store sits in a top-level `uuid` box carrying
+// the C2PA usertype. Walk to that box rather than scanning blind, so a stray
+// 'jumb' in the media data can't be mistaken for a manifest.
+function extractFromIsobmff(b: Uint8Array) {
+  if (b.length < 16 || ascii(b, 4, 4) !== 'ftyp') return null;
+  let p = 0;
+  while (p + 8 <= b.length) {
+    let size = (b[p] << 24 | b[p + 1] << 16 | b[p + 2] << 8 | b[p + 3]) >>> 0;
+    const type = ascii(b, p + 4, 4);
+    let head = 8;
+    if (size === 1) {                       // 64-bit largesize
+      if (p + 16 > b.length) break;
+      const hi = (b[p + 8] << 24 | b[p + 9] << 16 | b[p + 10] << 8 | b[p + 11]) >>> 0;
+      // A high word at all means the box outruns anything held in memory here.
+      size = hi ? b.length - p : (b[p + 12] << 24 | b[p + 13] << 16 | b[p + 14] << 8 | b[p + 15]) >>> 0;
+      head = 16;
+    } else if (size === 0) size = b.length - p;   // "to end of file"
+    if (size < head) break;
+    const end = Math.min(p + size, b.length);
+    if (type === 'uuid' && p + head + 16 <= b.length) {
+      let match = true;
+      for (let i = 0; i < 16; i++) if (b[p + head + i] !== BMFF_C2PA_UUID[i]) { match = false; break; }
+      if (match) {
+        const store = findJumbfStore(b, p + head + 16, end);
+        if (store) return store;
+      }
+    }
+    p = end;
+  }
+  return null;
+}
+
 function extractC2pa(b: Uint8Array) {
   if (b[0] === 0xFF && b[1] === 0xD8) return extractFromJpeg(b);
   if (b[0] === 0x89 && b[1] === 0x50) return extractFromPng(b);
   if (looksLikeJumbf(b)) return b;      // a bare .c2pa manifest
-  return null;
+  const iso = extractFromIsobmff(b);    // MP4/MOV/HEIF/AVIF
+  if (iso) return iso;
+  // WebP's RIFF 'C2PA' chunk, and any container not unpacked structurally above.
+  return findJumbfStore(b, 0, b.length);
 }
 
 // ---------- JUMBF box tree ----------
@@ -228,9 +305,22 @@ function x509Summary(der: Uint8Array) {
 // ---------- interpret the manifest tree ----------
 function findByTag(nodes: JumbfNode[]|undefined, tag: string, label: string): JumbfNode|null {
   for (const n of nodes || []) {
-    if (n.type === 'jumb' && (n.tag === tag || n.label === label)) return n;
+    if (n.type === 'jumb' && (n.tag === tag || baseLabel(n.label) === label)) return n;
   }
   return null;
+}
+
+// C2PA 2.x versions its labels ('c2pa.actions.v2', 'c2pa.claim.v2',
+// 'c2pa.ingredient.v3') and suffixes repeated assertions ('c2pa.actions__1').
+// Matching the bare stem is what makes a current file parse as well as a v1 one.
+function baseLabel(label: string|undefined) {
+  return (label || '').replace(/__\d+$/, '').replace(/\.v\d+$/, '');
+}
+
+// digitalSourceType is written as a full cv.iptc.org newscode URL; only the last
+// path segment is worth showing.
+function shortDst(v: string|undefined) {
+  return v == null ? null : String(v).replace(/^.*\//, '');
 }
 
 // Extract signer certificate(s) from a COSE_Sign1 [protected, unprotected, payload, sig].
@@ -267,22 +357,27 @@ function parseManifest(node: JumbfNode) {
       const db = dataOf(a);
       const val = db ? (db.type === 'cbor' ? decodeCbor(db.data!) : safeJson(db.data)) : null;
       out.assertions.push(a.label);
-      if (a.label === 'c2pa.actions' && val && Array.isArray(val.actions)) {
+      const base = baseLabel(a.label);
+      if (base === 'c2pa.actions' && val && Array.isArray(val.actions)) {
         for (const act of val.actions) {
-          out.actions.push({ action: act.action, agent: softwareAgentName(act.softwareAgent), src: act.digitalSourceType });
-          if (/trainedAlgorithmicMedia|compositeWithTrainedAlgorithmicMedia|algorithmicMedia/i.test(act.digitalSourceType || ''))
-            out.ai.push('Action "' + (act.action || '?') + '" declares AI source: ' + act.digitalSourceType);
+          const agent = softwareAgentName(act.softwareAgent);
+          const src = shortDst(act.digitalSourceType);
+          out.actions.push({ action: act.action, agent: agent || act.description, src });
+          if (DIGITAL_SOURCE_AI.test(act.digitalSourceType || ''))
+            out.ai.push('Action "' + (act.action || '?') + '" declares an AI digital source type: ' + src);
+          else if (AI_WORDING.test(act.description || '') || AI_WORDING.test(agent || ''))
+            out.ai.push('Action "' + (act.action || '?') + '": ' + (act.description || agent));
         }
-      } else if (/^c2pa\.ingredient/.test(a.label || '') && val) {
+      } else if (/^c2pa\.ingredient/.test(base) && val) {
         out.ingredients.push({ title: val.title, format: val.format, relationship: val.relationship });
-      } else if (/schema-org\.CreativeWork/i.test(a.label || '') && val) {
+      } else if (/schema-org\.CreativeWork/i.test(base) && val) {
         out.creativeWork = val;
-      } else if (/training-mining/i.test(a.label || '') && val) {
+      } else if (/training-mining/i.test(base) && val) {
         out.trainingMining = val;
       }
     }
   }
-  const claimBox = findByTag(node.children, 'c2cl', 'c2pa.claim') || findByTag(node.children, 'c2cl', 'c2pa.claim.v2');
+  const claimBox = findByTag(node.children, 'c2cl', 'c2pa.claim');
   if (claimBox) {
     const db = dataOf(claimBox);
     const claim = db ? decodeCbor(db.data!) : null;
@@ -323,12 +418,26 @@ export function parseC2paStore(storeBytes: Uint8Array) {
   return manifests.length ? manifests : null;
 }
 
-// Read a File and return decoded manifests, or null if there's no C2PA data.
-export async function readC2pa(file: File) {
-  const b = new Uint8Array(await file.arrayBuffer());
+// Decode manifests out of bytes already in hand - a capped slice, or a uuid-box
+// payload some container parser located structurally. Returns null when the
+// bytes hold no manifest store.
+export function readC2paFromBytes(b: Uint8Array) {
   const store = extractC2pa(b);
   if (!store) return null;
   try { return parseC2paStore(store); } catch (_) { return null; }
+}
+
+// Read a File and return decoded manifests, or null if there's no C2PA data.
+// A still fits in memory and is scanned whole; a video does not, so anything
+// larger is scanned at both ends only (C2PA_SCAN_EDGE). The store is top-level
+// and sits by ftyp/moov in practice, but some writers append it - hence both.
+export async function readC2pa(file: File) {
+  if (file.size <= C2PA_SCAN_EDGE * 2) {
+    return readC2paFromBytes(new Uint8Array(await file.arrayBuffer()));
+  }
+  const head = readC2paFromBytes(new Uint8Array(await file.slice(0, C2PA_SCAN_EDGE).arrayBuffer()));
+  if (head) return head;
+  return readC2paFromBytes(new Uint8Array(await file.slice(file.size - C2PA_SCAN_EDGE).arrayBuffer()));
 }
 
 // ---------- card UI ----------

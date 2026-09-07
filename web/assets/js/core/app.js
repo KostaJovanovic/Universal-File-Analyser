@@ -43,7 +43,7 @@
    on every build, so an edit there is silently lost. src/ edits do nothing until
    `npm run build` recompiles.
    ============================================================================ */
-const COMMIT_COUNT = 301;
+const COMMIT_COUNT = 302;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -76,7 +76,7 @@ function analyserVersion(n, releases) {
 // the page becomes interactive sooner. See the media-init block in boot().
 import { renderArchive, renderArchiveEmbedded } from '../renderers/archive.js';
 import { renderUnknown } from '../renderers/unknown.js';
-import { renderProprietary, extractPeIcon } from '../renderers/proprietary.js';
+import { renderProprietary, plaintextExt, extractPeIcon } from '../renderers/proprietary.js';
 import { renderSpiceRaw, sniffSpiceRaw } from '../renderers/spice.js';
 import { initSearch } from './search.js';
 import { fileExt, el, row, fmtBytes, probeReadable, cloudFileWarning, emptyFileWarning, integrityCard, errorCard } from './util.js';
@@ -117,6 +117,7 @@ function $(id) { return document.getElementById(id); }
 // then a row here only if the wrong renderer would otherwise get the file.
 const VARIANT_REROUTE = {
     ts: { primary: 'MPEG transport stream', to: 'plaintext' }, // TypeScript source
+    mts: { primary: 'AVCHD video', to: 'plaintext' }, // TypeScript ES module
     dts: { primary: 'DTS audio', to: 'plaintext' }, // Device Tree Source
     key: { primary: 'Apple Keynote presentation', to: 'plaintext' }, // PEM key (text)
     obj: { primary: 'Wavefront 3D model', to: 'unknown' }, // compiled object (binary)
@@ -385,8 +386,10 @@ const ROUTES = {
     proprietary: { render: renderProprietary },
     // Licence / marker text files open exactly like a .txt - the Plain Text view in
     // proprietary.js (metadata, line count, source preview + the "Open full" reader),
-    // not the paginated markup page-sheets.
-    plaintext: { render: (f, r) => renderProprietary(f, r, 'txt') },
+    // not the paginated markup page-sheets. plaintextExt() keeps a file that DOES
+    // name a text format under that format instead (a TypeScript .ts arrives here
+    // from VARIANT_REROUTE and must not be demoted to "Plain Text").
+    plaintext: { render: (f, r) => renderProprietary(f, r, plaintextExt(f.name)) },
     'git-object': { render: lazy('../renderers/gitobject.js', 'renderGitObject') },
     unknown: { render: renderUnknown },
     // Extensionless files: same inspector as 'unknown' but framed as an expected

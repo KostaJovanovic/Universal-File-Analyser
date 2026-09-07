@@ -12,18 +12,26 @@
        ComfyUI, InvokeAI and NovelAI stash their generation parameters
      - JPEG UserComment / EXIF description carrying SD parameter blocks
      - a cross-reference to any C2PA Content Credentials AI markers
+     - the raw IPTC "Digital Source Type" newscode anywhere in the bytes, as a
+       fallback for manifests in containers this build doesn't unpack
 
    Deliberately overlaps with the C2PA card only to *corroborate*; the provenance
    detail itself lives there. */
 
 import { el, row, rowHelp, wireInfoToggle } from '../core/util.js';
 import { ascii, utf8, findBytes, inflate } from '../core/binutil.js';
-import { readC2pa } from './c2pa.js';
+import { readC2pa, DIGITAL_SOURCE_AI, AI_WORDING } from './c2pa.js';
+import { C2PA_SCAN_EDGE } from '../core/limits.js';
 
 // Generator tool names. Word-ish boundaries keep "dalle" out of unrelated words.
+// The newer hosted models (Gemini/"Nano Banana", Sora, Grok, ...) live in
+// AI_WORDING next to the C2PA reader, which needs the same list.
 const AI_TOOLS = /(stable\s?diffusion|automatic1111|comfyui|invoke\s?ai|fooocus|midjourney|dall[\s.·-]?e\b|adobe\s?firefly|\bfirefly\b|novel\s?ai|craiyon|stability\s?ai|dreamstudio|dream\s?studio|leonardo\.?ai|playground\s?ai|nightcafe|starryai|\bwombo\b|imagen\b|ideogram|recraft|\bkrea\b|flux\.1|\bsdxl\b|bing\s?image\s?creator|deep\s?dream|disco\s?diffusion|kandinsky|latent\s?diffusion|gigapixel\s?ai)/i;
-// The IPTC/C2PA standard "this is AI" markers (also appear as a cv.iptc.org URL).
-const DIGITAL_SOURCE_AI = /(trainedAlgorithmicMedia|compositeWithTrainedAlgorithmicMedia|algorithmicMedia|compositeSyntheticMedia|syntheticMedia)/i;
+// Either list is a "a generative tool is named here" hit.
+const AI_NAMED = new RegExp(AI_TOOLS.source + '|' + AI_WORDING.source, 'i');
+// The IPTC newscode URL that carries the Digital Source Type, as bytes - the
+// value can sit in a C2PA manifest inside a container we don't unpack.
+const DST_URL_BYTES = [...'digitalsourcetype/'].map((c) => c.charCodeAt(0));
 // Stable-Diffusion-style parameter block fingerprints.
 const SD_PARAMS = /(^|\n)\s*Steps:\s*\d+|Negative prompt:|Sampler:\s*\S|CFG scale:\s*[\d.]|Model hash:|Denoising strength:/i;
 
@@ -97,26 +105,41 @@ function extractXmp(b: Uint8Array) {
   return utf8(b.subarray(open, close < 0 ? Math.min(b.length, open + 65536) : close + closeSig.length));
 }
 
+// ---------- the bytes to scan ----------
+// A still is read whole. A video would blow the heap, so anything larger is read
+// at both ends and the two joined: every signal below (the XMP packet, PNG text
+// chunks, the digitalsourcetype newscode) lives in metadata at one end or the
+// other, never buried in the middle of the media data.
+async function readForSignals(file: File) {
+  if (file.size <= C2PA_SCAN_EDGE * 2) return new Uint8Array(await file.arrayBuffer());
+  const head = new Uint8Array(await file.slice(0, C2PA_SCAN_EDGE).arrayBuffer());
+  const tail = new Uint8Array(await file.slice(file.size - C2PA_SCAN_EDGE).arrayBuffer());
+  const out = new Uint8Array(head.length + tail.length);
+  out.set(head, 0);
+  out.set(tail, head.length);
+  return out;
+}
+
 // ---------- collect all signals ----------
 export async function collectAiSignals(file: File, exif: any, preManifests: any) {
-  const b = new Uint8Array(await file.arrayBuffer());
+  const b = await readForSignals(file);
   const signals: any[] = [];
 
   // 1) EXIF / XMP fields the parser already surfaced.
   if (exif) {
     for (const [k, v] of Object.entries(exif)) {
       if (typeof v !== 'string' || !v) continue;
-      if (DIGITAL_SOURCE_AI.test(v)) pushUnique(signals, { label: 'Digital Source Type (' + k + ')', detail: v + '  - a standard "AI-generated" marker', strong: true, help: DST_HELP });
+      if (DIGITAL_SOURCE_AI.test(v)) pushUnique(signals, { label: 'Digital Source Type (' + k + ')', detail: v + '  - a standard "AI-generated" marker', strong: true, dst: true, help: DST_HELP });
       else if (SD_PARAMS.test(v)) { const sd = sdSummary(v); pushUnique(signals, { label: 'Generation parameters (' + k + ')', detail: sd.params || v.slice(0, 200), prompt: sd.prompt, strong: true }); }
-      else if (AI_TOOLS.test(v)) pushUnique(signals, { label: 'Generator tool in metadata (' + k + ')', detail: v, strong: true });
+      else if (AI_NAMED.test(v)) pushUnique(signals, { label: 'Generator tool in metadata (' + k + ')', detail: v, strong: true });
     }
   }
 
   // 2) Raw XMP packet (covers fields exifr may not expose, e.g. GenAI extensions).
   const xmp = extractXmp(b);
   if (xmp) {
-    if (DIGITAL_SOURCE_AI.test(xmp)) pushUnique(signals, { label: 'Digital Source Type (XMP)', detail: (xmp.match(DIGITAL_SOURCE_AI) || [])[0] + '  - a standard "AI-generated" marker', strong: true, help: DST_HELP });
-    const tool = xmp.match(AI_TOOLS);
+    if (DIGITAL_SOURCE_AI.test(xmp)) pushUnique(signals, { label: 'Digital Source Type (XMP)', detail: (xmp.match(DIGITAL_SOURCE_AI) || [])[0] + '  - a standard "AI-generated" marker', strong: true, dst: true, help: DST_HELP });
+    const tool = xmp.match(AI_NAMED);
     if (tool) pushUnique(signals, { label: 'Generator tool named in XMP', detail: tool[0], strong: true });
   }
 
@@ -135,8 +158,8 @@ export async function collectAiSignals(file: File, exif: any, preManifests: any)
       } else if (SD_PARAMS.test(text)) {
         const sd = sdSummary(text);
         pushUnique(signals, { label: 'Generation parameters (PNG "' + kw + '")', detail: sd.params || 'present', prompt: sd.prompt, strong: true });
-      } else if (AI_TOOLS.test(text) || AI_TOOLS.test(kw)) {
-        pushUnique(signals, { label: 'Generator tool in PNG "' + kw + '"', detail: (text.match(AI_TOOLS) || [text])[0], strong: true });
+      } else if (AI_NAMED.test(text) || AI_NAMED.test(kw)) {
+        pushUnique(signals, { label: 'Generator tool in PNG "' + kw + '"', detail: (text.match(AI_NAMED) || [text])[0], strong: true });
       }
     }
   }
@@ -145,10 +168,26 @@ export async function collectAiSignals(file: File, exif: any, preManifests: any)
   try {
     const manifests = preManifests !== undefined ? preManifests : await readC2pa(file);
     for (const m of manifests || []) {
-      if (m.ai && m.ai.length) pushUnique(signals, { label: 'Content Credentials declare an AI source', detail: 'see the C2PA card above', strong: true, c2pa: true, help: CC_AI_HELP });
-      else if (m.generator && AI_TOOLS.test(m.generator)) pushUnique(signals, { label: 'Content Credentials generator is an AI tool', detail: m.generator, strong: true, c2pa: true, help: CC_AI_HELP });
+      // Lead with the standard newscode when the manifest carries one; the prose
+      // wording of another action is the weaker of the two tells.
+      const lead = m.ai && (m.ai.find((s: string) => DIGITAL_SOURCE_AI.test(s)) || m.ai[0]);
+      if (lead) pushUnique(signals, { label: 'Content Credentials declare an AI source', detail: lead + '  - see the C2PA card above', strong: true, c2pa: true, dst: true, help: CC_AI_HELP });
+      else if (m.generator && AI_NAMED.test(m.generator)) pushUnique(signals, { label: 'Content Credentials generator is an AI tool', detail: m.generator, strong: true, c2pa: true, help: CC_AI_HELP });
     }
   } catch (_) { /* no C2PA - fine */ }
+
+  // 5) Last resort: the Digital Source Type newscode straight out of the bytes.
+  // Covers a C2PA manifest in a container this build doesn't unpack (WebP, AVIF,
+  // MP4) and any writer whose labels we don't recognise. Skipped when a parsed
+  // source above already reported the same marker, so it never double-counts.
+  if (!signals.some((s) => s.dst)) {
+    const at = findBytes(b, DST_URL_BYTES);
+    if (at >= 0) {
+      const after = at + DST_URL_BYTES.length;
+      const code = (utf8(b.subarray(after, after + 64)).match(/^[A-Za-z]+/) || [''])[0];
+      if (DIGITAL_SOURCE_AI.test(code)) pushUnique(signals, { label: 'Digital Source Type (embedded metadata)', detail: code + '  - a standard "AI-generated" marker', strong: true, dst: true, help: DST_HELP });
+    }
+  }
 
   return signals;
 }
