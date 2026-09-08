@@ -306,7 +306,10 @@ The five things worth knowing before you touch anything:
   the device tier), `export-data.ts` (native save dialog), the native-FFmpeg
   shim in `video.ts` and the open-by-path glue in `app.ts` + `folder.ts`. Keep
   new ones equally narrow, and prefer a guarded branch in an existing module to
-  a new one.
+  a new one. **One deliberate exception**: `core/desktop-chrome.ts`, the
+  frameless window's own title bar and page scrollbar. It has no owning module -
+  the desktop can land on `app.ts` or `docs.ts` - so both `import()` it
+  dynamically inside the guard, and a browser never fetches it.
 - **The desktop runs a real FFmpeg binary, not the WASM one.**
   `desktop/ffmpeg-native.mjs` finds a binary, PROBES which hardware encoders
   actually work (by encoding a throwaway frame - `ffmpeg -encoders` lists

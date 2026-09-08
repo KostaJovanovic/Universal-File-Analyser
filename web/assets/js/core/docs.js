@@ -17,6 +17,15 @@ import { wireFooterContact } from './popups.js';
         wireFooterContact();
     }
     catch (e) { /* popups.js unavailable - footer link is non-critical */ }
+    // ----- Desktop shell: the window is frameless, so the page draws the title
+    //       bar. Docs pages don't load app.js, which is where every other page
+    //       mounts it, so they mount it here. Dynamically imported behind the
+    //       guard, so a browser never fetches the module at all.
+    if (window.anrDesktop) {
+        import('./desktop-chrome.js')
+            .then(function (m) { m.mountDesktopChrome(); })
+            .catch(function () { });
+    }
     // ----- Size the linkback gif to match the "valjdakosta.com · 2026" line
     //       above it, same as app.js does for every other page's footer.
     var copyright = document.querySelector('.footer-copyright');

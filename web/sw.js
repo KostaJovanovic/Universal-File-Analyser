@@ -2,7 +2,7 @@
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v303';
+const VERSION = 'analyser-v304';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -27,6 +27,7 @@ const SHELL = [
   './assets/js/core/effects.js',
   './assets/js/core/popups.js',
   './assets/js/core/export-data.js',
+  './assets/js/core/desktop-chrome.js',
   './assets/js/core/util.js',
   './assets/js/core/sanitize.js',
   './assets/js/core/limits.js',
