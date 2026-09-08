@@ -44,7 +44,7 @@
    `npm run build` recompiles.
    ============================================================================ */
 
-const COMMIT_COUNT = 303;
+const COMMIT_COUNT = 304;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1797,6 +1797,13 @@ window._anrReadableText = isReadableText;
   // is what keeps this closure pointing at the current page's containers after
   // an SPA swap. Absent on the website, where window.anrDesktop is undefined.
   if (window.anrDesktop) {
+    // The window is frameless, so the page draws its own title bar. Re-mounted
+    // per boot rather than once: an SPA swap replaces the body content, and
+    // mountDesktopChrome() is idempotent - it re-uses a bar that survived.
+    import('./desktop-chrome.js')
+      .then((m) => m.mountDesktopChrome())
+      .catch(() => { /* no title bar is survivable; the menu still works */ });
+
     window.anrDesktop.onOpen(async (p: any) => {
       if (!p) return;
       const goHome = () => {
@@ -2059,7 +2066,14 @@ window._anrReadableText = isReadableText;
     // really on the page for a non-media file.
     for (const s of sections) s.a.classList.toggle('is-active', s === active && !s.a.classList.contains('is-disabled'));
     if (stickyNav) {
-      document.body.classList.toggle('anr-nav-stuck', stickyNav.getBoundingClientRect().top <= 0);
+      // Compare against where the nav actually pins, not against 0. That is 0
+      // on the website, but the desktop shell's title bar pushes the sticky
+      // offset down to --anr-tb-h, and a hardcoded 0 there means the nav never
+      // registers as stuck at all. Read from the element so the two agree by
+      // construction. Same tick as the getBoundingClientRect below, so the
+      // style read costs no extra layout flush.
+      const pin = parseFloat(getComputedStyle(stickyNav).top) || 0;
+      document.body.classList.toggle('anr-nav-stuck', stickyNav.getBoundingClientRect().top <= pin);
     }
   };
   window.addEventListener('scroll', _scrollHandler, { passive: true });

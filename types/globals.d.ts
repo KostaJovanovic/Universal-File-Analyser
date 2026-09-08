@@ -54,11 +54,36 @@ declare global {
     onOpen(cb: (payload: any) => void): void;
     /** Save the export report through a native dialog. */
     saveReport(name: string, html: string): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>;
+    /** Window controls for the app-drawn title bar (core/desktop-chrome.ts).
+        The window is frameless off macOS, so nothing else can minimise,
+        maximise, close it or reach the application menu. */
+    win: AnrWindowBridge;
     /** Native, hardware-accelerated FFmpeg (desktop/ffmpeg-native.mjs).
         src/renderers/video.ts wraps this into an ffmpeg.wasm-shaped object, so
         the existing call sites are untouched. Absent when no binary is found,
         and then the WASM build runs as before. */
     ffmpeg?: AnrFfmpegBridge;
+  }
+
+  /** The window half of the desktop bridge (desktop/preload.cjs). `state()` is
+      synchronous on purpose: it returns the last state main pushed, so the bar
+      paints the right glyph on its first frame instead of flickering through a
+      round trip. */
+  interface AnrWindowBridge {
+    minimize(): Promise<AnrWindowState | null>;
+    toggleMaximize(): Promise<AnrWindowState | null>;
+    close(): Promise<AnrWindowState | null>;
+    state(): AnrWindowState;
+    /** Pop the application menu at a point in page coordinates. */
+    menu(x: number, y: number): Promise<boolean>;
+    /** Register the state-change sink. One handler; a second replaces it. */
+    onStateChange(cb: ((s: AnrWindowState) => void) | null): void;
+  }
+
+  interface AnrWindowState {
+    maximized: boolean;
+    fullScreen: boolean;
+    focused: boolean;
   }
 
   /** What the probe found on this machine. `accel` is the family that actually

@@ -29,6 +29,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
    is forwarded to it. */
 const SITE = 'https://analyser.valjdakosta.com';
 
+/* macOS keeps its native frame so the traffic lights survive; every other
+   platform is frameless and draws the whole title bar itself. */
+const isMac = process.platform === 'darwin';
+
 /* Dev serves from ../web, the packaged build from resources/web (the assets go
    in as extraResources rather than into the asar - see electron-builder.yml). */
 const WEB_DIR = app.isPackaged
@@ -215,6 +219,17 @@ function createWindow() {
     backgroundColor: '#0a0a0a',
     show: false,
     title: 'Analyser',
+    // The window draws its own title bar (src/core/desktop-chrome.ts), so the
+    // OS one is removed entirely. On macOS `frame: false` would take the
+    // traffic lights with it, so there the frame stays and only the bar is
+    // hidden - our own buttons hide themselves on darwin and the CSS leaves a
+    // gap for the native ones. `autoHideMenuBar` matters on Windows/Linux: the
+    // native menu bar is unreachable without a frame, so the MENU button in
+    // the custom bar pops the same menu up instead (see anr:win-menu).
+    frame: isMac,
+    titleBarStyle: isMac ? 'hidden' : 'default',
+    trafficLightPosition: isMac ? { x: 14, y: 11 } : undefined,
+    autoHideMenuBar: true,
     // Dev only: build/ is not inside the asar, and a packaged window takes its
     // icon from the executable that electron-builder stamped.
     icon: app.isPackaged ? undefined : join(HERE, 'build', 'icon.png'),
@@ -245,6 +260,21 @@ function createWindow() {
   win.on('move', queueSave);
   win.on('close', () => writeState(win));
   win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
+
+  /* The custom title bar draws its own maximise/restore glyph and inset, so it
+     has to hear about every state change - including the ones it did not cause
+     (Win+Up, Snap, a double-click on the drag region, exiting full screen). */
+  const pushState = () => {
+    if (win.isDestroyed()) return;
+    win.webContents.send('anr:win-state', {
+      maximized: win.isMaximized(),
+      fullScreen: win.isFullScreen(),
+      focused: win.isFocused(),
+    });
+  };
+  for (const ev of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'focus', 'blur']) {
+    win.on(ev, pushState);
+  }
 
   win.loadURL(ORIGIN + '/');
   return win;
@@ -396,6 +426,35 @@ const actions = {
     }).then((r) => { if (r.response === 1) shell.openPath(dir); }).catch(() => {});
   },
 };
+
+// ---------------------------------------------------------------------------
+// Window controls for the custom title bar (src/core/desktop-chrome.ts).
+//
+// The window is frameless everywhere except macOS, so minimise / maximise /
+// close have no native affordance left and arrive here instead. `menu` pops the
+// application menu under the bar's MENU button: with no frame there is no menu
+// bar to drop it from, and Menu.getApplicationMenu() still holds the one
+// buildMenu() made, so the accelerators and the entries stay in one place.
+// ---------------------------------------------------------------------------
+ipcMain.handle('anr:win', (e, action) => {
+  if (!mainWindow || e.sender !== mainWindow.webContents) return null;
+  const w = mainWindow;
+  if (action === 'minimize') w.minimize();
+  else if (action === 'maximize') { w.isMaximized() ? w.unmaximize() : w.maximize(); }
+  else if (action === 'close') w.close();
+  return { maximized: w.isMaximized(), fullScreen: w.isFullScreen(), focused: w.isFocused() };
+});
+
+ipcMain.handle('anr:win-menu', (e, { x, y }) => {
+  if (!mainWindow || e.sender !== mainWindow.webContents) return false;
+  const menu = Menu.getApplicationMenu();
+  if (!menu) return false;
+  // CSS pixels from the page; popup() wants window coordinates, and the two
+  // differ the moment someone zooms the page (Ctrl+= is in the View menu).
+  const z = mainWindow.webContents.getZoomFactor() || 1;
+  menu.popup({ window: mainWindow, x: Math.round(x * z), y: Math.round(y * z) });
+  return true;
+});
 
 // ---------------------------------------------------------------------------
 // Save the exported report through a native dialog (IPC from preload).

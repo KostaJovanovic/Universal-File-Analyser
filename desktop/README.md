@@ -230,9 +230,44 @@ not exist in a browser, so the website is unaffected:
   `about:blank` child window kept as the fallback.
 - `core/app.ts` and `renderers/folder.ts` - the open-by-path plumbing described
   above.
+- `core/desktop-chrome.ts` - the title bar and page scrollbar. The one
+  desktop-only MODULE rather than a guarded branch, because the desktop can land
+  on either entry point (`core/app.ts` or `core/docs.ts`) and a title bar
+  duplicated across both is worse than a file. Both `import()` it dynamically
+  inside the guard, so a browser never fetches it.
+
+## Window chrome
+
+`frame: false` everywhere except macOS, where the frame stays so the traffic
+lights survive (`titleBarStyle: 'hidden'` plus `trafficLightPosition`, and the
+CSS hides the app's own buttons and reserves `--anr-tb-lead` for the native
+ones). Three consequences worth knowing:
+
+- **The native menu bar is unreachable without a frame.** `autoHideMenuBar` is
+  on and the bar's MENU button pops `Menu.getApplicationMenu()` through
+  `anr:win-menu` instead, so `menu.mjs` stays the single definition of the menu
+  and its accelerators.
+- **Minimise, maximise and close have no native affordance left.** They go
+  through `anr:win`, which checks the sender is our own window. Main pushes
+  `anr:win-state` on maximize, unmaximize, full screen and focus, because the
+  bar has to redraw for state changes it did not cause - Win+Up, Snap, a
+  double-click on the drag region.
+- **`.anr-desktop` goes on `<html>` in the PRELOAD, not in the module.** The CSS
+  reserves the bar's height with `html.anr-desktop body { padding-top }`, and
+  the preload runs before any page script, so the page lays out with the room
+  already made. Adding the class later shifts the whole page down on every load.
+
+The page scrollbar is drawn too, and for a specific reason: a native scrollbar
+is the full height of the viewport and nothing in CSS can shorten it, so it runs
+up beside the title bar and breaks its line. The root one is hidden and
+`desktop-chrome.ts` draws a rail starting below the bar. It deliberately does
+NOT move the scroll onto a wrapper element - `window` stays the scrolling
+element, so `window.scrollY`, every scroll listener and all the `scrollIntoView`
+calls behave exactly as they do on the website. Inner panes keep the styled
+native scrollbar, drawn to the same measurements.
 
 ## Not done yet
 
-File associations, a bundled ffmpeg core and OCCT, the frameless title bar,
-cross-origin isolation, CI and code signing, and auto-update. All of them need a
-decision first - see `research/ELECTRON-PLAN.md`, Phase 3 and Phase 4.
+File associations, a bundled ffmpeg core and OCCT, cross-origin isolation, CI
+and code signing, and auto-update. All of them need a decision first - see
+`research/ELECTRON-PLAN.md`, Phase 3 and Phase 4.

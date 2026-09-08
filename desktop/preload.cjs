@@ -30,6 +30,17 @@ function bootInfo() {
 
 const info = bootInfo();
 
+/* Flag the document for the custom title bar HERE rather than in the module
+   that builds it. The CSS reserves the bar's height with `html.anr-desktop body
+   { padding-top }`, and this preload runs before any page script, so the page
+   lays out with the room already made - core/desktop-chrome.ts adding the class
+   later would shift the whole page down on every load. */
+try {
+  const root = document.documentElement;
+  root.classList.add('anr-desktop');
+  if (process.platform === 'darwin') root.classList.add('anr-desktop--mac');
+} catch (_) { /* no document yet is not worth failing the preload over */ }
+
 /** Queue anything that arrives before the page has registered its handler.
  *  A file passed on the command line is sent as soon as the window loads, which
  *  can be before app.js has booted. */
@@ -47,6 +58,16 @@ const ffListeners = new Map();          // session id -> (payload) => void
 ipcRenderer.on('anr:ffmpeg-event', (_e, payload) => {
   const fn = payload && ffListeners.get(payload.id);
   if (fn) { try { fn(payload); } catch (_) {} }
+});
+
+/* Window state for the custom title bar. Kept in a local so a page that mounts
+   its bar after a maximise still paints the right glyph, and so an SPA swap
+   (which replaces the handler) never misses the current state. */
+let winState = { maximized: false, fullScreen: false, focused: true };
+let winStateHandler = null;
+ipcRenderer.on('anr:win-state', (_e, s) => {
+  winState = s || winState;
+  if (winStateHandler) { try { winStateHandler(winState); } catch (_) {} }
 });
 
 contextBridge.exposeInMainWorld('anrDesktop', {
@@ -75,6 +96,24 @@ contextBridge.exposeInMainWorld('anrDesktop', {
       const p = pending.shift();
       try { openHandler(p); } catch (_) {}
     }
+  },
+
+  /** Window controls for the app-drawn title bar (src/core/desktop-chrome.ts).
+   *  The window is frameless off macOS, so these are the only way to minimise,
+   *  maximise or close it, and `menu` is the only way to reach the application
+   *  menu. Every call is checked in main against our own window. */
+  win: {
+    minimize: () => ipcRenderer.invoke('anr:win', 'minimize'),
+    toggleMaximize: () => ipcRenderer.invoke('anr:win', 'maximize'),
+    close: () => ipcRenderer.invoke('anr:win', 'close'),
+    /** Last state pushed by main - synchronous, so the bar paints correctly on
+     *  its very first frame instead of flickering through a round trip. */
+    state: () => ({ ...winState }),
+    /** Pop the application menu at a point in page coordinates. */
+    menu: (x, y) => ipcRenderer.invoke('anr:win-menu', { x: Number(x) || 0, y: Number(y) || 0 }),
+    /** Register the state-change sink. One handler; a second replaces the
+     *  first, which is what an SPA swap wants. */
+    onStateChange(cb) { winStateHandler = typeof cb === 'function' ? cb : null; },
   },
 
   /** Save the exported analysis report through a native save dialog.

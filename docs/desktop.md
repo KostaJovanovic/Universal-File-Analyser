@@ -195,6 +195,30 @@ which does not exist in a browser. The website is unaffected.
 | Device tier | Sized from real total RAM, not `navigator.deviceMemory`, which browsers clamp at 8 GB. A large machine gets the caps it deserves |
 | Export report | Offers a native save dialog, and keeps the browser path as a fallback |
 | Video encoding | Runs on your graphics hardware through a real FFmpeg binary. See the section above |
+| Title bar | The app draws its own. See below |
+| Page scrollbar | Drawn by the app so it starts below the title bar, rather than running up beside it |
+
+## The title bar
+
+The window has no system frame on Windows, and the page draws the whole title
+bar itself: the menu button, the wordmark, the section you are on, and the
+minimise, maximise and close controls. It is the same hairline band as the rest
+of the site - square corners, mono type, the red mark from the site's accent -
+so the window edge and the page read as one surface instead of two.
+
+The controls use the system glyphs, from the icon font every native Windows
+title bar draws, so they sit at the weight and size you expect. Drag anywhere on
+the bar to move the window, and double-click it to maximise. The menu button
+opens the same application menu the menu bar used to hold, with the same
+shortcuts.
+
+macOS keeps its native frame, so the traffic lights stay where they belong and
+the app draws no buttons of its own.
+
+Because the bar covers the top of the window, the page scrollbar would run up
+behind it and cut the line. So the app hides the native one and draws a matching
+scrollbar that starts below the bar. Drag it, or click the track to move a
+screen at a time.
 
 ## What ships in the package
 
@@ -220,6 +244,6 @@ The app uses an FFmpeg binary it finds on your machine, and falls back to the
 WebAssembly build when there is none. Shipping one inside the installer is the
 obvious next step, and would make the hardware path work on a fresh machine.
 
-Also outstanding: file associations, a bundled OCCT, a frameless title bar,
-automated release builds, code signing and auto-update. Builds today are
-unsigned, so Windows SmartScreen warns the first time one runs.
+Also outstanding: file associations, a bundled OCCT, automated release builds,
+code signing and auto-update. Builds today are unsigned, so Windows SmartScreen
+warns the first time one runs.

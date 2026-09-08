@@ -83,6 +83,11 @@
      of page-fill, then a hairline - at half the navbar's height (see --nav-offset). */
   --rule-band-h: calc(var(--nav-offset) / 2);
   --radius:     0;
+  /* Desktop window chrome (Electron only - see DESKTOP WINDOW CHROME at the end
+     of this file): the app-drawn title bar's height, and the room macOS needs
+     left of it for the native traffic lights. Zero everywhere else. */
+  --anr-tb-h:    34px;
+  --anr-tb-lead: 0px;
 
   /* Rhythm */
   --lh-tight: 1.2;
@@ -107,6 +112,47 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+
+/* ---------- SCROLLBARS ----------
+   The site's own scrollbar, in the same language as the rest of the chrome:
+   square, hairline, no radius, themed off the same tokens so it flips with
+   light/dark like everything else.
+
+   Two implementations, and the split is load-bearing. Chromium IGNORES the
+   ::-webkit-scrollbar pseudo-elements on any element that sets the standard
+   scrollbar-width / scrollbar-color, so the standard pair is fenced inside an
+   @supports block only Firefox enters. Hoist it out and every Chromium browser
+   (and the desktop app) silently drops back to a plain thin bar with none of
+   the styling below.
+
+   Elements that deliberately hide or recolour their own scrollbar
+   (.anr-spec-scroll, .fmt-chips, the always-dark media surfaces around line
+   2666) carry a class, so they outrank these bare pseudo-elements and still
+   win. */
+::-webkit-scrollbar { width: 13px; height: 13px; background: var(--bg); }
+::-webkit-scrollbar-track { background: var(--bg); border-left: var(--bd-rule); }
+::-webkit-scrollbar-track:horizontal { border-left: 0; border-top: var(--bd-rule); }
+::-webkit-scrollbar-corner { background: var(--bg); }
+/* No stepper arrows. They are the one part of a native scrollbar that cannot be
+   drawn square, and nothing else on the site has that affordance. */
+::-webkit-scrollbar-button { display: none; }
+::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  /* The padding-box border is what turns the thumb into a 5px bar centred in
+     the gutter instead of a 13px slab: the track shows through the border.
+     Each state below has to restate background-clip, because the `background`
+     shorthand resets it back to border-box. */
+  border: 4px solid var(--bg);
+  background-clip: padding-box;
+  transition: background-color var(--dur-fast) ease;
+}
+::-webkit-scrollbar-thumb:hover  { background: var(--fg);     background-clip: padding-box; }
+::-webkit-scrollbar-thumb:active { background: var(--accent);  background-clip: padding-box; }
+
+@supports not selector(::-webkit-scrollbar) {
+  html { scrollbar-width: thin; scrollbar-color: var(--muted) var(--bg); }
+}
+
 /* Faint drifting grid backdrop. NOTE: on high-refresh-rate displays a recent
    Firefox/WebRender regression pixel-snaps this slow axis-aligned drift, so it can
    look choppy in Firefox (Chrome/Safari stay smooth). It is NOT a site bug - 2.0
@@ -9800,3 +9846,209 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
 .sample-pop-label { font-weight: 600; }
 .sample-pop-size { margin-left: auto; color: var(--muted); font-size: 11px; }
 .sample-pop-desc { color: var(--muted); }
+
+/* =========================================================
+   DESKTOP WINDOW CHROME  (Electron shell only)
+   =========================================================
+   The desktop window is frameless off macOS and draws its own title bar and
+   page scrollbar (src/core/desktop-chrome.ts).
+
+   Two kinds of rule live here, split on purpose. The COMPONENT rules
+   (.anr-titlebar, .anr-tb-*, .anr-scrollbar*) are unscoped, so /test can show
+   them like any other element - nothing on the website carries those classes,
+   because only that module ever writes them. The LAYOUT rules - the room the
+   page has to leave for the bar, and hiding the native root scrollbar - are
+   scoped under `html.anr-desktop`, a class the desktop's preload adds before
+   any page script runs, so a browser is untouched by them.
+
+   Deliberately not a floating chrome bar: it reads as one more hairline band in
+   the same grammar as the navbar - square, mono, uppercase, a hairline seam
+   underneath, the red mark borrowed from the site's accent.
+
+   On macOS the native frame stays (so the traffic lights survive), the app's
+   own buttons hide themselves, and --anr-tb-lead reserves the room the lights
+   sit in. */
+html.anr-desktop--mac { --anr-tb-lead: 78px; }
+
+.anr-titlebar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--anr-tb-h);
+  z-index: 1000;                      /* over the navbar (20/30) and the wide-screen margin fillers (25) */
+  display: flex;
+  align-items: stretch;
+  padding-left: var(--anr-tb-lead);
+  background: var(--bg);
+  border-bottom: var(--bd-hairline);
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  letter-spacing: var(--ls-micro);
+  text-transform: uppercase;
+  user-select: none;
+  -webkit-app-region: drag;           /* the whole bar drags; the controls opt out */
+}
+/* Unfocused, the bar recedes rather than changing shape. Driven by a class on
+   <html> because that is where the window state lands; `.is-unfocused` is the
+   same look as a plain modifier, which is what /test uses to show it. */
+html.anr-desktop:not(.anr-win-focused) .anr-titlebar,
+.anr-titlebar.is-unfocused { color: var(--muted); }
+html.anr-desktop:not(.anr-win-focused) .anr-tb-mark,
+.anr-titlebar.is-unfocused .anr-tb-mark { background: var(--muted); }
+
+/* The whole page sits below the bar. A single padding on body rather than a
+   spacer element, so nothing in the document tree shifts. */
+html.anr-desktop body { padding-top: var(--anr-tb-h); }
+
+/* Everything the site pins to the top of the VIEWPORT has to clear the bar.
+   These are the only four: the navbar (which re-asserts top:0 in its own mobile
+   media query, hence the class-qualified selector), the drill-down back bar,
+   the /compare control strip and the phone search overlay. */
+html.anr-desktop .site-nav,
+html.anr-desktop .anr-back-bar,
+html.anr-desktop .anr-cmp-controls,
+html.anr-desktop .search-overlay { top: var(--anr-tb-h); }
+
+/* ---- identity ---- */
+.anr-tb-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: var(--fg);
+  font-weight: 600;
+}
+.anr-tb-mark {
+  width: 8px; height: 8px;
+  background: var(--accent);
+  flex: none;
+}
+.anr-tb-sub {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-left: var(--bd-rule);
+  color: var(--muted);
+  font-weight: 400;
+}
+/* Below this the window is too narrow for both the section name and the
+   controls; the name is the one that can go. */
+@media (max-width: 560px) {
+  .anr-tb-sub { display: none; }
+}
+
+/* The flexible middle is pure drag surface. Double-clicking it maximises, which
+   the OS handles for a drag region - no script involved. */
+.anr-tb-space { flex: 1 1 auto; min-width: 12px; }
+
+/* ---- buttons ---- */
+.anr-tb-btn {
+  -webkit-app-region: no-drag;
+  appearance: none;
+  border: 0;
+  border-left: var(--bd-rule);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  transition: background-color var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+.anr-tb-btn:hover { background: var(--surface); color: var(--fg); }
+.anr-tb-btn:active { background: var(--fg); color: var(--bg); }
+.anr-tb-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: -3px; }
+.anr-tb-btn svg { display: block; }
+
+/* The menu button is the only route to the application menu once the frame is
+   gone, so it is labelled rather than left as a bare glyph. */
+.anr-tb-menu { gap: 8px; border-left: 0; border-right: var(--bd-rule); }
+
+.anr-tb-ctl { display: flex; align-items: stretch; }
+.anr-tb-ctl .anr-tb-btn { width: 46px; padding: 0; }
+/* Close is the only destructive control on the bar, so it is the only one that
+   takes the accent on hover. */
+.anr-tb-close:hover { background: var(--accent); color: var(--accent-fg); }
+.anr-tb-close:active { background: var(--accent); color: var(--accent-fg); filter: brightness(0.85); }
+
+/* macOS keeps its native buttons: ours would be a second set. */
+html.anr-desktop--mac .anr-tb-ctl { display: none; }
+
+/* Maximised, the restore glyph replaces the maximise one. Same pairing as the
+   unfocused look above: <html> carries the real window state, and `.is-max` on
+   the button is the same result as a modifier, for /test. */
+.anr-tb-max .anr-tb-ico-restore,
+html.anr-win-max .anr-tb-max .anr-tb-ico-max { display: none; }
+html.anr-win-max .anr-tb-max .anr-tb-ico-restore,
+.anr-tb-max.is-max .anr-tb-ico-restore { display: block; }
+.anr-tb-max.is-max .anr-tb-ico-max { display: none; }
+
+/* Full screen: the bar would cover the content it is supposed to frame. */
+html.anr-win-full .anr-titlebar { display: none; }
+html.anr-win-full body { padding-top: 0; }
+html.anr-win-full .site-nav,
+html.anr-win-full .anr-back-bar,
+html.anr-win-full .anr-cmp-controls,
+html.anr-win-full .search-overlay { top: 0; }
+
+/* ---- window-control glyphs ----
+   On Windows these are the system ones, from the same icon font every native
+   title bar draws (Segoe Fluent Icons on 11, Segoe MDL2 Assets on 10), so the
+   controls match the rest of the OS exactly and stay even at any DPI. Off
+   Windows core/desktop-chrome.ts emits a small SVG set instead and this font
+   stack never applies. */
+.anr-tb-ico { display: block; }
+.anr-tb-ico--font {
+  /* MDL2 FIRST, and not by accident: Segoe Fluent's ChromeMaximize carries a
+     1px corner radius, and this site has none anywhere. MDL2 draws the same
+     glyph square, and Windows 11 still ships it beside Fluent for
+     back-compatibility, so ordering it first costs nothing on either version. */
+  font-family: "Segoe MDL2 Assets", "Segoe Fluent Icons";
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+}
+.anr-tb-menu .anr-tb-ico--font { font-size: 12px; }
+
+/* ---- the page scrollbar ----
+   A native scrollbar is the full height of the viewport and no CSS can shorten
+   it, so it runs up beside the title bar and breaks its line. The root one is
+   hidden and core/desktop-chrome.ts draws the rail below, which starts under
+   the bar. Root scroller ONLY - every inner pane keeps the styled native bar
+   from the SCROLLBARS block near the top of this file, and the two are drawn to
+   the same measurements (13px rail, 5px thumb, 4px inset). */
+html.anr-desktop { scrollbar-width: none; }
+html.anr-desktop::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+.anr-scrollbar {
+  position: fixed;
+  top: var(--anr-tb-h);
+  right: 0;
+  bottom: 0;
+  width: 13px;
+  z-index: 999;                       /* under the title bar (1000), over everything else */
+  background: var(--bg);
+  border-left: var(--bd-rule);
+}
+/* Nothing to scroll: the rail would read as an empty gutter. */
+.anr-scrollbar.is-idle { display: none; }
+
+.anr-scrollbar-thumb {
+  position: absolute;
+  top: 0;
+  left: 4px;
+  width: 5px;
+  background: var(--muted);
+  transition: background-color var(--dur-fast) ease;
+  will-change: transform;
+}
+.anr-scrollbar:hover .anr-scrollbar-thumb { background: var(--fg); }
+.anr-scrollbar.is-dragging .anr-scrollbar-thumb { background: var(--accent); }
+
+/* Full screen has no title bar to clear. */
+html.anr-win-full .anr-scrollbar { top: 0; }
