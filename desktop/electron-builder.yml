@@ -1,0 +1,102 @@
+# Analyser desktop - electron-builder configuration (Windows for v1).
+#
+# The website's own files are NOT bundled into the asar. They ship as
+# extraResources, so they land in resources/web/ as ordinary files on disk:
+# that keeps net.fetch(pathToFileURL(...)) trivial in main.mjs and sidesteps
+# asar quirks around the 72 MB of vendor WASM.
+#
+# The version is written by tools/stamp-version.mjs from COMMIT_COUNT in
+# src/core/app.ts, so the installer and the number in the app's own footer
+# always agree. `npm run dist` runs it first.
+
+appId: com.valjdakosta.analyser
+productName: Analyser
+copyright: Kosta Jovanovic
+
+directories:
+  output: dist
+  buildResources: build
+
+# Only the shell itself goes in the asar.
+files:
+  - main.mjs
+  - router.mjs
+  - menu.mjs
+  - ffmpeg-native.mjs
+  - preload.cjs
+  - package.json
+
+extraResources:
+  - from: ../web
+    to: web
+    filter:
+      - "**/*"
+      # 19 MB of gallery example files. The /samples page still loads; its
+      # downloads do not, which is why the menu has no Samples entry.
+      - "!samples/**"
+      # 191 source maps - dev-only, and tsc regenerates them on every build.
+      - "!**/*.map"
+      # Crawler and deploy plumbing with no meaning off the web.
+      - "!sitemap*.xml"
+      - "!robots.txt"
+      - "!llms.txt"
+      - "!_headers"
+      # NOTE: formats/** (25 MB of generated /formats/<ext> pages) is kept in
+      # on purpose. The /formats hub links straight at them, and a hub full of
+      # dead links is a worse trade than the 25 MB.
+
+  # An ffmpeg binary dropped in here ships as resources/ffmpeg/ffmpeg.exe, which
+  # is the first path ffmpeg-native.mjs checks - that is how the hardware video
+  # path would work on a machine with no ffmpeg installed. Nothing is bundled
+  # yet (licensing and roughly 100 MB to decide on), so the app uses the one on
+  # PATH and falls back to the WASM build when there is none. The entry is
+  # commented out rather than deleted so the slot is obvious.
+  # - from: ffmpeg
+  #   to: ffmpeg
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    # Self-extracting portable .exe. It sets PORTABLE_EXECUTABLE_DIR at runtime,
+    # which main.mjs uses to move userData to `Analyser-data` beside the .exe -
+    # so the offline cache, the analysed history, the theme and the window
+    # position all travel with the stick instead of being left in the host's
+    # %APPDATA%.
+    - target: portable
+      arch: [x64]
+    # The same thing without the extraction step: unzip anywhere and run
+    # Analyser.exe. Add an empty `portable.txt` next to the .exe and main.mjs
+    # treats it as portable too. Faster to start than the self-extracting build,
+    # since nothing is unpacked to temp.
+    - target: zip
+      arch: [x64]
+  icon: build/icon.png
+  # Unsigned for now. Windows SmartScreen will warn on first run until a
+  # certificate is in place - see the note in README.md.
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Analyser
+  artifactName: Analyser-Setup-${version}.exe
+  uninstallDisplayName: Analyser
+
+portable:
+  artifactName: Analyser-${version}-portable.exe
+  # unpackDirName is deliberately left at its default: a uuid regenerated per
+  # BUILD, not per launch. So a given version extracts to temp once and reuses
+  # it, instead of re-extracting 118 MB every time. Setting it to false would
+  # leave no persistent temp folder but would pay that extraction on every run.
+
+# Folder-copy portable build (see the zip target above).
+# The user's data still lands in Analyser-data next to the .exe, but only once
+# `portable.txt` is there - without it a copied folder behaves like an install
+# and writes to %APPDATA%, which is the right default for the NSIS build.
+
+# File associations are deliberately absent. Claiming .pdf or .jpg on install
+# would be hostile, and the format catalog is far too broad to register wholesale.

@@ -216,39 +216,14 @@
           <p class="patch-name">Who Made This</p>
           <p class="patch-date">7 September 2026</p>
           <ul class="patch-list">
-            <li><strong>Two ways of asking what made a file. Video now gets the provenance reading photos have had for a while: if a clip was made or edited by a tool that signs its work - Veo, Sora and the rest of the video generators - Analyser lays out the record sealed inside it, with the AI-generation indicators beside it. And two source-code extensions that a camcorder also uses stop being mistaken for camcorder footage: a TypeScript file is now recognised as one and actually read, rather than shown as anonymous text.</strong></li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Provenance for video</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>A video&rsquo;s Content Credentials open.</strong> Some cameras and most generative video tools seal a signed history into the file: what made it, what was done to it afterwards, and what it was built from. An <a href="/about#ext-mp4">MP4</a> or <a href="/about#ext-mov">MOV</a> lays that history out the way a photo does - the signing tool, each edit in order, the ingredients, and the certificate&rsquo;s subject, issuer and dates.</li>
-            <li><span class="patch-tag">New</span><strong>The AI-generation card comes with it.</strong> Below the history sits the same summary a photo gets, gathering the indicators on their own: the standard &ldquo;made by a model&rdquo; marker, a generator named in the metadata, or a plain sentence like &ldquo;Created by Google Generative AI&rdquo;. Both cards appear only when there is something to show, so a camera original renders neither.</li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Found in more places</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>Credentials are read from far more containers.</strong> Video and the modern picture formats - MP4, MOV, <a href="/about#ext-heic">HEIC</a>, <a href="/about#ext-avif">AVIF</a> and <a href="/about#ext-webp">WebP</a> - where before only JPEG and PNG were unpacked. Where a container cannot be opened structurally, the standard marker is still looked for in the bytes themselves.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Files written by the current version of the standard read properly.</strong> C2PA 2.x numbers its parts (<code>c2pa.actions.v2</code>, <code>c2pa.claim.v2</code>) and Analyser had been looking only for the original names, so a recent file could come up empty or arrive without its edit history.</li>
-            <li><span class="patch-tag">New</span><strong>The newer generators are known by name</strong> - Veo, Sora, Kling, Pika, Hailuo, MiniMax, Seedance, Luma&rsquo;s Dream Machine, Runway, Gemini and its &ldquo;Nano Banana&rdquo;, Grok, Seedream, Ideogram, Firefly and SynthID among them. Names that are ordinary words elsewhere only count with their maker or version beside them, so a caption mentioning a runway or a pika is not mistaken for one.</li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Honest about what this is</p>
-          <ul class="patch-list">
-            <li><strong>It reads the record; it does not check the signature.</strong> Nothing here is verified against a list of trusted signers, and this kind of metadata can be stripped, re-encoded away or forged outright. Treat what these cards show as what the file says about itself - useful evidence, never a verdict.</li>
-            <li><span class="patch-tag is-faster">Faster</span><strong>A long video is not read end to end to find it.</strong> The record is a few tens of kilobytes and sits at one end of the file, so only the first and last few megabytes are read - a multi-gigabyte clip costs about what a photo does.</li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">TypeScript, read rather than displayed</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>A <a href="/about#ext-ts">.ts</a> file is now taken apart, not just shown.</strong> Beside the source sits what the file actually is: the things it brings in, split into outside packages and its own neighbouring files and marked where an import is only for types; the names it hands out; what it declares - interfaces, type aliases, enums, classes, functions; and how its lines divide into code, comment and blank, with the comment share given as a percentage.</li>
-            <li><span class="patch-tag">New</span><strong>It counts the ways out of the type system.</strong> TypeScript exists to check a program, and every language of its kind offers ways to tell it to stop asking. Analyser counts them - <code>any</code>, forced casts, non-null marks and outright suppressions - so the effort a file makes to stay honest is visible at a glance rather than something you would have to read it to learn. A file that uses none says so.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>TypeScript was being labelled &ldquo;Plain Text&rdquo;.</strong> A <code>.ts</code> shares its extension with a broadcast video stream, so Analyser starts by pointing it at the video player and turns it back when the contents prove it is text - and that turn had been dropping the file&rsquo;s identity on the way. It now arrives named, which is also what puts the new reading within reach of it.</li>
-            <li><span class="patch-tag">New</span><strong>An <a href="/about#ext-mts">.mts</a> is no longer assumed to be camcorder footage.</strong> The extension belongs both to AVCHD - what a Sony or Panasonic camcorder writes to its card - and to a kind of TypeScript file. They are told apart by their contents, which needed care: AVCHD tags every packet with an arrival time, so its telltale byte sits four places further along than in an ordinary broadcast stream, and looking in the usual place found nothing at all.</li>
-            <li><strong>Declaration files are named as such,</strong> and each of these extensions now has its own page explaining both of the things it can be.</li>
+            <li><span class="patch-tag">New</span><strong>Content Credentials for video.</strong> An <a href="/about#ext-mp4">MP4</a> or <a href="/about#ext-mov">MOV</a> lays out the signed history sealed inside it, the way a photo does - what made the clip, each edit in order, what it was built from, and the certificate behind it.</li>
+            <li><span class="patch-tag">New</span><strong>An AI-generation card sits beside it,</strong> gathering whatever says a model was involved and naming the generator where the file names one - Veo, Sora, Kling, Runway, Firefly, Gemini and a dozen others. A camera original shows neither card.</li>
+            <li>Analyser reads that record. It does not check the signature, so treat it as what the file says about itself.</li>
+            <li><span class="patch-tag">New</span>Credentials are now read from <strong><a href="/about#ext-heic">HEIC</a></strong>, <strong><a href="/about#ext-avif">AVIF</a></strong> and <strong><a href="/about#ext-webp">WebP</a></strong> too, not just JPEG and PNG.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Files written to the current <strong>C2PA 2.x</strong> standard came up empty or lost their edit history.</li>
+            <li><span class="patch-tag is-faster">Faster</span>Only the first and last few megabytes of a video are read to find the record, so a multi-gigabyte clip costs about what a photo does.</li>
+            <li><span class="patch-tag">New</span><strong>TypeScript</strong> (<a href="/about#ext-ts">.ts</a>, <a href="/about#ext-mts">.mts</a>) is read rather than shown as anonymous text - imports split into packages and neighbouring files, exports, declarations, line make-up, and a tally of the escapes from the type system (<code>any</code>, forced casts, suppressions).</li>
+            <li><span class="patch-tag is-fix">Fix</span>A <code>.ts</code> was labelled &ldquo;Plain Text&rdquo; and an <code>.mts</code> was taken for camcorder footage. Both share an extension with a video format, and both are now told apart by their contents.</li>
           </ul>
         </div>
 
@@ -257,30 +232,16 @@
           <p class="patch-name">Nameless</p>
           <p class="patch-date">31 August 2026</p>
           <ul class="patch-list">
-            <li><strong>Most extensions name a format. <code>.bin</code> and <code>.out</code> name nothing at all - one means &ldquo;some bytes&rdquo;, the other &ldquo;whatever the program left behind&rdquo; - so Analyser stops taking their word for it and reads them instead. CNC programs written in the German dialect now draw their toolpath, five more formats are recognised on sight, and one file type that had been blamed on the wrong program for a long time is put right.</strong></li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Two extensions that name nothing</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>A <a href="/about#ext-bin">.bin</a> is examined rather than labelled.</strong> Disc images, cartridge dumps, router firmware and plain application data all wear the same suffix, so there is nothing honest to say about the name. It opens in a byte-level inspector instead - a guess at the format from the opening bytes, how random the contents are, and the bytes themselves - and names itself where the evidence allows: a raw disc image by its sector pattern, a Mega Drive cartridge by the word SEGA sitting exactly where Sega put it.</li>
-            <li><span class="patch-tag">New</span><strong>And it is still allowed to be something else.</strong> A real extension settles the question, but these two do not, so the contents are consulted first: a <code>.bin</code> that is really a ZIP, a PDF or a picture opens as that, with everything that normally comes with it.</li>
-            <li><span class="patch-tag">New</span><strong>A <a href="/about#ext-out">.out</a> is either a program or a program&rsquo;s output.</strong> It is the name a compiler gives a finished executable when nobody chose one, and equally the name given to a log some script tipped into a file. The two look nothing alike inside, so each now opens as what it actually is.</li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">More formats recognised</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>CNC programs in the German dialect draw their toolpath.</strong> A <a href="/about#ext-din">.din</a> is a machining program written to the standard that Heidenhain and Siemens controls speak, which is the same G-code as every other dialect - so it goes to the toolpath viewer and shows the part, instead of arriving as an unrecognised file.</li>
-            <li><span class="patch-tag">New</span><strong>Three unrelated programs, one <a href="/about#ext-scn">.scn</a>.</strong> A Godot game scene, a strategy scenario for OpenTTD, Age of Empires or SimCity 2000, and the plain-text scenes an Orbiter simulation or a Behringer mixer writes all claim the extension. They are told apart by their contents now, not by the name.</li>
-            <li><span class="patch-tag">New</span><strong>Three more known on sight:</strong> the <a href="/about#ext-dcb">Concordance</a> databases used in legal document review, <a href="/about#ext-trt">NVIDIA TensorRT</a> engines - an AI model compiled for one particular graphics card, which is why it will not load on any other - and <a href="/about#ext-cpmmodel">Custom Player Models</a> avatars from Minecraft.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>A <a href="/about#ext-wsp">.wsp</a> was blamed on the wrong program.</strong> Analyser called it a Wondershare Filmora sub-project. It is a SharePoint solution package, and because that is a Windows cabinet archive underneath, it now opens and lists everything inside it.</li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Under the bonnet</p>
-          <ul class="patch-list">
-            <li><strong>Maintenance:</strong> one of these two updates carried nothing but refreshed sitemaps for search engines. These notes cover both, written together.</li>
+            <li><strong>Some extensions name nothing at all. <code>.bin</code> and <code>.out</code> are now read for what they contain, not trusted for what they are called.</strong></li>
+            <li><span class="patch-tag">New</span><strong>A <a href="/about#ext-bin">.bin</a> is examined, not labelled.</strong> Disc images, cartridge dumps and router firmware all wear the same suffix, so it opens in a byte-level inspector: a format guess, how random the contents are, and the bytes themselves.</li>
+            <li><span class="patch-tag">New</span><strong>It names itself where the evidence allows</strong> - a raw disc image by its sector pattern, a Mega Drive cartridge by the word SEGA sitting exactly where Sega put it.</li>
+            <li><span class="patch-tag">New</span><strong>A <code>.bin</code> that is really a ZIP, a PDF or a picture opens as that,</strong> with everything that normally comes with it. Neither extension settles the question, so the contents are consulted first.</li>
+            <li><span class="patch-tag">New</span><strong>A <a href="/about#ext-out">.out</a> is either a program or a program&rsquo;s output.</strong> A compiler and a script both reach for the name, and the two look nothing alike inside, so each opens as what it is.</li>
+            <li><span class="patch-tag">New</span><strong>CNC programs in the German dialect draw their toolpath.</strong> A <a href="/about#ext-din">.din</a> is the same G-code that Heidenhain and Siemens controls speak, so it goes to the toolpath viewer and shows the part.</li>
+            <li><span class="patch-tag">New</span><strong>Three unrelated programs, one <a href="/about#ext-scn">.scn</a>.</strong> A Godot game scene, a strategy scenario for OpenTTD or SimCity 2000, and the plain-text scenes Orbiter writes are told apart by their contents now.</li>
+            <li><span class="patch-tag">New</span><strong>Three more known on sight:</strong> <a href="/about#ext-dcb">Concordance</a> databases from legal document review, <a href="/about#ext-trt">NVIDIA TensorRT</a> engines (an AI model compiled for one graphics card, so it loads on no other), and <a href="/about#ext-cpmmodel">Custom Player Models</a> avatars from Minecraft.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A <a href="/about#ext-wsp">.wsp</a> was blamed on the wrong program.</strong> It is a SharePoint solution package rather than a Wondershare Filmora sub-project, and it opens as the Windows cabinet archive it really is.</li>
+            <li><strong>Maintenance:</strong> one of these two updates carried only refreshed sitemaps. These notes cover both.</li>
           </ul>
         </div>
 
@@ -289,24 +250,24 @@
           <p class="patch-name">Open House</p>
           <p class="patch-date">29 August 2026</p>
           <ul class="patch-list">
-            <li><strong>Everything Analyser could name but not open now opens: buildings, molecules, AI models, design documents and music sessions. Subtitles play where their author put them, GPS tracks gain pace and density maps, and three new tools arrive for looking hard at a file.</strong></li>
+            <li><strong>Everything Analyser could name but not open now opens: buildings, molecules, AI models, design documents and music sessions. Subtitles play where their author put them, and three new tools arrive for looking hard at a file.</strong></li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Things that used to be just a name</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>A building opens as a building.</strong> An <a href="/about#ext-ifc">.ifc</a> is a list of things rather than a drawing, so Analyser rebuilds the structure - project, site, building, storey, everything on each floor by type - and draws it. Openings cut through walls are counted and named rather than drawn wrong.</li>
-            <li><span class="patch-tag">New</span><strong>Molecules are drawn, not described.</strong> A <a href="/about#ext-mol">.mol</a>, <a href="/about#ext-sdf">.sdf</a>, <a href="/about#ext-pdb">.pdb</a> or <a href="/about#ext-cif">.cif</a> comes up in 3D - ball-and-stick for a small molecule, ribbons for a protein - with formula and weight worked out from the atoms actually in the file.</li>
-            <li><span class="patch-tag">New</span><strong>AI models open up.</strong> An <a href="/about#ext-onnx">.onnx</a> network is drawn as a graph, each step a box; weight files report their parameter count and precision, and a local language model (<a href="/about#ext-gguf">.gguf</a>) its architecture and how much text it can hold at once.</li>
+            <li><span class="patch-tag">New</span><strong>A building opens as a building.</strong> An <a href="/about#ext-ifc">.ifc</a> is a list of things rather than a drawing, so Analyser rebuilds the structure and draws it: project, site, building, storey, and everything on each floor by type.</li>
+            <li><span class="patch-tag">New</span><strong>Molecules are drawn, not described.</strong> A <a href="/about#ext-mol">.mol</a>, <a href="/about#ext-sdf">.sdf</a>, <a href="/about#ext-pdb">.pdb</a> or <a href="/about#ext-cif">.cif</a> comes up in 3D, ball-and-stick for a small molecule and ribbons for a protein, with formula and weight worked out from the atoms in the file.</li>
+            <li><span class="patch-tag">New</span><strong>AI models open up.</strong> An <a href="/about#ext-onnx">.onnx</a> network is drawn as a graph, each step a box. Weight files report their parameter count and precision, and a local language model (<a href="/about#ext-gguf">.gguf</a>) reports its architecture.</li>
             <li><span class="patch-tag">New</span><strong>A warning worth having on AI checkpoints.</strong> A PyTorch <a href="/about#ext-pt">.pt</a> is a small program, not a bag of numbers, so Analyser lists everything it would reach for on loading without running any of it.</li>
             <li><span class="patch-tag">New</span><strong>Design documents open.</strong> A <a href="/about#ext-sketch">.sketch</a> shows every page, artboard, group and layer, which of its components nothing uses, all the writing, and the pictures placed into it.</li>
-            <li><span class="patch-tag">New</span><strong>Music sessions draw their arrangement.</strong> <a href="/about#ext-als">Ableton Live</a> and <a href="/about#ext-rpp">Reaper</a> projects lay out a row per track with every clip in place, and list the recordings they point at but do not contain - which is how you check a session will open complete.</li>
+            <li><span class="patch-tag">New</span><strong>Music sessions draw their arrangement.</strong> <a href="/about#ext-als">Ableton Live</a> and <a href="/about#ext-rpp">Reaper</a> projects lay out a row per track with every clip in place, and list the recordings they point at but do not contain.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Subtitles that behave like subtitles</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>They appear where they were put, and karaoke sings.</strong> <a href="/about#ext-ass">.ass</a> and .ssa subtitles now play on a stage you can scrub through - signs in the corner, captions sliding across the frame, karaoke filling in a syllable at a time - rather than being flattened into a list of lines.</li>
+            <li><span class="patch-tag">New</span><strong>They appear where they were put, and karaoke sings.</strong> <a href="/about#ext-ass">.ass</a> and .ssa subtitles play on a stage you can scrub through, with signs in the corner, captions sliding across the frame, and karaoke filling in a syllable at a time.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>Two subtitle faults found while building it.</strong> Karaoke timings were being swallowed into the name of the instruction carrying them, and the sweeping highlight was treated as the plain one.</li>
           </ul>
 
@@ -319,15 +280,16 @@
           <hr class="patch-rule">
           <p class="patch-subhead">For looking hard at a file</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>How alike are these two files?</strong> A checksum only answers &ldquo;identical or not&rdquo;; <a href="/compare">Compare</a> now scores how much of two files is genuinely the same content out of 100.</li>
-            <li><span class="patch-tag">New</span><strong>Windows programs say what made them.</strong> An <a href="/about#ext-exe">.exe</a> is checked for whether its code is packed, naming UPX, VMProtect, Themida and around thirty others, plus the language that built it. Packing is as often an installer as anything suspicious, so the card reports rather than concludes.</li>
-            <li><span class="patch-tag">New</span><strong>A real database console.</strong> The query box on a <a href="/about#ext-sqlite">SQLite</a> file now runs anything you type, changes included, because what you are querying is a copy held in memory - the file on your device is never written to.</li>
+            <li><span class="patch-tag">New</span><strong>How alike are these two files?</strong> A checksum only answers &ldquo;identical or not&rdquo;, so <a href="/compare">Compare</a> now scores how much of two files is genuinely the same content out of 100.</li>
+            <li><span class="patch-tag">New</span><strong>Windows programs say what made them.</strong> An <a href="/about#ext-exe">.exe</a> reports whether its code is packed, naming UPX, VMProtect, Themida and around thirty others. Packing is as often an installer as anything suspicious, so the card reports rather than concludes.</li>
+            <li><span class="patch-tag">New</span><strong>A real database console.</strong> The query box on a <a href="/about#ext-sqlite">SQLite</a> file runs anything you type, changes included. You are querying a copy held in memory, and the file on your device is never written to.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Under the bonnet</p>
           <ul class="patch-list">
-            <li><strong>Credit where it is due:</strong> the molecule viewer is drawn by the open-source <em>3Dmol.js</em>, now in the credits. <strong>One deliberate gap:</strong> <a href="/about#ext-fig">Figma files</a> read out their outer details but not their contents - Figma describes itself differently in every version, so there is nothing dependable to read.</li>
+            <li><strong>Credit where it is due:</strong> the molecule viewer is drawn by the open-source <em>3Dmol.js</em>, now in the credits.</li>
+            <li><strong>One deliberate gap:</strong> <a href="/about#ext-fig">Figma files</a> read out their outer details but not their contents. Figma describes itself differently in every version, so there is nothing dependable to read.</li>
           </ul>
         </div>
 
@@ -339,42 +301,43 @@
           <p class="patch-name">Show and Tell</p>
           <p class="patch-date">29 August 2026</p>
           <ul class="patch-list">
-            <li><strong>More formats that could only be named now open: GIMP images, pixel-art sprites, tracker music from the Amiga and DOS eras, Terraria world maps and game textures. Very large AVI videos open too, and the iPhone app icons no browser can display are repaired and shown.</strong></li>
+            <li><strong>More formats that could only be named now open: GIMP images, pixel-art sprites, tracker music, Terraria world maps and game textures. Very large AVI videos open too.</strong></li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Pictures that were only a name</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>GIMP images open.</strong> A <a href="/about#ext-xcf">.xcf</a> stores no finished picture, only its layers, so Analyser assembles the image itself - every layer decoded, masked, faded and blended as GIMP would - and shows it with the layer list, saveable as a PNG.</li>
+            <li><span class="patch-tag">New</span><strong>GIMP images open.</strong> A <a href="/about#ext-xcf">.xcf</a> stores no finished picture, only its layers, so Analyser assembles the image itself. Every layer is decoded, masked, faded and blended as GIMP would, and the result saves as a PNG.</li>
             <li><span class="patch-tag">New</span><strong>Pixel-art sprites play.</strong> An <a href="/about#ext-aseprite">Aseprite</a> animation plays at the file&rsquo;s own per-frame timings, with the layer list, the named animations (walk, idle, attack) and any single frame saveable.</li>
-            <li><span class="patch-tag">New</span><strong>Game textures show the texture.</strong> <a href="/about#ext-vtf">Valve&rsquo;s VTF</a> and the <a href="/about#ext-ktx">KTX and KTX2</a> files used across modern engines store their pictures in a form built for graphics cards, not browsers; they are decoded and displayed now, where before you got only their dimensions.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>iPhone app icons display.</strong> Every picture inside an <a href="/about#ext-ipa">.ipa</a> is rewritten by Apple&rsquo;s build tools into a private form of PNG that <em>no</em> browser will show; Analyser recognises it and rebuilds an ordinary picture.</li>
+            <li><span class="patch-tag">New</span><strong>Game textures show the texture.</strong> <a href="/about#ext-vtf">Valve&rsquo;s VTF</a> and the <a href="/about#ext-ktx">KTX and KTX2</a> files store their pictures in a form built for graphics cards, not browsers. They are decoded and displayed now, where before you got only their dimensions.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>iPhone app icons display.</strong> Apple&rsquo;s build tools rewrite every picture inside an <a href="/about#ext-ipa">.ipa</a> into a private form of PNG that <em>no</em> browser will show. Analyser recognises it and rebuilds an ordinary picture.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Music from the demoscene</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>Tracker music plays - about sixty formats of it.</strong> <a href="/about#ext-mod">MOD, XM, IT, S3M</a> and their relatives are sheet music plus a box of sounds rather than recordings, so the piece is performed on your device and then gets the full sound analysis: waveform, spectrogram, player, loudness, key and tempo, saveable as a WAV.</li>
-            <li><strong>The parts a recording has no equivalent of are shown too:</strong> the tracker that wrote the file, its channels and patterns, the composer&rsquo;s free-text message, and the sample names - traditionally where authors tucked their greetings.</li>
+            <li><span class="patch-tag">New</span><strong>Tracker music plays, about sixty formats of it.</strong> <a href="/about#ext-mod">MOD, XM, IT, S3M</a> and their relatives are sheet music plus a box of sounds, so the piece is performed on your device and then gets the full sound analysis.</li>
+            <li><strong>The parts a recording has no equivalent of are shown too:</strong> the tracker that wrote the file, its channels and patterns, the composer&rsquo;s message, and the sample names where authors traditionally tucked their greetings.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Worlds and video</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>A Terraria save draws its map.</strong> A <a href="/about#ext-wld">.wld</a> is drawn one pixel per tile - terrain and ore in front, walls shaded behind, water, lava and honey in their own colours - with the world name, seed, size and difficulty alongside, saveable as a PNG.</li>
-            <li><span class="patch-tag">New</span><strong>Very large AVI videos open.</strong> No browser plays most <a href="/about#ext-avi">AVI</a> files and Analyser used to give up past a certain size; it now indexes the video and reads each frame off the disk as you reach it, so a multi-gigabyte file opens on an ordinary machine.</li>
+            <li><span class="patch-tag">New</span><strong>A Terraria save draws its map.</strong> A <a href="/about#ext-wld">.wld</a> is drawn one pixel per tile, with terrain and ore in front, walls shaded behind, and the world name, seed, size and difficulty alongside.</li>
+            <li><span class="patch-tag">New</span><strong>Very large AVI videos open.</strong> No browser plays most <a href="/about#ext-avi">AVI</a> files, and Analyser used to give up past a certain size. It now reads each frame off the disk as you reach it, so a multi-gigabyte file opens.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Two files that shared a name</p>
           <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>.wld and .ase each mean two unrelated things.</strong> A <code>.wld</code> is a Terraria world or a map-positioning text file; an <code>.ase</code> is an Aseprite sprite or an Adobe colour palette. Each pair is told apart by contents now, not by name.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>.wld and .ase each mean two unrelated things.</strong> A <code>.wld</code> is a Terraria world or a map-positioning text file. An <code>.ase</code> is an Aseprite sprite or an Adobe colour palette. Each pair is told apart by contents now.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Under the bonnet</p>
           <ul class="patch-list">
-            <li><strong>Maintenance:</strong> the picture decoder behind DDS textures moved somewhere the other texture formats could share it, which is most of why three arrived at once. <strong>Credit where it is due:</strong> the open-source <em>Convert to it!</em> pointed the way on what could be decoded in a browser at all, and is now in the credits. These notes cover seven updates, written together after the fact.</li>
+            <li><strong>Maintenance:</strong> the picture decoder behind DDS textures moved somewhere the other texture formats could share it. That is most of why three arrived at once.</li>
+            <li><strong>Credit where it is due:</strong> the open-source <em>Convert to it!</em> showed what could be decoded in a browser at all, and is now in the credits. These notes cover seven updates.</li>
           </ul>
         </div>
 
@@ -383,24 +346,24 @@
           <p class="patch-name">Hidden Pictures</p>
           <p class="patch-date">19 August 2026</p>
           <ul class="patch-list">
-            <li><strong>A surprising number of files quietly carry a picture of themselves that nothing ever shows you - the snapshot inside an AutoCAD drawing, the photo on a contact card, a slicer&rsquo;s build plate, a Blender thumbnail, the preview inside EPS artwork. Analyser now finds each and shows it, full size and saveable. An AVI that looked like it had been analysing for hours is fixed too.</strong></li>
+            <li><strong>A surprising number of files carry a picture of themselves that nothing ever shows you. Analyser now finds each one and shows it, full size and saveable.</strong></li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Pictures hidden inside files</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>An AutoCAD drawing shows the picture AutoCAD saved of it.</strong> Every <a href="/about#ext-dwg">DWG and DWT</a> keeps a snapshot of how it last looked, and it is pulled out <em>before</em> the drawing is read - because a file too new or too damaged to open is exactly where that picture is all there is.</li>
-            <li><span class="patch-tag">New</span><strong>Contact cards give up their photos.</strong> The picture and company logo inside a <a href="/about#ext-vcf">.vcf</a> are extracted at full size, shown and saveable; a card that merely links to one says so.</li>
-            <li><span class="patch-tag">New</span><strong>3D print packages show the plate, not just the mesh.</strong> A <a href="/about#ext-3mf">3MF</a> thumbnail, the build-plate renders <strong>Bambu Studio</strong> and <strong>OrcaSlicer</strong> add, and any texture maps now sit beside the 3D viewer - and lead it when there is no mesh to view.</li>
-            <li><span class="patch-tag">New</span><strong>A Blender scene shows its thumbnail.</strong> A <a href="/about#ext-blend">.blend</a> saved with previews on stores a small render of the scene; a <em>compressed</em> .blend now says so, rather than leaving you wondering why there is no version and no picture.</li>
-            <li><span class="patch-tag">New</span><strong>EPS artwork shows the preview it was given.</strong> An <a href="/about#ext-eps">EPS</a> carries a low-resolution preview for the layout program that will place it: the plain-text kind is drawn on the spot, the other behind a button, since it needs a heavier decoder than every file should fetch.</li>
+            <li><span class="patch-tag">New</span><strong>An AutoCAD drawing shows the picture AutoCAD saved of it.</strong> Every <a href="/about#ext-dwg">DWG and DWT</a> keeps a snapshot of how it last looked, pulled out <em>before</em> the drawing is read. In a damaged file, that picture is all there is.</li>
+            <li><span class="patch-tag">New</span><strong>Contact cards give up their photos.</strong> The picture and company logo inside a <a href="/about#ext-vcf">.vcf</a> come out at full size, shown and saveable. A card that merely links to one says so.</li>
+            <li><span class="patch-tag">New</span><strong>3D print packages show the plate, not just the mesh.</strong> A <a href="/about#ext-3mf">3MF</a> thumbnail, the build-plate renders <strong>Bambu Studio</strong> and <strong>OrcaSlicer</strong> add, and any texture maps sit beside the 3D viewer, and lead it when there is no mesh.</li>
+            <li><span class="patch-tag">New</span><strong>A Blender scene shows its thumbnail.</strong> A <a href="/about#ext-blend">.blend</a> saved with previews on stores a small render of the scene. A <em>compressed</em> .blend now says so, rather than showing no version and no picture.</li>
+            <li><span class="patch-tag">New</span><strong>EPS artwork shows the preview it was given.</strong> An <a href="/about#ext-eps">EPS</a> carries a low-resolution preview for the layout program that will place it. The plain-text kind is drawn on the spot, and the other waits behind a button.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Video</p>
           <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>An AVI no longer looks like it is analysing for ever.</strong> Analyser reads most <a href="/about#ext-avi">AVI</a> files itself in about a second, but the <code>Decoding video&hellip;</code> bar was never taken down afterwards, leaving a large one apparently still working with its finished analysis on screen below. It clears on every route through now.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>That loading bar stays inside its box.</strong> In the narrow column beside a video it was wider than its panel and hung past the edge; it wraps onto a second line now.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>An AVI no longer looks like it is analysing for ever.</strong> The <code>Decoding video&hellip;</code> bar was never taken down, so a large file looked busy with its finished analysis on screen below. It clears on every route through now.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>That loading bar stays inside its box.</strong> In the narrow column beside a video it hung past the panel edge. It wraps onto a second line now.</li>
           </ul>
 
           <hr class="patch-rule">
@@ -415,21 +378,21 @@
           <p class="patch-name">No Loose Ends</p>
           <p class="patch-date">14 August 2026</p>
           <ul class="patch-list">
-            <li><strong>Analysing a picture taken out of a PDF now leaves you a way back to the PDF. Everything else was deliberate invisible work: all 176 files the app is built from are now checked far more strictly before they ship, which turned up roughly 11,400 places the code could have been handed something missing or the wrong shape.</strong></li>
+            <li><strong>Analysing a picture taken out of a PDF now leaves you a way back to the PDF. Everything else was invisible work: all 176 files the app is built from are checked far more strictly before they ship.</strong></li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">What you can see</p>
           <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>A Back bar when you analyse an image from a PDF.</strong> Pressing <strong>Analyse</strong> under an embedded picture used to leave no way back short of dropping the file in again; it now leaves the same breadcrumb you get opening a file from inside an archive.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A Back bar when you analyse an image from a PDF.</strong> Pressing <strong>Analyse</strong> under an embedded picture used to leave no way back. It now leaves the same breadcrumb you get opening a file from inside an archive.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">The strictness pass</p>
           <ul class="patch-list">
-            <li><strong>Nothing else you can see - and that was the whole point.</strong> Analyser has no automated tests, so the only safe way to make a change this wide was to prove the shipped code came out identical afterwards. It did.</li>
+            <li><strong>Nothing else you can see, and that was the whole point.</strong> Analyser has no automated tests, so the only safe way to make a change this wide was to prove the shipped code came out identical. It did.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>A document that fails to read one of its inner parts now still shows the rest.</strong> Word, OpenDocument and e-book files are small archives of pieces, and one piece that would not decode used to throw away everything already read. It is simply skipped now.</li>
-            <li><strong>The checks are stricter about what an unfinished value means</strong> - every place the app carried on as if a lookup had definitely succeeded now says so and is enforced, so a future change that breaks it fails on the spot.</li>
+            <li><strong>The checks are stricter about a value that may be missing.</strong> Every place the app assumed a lookup had succeeded now says so, so a future change that breaks it fails on the spot.</li>
             <li><strong>Maintenance:</strong> one long-dead field in the AI separation tool, sending nothing since the day it was written, is now recorded as such.</li>
           </ul>
         </div>
@@ -439,31 +402,31 @@
           <p class="patch-name">Room to Breathe</p>
           <p class="patch-date">13 August 2026</p>
           <ul class="patch-list">
-            <li><strong>The AI sound tools now fit on an iPhone.</strong> Separating a track used to run the tab out of memory and take Safari down with it; it now uses a fraction of the memory, downloads a smaller AI engine on Apple devices, and its <strong>Download WAV</strong> buttons actually save a file. The old <u>lab.valjdakosta.com</u> address forwards to the new one, and underneath, all 176 files the app is built from were rewritten in a language that checks the code as it is written.</li>
+            <li><strong>The AI sound tools now fit on an iPhone.</strong> Separating a track used to run the tab out of memory, and it now uses a fraction of that.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Separation on a phone</p>
           <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>The tab no longer runs out of memory partway through.</strong> The model is fetched and started <em>before</em> the song is copied for it and released once the engine has taken it, the frequency workspace is reused rather than rebuilt for every window, and the second output track is set aside only once the first pass has succeeded.</li>
-            <li><span class="patch-tag is-faster">Faster</span><strong>A smaller AI engine on iPhone and iPad.</strong> Safari cannot use the graphics-card path at all, so it no longer downloads the version built for it - roughly 10 MB instead of 21 MB before anything can start.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Downloading a separated vocal or instrumental saves the file.</strong> On iPhone the button often opened a preview or did nothing; the download now hangs off your own tap and is handed over as a file.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>The first pass says what it is doing.</strong> With no percentage to show until the model returns its first window of audio, it reads <code>Starting first separation pass&hellip;</code> rather than sitting on a figure it cannot know, and gives up after two minutes instead of five.</li>
-            <li><span class="patch-tag is-faster">Faster</span><strong>The blend and the per-part spectrograms are drawn without another full-length copy of the track</strong>, working the mix out slice by slice - which is what lets the results view survive on a phone.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The tab no longer runs out of memory partway through.</strong> The model starts <em>before</em> the song is copied for it, and the copy is released once the engine has taken it. The frequency workspace is reused rather than rebuilt for every window.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>A smaller AI engine on iPhone and iPad.</strong> Safari cannot use the graphics-card path at all, so it no longer downloads the version built for it. That is roughly 10 MB instead of 21 MB before anything can start.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Downloading a separated vocal or instrumental saves the file.</strong> On iPhone the button often opened a preview or did nothing. The download now hangs off your own tap and arrives as a file.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The first pass says what it is doing.</strong> It reads <code>Starting first separation pass&hellip;</code> rather than sitting on a figure it cannot know, and gives up after two minutes instead of five.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>The blend and the per-part spectrograms are drawn without another full-length copy of the track</strong>, working the mix out slice by slice. That is what lets the results view survive on a phone.</li>
             <li>A separation that crashes on an Apple device is no longer retried straight away: the retry exists for a graphics-card fault those devices cannot have.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Offline and addresses</p>
           <ul class="patch-list">
-            <li><strong>The <a href="/about#where">Complete offline download</a> is now about 96 MB, up from 85 MB.</strong> It carries both AI engines - the graphics-card one and the plain one - so separation still works offline whichever browser you come back in.</li>
+            <li><strong>The <a href="/about#where">Complete offline download</a> is now about 96 MB, up from 85 MB.</strong> It carries both AI engines, the graphics-card one and the plain one, so separation still works offline in any browser.</li>
             <li><strong><u>lab.valjdakosta.com</u> now forwards to <u>analyser.valjdakosta.com</u></strong>, keeping whatever page you asked for. It is a temporary forward on purpose, so it can be undone, and a copy installed from the old address keeps working.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Under the bonnet</p>
           <ul class="patch-list">
-            <li><strong>The app was rewritten in a stricter language.</strong> Nothing about the site changed, and that was the requirement: the shipped code was compared against the old to prove it came out the same - groundwork for the stricter checking in the update above.</li>
+            <li><strong>The app was rewritten in a stricter language.</strong> Nothing about the site changed, and that was the requirement. The shipped code was compared against the old to prove it came out the same.</li>
             <li><strong>Maintenance:</strong> the previous update&rsquo;s notes and its entry in the <code>tl;dr</code> summary.</li>
           </ul>
         </div>
@@ -473,25 +436,25 @@
           <p class="patch-name">Steady Hands</p>
           <p class="patch-date">30 July 2026</p>
           <ul class="patch-list">
-            <li><strong>A thorough reliability pass over the on-device AI sound tools: they recover from a stuck graphics card, keep a downloaded model instead of fetching it all over again, need far less memory on a phone, and no longer throw away a finished separation the moment you ask for another.</strong></li>
+            <li><strong>A reliability pass over the on-device AI sound tools. They recover from a stuck graphics card, keep a downloaded model, and need far less memory on a phone.</strong></li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">The separation panel</p>
           <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>Separating a second time.</strong> With a result on screen, pressing <strong>Separation</strong> now opens a fresh prompt - pick a model, confirm, and it runs again on the original track. Change your mind and the finished result is still there, untouched. Before, pressing it simply wiped what you had.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Separating a second time.</strong> With a result on screen, pressing <strong>Separation</strong> opens a fresh prompt and runs again on the original track. Change your mind and the finished result is still there, where before it was wiped.</li>
             <li><strong>The model choices fold away once a separation is ready</strong>, leaving the vocal and instrumental blend the whole panel.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Progress says which stage it is at</strong> - downloading the model, saving it for offline use, starting the AI engine, then separating - so a finished download is no longer mistaken for a finished separation. The bar now fills from empty to full in step with the percentage beside it, rather than the two disagreeing.</li>
-            <li><strong>Lite is chosen for you on more devices</strong> - any touch device, or one reporting 4 GB of memory or less, not just a narrow window.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Progress says which stage it is at:</strong> downloading the model, saving it for offline use, starting the AI engine, then separating. The bar now fills in step with the percentage beside it.</li>
+            <li><strong>Lite is chosen for you on more devices</strong> - any touch device, or one reporting 4 GB of memory or less.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">When things go wrong</p>
           <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>A stalled graphics card no longer ends the run.</strong> If the fast path hangs or crashes partway through, it is torn down and tried once more on the compatible one, saying <code>GPU unavailable - retrying with the compatible runtime&hellip;</code> while it does. If it cannot start at all, the job simply carries on without it instead of giving up.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A stalled graphics card no longer ends the run.</strong> If the fast path hangs, the job is tried once more on the compatible engine. If the card cannot start at all, the job carries on without it.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>A job that stops responding is reported.</strong> Both tools now watch for silence and fail with a message, instead of leaving a progress bar sitting at the same place indefinitely.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>AI denoise runs where it gives correct results.</strong> On the graphics-card path the network produced wrong output, so denoise now deliberately uses the compatible engine on every browser.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>A truncated or damaged model download is caught.</strong> Model files are checked against their exact expected size, both as they arrive and when read back from storage; a bad copy is discarded and fetched again rather than failing the run.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A truncated or damaged model download is caught.</strong> Model files are checked against their exact expected size, both as they arrive and when read back from storage. A bad copy is discarded and fetched again.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>The download prompt tells the truth.</strong> Whether a model is already saved is checked against storage itself, so it can no longer offer to fetch something you have or skip something you do not.</li>
           </ul>
 
@@ -499,14 +462,14 @@
           <p class="patch-subhead">On a phone</p>
           <ul class="patch-list">
             <li><span class="patch-tag is-faster">Faster</span><strong>Separation needs much less memory.</strong> A separated part is turned into a sound file only when you press its <strong>Play</strong> or <strong>Download</strong>, rather than every part being built the instant the separation finished.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>The vocal and instrumental blend slider can be dragged on iPhone.</strong> Your finger is now followed across the whole slider, instead of the value only jumping to where you tapped. With that in place the slider wears the site&rsquo;s thin marker again, rather than the oversized grab handle it used to need.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The vocal and instrumental blend slider can be dragged on iPhone.</strong> Your finger is followed across the whole slider, instead of the value jumping to where you tapped. The slider wears the site&rsquo;s thin marker again.</li>
             <li><span class="patch-tag is-fix">Fix</span>Leaving the page or dropping another file mid-run shuts the AI work down cleanly, rather than leaving it painting in the background.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Downloads and storage</p>
           <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>A downloaded model stays downloaded.</strong> It used to be dropped after a day, quietly costing another ~85 MB the next time you asked for a separation. It is kept for good now, somewhere that survives site updates. This update moves it, so it is fetched once more and then stays.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A downloaded model stays downloaded.</strong> It used to be dropped after a day, costing another 85 MB the next time you asked for a separation. It is kept for good now, somewhere that survives site updates.</li>
             <li><span class="patch-tag is-faster">Faster</span><strong>A model is no longer stored twice.</strong> The browser was keeping a second copy alongside the app&rsquo;s own, doubling the space a separation cost you.</li>
             <li><strong>The shared AI engine is kept on its own</strong>, so it survives a site update even if you have not taken the <a href="/about#where">Complete offline download</a>.</li>
             <li>Leftover model files from an experiment that never shipped are cleared out of offline storage, handing the space back.</li>
@@ -536,7 +499,7 @@
           <p class="patch-subhead">The move</p>
           <ul class="patch-list">
             <li><span class="patch-tag">New</span><strong>The site now lives at analyser.valjdakosta.com</strong> - a name that says what it actually is. Every link, share and page on the site points there from now on.</li>
-            <li><strong>The old lab.valjdakosta.com address keeps working</strong> and shows the same pages, so old bookmarks, links you have shared, and a copy you installed to your home screen all carry on as before. There is no redirect and no rush: use whichever you like, though the new one is the one to keep.</li>
+            <li><strong>The old lab.valjdakosta.com address keeps working</strong> and shows the same pages, so old bookmarks and an installed copy carry on as before. Use whichever you like, though the new one is the one to keep.</li>
             <li>Sharing the site, <a href="/about#what">exporting an analysis</a> and the watermark on a saved <a href="/about#ext-gcode">G-code</a> clip all carry the new address now.</li>
             <li><strong>Nothing else changed.</strong> The app itself is exactly as it was, still doing every bit of the work on your own device, with nothing uploaded.</li>
           </ul>
@@ -547,17 +510,17 @@
           <p class="patch-name">True Colours</p>
           <p class="patch-date">25 July 2026</p>
           <ul class="patch-list">
-            <li><strong>Video now reports what is genuinely inside it: exact codec profile and level, bit depth, colour and HDR detail, every soundtrack and subtitle track in an MKV, and the real frame rate of a raw stream - all read from the picture data itself rather than from the file&rsquo;s own summary of it.</strong></li>
+            <li><strong>Video now reports what is genuinely inside it: codec profile and level, bit depth, colour and HDR detail, and every track in an MKV. All of it is read from the picture data, not from the file&rsquo;s own summary.</strong></li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Video</p>
           <ul class="patch-list">
             <li><span class="patch-tag">New</span><strong>Codec detail read from the video itself</strong> - profile, tier and level, bit depth, and chroma subsampling. These are read out of the picture data, so they appear even when the file&rsquo;s own summary leaves them out or gets them wrong.</li>
-            <li><span class="patch-tag">New</span><strong>Colour and HDR.</strong> Colour primaries, transfer, matrix and range; the <strong>HDR</strong> type with its MaxCLL and MaxFALL brightness figures; and <strong>Dolby Vision</strong> profile and level where the file carries them.</li>
-            <li><span class="patch-tag">New</span><strong>Every track in an <a href="/about#ext-mkv">MKV</a> or <a href="/about#ext-webm">WebM</a> is listed</strong> - kind, codec, size or channel count, language, name, and whether it is the default or forced one. Those files routinely hold several soundtracks and subtitle tracks, and now you can see all of them at a glance.</li>
+            <li><span class="patch-tag">New</span><strong>Colour and HDR.</strong> Colour primaries, transfer, matrix and range, the <strong>HDR</strong> type with its MaxCLL and MaxFALL brightness figures, and <strong>Dolby Vision</strong> profile and level where the file carries them.</li>
+            <li><span class="patch-tag">New</span><strong>Every track in an <a href="/about#ext-mkv">MKV</a> or <a href="/about#ext-webm">WebM</a> is listed</strong> - kind, codec, channel count, language, name, and whether it is the default one. Those files routinely hold several soundtracks and subtitle tracks.</li>
             <li><span class="patch-tag">New</span><strong>The encoder&rsquo;s own average and peak bitrate</strong>, where the file records them, shown separately from the rough file-size-over-length figure.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>A raw video stream reads its true frame rate.</strong> A bare <strong>.h264</strong> or <strong>.h265</strong> file has no container to ask, and was simply assumed to run at 25 frames per second - which then threw off the length and the bitrate as well. The rate is read from the stream itself now.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A raw video stream reads its true frame rate.</strong> A bare <strong>.h264</strong> or <strong>.h265</strong> file has no container to ask, and was assumed to run at 25 frames per second. The rate is read from the stream itself now.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>HEVC inside an MKV</strong> goes straight to the readout and the offer to convert, instead of attempting a playback that no browser can manage.</li>
             <li>The consistency check in <strong>Advanced</strong> now covers <strong>HEVC</strong> as well as H.264.</li>
           </ul>
@@ -568,7 +531,7 @@
           <p class="patch-name">Dust Off</p>
           <p class="patch-date">25 July 2026</p>
           <ul class="patch-list">
-            <li><strong>Maintenance:</strong> styles and code left behind by features that have since changed were removed across the site. Nothing looks or behaves any differently; the download is a little smaller.</li>
+            <li><strong>Maintenance:</strong> styles and code left behind by features that have since changed were removed across the site. Nothing looks or behaves differently, and the download is a little smaller.</li>
           </ul>
         </div>
 
@@ -583,7 +546,7 @@
           <hr class="patch-rule">
           <p class="patch-subhead">Safety</p>
           <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>Animation tricks are stripped from previews.</strong> An <a href="/about#ext-eml">email</a>, a saved web page or an <a href="/about#ext-epub">e-book</a> chapter can carry an animation that rewrites a harmless-looking link into a script <em>after</em> the page has already checked it. The SVG viewer has always removed those; the shared cleaner every other preview uses now does too.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Animation tricks are stripped from previews.</strong> An <a href="/about#ext-eml">email</a> or <a href="/about#ext-epub">e-book</a> chapter can carry an animation that rewrites a safe-looking link into a script after the page has checked it. Every preview now removes those.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>Nothing in a preview reaches out to the internet.</strong> A picture or shape reference inside one of those previews can no longer quietly fetch a remote file - only links you can actually click stay live, and a file&rsquo;s own internal references keep working.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>Exported reports</strong> escape every embedded picture address, so nothing carried in by the analysed file can slip out of place in the report or its print preview.</li>
           </ul>
@@ -592,7 +555,7 @@
           <p class="patch-subhead">Speed</p>
           <ul class="patch-list">
             <li><span class="patch-tag is-faster">Faster</span><strong>Format search</strong> keeps up with fast typing. It now waits for a short pause instead of re-checking every supported type on each keystroke.</li>
-            <li><span class="patch-tag is-faster">Faster</span><strong>A very large file no longer freezes the page</strong> working out its fingerprints. <strong>MD5</strong> and <strong>CRC-32</strong> have no hardware acceleration, so past 512 MB they are skipped and say so in their own row; the <strong>SHA</strong> fingerprints still compute as normal.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>A very large file no longer freezes the page</strong> working out its fingerprints. <strong>MD5</strong> and <strong>CRC-32</strong> have no hardware acceleration, so past 512 MB they are skipped and say so in their own row. The <strong>SHA</strong> fingerprints still compute as normal.</li>
             <li><span class="patch-tag is-faster">Faster</span>Sorting a folder or archive that holds tens of thousands of entries in one place.</li>
           </ul>
 
@@ -603,7 +566,7 @@
             <li><span class="patch-tag is-fix">Fix</span>The <strong>Sound</strong> button in the navigation bar re-measures when you resize the window, instead of keeping a width from whatever size the page opened at.</li>
             <li><span class="patch-tag is-fix">Fix</span>Switching to another tab mid-analysis and coming back no longer jumps you down to results you had already cancelled.</li>
             <li><span class="patch-tag is-fix">Fix</span>A <strong>very complex SVG</strong> that is too large to display safely now says exactly that, instead of claiming the file is invalid.</li>
-            <li><strong>Tidied:</strong> the archive <strong>Timing &amp; integrity</strong> card explains its CRC check in the <code>[?]</code> rather than in a line above the button; the amplitude histogram has been dropped from sound and video analysis; submitting an Asteroids score no longer repeats a one-off database step every time.</li>
+            <li><strong>Tidied:</strong> the archive <strong>Timing &amp; integrity</strong> card explains its CRC check in the <code>[?]</code> rather than above the button. The amplitude histogram is gone from sound and video analysis.</li>
           </ul>
         </div>
 
@@ -612,14 +575,14 @@
           <p class="patch-name">Gotta Go Fast 2: Tokyo Drift</p>
           <p class="patch-date">24 July 2026</p>
           <ul class="patch-list">
-            <li><strong>Second speed pass: long songs usable ~9&times; quicker. Heavy analysis runs one pass at a time off the main thread so the page never freezes; huge compressed files decode on demand, AAC reads in full, and the touch-tone reader recovers every digit.</strong></li>
+            <li><strong>Second speed pass: a long song is usable about 9&times; quicker. Heavy analysis runs one pass at a time off the main thread, so the page never freezes.</strong></li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Sound</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>Large compressed audio decodes on demand.</strong> A long <a href="/about#ext-aac">AAC</a> or similar no longer blocks the page unpacking to PCM: header, tags, cover art and native playback show at once; waveform, spectrogram, loudness and forensics sit behind a <strong>Decode and analyse</strong> button with a progress bar and an estimated memory cost.</li>
-            <li><span class="patch-tag">New</span><strong>AAC (ADTS) parsed without decoding.</strong> Profile, sample rate and channel config read exactly from the first frame; duration and bitrate estimated from average frame size sampled across the whole file, so a low-bitrate intro no longer skews them.</li>
+            <li><span class="patch-tag">New</span><strong>Large compressed audio decodes on demand.</strong> A long <a href="/about#ext-aac">AAC</a> no longer blocks the page while it unpacks. Header, tags, cover art and playback show at once, and the heavier readouts sit behind a <strong>Decode and analyse</strong> button.</li>
+            <li><span class="patch-tag">New</span><strong>AAC is read without decoding.</strong> Profile, sample rate and channel count come from the first frame. Duration and bitrate are estimated across the whole file, so a quiet intro no longer skews them.</li>
             <li><span class="patch-tag is-faster">Smoother</span><strong>Whole-file passes stay off the critical path.</strong> Waveform reduction, spectrogram STFT and the forensic DSP on buffers too large to offload to the worker now yield mid-loop and run sequentially, so input, scroll and playback stay live throughout.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>DTMF: every digit recovered.</strong> A broken high-group argmax only ever matched the 1336 Hz column (digits 2, 5, 8, 0) and dropped the rest - a 10-digit number could decode as two. All digits resolve now.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>DTMF: fewer false positives.</strong> Twist tolerance tightened 12&rarr;8 dB and minimum tone hold 40&rarr;60 ms, so music transients no longer register as digits.</li>
@@ -639,7 +602,7 @@
           <p class="patch-subhead">Elsewhere</p>
           <ul class="patch-list">
             <li><span class="patch-tag is-fix">Fix</span>Installed PWA: an in-page hash jump left an untagged history entry that tripped the back-guard into an &ldquo;Are you sure you want to exit?&rdquo; prompt. Now tagged in place.</li>
-            <li><strong>Tidied:</strong> on mobile, <strong>Isolate</strong> and <strong>Separation</strong> share one row; the EQ presets wrap compactly instead of stretching to fill it.</li>
+            <li><strong>Tidied:</strong> on mobile, <strong>Isolate</strong> and <strong>Separation</strong> share one row, and the EQ presets wrap compactly instead of stretching to fill it.</li>
           </ul>
         </div>
 
@@ -673,11 +636,11 @@
             <li><span class="patch-tag">New</span><strong>Touch-tones</strong> redrawn: decoded number shown large, a whole-file tone timeline, and per-tone keys that seek playback to each press.</li>
             <li><span class="patch-tag">New</span><strong>Space</strong> toggles play/pause for the active media (audio, video, stem, reversed track) unless typing or focused on a button.</li>
             <li><span class="patch-tag">New</span><strong>Advanced</strong> readout de-duplicated: redundant sub-headings dropped from self-describing rows.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Separation</strong> gets its own panel beside <strong>Isolate</strong>; it previously opened into a still-closed panel and appeared to do nothing.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Separation</strong> gets its own panel beside <strong>Isolate</strong>. It previously opened into a still-closed panel and appeared to do nothing.</li>
             <li><span class="patch-tag is-fix">Fix</span>Vocals-to-instrumental blend slider tracks the pointer on long tracks instead of lagging the redraw.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>Loudness-graph</strong> playhead re-synced to the waveform and spectrogram - it was scaled against a slightly different sample length and drifted on <a href="/about#ext-mp3">MP3</a> and video soundtracks.</li>
             <li><span class="patch-tag">New</span>Long-call <strong>touch-tone</strong> keypad now behind a <code>Show</code> button, so the grid stops pushing the number and timeline offscreen.</li>
-            <li><strong>Tidied:</strong> playback driven from the spectrogram/waveform transports (<strong>File info</strong> is now a pure readout); loudness graph restyled to match the waveform; encoder tag moved from Tags to Advanced.</li>
+            <li><strong>Tidied:</strong> playback is driven from the spectrogram and waveform transports, the loudness graph matches the waveform, and the encoder tag moved from Tags to Advanced.</li>
           </ul>
 
           <hr class="patch-rule">
@@ -685,7 +648,7 @@
           <ul class="patch-list">
             <li><span class="patch-tag">New</span><strong>.xmp sidecars</strong> (Lightroom, Adobe Camera Raw, darktable) render as the develop recipe: tone curve, bipolar Basic sliders, colour mixer and crop rectangle, plus editor, paired raw, white balance, rating, keywords and camera.</li>
             <li><span class="patch-tag">New</span><strong>Image to sound</strong> no longer autoplays - <strong>Render</strong> builds the sound and its analysis, then waits for you to press play.</li>
-            <li><span class="patch-tag is-fix">Fix</span>Embedded photo <strong>thumbnail</strong> orientation-corrected (cameras store it in sensor orientation with a separate rotation tag) and labelled; the saveable file is untouched.</li>
+            <li><span class="patch-tag is-fix">Fix</span>The embedded photo <strong>thumbnail</strong> is turned the right way up and labelled. Cameras store it in sensor orientation with a separate rotation tag, and the saveable file is untouched.</li>
             <li><strong>Tidied:</strong> photo <strong>fingerprints</strong> (pHash, SHA-256) moved into <strong>Advanced</strong> with the rest of the deep analysis.</li>
           </ul>
 
@@ -704,18 +667,18 @@
           <p class="patch-subhead">Circuit boards</p>
           <ul class="patch-list">
             <li><span class="patch-tag is-fix">Fix</span><strong><a href="/about#ext-kicad_pcb">PCB</a> viewers open offline.</strong> The shared render engine behind <strong>KiCad</strong> and <strong>Altium</strong> was never added to the offline cache - the one thing the installed app could not open.</li>
-            <li><span class="patch-tag">New</span>3D board gains the <strong>view cube</strong> (orbit by drag; click a face, edge or corner to snap head-on, edge-on or corner-on).</li>
-            <li><span class="patch-tag">New</span><strong>Auto-rotate</strong>, off by default; any drag, snap or reset stops it.</li>
+            <li><span class="patch-tag">New</span>3D board gains the <strong>view cube</strong>. Drag to orbit, or click a face, edge or corner to snap head-on, edge-on or corner-on.</li>
+            <li><span class="patch-tag">New</span><strong>Auto-rotate</strong>, off by default. Any drag, snap or reset stops it.</li>
             <li><span class="patch-tag">New</span>Board opens at a three-quarter angle, matching the other 3D viewers.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>Flip over</strong> rotates 180&deg; in place, preserving your viewing angle, instead of resetting the board flat.</li>
-            <li><span class="patch-tag is-fix">Fix</span>3D viewers no longer capture page scroll on pointer-over; scroll-zoom is opt-in on the board, schematic and <a href="/about#ext-cube">LUT</a> viewers.</li>
+            <li><span class="patch-tag is-fix">Fix</span>3D viewers no longer capture page scroll when the pointer is over them. Scroll-zoom is opt-in on the board, schematic and <a href="/about#ext-cube">LUT</a> viewers.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Safety and privacy</p>
           <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>Single sanitiser for all file-supplied markup</strong> - email bodies, saved web pages, <a href="/about#ext-epub">e-book</a> chapters, <a href="/about#ext-svg">SVG</a>. Four had drifted apart and three carried a <code>javascript:</code>-scheme bypass; all route through the strict one now.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>E-book</strong> chapters can no longer fetch remote images (a call-home); the book&rsquo;s own embedded images still render.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Single sanitiser for all file-supplied markup</strong> - email bodies, saved web pages, <a href="/about#ext-epub">e-book</a> chapters and <a href="/about#ext-svg">SVG</a>. Four had drifted apart and three carried a <code>javascript:</code>-scheme bypass, so all route through the strict one now.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>E-book</strong> chapters can no longer fetch remote images. The book&rsquo;s own embedded images still render.</li>
             <li><span class="patch-tag">New</span><a href="/about#ext-svg">SVG</a> safety report enumerates every script-capable link type, not just the obvious one.</li>
           </ul>
 
@@ -726,13 +689,13 @@
             <li><span class="patch-tag is-fix">Fix</span>A huge <a href="/about#where">folder</a> caps at its first 100,000 files and says so, instead of appearing to load forever.</li>
             <li><span class="patch-tag is-fix">Fix</span>A <strong>SPICE</strong> file whose header over-claims its data size no longer crashes the tab - the real points are plotted with a note of the claim.</li>
             <li><span class="patch-tag is-fix">Fix</span>A very large <a href="/about#ext-csv">CSV</a> column or dense circuit-board netlist no longer fails mid-readout.</li>
-            <li><span class="patch-tag">New</span><strong>Clear storage</strong> now also evicts offline downloads (cached app, OCR languages, AI models); theme and <strong>Clear view</strong> survive.</li>
+            <li><span class="patch-tag">New</span><strong>Clear storage</strong> now also clears offline downloads, meaning the cached app, OCR languages and AI models. Theme and <strong>Clear view</strong> survive.</li>
             <li><span class="patch-tag is-fix">Fix</span>In-page <strong>search</strong> expands a collapsed <strong>Advanced</strong> section to reveal the match.</li>
             <li><span class="patch-tag is-fix">Fix</span>Opening a <a href="/samples">sample</a> no longer replaces the file already open on the home page.</li>
             <li><span class="patch-tag is-fix">Fix</span>Dropping a file scrolls to the analysis even from near the page bottom.</li>
-            <li><span class="patch-tag">New</span><strong>Paged viewers reserve blank page space up front</strong> - a <a href="/about#ext-pdf">PDF</a>, <a href="/about#ext-docx">Word</a>/ODF, <a href="/about#ext-pptx">slideshow</a> or <a href="/about#ext-cbz">comic</a> - so late-drawn previews don&rsquo;t shove the finished layout downwards.</li>
+            <li><span class="patch-tag">New</span><strong>Paged viewers reserve blank page space up front</strong> in a <a href="/about#ext-pdf">PDF</a>, <a href="/about#ext-docx">Word</a>/ODF, <a href="/about#ext-pptx">slideshow</a> or <a href="/about#ext-cbz">comic</a>, so a late-drawn preview does not shove the finished layout downwards.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>Settings persist across reload:</strong> a per-load cleanup was evicting preferences it should have left alone.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Clear storage</strong> spares all accessibility settings, not just theme and <strong>Clear view</strong>; everything else still clears.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Clear storage</strong> spares all accessibility settings, not just theme and <strong>Clear view</strong>. Everything else still clears.</li>
             <li><span class="patch-tag is-fix">Fix</span>A saved web page no longer double-draws the rule under its heading.</li>
             <li><strong>Maintenance:</strong> <strong>Record</strong> and <strong>Live spectrogram</strong> live only on the dropzone.</li>
             <li><strong>Maintenance:</strong> every release is now checked for offline-manifest gaps - the class of bug behind the PCB regression above.</li>
@@ -745,14 +708,14 @@
           <p class="patch-name">Bottom Line</p>
           <p class="patch-date">22 July 2026</p>
           <ul class="patch-list">
-            <li><strong>The deep Advanced analysis is tidied into one clean section and dropped to the very bottom of every photo, video and sound; the loudness graph now plays; and comparing two files reads far more clearly.</strong></li>
+            <li><strong>The deep Advanced analysis is tidied into one section at the bottom of every photo, video and sound. The loudness graph plays now, and comparing two files reads far more clearly.</strong></li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Photos</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span>The <strong>Advanced</strong> section now reads as a single block - each forensic panel a sub-heading rather than its own card - and sits at the very bottom, below everything else. The most useful panel stays open; the rest start folded.</li>
-            <li><span class="patch-tag">New</span>The <strong>Privacy</strong> report - GPS, camera serial, owner, copyright and unique IDs - moves up into the main metadata, so the identifying details sit in plain sight.</li>
+            <li><span class="patch-tag">New</span>The <strong>Advanced</strong> section reads as a single block, each forensic panel a sub-heading rather than its own card, and sits below everything else. The most useful panel stays open and the rest start folded.</li>
+            <li><span class="patch-tag">New</span>The <strong>Privacy</strong> report moves up into the main metadata, so GPS, camera serial, owner, copyright and unique IDs sit in plain sight.</li>
             <li><span class="patch-tag is-fix">Fix</span>Copyright and description text that arrives in an unusual shape no longer shows as <code>[object Object]</code>.</li>
           </ul>
 
@@ -802,7 +765,7 @@
             <li><span class="patch-tag">New</span><strong>Video structure.</strong> An Advanced card opens an <a href="/about#ext-mp4">MP4/MOV</a>&rsquo;s box tree, tracks, re-save tells, a playback-free bitrate and keyframe map, and true constant/variable frame rate.</li>
             <li><span class="patch-tag">New</span>Decode <strong>GoPro</strong> and <strong>CAMM</strong> telemetry - GPS route on a local map, accelerometer and gyroscope traces, exposure and temperature.</li>
             <li><span class="patch-tag">New</span>Recover the true profile, colour and range, read exact <strong>x264/x265</strong> settings, <strong>HDR</strong> mastering, <strong>Dolby Vision</strong> and <strong>C2PA</strong> credentials.</li>
-            <li><span class="patch-tag">New</span>A colour &ldquo;barcode&rdquo; timeline of the whole video with brightness curve and black-frame and freeze flags; click to jump the player.</li>
+            <li><span class="patch-tag">New</span>A colour &ldquo;barcode&rdquo; timeline of the whole video, with a brightness curve and black-frame and freeze flags. Click it to jump the player.</li>
             <li><span class="patch-tag is-faster">Faster</span>Unsupported clips (much <strong>GoPro HEVC</strong>) get a 720p playable copy by default, with an Advanced panel for resolution, frame rate, speed and Turbo.</li>
             <li><span class="patch-tag is-fix">Fix</span>The playable copy drives only playback - every result is read from the original file.</li>
             <li><span class="patch-tag is-fix">Fix</span>Synced motion and gyro timelines (GoPro/CAMM/Sony) play for codecs the browser cannot open directly.</li>
@@ -816,7 +779,7 @@
             <li><span class="patch-tag">New</span>Musical <strong>key</strong> estimate, plus listeners for mains hum, ultrasonic tones and watermarks, and touch-tone <strong>DTMF</strong> digits.</li>
             <li><span class="patch-tag">New</span><strong>Crest factor</strong> shows how heavily a master is compressed and <strong>DC offset</strong> flags a capture fault.</li>
             <li><span class="patch-tag">New</span><strong>Denoise</strong> - an on-device <strong>DeepFilterNet3</strong> model strips hiss as a Clean-to-Noise blend you can play, analyse or save.</li>
-            <li><span class="patch-tag">New</span>Isolate presets become <strong>Underwater</strong>, <strong>Radio</strong> and <strong>Hollow</strong>; the AI vocal split moves under an <strong>AI separation</strong> button.</li>
+            <li><span class="patch-tag">New</span>Isolate presets become <strong>Underwater</strong>, <strong>Radio</strong> and <strong>Hollow</strong>. The AI vocal split moves under an <strong>AI separation</strong> button.</li>
             <li><span class="patch-tag">New</span>A <a href="/about#where">video</a>&rsquo;s sound runs through the full audio analysis, loudness meter and Advanced forensics.</li>
             <li><span class="patch-tag is-fix">Fix</span>Switching AI tool or denoise while the download prompt is open updates it immediately.</li>
           </ul>
@@ -825,7 +788,7 @@
           <p class="patch-subhead">Clearer help</p>
           <ul class="patch-list">
             <li><span class="patch-tag">New</span><strong>Plain-English help.</strong> The site&rsquo;s hundreds of <code>[?]</code> explanations were rewritten without jargon, and many more readouts gained one.</li>
-            <li><span class="patch-tag">New</span>Tapping a <code>[?]</code> opens a small pop-up anchored to the button; clicking elsewhere closes it.</li>
+            <li><span class="patch-tag">New</span>Tapping a <code>[?]</code> opens a small pop-up anchored to the button. Clicking elsewhere closes it.</li>
             <li><span class="patch-tag is-fix">Fix</span>A dropped <strong>0-byte</strong> file explains there is nothing inside rather than failing with an error.</li>
           </ul>
 
@@ -843,7 +806,7 @@
           <ul class="patch-list">
             <li><strong>Long animated GIFs and WebPs play in full with device-scaled memory, plus a DJI recorder&rsquo;s waveform, a sharp-cornered visual pass and document-preview fixes.</strong></li>
             <li><span class="patch-tag">New</span><strong>Long animations play in full.</strong> A big <a href="/about#where">animated GIF or WebP</a> decodes each frame on scrub and keeps a rolling window in memory, so any length steps forwards or back.</li>
-            <li><span class="patch-tag">New</span><strong>DJI waveform.</strong> A <strong>.pkf</strong> overview from a DJI <strong>Mic</strong>, <strong>Osmo</strong> or drone draws its waveform, channel count and estimated length; Adobe Audition <strong>.pkf</strong> peak caches are recognised separately.</li>
+            <li><span class="patch-tag">New</span><strong>DJI waveform.</strong> A <strong>.pkf</strong> overview from a DJI <strong>Mic</strong>, <strong>Osmo</strong> or drone draws its waveform, channel count and estimated length. Adobe Audition <strong>.pkf</strong> peak caches are recognised separately.</li>
             <li><span class="patch-tag">New</span>The size limit for a very large <a href="/about#ext-zip">archive</a>, disk image or big file scales with device memory.</li>
             <li><span class="patch-tag is-fix">Fix</span>On the <strong>See full document</strong> view, dark-mode text stays visible and the open button sits above the excerpt.</li>
             <li><strong>Maintenance:</strong> every rounded corner squared off, SPICE readouts moved to monospace, and shared code consolidated across provenance, the PCB viewer, photo salvage and size limits.</li>
@@ -855,12 +818,12 @@
           <p class="patch-name">Disk Dive</p>
           <p class="patch-date">20 July 2026</p>
           <ul class="patch-list">
-            <li><strong>Open a raw disk image - an SD card, USB stick or floppy copy - like a folder, browse every file, and rescue deleted photos down to a damaged photo&rsquo;s readable part or its thumbnail.</strong></li>
+            <li><strong>Open a raw disk image like a folder, whether it came from an SD card, a USB stick or a floppy. Browse every file, and rescue deleted photos.</strong></li>
           </ul>
 
           <p class="patch-subhead">The disk browser</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>Open a disk image like a folder.</strong> A raw image (<strong>.img</strong>, .ima, .dsk) mounts its FAT12/16/32 filesystem into a browsable tree and treemap; VHD/VHDX, VMDK, QCOW2, VDI and ISO are identified with their partition table.</li>
+            <li><span class="patch-tag">New</span><strong>Open a disk image like a folder.</strong> A raw image (<strong>.img</strong>, .ima, .dsk) mounts its FAT12/16/32 filesystem into a browsable tree and treemap. VHD/VHDX, VMDK, QCOW2, VDI and ISO are identified with their partition table.</li>
             <li><span class="patch-tag">New</span><strong>Rescue deleted photos.</strong> A raw-sector scan carves every picture, including deleted and orphaned ones, into a gallery you step through and save.</li>
             <li><span class="patch-tag">New</span><strong>Rebuild a headerless JPEG.</strong> Pick a healthy photo from the same camera and Analyser borrows its header so a JPEG with only raw data left decodes again.</li>
             <li><span class="patch-tag">New</span><strong>Android app bundles.</strong> XAPK, APKM and APKS bundles open as browsable archives, reading app name, package, version, permissions and the base/split APKs.</li>
@@ -893,7 +856,7 @@
           <ul class="patch-list">
             <li><span class="patch-tag">New</span><strong>Content Credentials.</strong> Unpacks an image&rsquo;s C2PA record - signing tool, edits, source images, AI involvement and certificate.</li>
             <li><span class="patch-tag">New</span><strong>AI-generated image check.</strong> Surfaces generator names, the &ldquo;digital source type&rdquo; marker and hidden <strong>Stable Diffusion</strong>, <strong>ComfyUI</strong> and <strong>Midjourney</strong> parameter blocks.</li>
-            <li><span class="patch-tag">New</span><strong>Strip hidden metadata</strong> from a <a href="/about#where">JPEG, PNG or WebP</a> - EXIF, XMP, IPTC, comments and GPS - by lossless container surgery.</li>
+            <li><span class="patch-tag">New</span><strong>Strip hidden metadata</strong> from a <a href="/about#where">JPEG, PNG or WebP</a>. EXIF, XMP, IPTC, comments and GPS come out without touching the picture.</li>
             <li><span class="patch-tag">New</span><strong>Dates timeline</strong> lines up every timestamp a file carries and flags impossible orderings.</li>
             <li><span class="patch-tag">New</span>Browsable, searchable <a href="/docs">docs site</a> with live interactive examples, plus a reorganised footer.</li>
           </ul>
@@ -1021,7 +984,7 @@
             <li><span class="patch-tag">New</span>The <a href="/about#ext-stl">3D model</a> viewer gains the <a href="/about#ext-gcode">G-code</a> camera stack: press-hold +/- zoom, a scroll-to-zoom toggle and fullscreen.</li>
             <li><span class="patch-tag">New</span>The <a href="/samples">samples</a> gallery leads with a curated set behind a + More reveal.</li>
             <li><span class="patch-tag is-faster">Faster</span>A downloaded AI model is cached for 24 hours, so reloads skip the re-download.</li>
-            <li>The anonymous analysed-count tick banks offline and sends on reconnect, keeping the <a href="/stats">running total</a> accurate; only extension and supported-status are ever sent.</li>
+            <li>The anonymous analysed-count tick banks offline and sends on reconnect, keeping the <a href="/stats">running total</a> accurate. Only the extension and the supported status are ever sent.</li>
             <li><span class="patch-tag is-fix">Fix</span>The spectrogram playhead tracks the cursor exactly while scrubbing.</li>
             <li><span class="patch-tag is-fix">Fix</span>Analysing a new file stops any sound still playing from the previous one.</li>
             <li><span class="patch-tag is-fix">Fix</span>The <code>[?]</code> hints sit beside their headings and the spectrogram's Analysis figures moved into the File info card.</li>
@@ -1063,7 +1026,7 @@
           <ul class="patch-list">
             <li><strong>A wide compatibility pass so more of the workbench works outside Chrome, files the browser refuses to play open anyway, and a CRC-32 checksum on every file.</strong></li>
             <li><span class="patch-tag">New</span>The <a href="/about#ext-gcode">G-code</a> Export clip panel adds a Quality setting (Standard, High, Max) and renames the old control Resolution.</li>
-            <li><span class="patch-tag">New</span>Show more hashes adds a CRC-32 checksum - as used by ZIP, PNG, gzip and <code>.sfv</code> - beside MD5, SHA-1 and SHA-512.</li>
+            <li><span class="patch-tag">New</span>Show more hashes adds a CRC-32 checksum beside MD5, SHA-1 and SHA-512. ZIP, PNG, gzip and <code>.sfv</code> all use it.</li>
             <li><span class="patch-tag is-fix">Fix</span>Word, Excel, PowerPoint, ODF, <a href="/about#ext-epub">EPUB</a> and comic archives fall back to a bundled unzipper on older Safari, Firefox and Chrome.</li>
             <li><span class="patch-tag is-fix">Fix</span>Double-click and double-tap zoom works in Firefox for <a href="/about#ext-pdf">PDF</a> and document viewers.</li>
             <li><span class="patch-tag is-fix">Fix</span>Each 3D and <a href="/about#ext-gcode">G-code</a> viewer releases its graphics context on exit, so a later viewer no longer blanks.</li>
@@ -1097,8 +1060,8 @@
           <p class="patch-name">Render First</p>
           <p class="patch-date">7 July 2026, 03:40</p>
           <ul class="patch-list">
-            <li><strong>Every file now leads with the real thing - render, preview or file tree first, details below - and the After Effects timeline is rebuilt with true timing and colours.</strong></li>
-            <li><span class="patch-tag is-fix">Fix</span>Across every viewer the actual result - rendered page, preview, file tree, spectrogram - leads the report, with technical details beneath.</li>
+            <li><strong>Every file now leads with the real thing: a render, a preview or a file tree first, and the details below. The After Effects timeline is rebuilt with true timing and colours.</strong></li>
+            <li><span class="patch-tag is-fix">Fix</span>Across every viewer the actual result leads the report, whether that is a rendered page, a preview, a file tree or a spectrogram.</li>
             <li><span class="patch-tag is-fix">Fix</span>A recorded <a href="/about#ext-gcode">G-code</a> clip saves in a broadly compatible format that plays on WhatsApp and social apps.</li>
             <li><span class="patch-tag">New</span>The Export clip panel adds lines-per-second speeds and fields for an exact duration, and fills the screen on phones.</li>
             <li><span class="patch-tag is-fix">Fix</span>An <a href="/about#ext-aep">After Effects</a> timeline places every layer at its real position and drops hidden camera-view rows.</li>
@@ -1136,7 +1099,7 @@
           <p class="patch-name">Living Type</p>
           <p class="patch-date">4 July 2026, 10:00</p>
           <ul class="patch-list">
-            <li><strong>Variable fonts come alive - their adjustable traits can animate on their own - with a real variable font in the samples gallery to try it on.</strong></li>
+            <li><strong>Variable fonts come alive, and their adjustable traits can animate on their own. A real variable font sits in the samples gallery to try it on.</strong></li>
             <li><span class="patch-tag">New</span>Each adjustable trait of a variable font (<a href="/about#ext-ttf">.ttf</a> / <a href="/about#ext-otf">.otf</a>) gets a play button, Play all sweeps every axis, and dragging one stops just that one.</li>
             <li><span class="patch-tag">New</span>The <a href="/samples">Samples</a> gallery gains Fraunces, an expressive variable serif, with its open-source licence.</li>
             <li><span class="patch-tag is-fix">Fix</span>The live font preview leads the report and the axis sliders match the rest of the workbench.</li>
@@ -1149,7 +1112,7 @@
           <p class="patch-name">Sound Vision</p>
           <p class="patch-date">1 July 2026, 22:00</p>
           <ul class="patch-list">
-            <li><strong>Analyser can turn a picture into sound - read any photo, or a real spectrogram, as audio, run the whole sound workbench on it and save it - and you can keep what you record.</strong></li>
+            <li><strong>Analyser can turn a picture into sound. Read any photo as audio, run the whole sound workbench on it, and save the result.</strong></li>
             <li><span class="patch-tag">New</span>The Sound section can Sonify a photo, reading it as a spectrogram (left-right time, top-bottom pitch, brightness loudness) with a line sweeping across in step.</li>
             <li><span class="patch-tag">New</span>Drop a real <a href="/about#where">spectrogram</a> image and Analyser inverts it to recover the sound, with colour-map presets and an Invert switch.</li>
             <li><span class="patch-tag">New</span>A sonified picture runs through full <a href="/about#where">Sound analysis</a> with a WAV download and a length up to three minutes.</li>
@@ -1163,7 +1126,7 @@
           <p class="patch-date">28 June 2026, 02:39</p>
           <ul class="patch-list">
             <li><strong>Analyser now says plainly how deeply it can open each format, and the circuit-board 3D view gains pinch-zoom and two-finger pan on phones.</strong></li>
-            <li><span class="patch-tag">New</span>Every format carries a Full, Partial or ID tag across the format list, samples gallery and guide pages; preview-only files like <a href="/about#ext-psd">Photoshop</a> and <a href="/about#ext-ai">Illustrator</a> are marked Partial.</li>
+            <li><span class="patch-tag">New</span>Every format carries a Full, Partial or ID tag across the format list, samples gallery and guide pages. Preview-only files like <a href="/about#ext-psd">Photoshop</a> and <a href="/about#ext-ai">Illustrator</a> are marked Partial.</li>
             <li><span class="patch-tag">New</span>The 3D view of a <a href="/about#ext-kicad_pcb">KiCad</a> board pinch-zooms and two-finger pans, with double-tap gliding back to the start.</li>
             <li><span class="patch-tag is-fix">Fix</span>On phones a board's bill of materials wraps long part numbers and scrolls a wide table within its card.</li>
             <li><span class="patch-tag is-fix">Fix</span>A video's reverse-playback option and the hidden-data note move above the fingerprints, the note no longer styled as an alert.</li>
@@ -1188,7 +1151,7 @@
             <li><span class="patch-tag">New</span>Advanced SubStation Alpha subtitles (.ass / .ssa) render with real styling on a dark stage, with a table of every style.</li>
             <li><span class="patch-tag">New</span>A Lottie or Telegram sticker (.lottie, .tgs, or a Lottie <a href="/about#ext-json">.json</a>) plays live with a scrubbable timeline and speed and loop controls.</li>
             <li><span class="patch-tag">New</span>An Autodesk .fbx model opens in the 3D viewer, reading its mesh from both binary and text forms.</li>
-            <li><span class="patch-tag">New</span>The exported report leads with a verification block - SHA-256, size, UTC timestamp and version - and a new PDF print option.</li>
+            <li><span class="patch-tag">New</span>The exported report leads with a verification block holding SHA-256, size, UTC timestamp and version. A PDF print option comes with it.</li>
             <li><span class="patch-tag is-fix">Fix</span>An <a href="/about#ext-html">.html</a> preview lays out at real browser width and scales to fit, with a Desktop / Mobile switch.</li>
             <li><span class="patch-tag is-fix">Fix</span>Switching a render-quality option in the <a href="/about#ext-gcode">G-code</a> viewer no longer resets dim other tools or the build-plate view.</li>
             <li>The <a href="/samples">Samples</a> button is highlighted and never triggers the share prompt, and the stats graph opens cumulative and stays readable on phones.</li>
@@ -1203,7 +1166,7 @@
             <li><span class="patch-tag">New</span>Repairs a truncated or corrupt <a href="/about#ext-jpg">JPEG</a>, <a href="/about#ext-png">PNG</a> or <a href="/about#ext-heic">HEIC</a>, or carves photos out of an unknown file.</li>
             <li><span class="patch-tag">New</span>Rebuilds an unfinished, index-less video frame by frame and plays it in place.</li>
             <li><span class="patch-tag">New</span>Fusion 360 <a href="/about#ext-f3d">.f3d</a>/.f3z open to their embedded thumbnail with document type, version and body count.</li>
-            <li><span class="patch-tag">New</span>SolidWorks parts (<a href="/about#ext-sldprt">.sldprt</a>), assemblies and drawings give up preview and details; modern encrypted files are identified on sight.</li>
+            <li><span class="patch-tag">New</span>SolidWorks parts (<a href="/about#ext-sldprt">.sldprt</a>), assemblies and drawings give up their preview and details. Modern encrypted files are identified on sight.</li>
             <li><span class="patch-tag">New</span>A Samples gallery opens built-in example files of every kind in one click, never counted.</li>
             <li><span class="patch-tag">New</span>Adobe SpeedGrade and Iridas .look files join <a href="/about#ext-cube">.cube</a> LUTs, visualised before and after on a sample photo.</li>
             <li><span class="patch-tag">New</span>An <a href="/about#ext-stl">STL</a>, 3MF, AMF or STEP model opens upright, with a Z-up / Y-up toggle.</li>
@@ -1238,7 +1201,7 @@
             <li><span class="patch-tag">New</span>Detects extra data appended after the real end of <a href="/about#ext-jpg">JPEG</a>, <a href="/about#ext-png">PNG</a>, GIF, BMP, WAV and <a href="/about#ext-zip">ZIP</a> files.</li>
             <li><span class="patch-tag">New</span>The integrity panel adds MD5, SHA-1 and SHA-512 alongside SHA-256.</li>
             <li><span class="patch-tag">New</span>A <a href="/about#ext-zip">.zip</a> gets a per-entry timestamp chart flagging repacks and odd dates, with checksum recompute.</li>
-            <li><span class="patch-tag">New</span>The home page keeps the last ten files analysed - names, sizes and types only - for a week.</li>
+            <li><span class="patch-tag">New</span>The home page keeps the last ten files analysed for a week, with names, sizes and types only.</li>
             <li><span class="patch-tag">New</span>A <a href="/about#ext-csv">.csv</a> or spreadsheet flags outlier numbers, constant columns and identifier-like columns.</li>
             <li>The header now counts files analysed in place of the visitor count.</li>
           </ul>
@@ -1311,7 +1274,7 @@
   <p class="patch-name">Long Tail</p>
   <p class="patch-date">19 June 2026, 02:29</p>
   <ul class="patch-list">
-    <li><strong>Over eighty more file types recognised - more than 1,140 in all - and the newest Visual Studio solution format opens.</strong></li>
+    <li><strong>Over eighty more file types recognised, more than 1,140 in all. The newest Visual Studio solution format opens too.</strong></li>
     <li><span class="patch-tag">New</span>A <a href="/about#ext-slnx">.slnx</a>, the XML solution recent Visual Studio saves, lists every project, language and configuration like the classic <a href="/about#ext-sln">.sln</a>.</li>
     <li><span class="patch-tag">New</span>Eighty-plus formats across documents, data, archives, mapping, games, CAD, science and disk images now identify, the rarest grouped as Niche and rare formats.</li>
   </ul>
@@ -1381,7 +1344,7 @@
   <p class="patch-name">Rewind</p>
   <p class="patch-date">17 June 2026, 04:41</p>
   <ul class="patch-list">
-    <li><strong>Play almost anything backwards - video, sound, animated GIF and WebP - plus three new image formats and volume on every player.</strong></li>
+    <li><strong>Play almost anything backwards: video, sound, animated GIF and WebP. Three new image formats arrive, and every player gains volume.</strong></li>
     <li><span class="patch-tag">New</span>A new Reverse card re-encodes a clip playing backwards, picture and sound, on-device in chunks so long videos finish.</li>
     <li><span class="patch-tag">New</span>Any audio file can play backwards and save as a reversed copy.</li>
     <li><span class="patch-tag">New</span>An animated <a href="/about#ext-gif">.gif</a> or <a href="/about#ext-webp">.webp</a> can play backwards and download as a reversed GIF.</li>
@@ -1425,11 +1388,11 @@
   <p class="patch-name">Going Pro (RAW)</p>
   <p class="patch-date">12 June 2026, 21:32</p>
   <ul class="patch-list">
-    <li><strong>More awkward files open - database logs, git internals and Sigma RAW - a folder scan names what won't open, and reports capture the whole page.</strong></li>
+    <li><strong>More awkward files open: database logs, git internals and Sigma RAW. A folder scan names what will not open, and reports capture the whole page.</strong></li>
     <li><span class="patch-tag">New</span>RAW photos are now a separate group in the <a href="/formats">formats</a> list, with X-Trans and Foveon cameras called out.</li>
     <li><span class="patch-tag">New</span>A Sigma <a href="/about#ext-x3f">.x3f</a> RAW shows the full-resolution image baked inside.</li>
     <li><span class="patch-tag">New</span>Analyser reads SQLite's <a href="/about#ext-sqlite-wal">-wal</a> and <a href="/about#ext-sqlite-shm">-shm</a> sidecars, showing pending changes and checkpoint progress.</li>
-    <li><span class="patch-tag">New</span>The compressed objects under <code>.git</code> - blobs, trees, commits, tags and <a href="/about#ext-pack">pack</a> files - open with no git installed.</li>
+    <li><span class="patch-tag">New</span>The compressed objects under <code>.git</code> open with no git installed: blobs, trees, commits, tags and <a href="/about#ext-pack">pack</a> files.</li>
     <li><span class="patch-tag">New</span>The folder and ZIP openability check now also names file types Analyser doesn't recognise.</li>
     <li><span class="patch-tag is-faster">Faster</span>Checking whether <a href="/about#ext-heic">HEIC</a> photos open no longer decodes each in full, so sweeping a folder is far quicker.</li>
     <li><span class="patch-tag">New</span>Exporting a report opens collapsed sections, builds the video contact sheet and adds a SHA-256 fingerprint.</li>
@@ -1519,7 +1482,7 @@
           <ul class="patch-list">
             <li><strong>Zoom into any photo, PDF or comic, and Back closes a viewer instead of leaving the page.</strong></li>
             <li><span class="patch-tag">New</span>Every full-screen viewer zooms and pans by pinch, scroll or click.</li>
-            <li><span class="patch-tag">New</span>Back closes pop-ups instead of navigating away; the installed app asks before you exit.</li>
+            <li><span class="patch-tag">New</span>Back closes pop-ups instead of navigating away. The installed app asks before you exit.</li>
             <li><span class="patch-tag">New</span>PDF previews are sharper, with a <code>High-res</code> button that re-renders the current page.</li>
             <li><span class="patch-tag">New</span>PDFs now list fonts, flag embedded JavaScript, count re-saves, spot scanned pages and copy text with line breaks.</li>
             <li><span class="patch-tag is-fix">Fix</span>Links open at the top of the target page.</li>
@@ -1544,7 +1507,7 @@
           <p class="patch-name">Read Me</p>
           <p class="patch-date">10 June 2026, 04:22</p>
           <ul class="patch-list">
-            <li>Maintenance - the internal guide and public GitHub readme were rewritten; the site itself is unchanged.</li>
+            <li>Maintenance - the internal guide and public GitHub readme were rewritten. The site itself is unchanged.</li>
           </ul>
         </div>
 
@@ -1631,8 +1594,8 @@
             <li><span class="patch-tag">New</span>Motion-JPEG <a href="/about#ext-avi">.avi</a> clips play frame by frame at the clip&rsquo;s rate, in sync with their sound.</li>
             <li><span class="patch-tag">New</span>Raw H.264 / H.265 streams (<a href="/about#ext-h264">.h264</a>, .265) are remuxed to MP4 so they open in the normal player.</li>
             <li><span class="patch-tag">New</span>A stream too big to convert is split at its keyframes into parts with full frame-by-frame tools.</li>
-            <li><span class="patch-tag">New</span>Dropping a video no longer auto-analyses; Analyse audio and Analyse photo buttons let you decide.</li>
-            <li><span class="patch-tag">New</span>Frame tools sit in one row - Analyse frame, Frame grab, Contact sheet - above the file details.</li>
+            <li><span class="patch-tag">New</span>Dropping a video no longer analyses it straight away. Analyse audio and Analyse photo buttons let you decide.</li>
+            <li><span class="patch-tag">New</span>Frame tools sit in one row above the file details: Analyse frame, Frame grab and Contact sheet.</li>
             <li><span class="patch-tag is-fix">Fix</span>Auto-scroll to a dropped video no longer overshoots.</li>
           </ul>
         </div>
@@ -1656,7 +1619,7 @@
           <p class="patch-name">Solid State</p>
           <p class="patch-date">6 June 2026, 17:05</p>
           <ul class="patch-list">
-            <li><strong>Two new viewers - a real 3D model viewer and an editing-timeline viewer - plus frame-accurate video tools.</strong></li>
+            <li><strong>Two new viewers: a real 3D model viewer and an editing-timeline viewer. Frame-accurate video tools come with them.</strong></li>
             <li><span class="patch-tag">New</span>The 3D viewer now opens <a href="/about#ext-obj">OBJ</a>, <a href="/about#ext-ply">PLY</a>, OFF, <a href="/about#ext-3mf">3MF</a> and AMF, and tessellates <a href="/about#ext-step">STEP</a>, IGES and BREP with OpenCASCADE.</li>
             <li><span class="patch-tag">New</span>The editing-timeline viewer draws <a href="/about#ext-edl">EDL</a>, FCPXML and OTIO sequences as tracks of clip blocks by timecode.</li>
             <li><span class="patch-tag">New</span>Frame-accurate video controls add editable timecode, single-frame step, send-to-photo, PNG grab and a contact sheet.</li>
@@ -1767,7 +1730,7 @@
   <p class="patch-name">Sign Posts</p>
   <p class="patch-date">5 June 2026, 00:53</p>
   <ul class="patch-list">
-    <li><span class="patch-tag">New</span>Shortcut files are decoded - Windows <a href="/about#ext-lnk">LNK</a> reveals target, arguments and hotkey; <a href="/about#ext-url">URL</a> and <a href="/about#ext-webloc">WEBLOC</a> show the address.</li>
+    <li><span class="patch-tag">New</span>Shortcut files are decoded. Windows <a href="/about#ext-lnk">LNK</a> reveals target, arguments and hotkey, and <a href="/about#ext-url">URL</a> and <a href="/about#ext-webloc">WEBLOC</a> show the address.</li>
     <li><span class="patch-tag">New</span><a href="/about#ext-thm">THM</a> camera thumbnails open with the full photo analysis.</li>
     <li><span class="patch-tag">New</span>Canon camera catalogs (<a href="/about#ext-ctg">CTG</a>) report the folder they track and its photo, movie and voice-memo counts.</li>
     <li><span class="patch-tag">New</span>Raw disk images (<a href="/about#ext-img">IMG</a>) have their partition table and first filesystem decoded, with volume label and size.</li>

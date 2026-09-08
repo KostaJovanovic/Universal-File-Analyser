@@ -41,6 +41,7 @@ it rather than written from assumption.
 | [`pwa-offline.md`](pwa-offline.md) | Engineers | Service-worker precache, the `VERSION` cache epoch, the three offline download tiers, the PWA manifest/install flow |
 | [`tooling.md`](tooling.md) | Engineers | The dev loop (`server.bat`/`serve.py`), the `save.bat` commit/version-bump/deploy flow, the `tools/*.mjs` generator scripts, version numbering |
 | [`worker.md`](worker.md) | Engineers | The Cloudflare Worker stats API - the only server-side code - and how privacy is preserved in it |
+| [`desktop.md`](desktop.md) | Engineers, end users | The Electron desktop build: the `analyser://` scheme, routing, the `/api/*` proxy, security, opening files by path |
 | [`design-system.md`](design-system.md) | Engineers, designers | Theme tokens, the sharp-corners rule, shared component idioms, the `/test` style-guide page |
 | [`FEATURE-INVENTORY.md`](FEATURE-INVENTORY.md) | Maintainers | Working checklist of every user-triggerable control on the site, grouped by which `features/*.md` doc owns it |
 | [`features/images.md`](features/images.md) | Everyone | Photo metadata, histogram, GPS, OCR, QR, HEIC/RAW conversion, broken-image recovery, ICO/MPO/TIFF extraction, sonify |

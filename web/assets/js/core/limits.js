@@ -18,7 +18,9 @@
    entirely on Safari/Firefox, which fall to `mid` (matching the historical
    `deviceMemory || 4` default). Phones are NOT handled by the tier: they stay
    gated by `isLowMemoryDevice()` (coarse pointer && tier !== 'high'), preserving
-   the exact pre-existing mobile-guard behaviour. */
+   the exact pre-existing mobile-guard behaviour. In the Electron desktop app
+   `window.anrDesktop.memoryGB` carries the unclamped os.totalmem() figure and
+   takes precedence; on the website that global does not exist. */
 // Binary units (matches the dominant `N * 1024 * 1024` convention in the codebase).
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -29,7 +31,11 @@ let _tier;
 export function deviceTier() {
     if (_tier)
         return _tier;
-    const dm = (typeof navigator !== 'undefined' && navigator.deviceMemory) || 0;
+    // Desktop app: the shell reports os.totalmem(), the real figure, so a 32 GB
+    // workstation is not read as 8 GB. Same thresholds, better input - this stays
+    // one change in one place, per THE RULE above.
+    const desktopGB = (typeof window !== 'undefined' && window.anrDesktop && window.anrDesktop.memoryGB) || 0;
+    const dm = desktopGB || (typeof navigator !== 'undefined' && navigator.deviceMemory) || 0;
     _tier = !dm ? 'mid' : dm >= 8 ? 'high' : dm >= 4 ? 'mid' : 'low';
     return _tier;
 }

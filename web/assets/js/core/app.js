@@ -43,7 +43,7 @@
    on every build, so an edit there is silently lost. src/ edits do nothing until
    `npm run build` recompiles.
    ============================================================================ */
-const COMMIT_COUNT = 302;
+const COMMIT_COUNT = 303;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -79,7 +79,7 @@ import { renderUnknown } from '../renderers/unknown.js';
 import { renderProprietary, plaintextExt, extractPeIcon } from '../renderers/proprietary.js';
 import { renderSpiceRaw, sniffSpiceRaw } from '../renderers/spice.js';
 import { initSearch } from './search.js';
-import { fileExt, el, row, fmtBytes, probeReadable, cloudFileWarning, emptyFileWarning, integrityCard, errorCard } from './util.js';
+import { fileExt, el, row, fmtBytes, probeReadable, cloudFileWarning, emptyFileWarning, integrityCard, errorCard, desktopFile } from './util.js';
 import { walkItems, renderFolder } from '../renderers/folder.js';
 import { setupHeaderFx, setupSectionFx, setupFooterFx } from './effects.js';
 import { setupStatsPage } from './stats-page.js';
@@ -1920,6 +1920,84 @@ function boot() {
         });
         boot._once = true;
     } // end one-time guard
+    // ----- Desktop shell: File > Open, Open folder, "Open with", a path on the
+    //       command line, and a second launch handing its argument to this one.
+    //
+    // The shell has no File object to give us - a renderer with no Node access
+    // cannot make one from a path. So the main process mints a token URL on the
+    // `anr-open://` scheme for the path the user chose, and desktopFile() (in
+    // util.js) fetches it into a real File. A folder arrives as a listing of
+    // stubs in the same { path, size, file } shape walkItems() produces, so
+    // renderFolder needs no special case - each entry only becomes bytes when
+    // something reads it (see folder.js).
+    //
+    // Registered on EVERY boot, not inside the one-time guard: the preload keeps
+    // a single handler (a second onOpen replaces the first), and re-registering
+    // is what keeps this closure pointing at the current page's containers after
+    // an SPA swap. Absent on the website, where window.anrDesktop is undefined.
+    if (window.anrDesktop) {
+        window.anrDesktop.onOpen(async (p) => {
+            if (!p)
+                return;
+            const goHome = () => {
+                const home = new URL('/', location.href).href;
+                if (location.href === home)
+                    return false;
+                const link = document.createElement('a');
+                link.href = '/';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                return true;
+            };
+            if (p.kind === 'folder') {
+                const entries = (p.entries || []).map((e) => ({
+                    path: e.path,
+                    size: e.size,
+                    file: {
+                        name: e.name, size: e.size, type: e.mime || '',
+                        lastModified: e.lastModified, _anrOpenUrl: e.url,
+                    },
+                }));
+                entries.truncated = !!p.truncated;
+                entries.cancelled = false;
+                // goHome() first, unconditionally: on a page with no result containers
+                // the navigation IS the handling, and && / || would skip it.
+                const away = goHome();
+                if (away || !unknownResults) {
+                    window._anrPendingFolder = entries;
+                    return;
+                }
+                resetNav();
+                renderFolder(entries, unknownResults);
+                recordFolderHistory(entries);
+                enterLoadedUI();
+                requestAnimationFrame(() => unknownResults.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+                return;
+            }
+            // A single file: fetch the bytes before anything else, since a large one
+            // takes a moment and the drop loader is the site's own "working on it".
+            showDropLoader({ name: p.name }, () => { });
+            let file;
+            try {
+                file = await desktopFile({
+                    name: p.name, size: p.size, type: p.mime || '',
+                    lastModified: p.lastModified, _anrOpenUrl: p.url,
+                });
+            }
+            catch (_) {
+                hideDropLoader();
+                return;
+            }
+            hideDropLoader();
+            const away = goHome();
+            if (away || !photoResults) {
+                window._anrPendingFile = file;
+                return;
+            }
+            handleFile(file);
+        });
+    }
     // A file dropped on the About / Changelog page stashes itself here and
     // navigates home; pick it up once this (home) boot has the result containers.
     // Runs every boot - NOT inside the one-time guard - so it fires on the

@@ -31,6 +31,38 @@ Import from it with `import type { Row } from '../core/types.js'`.
 One module per top-level type: `classify.js` maps a dropped file to a kind,
 `ROUTES` in `core/app.js` maps that kind to a renderer here.
 
+**Desktop-only code is guarded, never a separate module.** The Electron shell
+(`desktop/`) runs this exact tree, and every branch that only makes sense there
+is behind `window.anrDesktop` - a global a browser never defines, which is what
+keeps the website's behaviour unchanged. It currently touches six modules:
+`core/popups.ts` (ping the live site for the online probe; skip the Turnstile
+challenge, which cannot verify on an `analyser://` origin, and open the mailto
+directly), `core/offline-tiers.ts` (hide the PWA install button, keep the
+download tiers), `core/limits.ts` (device tier from real RAM, not the clamped
+`navigator.deviceMemory`), `core/export-data.ts` (native save dialog for the
+report), `renderers/video.ts` (native FFmpeg, below) and the open-by-path glue
+in `core/app.ts` + `renderers/folder.ts`, which leans on `desktopFile()` in
+`core/util.ts`. Add new ones the same way - a guarded branch in the module that
+owns the behaviour, not a new file.
+
+**`video.ts`'s native FFmpeg is the one to be careful with.** WASM has no route
+to a GPU encoder, so the desktop runs a real ffmpeg binary through
+`desktop/ffmpeg-native.mjs`, which rewrites `-c:v libx264` into this machine's
+hardware encoder (NVENC / Quick Sync / AMF / VideoToolbox). Measured 52x. The
+whole thing hangs on one trick: `loadNativeFFmpeg()` returns an object with the
+**same shape as an ffmpeg.wasm instance** - `loaded`, `writeFile`, `readFile`,
+`deleteFile`, `exec`, `on`, `off`, `terminate` - so all ~40 call sites in this
+file never learn which backend they got. Keep that shape on both sides of the
+bridge. `exec` must RESOLVE on a non-zero exit and reject only when ffmpeg could
+not run at all, because callers use that difference to tell a clean failure from
+a dead instance.
+
+The **models already use the GPU** and need nothing here: `lib/mdx-worker.ts`
+asks for `['webgpu', 'wasm']` wherever `navigator.gpu` exists, which includes
+the desktop. `lib/dfn-worker.ts` is pinned to WASM on purpose - ORT-web's WebGPU
+backend miscomputes its GRU graph. That is a correctness decision, not an
+oversight, so do not "optimise" it to WebGPU.
+
 ```
 js/
   core/

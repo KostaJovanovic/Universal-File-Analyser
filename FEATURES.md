@@ -587,6 +587,24 @@ can expand into prose. British spelling, no em-dashes (site house style).
   keyboard support (Escape to close, focusable controls), and graceful degradation
   when a browser API isn't available.
 
+## Desktop app (Windows)
+
+- **The same app, in a window** - the desktop build wraps the very same site, so
+  every feature above behaves identically and nothing is uploaded here either.
+- **File > Open** and **Open folder**, plus "Open with" from Explorer, a path on
+  the command line, and handing a file to the window that is already running.
+  Drag-and-drop and the file picker still work, and stay the best route for very
+  large files.
+- **Bigger limits on a big machine** - the desktop reads your real total RAM,
+  which a browser hides behind a figure capped at 8 GB, so the size and memory
+  caps scale up properly.
+- **A native save dialog** for the exported report.
+- **The offline downloads still matter** - the OCR language data, the video
+  encoder, the CAD kernel and the AI models are all still fetched on first use,
+  so the "Download for offline use" tiers work here too.
+- **No installer footprint you did not ask for** - it claims no file
+  associations, and the "Install as app" button is hidden because you already did.
+
 ---
 
 ## Under the hood (for the technically curious)

@@ -809,7 +809,17 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
         refreshTierButtons();
     })();
     // ----- PWA install prompt -----
-    const installBtn = document.getElementById('offlineInstall');
+    // Desktop app: "Install as app" is exactly what the visitor already did, and
+    // beforeinstallprompt never fires on an analyser:// origin, so the button
+    // could only ever print an install hint for a browser they are not using.
+    // Hide it and leave the download tiers alone - those still matter here (the
+    // ffmpeg core, OCCT, Tesseract data and the ONNX models are all remote).
+    const installBtn = window.anrDesktop ? null : document.getElementById('offlineInstall');
+    if (window.anrDesktop) {
+        const b = document.getElementById('offlineInstall');
+        if (b)
+            b.hidden = true;
+    }
     // The beforeinstallprompt/appinstalled listeners are window-level, but
     // setupOfflineTiers() re-runs on every SPA navigation - so wire them once (they
     // resolve the current button by id at fire time) instead of stacking a new pair

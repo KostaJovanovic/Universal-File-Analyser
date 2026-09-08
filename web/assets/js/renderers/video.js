@@ -447,11 +447,95 @@ function canPlayHevc() {
     _hevcPlayable = ok;
     return ok;
 }
+// ---------- Native FFmpeg (Electron desktop only) ----------
+//
+// WASM cannot reach a GPU's encoder blocks, so ffmpeg.wasm is software-only and
+// single-threaded - roughly 50x slower than NVENC on the same transcode. In the
+// desktop app the main process runs a real ffmpeg binary instead and rewrites
+// the codec arguments to whatever hardware the machine actually has (NVIDIA
+// NVENC, Intel Quick Sync, AMD AMF, Apple VideoToolbox), falling back to the
+// software encoder automatically if the hardware attempt fails.
+//
+// This returns an object with the SAME shape as an ffmpeg.wasm instance
+// (loaded / writeFile / readFile / deleteFile / exec / on / off / terminate),
+// which is what lets every existing call site below stay exactly as it was.
+// Returns null on the website, or in the desktop with no ffmpeg installed - and
+// then the WASM path below runs unchanged.
+let _nativeCaps = null;
+export function ffmpegAccelInfo() { return _nativeCaps; }
+async function loadNativeFFmpeg() {
+    const d = window.anrDesktop;
+    if (!d || !d.ffmpeg)
+        return null;
+    try {
+        const caps = await d.ffmpeg.caps();
+        if (!caps || !caps.available)
+            return null;
+        const id = await d.ffmpeg.open();
+        if (!id)
+            return null;
+        _nativeCaps = caps;
+        // ffmpeg.wasm's emitter hands 'log' a { type, message } and 'progress' a
+        // { progress, time }. Mirror both shapes so existing handlers work.
+        const sinks = { log: new Set(), progress: new Set() };
+        d.ffmpeg.listen(id, (p) => {
+            if (p.type === 'log')
+                for (const cb of sinks.log) {
+                    try {
+                        cb({ type: 'stderr', message: p.message });
+                    }
+                    catch (_) { }
+                }
+            else if (p.type === 'progress')
+                for (const cb of sinks.progress) {
+                    try {
+                        cb({ progress: p.progress, time: 0 });
+                    }
+                    catch (_) { }
+                }
+        });
+        return {
+            loaded: true,
+            _native: true,
+            _caps: caps,
+            writeFile: (name, data) => d.ffmpeg.write(id, name, data),
+            readFile: (name) => d.ffmpeg.read(id, name),
+            deleteFile: (name) => d.ffmpeg.del(id, name),
+            // Resolves with the exit code whenever ffmpeg RAN, even on a non-zero
+            // exit - matching ffmpeg.wasm, where callers tell a clean failure from a
+            // crash by whether this rejected. Only an unstartable binary rejects.
+            exec: async (args, timeout) => {
+                const r = await d.ffmpeg.exec(id, args.map(String), timeout || 0);
+                if (!r || (r.code === -1 && !r.ok))
+                    throw new Error((r && r.log) || 'ffmpeg failed to run');
+                return r.code;
+            },
+            on: (ev, cb) => { if (sinks[ev])
+                sinks[ev].add(cb); },
+            off: (ev, cb) => { if (sinks[ev])
+                sinks[ev].delete(cb); },
+            terminate: () => { try {
+                d.ffmpeg.close(id);
+            }
+            catch (_) { } },
+        };
+    }
+    catch (_) {
+        return null; // any failure here just means the WASM path runs instead
+    }
+}
 export async function loadFFmpeg(onProgress) {
     if (ffmpegInstance && ffmpegInstance.loaded)
         return ffmpegInstance;
     if (ffmpegInstance)
         killFFmpeg(); // half-loaded / terminated leftover
+    // Desktop first. It needs no download, so it must be tried BEFORE the loader
+    // bar goes up - there is nothing to show progress for.
+    const native = await loadNativeFFmpeg();
+    if (native) {
+        ffmpegInstance = native;
+        return native;
+    }
     showFfmpegLoader();
     try {
         const { FFmpeg } = await import(new URL('../../vendor/ffmpeg/ffmpeg.js', import.meta.url).href);
