@@ -527,7 +527,12 @@ function showChooser() {
       el('strong', {}, 'Machine-readable'),
       el('span', {}, 'A structured JSON file - every field, table and text block, typed and grouped by section. Ideal for scripts and tooling.'),
     ]);
-    const pdfBtn = el('button', { type: 'button', class: 'anr-export-opt' }, [
+    // Desktop app: the print path goes through a native save dialog rather than
+    // an about:blank window (see the click handler), so say what it does.
+    const pdfBtn = el('button', { type: 'button', class: 'anr-export-opt' }, window.anrDesktop ? [
+      el('strong', {}, 'Print-ready report'),
+      el('span', {}, 'Saves the complete report where you choose, ready to open and print. Includes the verification block.'),
+    ] : [
       el('strong', {}, 'PDF (print)'),
       el('span', {}, 'Opens the complete report in a new tab and launches your browser\'s print dialog - choose "Save as PDF". Includes the verification block.'),
     ]);
@@ -551,9 +556,20 @@ function showChooser() {
     pdfBtn.addEventListener('click', async () => {
       if (pdfBtn._busy) return;
       pdfBtn._busy = true;
+      // Desktop app: a native save dialog beats a stray about:blank window, so
+      // offer that first. The child-window path below stays as the fallback -
+      // it is what runs on the website, and what runs here if the save fails.
+      let built: string|null = null;   // the report, kept so a failed save does not build it twice
+      if (window.anrDesktop) {
+        try {
+          built = await buildHtml(sections);
+          const res = await window.anrDesktop.saveReport(baseName() + '-analysis', built);
+          if (res && (res.ok || res.canceled)) { close(); return; }
+        } catch (_) { /* fall through to the child window */ }
+      }
       const w = window.open('', '_blank');
       try {
-        const html = await buildHtml(sections);
+        const html = built !== null ? built : await buildHtml(sections);
         if (w) {
           w.document.open(); w.document.write(html); w.document.close(); w.focus();
           setTimeout(() => { try { w.print(); } catch (_) {} }, 400);

@@ -12,7 +12,7 @@ module there. `src/` keeps the same tree shape:
 - `parsers/` contains lazy metadata-parser chunks; `lib/` contains shared binary and WASM loaders.
 - `web/assets/css/analyser.css` is the central stylesheet; `web/assets/vendor/` is third-party code (kept out of the working tree by sparse-checkout; nothing imports it as a module, so builds don't need it).
 
-Root-level `tools/*.mjs` regenerate SEO and shared-page content. `worker/` is the small Cloudflare stats Worker. Project documentation is in `docs/`.
+Root-level `tools/*.mjs` regenerate SEO and shared-page content. `worker/` is the small Cloudflare stats Worker. Project documentation is in `docs/`. `desktop/` is the Electron desktop shell - its own `package.json`, its own dependencies, and it wraps the same `web/` tree rather than forking it.
 
 ## Build, Test, and Development Commands
 
@@ -37,6 +37,7 @@ or the `tools/*.mjs` generators that import the emitted `core/formats.js` break.
 - `server.bat` - start the development server at `http://localhost:3000` plus two `tsc --watch` windows; use it instead of `python -m http.server` because `serve.py` mirrors production clean-URL and SPA routing. Without a watcher running, edits to `src/` have no effect on the served site.
 - `node tools/prerender-formats.mjs` - regenerate the static formats hub when working on its generator inputs.
 - `save.bat` - interactive commit/version-bump workflow. `save.bat commit` commits without pushing.
+- `cd desktop && npm install && npm start` - run the Electron desktop shell against `../web`. `npm run dist` builds the Windows installer into `desktop/dist/` (gitignored, as is `desktop/node_modules/`). Desktop-only code paths in `src/` sit behind `window.anrDesktop`, which does not exist in a browser, so the website stays unaffected. See `desktop/README.md` and `docs/desktop.md`.
 
 Edit files, refresh locally, and manually check the affected feature. Test UI changes in light and dark themes and at narrow viewport widths.
 

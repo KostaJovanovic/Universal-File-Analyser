@@ -134,6 +134,12 @@ The "Download for offline use" section in the footer caches Analyser as an insta
 <img src="tools/readme-assets/download.jpg" alt="The three-tier offline download section in the footer" width="720">
 </div>
 
+## Desktop app
+
+Analyser also runs as a Windows desktop application. It wraps the same `web/` tree the site serves, so there is no fork of the code and nothing in the analysis pipeline changes - and the privacy promise is identical, since everything still happens on your own machine.
+
+The source is in `desktop/` (Electron, its own `package.json`). Build it with `cd desktop && npm install && npm run dist`, which writes an installer and a portable exe into `desktop/dist/`. The desktop adds File > Open and Open folder, opens files handed to it from Explorer or the command line, sizes its memory limits from real RAM rather than the browser's clamped figure, and saves the exported report through a native dialog. See [`desktop/README.md`](desktop/README.md) and [the docs page](https://analyser.valjdakosta.com/docs/desktop).
+
 ## Running locally
 
 ```
@@ -153,6 +159,7 @@ This starts a local instance on localhost:3000 and opens it in a browser. It kee
 - `web/assets/vendor/` - third-party libraries, served locally so the app stays offline-capable
 - `tools/` - Node scripts (in the repo root) that pre-render the `/formats` SEO pages from the catalog
 - `worker/` - the Cloudflare Worker behind the anonymous analysed-file counter (the only server-side code)
+- `desktop/` - the Electron desktop shell, which wraps the same `web/` tree
 - `web/sw.js` - the service worker behind the offline support
 
 ## Versioning

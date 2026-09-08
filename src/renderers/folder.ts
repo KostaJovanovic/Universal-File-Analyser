@@ -2,7 +2,7 @@
    Recursively walks a dropped folder via webkitGetAsEntry
    and renders a treemap + summary using the shared folder/archive modules. */
 
-import { el, row, inlineLoader, probeReadable, asciiBar, copyText } from '../core/util.js';
+import { el, row, inlineLoader, probeReadable, asciiBar, copyText, desktopFile } from '../core/util.js';
 import { normalizeFolder, renderBreakdownCards, renderViewToggle } from './folder-archive-shared.js';
 import { ARCHIVE_EXTS, RAW_EXTS, HEIC_EXTS, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS, CSV_EXTS } from '../core/formats.js';
 import { FORMATS } from './proprietary-formats.js';
@@ -565,7 +565,9 @@ export function renderFolder(files: WalkResult, resultsEl: HTMLElement) {
         scanBar.set(i / files.length);
         scanStatus.textContent = 'Checking ' + i + ' / ' + files.length + ' - ' + f.path;
         let res;
-        try { res = await probeOpenable(f.file); }
+        // desktopFile() is identity on the website; in the desktop app it turns
+        // this entry's stub into real bytes so the probe has something to read.
+        try { res = await probeOpenable(await desktopFile(f.file) as File); }
         catch (e) { res = { ok: false, reason: 'Unexpected error: ' + ((e && e.message) || e) }; }
         if (res && !res.ok) failures.push({ path: f.path, size: f.size, reason: res.reason, cloud: !!res.cloud });
         // Throttle repaints so a folder of cheap (non-image) files doesn't pay a
@@ -603,8 +605,11 @@ export function renderFolder(files: WalkResult, resultsEl: HTMLElement) {
       window._anrPushNav(folderName, () => { resultsEl.hidden = false; renderFolder(files, resultsEl); });
     }
   }
-  function openFile(file: File) {
-    if (!file) return;
+  async function openFile(entry: File) {
+    if (!entry) return;
+    // A folder opened through the desktop shell lists stubs, not File objects -
+    // this is where one becomes real bytes. Identity on the website.
+    const file = await desktopFile(entry) as File;
     const ext = extOf(file.name);
     if (ARCHIVE_EXTS.has(ext)) {
       import('./archive.js').then(m => {

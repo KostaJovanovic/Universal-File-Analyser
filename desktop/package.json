@@ -1,0 +1,21 @@
+{
+  "name": "analyser-desktop",
+  "productName": "Analyser",
+  "version": "8.46.0",
+  "private": true,
+  "type": "module",
+  "description": "Desktop shell for Analyser. Wraps the same web/ tree the website serves - no fork of the app code.",
+  "author": "Kosta Jovanovic",
+  "license": "UNLICENSED",
+  "main": "main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "stamp": "node tools/stamp-version.mjs",
+    "dist": "node tools/stamp-version.mjs && electron-builder --win",
+    "pack": "node tools/stamp-version.mjs && electron-builder --win --dir"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}

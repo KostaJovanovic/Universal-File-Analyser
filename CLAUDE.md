@@ -281,6 +281,58 @@ stage two files through the real renderers and merge them into `Field | A | B`
 tables. It is a full main page: `sw.js` `SHELL`, `sitemap.xml`, and both
 stamp-head and stamp-footer `PAGES`.
 
+## Desktop app (`desktop/`)
+
+An Electron shell that wraps **the same `web/` tree** Cloudflare serves. There
+is no fork of the app code and the site's deploy is untouched by it. Full
+detail in `desktop/README.md`; the public page is `docs/desktop.md`.
+
+The five things worth knowing before you touch anything:
+
+- **It has its OWN `package.json`.** Electron and electron-builder are large;
+  the root `package.json` keeps its single `typescript` devDependency and
+  `save.bat`'s generator chain never sees them. `desktop/node_modules/` and
+  `desktop/dist/` are gitignored, everything else in `desktop/` is tracked.
+  Run it with `cd desktop && npm install && npm start`; build with `npm run dist`.
+- **`desktop/router.mjs` is a port of `serve.py`'s `_route()`.** `serve.py`
+  stays the spec - change one and change the other. Two deliberate differences:
+  `/x.html` is served directly rather than redirected, and `/api/*` is proxied
+  to the live site from the main process (`API_ORIGIN` is `''` and the Worker
+  sets no CORS headers, so a renderer fetch would fail).
+- **Every desktop-only branch in `src/` sits behind `window.anrDesktop`**, which
+  a browser never defines - that is what keeps the website's behaviour
+  unchanged. Today that is `popups.ts` (online probe + the Turnstile skip),
+  `offline-tiers.ts` (hide the PWA install button), `limits.ts` (real RAM for
+  the device tier), `export-data.ts` (native save dialog), the native-FFmpeg
+  shim in `video.ts` and the open-by-path glue in `app.ts` + `folder.ts`. Keep
+  new ones equally narrow, and prefer a guarded branch in an existing module to
+  a new one.
+- **The desktop runs a real FFmpeg binary, not the WASM one.**
+  `desktop/ffmpeg-native.mjs` finds a binary, PROBES which hardware encoders
+  actually work (by encoding a throwaway frame - `ffmpeg -encoders` lists
+  families the machine cannot run), and rewrites `-c:v libx264` into
+  `h264_nvenc` / `h264_qsv` / `h264_amf` / `h264_videotoolbox` with the matching
+  preset and quality flag. Measured 52x on an NVENC machine: 0.58 s against
+  30.5 s for the same transcode. `loadNativeFFmpeg()` in `video.ts` returns an
+  object with the **same shape as an ffmpeg.wasm instance**, which is why the
+  ~40 call sites are untouched - keep that shape if you change either side. A
+  hardware failure silently retries the ORIGINAL software arguments, so a driver
+  quirk can never lose a job; never remove that fallback. No binary found means
+  the WASM path runs exactly as on the website.
+- **The dev/prod host difference is load-bearing.** `analyser://localhost/` in
+  dev (so `sw.js` goes pass-through and the dev-only reset buttons show) and
+  `analyser://app/` when packaged. Do not "tidy" them into one host.
+- **Portable builds redirect `userData` beside the executable.** `npm run dist`
+  emits three artefacts (NSIS installer, self-extracting portable `.exe`, and a
+  `win.zip`). `portableRoot()` in `main.mjs` detects portability from
+  electron-builder's `PORTABLE_EXECUTABLE_DIR`, or from a `portable.txt` marker
+  next to the `.exe` (which is what makes the zip portable). It then points
+  `userData` at `<exe dir>/Analyser-data`, so the offline cache, history, theme
+  and window state travel with the stick instead of being left in the host's
+  `%APPDATA%`. **That `setPath` must stay above `requestSingleInstanceLock()`** -
+  Electron keys the lock on `userData`, and the ordering is also what lets a
+  portable and an installed copy run at once.
+
 ## File structure
 
 ```
@@ -296,7 +348,8 @@ src/                — THE APP SOURCE (TypeScript). Mirrors the old
                       web/assets/js/ tree exactly: core/ renderers/ parsers/
                       lib/ games/. tsc compiles it 1:1 into web/assets/js/.
                       Module inventory: src/CLAUDE.md (loads automatically).
-types/              — ambient .d.ts (window._anr* channel + UMD vendor globals)
+types/              — ambient .d.ts (window._anr* channel, window.anrDesktop,
+                      UMD vendor globals)
 tsconfig.json       — main compile (DOM lib) -> web/assets/js/
 tsconfig.worker.json— the 3 module workers (WebWorker lib; can't share a program
                       with DOM). Both must run to produce a complete build.
@@ -321,7 +374,7 @@ docs/               — project reference docs (Markdown). SOURCE for the public
                       opt-in: only files listed in the NAV array of
                       tools/build-docs-html.mjs become /docs/<slug> pages, so a
                       new docs/*.md emits nothing until you add it there.
-                      Currently NAV covers all of them - the 13 top-level pages,
+                      Currently NAV covers all of them - the 14 top-level pages,
                       the 9 under features/, plus FEATURE-INVENTORY.md
                       (/docs/feature-inventory) and PROGRESS.md (/docs/progress).
 research/           — gitignored. Working notes, plans and reverse-engineering
@@ -361,6 +414,17 @@ tools/              — Node generator scripts (dev-only, never served). They re
 worker/             — Cloudflare Worker: anonymous analysed-count stats API
                       (index.js + schema.sql + disperse-unsupported.sql). The only
                       server-side code; the analyser itself stays browser-only.
+desktop/            — Electron desktop shell (Windows). Its OWN package.json and
+                      dependencies; the root one keeps its single typescript
+                      devDep. It wraps the same web/ tree - no fork of the app
+                      code. main.mjs (scheme handlers, window, security),
+                      router.mjs (a 1:1 port of serve.py's _route), preload.cjs
+                      (the one bridge: window.anrDesktop), menu.mjs,
+                      electron-builder.yml, build/icon.png,
+                      tools/stamp-version.mjs. desktop/node_modules/ and
+                      desktop/dist/ are gitignored; everything else is tracked.
+                      See the "Desktop app" section above, desktop/README.md and
+                      docs/desktop.md.
 
 web/                — THE WEBSITE, served at "/" by Cloudflare (assets.directory).
                       Everything from here down lives inside web/:

@@ -61,6 +61,12 @@ async function turnstileChallenge(box, setStatus) {
     // be precached and load offline, but the challenge itself needs the network.
     if (!(await probeOnline()))
         throw 'offline';
+    // Desktop app: the widget is bound to the site's hostname, so it can never
+    // verify on an analyser:// origin - the challenge would fail every time and
+    // the address would stay unreachable. Skip straight to the mail client. The
+    // reachability check above still stands, because mail needs the network.
+    if (window.anrDesktop)
+        return;
     let ts;
     try {
         ts = await loadTurnstile();
@@ -586,8 +592,20 @@ function probeOnline() {
     const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     if (ctrl)
         timer = setTimeout(() => ctrl.abort(), 5000);
-    return fetch(location.origin + '/?_anrping=' + performance.now(), {
-        method: 'HEAD', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined,
+    // Desktop app: our own origin is a local custom scheme, so it is reachable
+    // with the network unplugged and the status would always read Online. Ping
+    // the real site instead. 'no-cors' because the site sends no CORS headers to
+    // an analyser:// origin - an opaque response still proves reachability. HEAD
+    // is a CORS-safelisted method, so it survives the mode and nothing is
+    // downloaded either way.
+    const desktop = !!window.anrDesktop;
+    const url = desktop
+        ? 'https://analyser.valjdakosta.com/?_anrping=' + performance.now()
+        : location.origin + '/?_anrping=' + performance.now();
+    return fetch(url, {
+        method: 'HEAD',
+        mode: desktop ? 'no-cors' : undefined,
+        cache: 'no-store', signal: ctrl ? ctrl.signal : undefined,
     }).then(() => true).catch(() => false).finally(() => { if (timer)
         clearTimeout(timer); });
 }

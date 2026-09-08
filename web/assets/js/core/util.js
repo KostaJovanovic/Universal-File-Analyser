@@ -191,6 +191,30 @@ export function isUnreadableError(e) {
         msg.includes('a requested file or directory could not be found') ||
         (msg.includes('permission') && msg.includes('file'));
 }
+// Turn a desktop stub into a real File, and pass anything else straight through.
+//
+// The Electron shell hands the page paths, not File objects: a token URL on the
+// `anr-open://` scheme that the main process maps back to an approved path.
+// Fetching one gives a Blob, which `new File([blob], name)` makes into the
+// thing every renderer expects.
+//
+// Folders are the reason this is lazy rather than eager. A folder open lists
+// thousands of entries, and materialising every one up front would copy the
+// whole tree through the blob store to show a treemap. So the listing carries
+// stubs, and an entry only becomes a File when something actually reads it.
+//
+// On the website `_anrOpenUrl` never exists, so this is an identity function.
+export async function desktopFile(f) {
+    const stub = f;
+    if (!stub || !stub._anrOpenUrl)
+        return f;
+    const res = await fetch(stub._anrOpenUrl);
+    const blob = await res.blob();
+    return new File([blob], stub.name, {
+        type: stub.type || blob.type || '',
+        lastModified: stub.lastModified || Date.now(),
+    });
+}
 // Probe whether a File's bytes are actually readable. Returns null on success,
 // or the thrown error on failure. Used to detect cloud-only placeholders before
 // a renderer fails deep in its pipeline. Reads the head AND the last byte: a

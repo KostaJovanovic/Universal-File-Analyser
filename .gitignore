@@ -31,6 +31,12 @@ DOCS_PLAN.md
 README TEMP/
 graphify-out/
 
+# Electron desktop shell: the source in desktop/ IS tracked, but its
+# dependencies (Electron + electron-builder, hundreds of MB) and its build
+# output are not. desktop/build/icon.png is tracked - it is an input, not output.
+desktop/node_modules/
+desktop/dist/
+
 # npm: exists only so tsc can build src/*.ts -> web/assets/js/*.js.
 # The compiled output IS committed (like web/formats/ and web/docs/) so the
 # Cloudflare deploy stays a pure static upload of web/ with no build step.

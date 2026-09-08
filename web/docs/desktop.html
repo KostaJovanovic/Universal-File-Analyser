@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Desktop app (Electron) - Analyser docs</title>
+  <meta name="description" content="Analyser also runs as a Windows desktop application. It wraps the same web/ tree Cloudflare serves - there is no fork of the app code, and nothing in the…">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://analyser.valjdakosta.com/docs/desktop">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Desktop app (Electron) - Analyser docs">
+  <meta property="og:description" content="Analyser also runs as a Windows desktop application. It wraps the same web/ tree Cloudflare serves - there is no fork of the app code, and nothing in the analysis pipeline changes. The privacy promise is identical: everything still happens on your own machine and no file ever leaves it.">
+  <meta property="og:url" content="https://analyser.valjdakosta.com/docs/desktop">
+  <meta property="og:image" content="https://analyser.valjdakosta.com/assets/img/banner.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Desktop app (Electron) - Analyser docs">
+  <meta name="twitter:description" content="Analyser also runs as a Windows desktop application. It wraps the same web/ tree Cloudflare serves - there is no fork of the app code, and nothing in the analysis pipeline changes. The privacy promise is identical: everything still happens on your own machine and no file ever leaves it.">
+  <meta name="twitter:image" content="https://analyser.valjdakosta.com/assets/img/banner.jpg">
+  <meta name="twitter:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
+  <script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://analyser.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://analyser.valjdakosta.com/docs"},{"@type":"ListItem","position":3,"name":"Desktop app (Electron)","item":"https://analyser.valjdakosta.com/docs/desktop"}]}
+  </script>
+  <script type="application/ld+json">
+{"@context":"https://schema.org","@type":"TechArticle","headline":"Desktop app (Electron)","description":"Analyser also runs as a Windows desktop application. It wraps the same web/ tree Cloudflare serves - there is no fork of the app code, and nothing in the…","url":"https://analyser.valjdakosta.com/docs/desktop","mainEntityOfPage":"https://analyser.valjdakosta.com/docs/desktop","image":"https://analyser.valjdakosta.com/assets/img/banner.jpg","isPartOf":{"@type":"WebSite","name":"Analyser","url":"https://analyser.valjdakosta.com/"},"author":{"@type":"Person","name":"valjdakosta","url":"https://valjdakosta.com/"},"publisher":{"@type":"Organization","name":"valjdakosta","url":"https://valjdakosta.com/"}}
+  </script>
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/desktop" aria-current="page">Desktop app</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/desktop" aria-current="page">Desktop app</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Desktop app (Electron)</h1>
+<p class="docs-lede">Analyser also runs as a Windows desktop application. It wraps <strong>the same <code>web/</code> tree Cloudflare serves</strong> - there is no fork of the app code, and nothing in the analysis pipeline changes. The privacy promise is identical: everything still happens on your own machine and no file ever leaves it.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h2"><a href="#hardware-video-acceleration">Hardware video acceleration</a></li><li class="toc-h2"><a href="#what-about-the-ai-models">What about the AI models</a></li><li class="toc-h2"><a href="#portable-use">Portable use</a></li><li class="toc-h2"><a href="#why-a-custom-scheme-instead-of-file">Why a custom scheme instead of file://</a></li><li class="toc-h2"><a href="#routing">Routing</a></li><li class="toc-h2"><a href="#the-stats-api">The stats API</a></li><li class="toc-h2"><a href="#security-model">Security model</a></li><li class="toc-h2"><a href="#opening-files">Opening files</a></li><li class="toc-h2"><a href="#what-differs-from-the-website">What differs from the website</a></li><li class="toc-h2"><a href="#what-ships-in-the-package">What ships in the package</a></li><li class="toc-h2"><a href="#version-numbers">Version numbers</a></li><li class="toc-h2"><a href="#not-built-yet">Not built yet</a></li></ul></details>
+    <section class="docs-card docs-card--intro">
+<p>The source lives in <code>desktop/</code> and is dev-only. Cloudflare never serves it, <code>save.bat</code> never runs it, and it does not touch the website deploy.</p>
+</section>
+<section class="docs-card">
+<h2 id="hardware-video-acceleration">Hardware video acceleration<a class="h-anchor" href="#hardware-video-acceleration" aria-label="Link to this section">#</a></h2>
+<p>This is the main reason to run the desktop app rather than the website.</p>
+<p>On the web, video work runs on FFmpeg compiled to WebAssembly. WebAssembly is sandboxed software, with no route to the dedicated encoding hardware on a graphics card, so a transcode that a GPU finishes in well under a second takes it about half a minute. The desktop app runs a real FFmpeg binary instead.</p>
+<p>Measured on one machine, the same ten-second 720p transcode:</p>
+<div class="docs-table-wrap"><table><thead><tr><th>Path</th><th>Time</th></tr></thead><tbody><tr><td>WebAssembly FFmpeg, what the website uses</td><td>30.5 s</td></tr><tr><td>Native FFmpeg, software encoder</td><td>1.1 s</td></tr><tr><td>Native FFmpeg, NVIDIA NVENC</td><td>0.58 s</td></tr></tbody></table></div>
+<p>The app detects the graphics hardware for you. It supports NVIDIA NVENC, Intel Quick Sync, AMD AMF and Apple VideoToolbox, and it picks whichever one the machine really has.</p>
+<p>"Really" is the important word. Asking FFmpeg which encoders it contains is not a useful answer, because a build lists every family it was compiled with. A machine with only an NVIDIA card still advertises the Intel and AMD encoders, and both fail the moment you use them. So the app tests each one by encoding a throwaway frame, and only trusts the ones that succeed. The result is cached, so only the first launch pays for it.</p>
+<p>If a hardware encode fails anyway, for instance because a driver refuses an unusual frame size, the app silently repeats the job on the software encoder. You get the result either way. It also falls back to the WebAssembly build in full when no FFmpeg binary is installed, so the app still works without one.</p>
+</section>
+<section class="docs-card">
+<h2 id="what-about-the-ai-models">What about the AI models<a class="h-anchor" href="#what-about-the-ai-models" aria-label="Link to this section">#</a></h2>
+<p>The vocal separator and the noise remover run on ONNX Runtime, and the separator <strong>already uses your GPU</strong>, through WebGPU, on the website as well as here. The desktop app changes nothing about that because there was nothing to fix.</p>
+<p>The noise remover deliberately stays on the processor. Its network is a recurrent one, and the WebGPU backend computes that kind of graph incorrectly, producing a near-silent result with the voice pushed into the noise track. It is a small model and the processor handles it comfortably, so correctness wins.</p>
+</section>
+<section class="docs-card">
+<h2 id="portable-use">Portable use<a class="h-anchor" href="#portable-use" aria-label="Link to this section">#</a></h2>
+<p>There are three downloads, and two of them leave the computer as they found it.</p>
+<div class="docs-table-wrap"><table><thead><tr><th>Build</th><th>What it is</th></tr></thead><tbody><tr><td><code>Analyser-Setup-&lt;version&gt;.exe</code></td><td>The normal installer. Settings go in your user profile</td></tr><tr><td><code>Analyser-&lt;version&gt;-portable.exe</code></td><td>One file. Run it from anywhere, including a USB stick</td></tr><tr><td><code>Analyser-&lt;version&gt;-win.zip</code></td><td>Unzip and run. Nothing is extracted at start-up, so it opens quicker</td></tr></tbody></table></div>
+<p>A portable copy keeps <strong>everything</strong> in a folder called <code>Analyser-data</code>, beside the program. That covers the offline downloads, the recently-analysed list, the theme and the window size. Delete the folder and no trace of your use remains. Files you analyse are never stored by any build.</p>
+<p>For the zip, put an empty file named <code>portable.txt</code> next to <code>Analyser.exe</code>. That is the switch that turns portable storage on. Without it a copied folder behaves like an installed copy.</p>
+<p>To check any of this, open <strong>Help</strong>, then <strong>Where my data is stored</strong>. It names the exact folder and offers to open it.</p>
+<p>Two details worth knowing. The single-file build unpacks itself to a temporary folder the first time each version runs, then reuses it, so only the first start-up is slow. And a portable copy runs alongside an installed one, because the two keep separate settings.</p>
+<p>You can also drop an <code>ffmpeg.exe</code> next to the portable program, or in an <code>ffmpeg</code> folder there. The app prefers that one, so the stick carries its own hardware video support rather than relying on the computer it is plugged into.</p>
+</section>
+<section class="docs-card">
+<h2 id="why-a-custom-scheme-instead-of-file">Why a custom scheme instead of <code>file://</code><a class="h-anchor" href="#why-a-custom-scheme-instead-of-file" aria-label="Link to this section">#</a></h2>
+<p>The app uses root-relative URLs (<code>/assets/vendor/exifr.umd.js</code>, every nav link), ES modules, module workers, <code>import.meta.url</code>, <code>history.pushState</code>, the Cache API and a service worker. All of those break or degrade on <code>file://</code>.</p>
+<p>So <code>desktop/main.mjs</code> registers a scheme, <code>analyser</code>, with the privileges <code>standard</code>, <code>secure</code>, <code>supportFetchAPI</code>, <code>corsEnabled</code>, <code>stream</code> and <code>allowServiceWorkers</code>. The page then has a real origin and a secure context, and behaves exactly as it does on the website - service worker, offline tiers and all.</p>
+<p>The host is load-bearing rather than cosmetic:</p>
+<div class="docs-table-wrap"><table><thead><tr><th>Build</th><th>URL</th><th>Effect</th></tr></thead><tbody><tr><td>Dev (<code>npm start</code>)</td><td><code>analyser://localhost/</code></td><td><code>sw.js</code> sees hostname <code>localhost</code> and becomes a pass-through; the dev-only reset buttons appear</td></tr><tr><td>Packaged</td><td><code>analyser://app/</code></td><td>Production behaviour, service worker active</td></tr></tbody></table></div>
+<p>Neither needed a line of app code to arrange.</p>
+</section>
+<section class="docs-card">
+<h2 id="routing">Routing<a class="h-anchor" href="#routing" aria-label="Link to this section">#</a></h2>
+<p><code>desktop/router.mjs</code> is a one-to-one port of <code>serve.py</code>'s <code>_route()</code>, which itself mirrors the production Cloudflare routing:</p>
+<ul><li><code>/</code> serves <code>index.html</code></li><li><code>/about</code> serves <code>about.html</code>, <code>/formats/pdf</code> serves <code>formats/pdf.html</code></li><li>the handler serves real files (<code>/assets/...</code>) as they are, after percent-decoding</li><li>anything else serves <code>404.html</code> with a 404 status</li></ul>
+<p>Two deliberate differences from <code>serve.py</code>. The handler serves <code>/x.html</code> directly instead of redirecting it to <code>/x</code>, because inside an app no canonical-URL argument applies. And it does not mock <code>/api/*</code> - see below.</p>
+<p>Content types come from a small table in <code>router.mjs</code> whenever the handler knows the extension. Chromium refuses a module script unless <code>.mjs</code> carries <code>text/javascript</code>, and streaming compilation fails unless <code>.wasm</code> carries <code>application/wasm</code>. The table leaves neither to the platform's own guess.</p>
+</section>
+<section class="docs-card">
+<h2 id="the-stats-api">The stats API<a class="h-anchor" href="#the-stats-api" aria-label="Link to this section">#</a></h2>
+<p><code>API_ORIGIN</code> in <code>src/core/util.ts</code> is <code>''</code> (same origin) and the Worker sets no CORS headers, so a fetch from <code>analyser://app</code> straight to the live site would fail. The main process forwards <code>/api/*</code> to <code>https://analyser.valjdakosta.com</code> with <code>net.fetch()</code>, where CORS does not apply.</p>
+<p>The result: the visitor badge, the anonymous analysed-count ping, <code>/stats</code> and the Asteroids leaderboard all work exactly as on the website, and neither <code>util.ts</code> nor the Worker needed changing. Desktop analyses count into the same site totals, and still send only a lowercase extension string - see <a href="/docs/worker"><code>worker.md</code></a> and the privacy page.</p>
+</section>
+<section class="docs-card">
+<h2 id="security-model">Security model<a class="h-anchor" href="#security-model" aria-label="Link to this section">#</a></h2>
+<p>The renderer runs with <code>contextIsolation</code>, <code>sandbox</code> and no Node integration, and <code>webviewTag</code> off. It never sees Node. A crafted file that finds an XSS in a renderer gets the surface it has on the website, not your filesystem - <code>core/sanitize.js</code> remains the only XSS defence, exactly as on the site.</p>
+<ul><li><code>http</code>, <code>https</code> and <code>mailto</code> links open in your own browser or mail client. Nothing else opens at all.</li><li>The page itself opens the one permitted child window, the export report's <code>about:blank</code>.</li><li>The permission handler allows fullscreen and clipboard, and denies everything else - notifications, geolocation, camera, microphone, MIDI, USB, serial.</li><li>There is no Content Security Policy, for the same reason <code>web/_headers</code> has none: the app lazy-loads WebAssembly, spawns blob and module workers and uses <code>data:</code> URIs, and a wrong policy would silently break individual viewers.</li></ul>
+<p>The preload exposes a single object, <code>window.anrDesktop</code>. Every method on it is a message to the main process, never a handle to anything.</p>
+</section>
+<section class="docs-card">
+<h2 id="opening-files">Opening files<a class="h-anchor" href="#opening-files" aria-label="Link to this section">#</a></h2>
+<p>Drag-and-drop and the in-page file picker work as they always have, and remain the best paths: the <code>File</code> they produce points straight at the file on disk, so the app reads a multi-GB video in slices instead of copying it.</p>
+<p>The menu adds two more, for the case a browser tab cannot cover:</p>
+<ul><li><strong>File &gt; Open file</strong> (<code>Ctrl+O</code>)</li><li><strong>File &gt; Open folder</strong> (<code>Ctrl+Shift+O</code>)</li></ul>
+<p>Plus a path passed on the command line, and a second launch handing its argument to the running window.</p>
+<p>A renderer with no Node access cannot build a <code>File</code> from a path, so the main process mints a one-time token on a second scheme, <code>anr-open://&lt;token&gt;</code>, and maps it to the approved path. The page fetches that and wraps the result in a real <code>File</code> before handing it to the normal analysis pipeline. The app therefore holds a file opened this way as a blob instead of reading it off disk - so drop a very large file rather than opening it by path.</p>
+<p>The app lists a folder opened by path without reading any of it. Each entry becomes real bytes only when you click it, or when you run the folder view's "Openability check", which reads every file by design.</p>
+</section>
+<section class="docs-card">
+<h2 id="what-differs-from-the-website">What differs from the website<a class="h-anchor" href="#what-differs-from-the-website" aria-label="Link to this section">#</a></h2>
+<p>Every desktop-only branch in the app source sits behind <code>window.anrDesktop</code>, which does not exist in a browser. The website is unaffected.</p>
+<div class="docs-table-wrap"><table><thead><tr><th>Area</th><th>On the desktop</th></tr></thead><tbody><tr><td>Header status</td><td>The Online/Offline probe pings the live site, not the local origin, which would always answer</td></tr><tr><td>"Email me!" and "Suggest this format"</td><td>The app skips the human-check, because that widget belongs to the site's hostname and can never verify here. The mail client opens directly</td></tr><tr><td>"Install as app"</td><td>Hidden. You already installed it</td></tr><tr><td>Download for offline use</td><td>Unchanged, and still worth doing. The ffmpeg core, OCCT, the Tesseract language data and the ONNX models all still come from the network on first use</td></tr><tr><td>Device tier</td><td>Sized from real total RAM, not <code>navigator.deviceMemory</code>, which browsers clamp at 8 GB. A large machine gets the caps it deserves</td></tr><tr><td>Export report</td><td>Offers a native save dialog, and keeps the browser path as a fallback</td></tr><tr><td>Video encoding</td><td>Runs on your graphics hardware through a real FFmpeg binary. See the section above</td></tr></tbody></table></div>
+</section>
+<section class="docs-card">
+<h2 id="what-ships-in-the-package">What ships in the package<a class="h-anchor" href="#what-ships-in-the-package" aria-label="Link to this section">#</a></h2>
+<p>The web assets go in as ordinary files under <code>resources/web/</code>, not inside the asar archive, which keeps the 72 MB of vendor WebAssembly straightforward to read.</p>
+<p>The build leaves out the <code>/samples</code> gallery files (19 MB of examples), the source maps, the sitemaps, <code>robots.txt</code>, <code>llms.txt</code> and <code>_headers</code>. It keeps the generated <code>/formats/&lt;ext&gt;</code> pages, so the formats hub works offline.</p>
+</section>
+<section class="docs-card">
+<h2 id="version-numbers">Version numbers<a class="h-anchor" href="#version-numbers" aria-label="Link to this section">#</a></h2>
+<p><code>desktop/tools/stamp-version.mjs</code> reads <code>COMMIT_COUNT</code> from <code>src/core/app.ts</code> and applies the same formula as <code>analyserVersion()</code>, writing <code>major.minor.0</code> into <code>desktop/package.json</code>. The installer version and the number in the app's own footer therefore always agree. See <a href="/docs/tooling"><code>tooling.md</code></a> for how the site's version numbering works.</p>
+</section>
+<section class="docs-card">
+<h2 id="not-built-yet">Not built yet<a class="h-anchor" href="#not-built-yet" aria-label="Link to this section">#</a></h2>
+<p>The app uses an FFmpeg binary it finds on your machine, and falls back to the WebAssembly build when there is none. Shipping one inside the installer is the obvious next step, and would make the hardware path work on a fresh machine.</p>
+<p>Also outstanding: file associations, a bundled OCCT, a frameless title bar, automated release builds, code signing and auto-update. Builds today are unsigned, so Windows SmartScreen warns the first time one runs.</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/worker"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Worker</span></a><a class="docs-pn-next" href="/docs/design-system"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Design system</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <a href="/docs">Documentation</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

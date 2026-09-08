@@ -1,13 +1,17 @@
 /* Analyser - ambient global declarations.
 
-   Two unrelated groups live here:
+   Three unrelated groups live here:
 
    1. The `window._anr*` channel. app.js and the classic-script router
       (core/navigate.js) talk to each other through globals rather than imports,
       because navigate.js is loaded WITHOUT type="module" and so cannot import.
       A few renderers also park state here for the SPA restore path.
 
-   2. UMD vendor globals. Roughly half of web/assets/vendor/ is loaded by
+   2. `window.anrDesktop`, present only inside the Electron desktop shell
+      (desktop/preload.cjs). Optional by design: its absence is what keeps the
+      website's behaviour byte-for-byte unchanged.
+
+   3. UMD vendor globals. Roughly half of web/assets/vendor/ is loaded by
       injecting a <script> tag at runtime rather than by ES import, so the
       library lands on `window` with no static import to type it.
 
@@ -26,6 +30,65 @@
 export {};
 
 declare global {
+  /** The bridge the Electron desktop shell exposes on `window.anrDesktop`
+      (desktop/preload.cjs). It does not exist in a browser, so `anrDesktop?:`
+      below is what makes every desktop-only branch opt-in. The renderer never
+      sees Node - each method here is a message to the main process. */
+  interface AnrDesktop {
+    /** Desktop package version (major.minor.0, stamped from COMMIT_COUNT). */
+    version: string;
+    platform: string;
+    arch: string;
+    electron: string;
+    chrome: string;
+    packaged: boolean;
+    /** True in a portable copy: everything stored sits beside the executable,
+        so the host machine keeps nothing. */
+    portable: boolean;
+    /** Where this copy keeps its data (offline cache, history, window state). */
+    dataDir: string;
+    /** Real total RAM in GB from os.totalmem(), which navigator.deviceMemory
+        clamps at 8. Read by core/limits.ts for the device tier. */
+    memoryGB: number;
+    /** Register the "open this path" handler (core/app.ts boot()). */
+    onOpen(cb: (payload: any) => void): void;
+    /** Save the export report through a native dialog. */
+    saveReport(name: string, html: string): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>;
+    /** Native, hardware-accelerated FFmpeg (desktop/ffmpeg-native.mjs).
+        src/renderers/video.ts wraps this into an ffmpeg.wasm-shaped object, so
+        the existing call sites are untouched. Absent when no binary is found,
+        and then the WASM build runs as before. */
+    ffmpeg?: AnrFfmpegBridge;
+  }
+
+  /** What the probe found on this machine. `accel` is the family that actually
+      encoded a test frame, not merely one the build lists - an NVIDIA-only box
+      still advertises the Intel and AMD encoders and fails both. */
+  interface AnrFfmpegCaps {
+    available: boolean;
+    path?: string | null;
+    version?: string;
+    families?: { vendor: string; label: string; h264: string; hevc: string | null; av1: string | null; hwaccel: string }[];
+    accel?: { vendor: string; label: string; h264: string; hevc: string | null; av1: string | null; hwaccel: string } | null;
+    vendor?: string | null;
+    label?: string;
+    error?: string;
+  }
+
+  interface AnrFfmpegBridge {
+    caps(): Promise<AnrFfmpegCaps>;
+    /** Open a job session (its own temp directory). Returns the session id. */
+    open(): Promise<string | null>;
+    write(id: string, name: string, data: Uint8Array): Promise<boolean>;
+    read(id: string, name: string): Promise<Uint8Array>;
+    del(id: string, name: string): Promise<boolean>;
+    /** Resolves once ffmpeg has run, whatever its exit code. */
+    exec(id: string, args: string[], timeout?: number): Promise<{ ok: boolean; code: number; accelerated?: boolean; note?: string; log?: string }>;
+    close(id: string): Promise<boolean>;
+    /** Register the log/progress sink for one session. */
+    listen(id: string, cb: ((p: any) => void) | null): void;
+  }
+
   interface Window {
     /* --- app-internal cross-module channel (see core/app.js, core/navigate.js) --- */
     _anrAsteroidsActive?: any;
@@ -46,6 +109,12 @@ declare global {
     _anrRestore?: any;
     _anrSuggest?: any;
     _anrSuppressSuggest?: any;
+
+    /* --- the Electron desktop shell (desktop/preload.cjs) ---
+       Present ONLY in the desktop app, and absent on the website - so every
+       use of it is a guarded opt-in and the site behaves exactly as before.
+       See desktop/README.md and docs/desktop.md. */
+    anrDesktop?: AnrDesktop;
 
     /* --- UMD vendor globals injected via <script> tag --- */
     $3Dmol?: any;        // vendor/3dmol/3Dmol-min.js
