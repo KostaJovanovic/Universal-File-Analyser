@@ -44,17 +44,17 @@
    `npm run build` recompiles.
    ============================================================================ */
 
-const COMMIT_COUNT = 304;
+const COMMIT_COUNT = 305;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
 // major version and resets the counter within its era: commit 29 reads "1.0" (and
 // 30 → "1.01"), commit 60 reads "2.0", commit 100 reads "3.0" (and 101 → "3.01"),
-// commit 151 reads "4.0", commit 173 reads "5.0", commit 195 reads "6.0" and commit
-// 250 reads "7.0" and commit 256 reads "8.0". To crown a future 9.0, append its
-// commit number here (keep the
+// commit 151 reads "4.0", commit 173 reads "5.0", commit 195 reads "6.0", commit
+// 250 reads "7.0", commit 256 reads "8.0" and commit 305 reads "9.0". To crown a
+// future 10.0, append its commit number here (keep the
 // list sorted ascending, and mirror the RELEASES constant in save.bat).
-const RELEASE_COMMITS = [29, 60, 100, 151, 173, 195, 250, 256];
+const RELEASE_COMMITS = [29, 60, 100, 151, 173, 195, 250, 256, 305];
 
 function analyserVersion(n: number, releases: number[]) {
   let major = 0, base = 0;

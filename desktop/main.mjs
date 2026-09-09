@@ -153,6 +153,32 @@ if (PORTABLE_DIR) {
 }
 
 // ---------------------------------------------------------------------------
+// SharedArrayBuffer, so the on-device AI can use more than one core.
+//
+// Both inference workers (MDX-Net separation, DeepFilterNet3 denoise) run
+// onnxruntime-web. ORT ships a threaded WASM build and the app already
+// downloads those `-threaded` files, but pthreads need a shared
+// WebAssembly.Memory, which needs SharedArrayBuffer, which a browser grants
+// only to a cross-origin-isolated page. The website is deliberately not
+// isolated, so it has always run this on ONE core.
+//
+// A desktop app does not have to accept a browser's bargain. This switch grants
+// SAB without cross-origin isolation. Measured on Electron 33 (see the table in
+// desktop/README.md): SAB present in a module worker, shared memory allocates.
+//
+// Deliberately NOT the other route. Serving COOP/COEP would isolate the origin
+// properly, but it also makes every cross-origin subresource satisfy COEP - and
+// this app's service worker replays cached jsDelivr and HuggingFace responses
+// for the ORT runtime and the models. Breaking those breaks offline AI, with no
+// build-time signal. Same hazard as the CSP the site deliberately does not ship.
+//
+// src/lib/mdx-model.ts's ortThreads() is the consumer, and it tests for SAB
+// rather than for the desktop, so this stays a capability the app offers rather
+// than a fork in the app's code.
+// ---------------------------------------------------------------------------
+app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
+
+// ---------------------------------------------------------------------------
 // Scheme privileges. Must be registered before app is ready.
 //
 //   standard            - a real origin, so localStorage / IndexedDB / workers work
@@ -568,12 +594,20 @@ const actions = {
   view(what) {
     const wc = appContents();
     if (!wc || !mainWindow) return;
+    const setZoom = (level) => {
+      wc.setZoomLevel(level);
+      zoomFactor = zoomFactorFor(level);
+      applyTbHeight();
+    };
     if (what === 'reload') wc.reload();
     else if (what === 'back') wc.navigationHistory.goBack();
     else if (what === 'forward') wc.navigationHistory.goForward();
-    else if (what === 'zoomIn') wc.setZoomLevel(Math.min(9, wc.getZoomLevel() + 0.5));
-    else if (what === 'zoomOut') wc.setZoomLevel(Math.max(-8, wc.getZoomLevel() - 0.5));
-    else if (what === 'zoomReset') wc.setZoomLevel(0);
+    /* Every zoom re-applies the bar's height. The bar is on this origin too, so
+       it zoomed with the page and now paints taller, and the app view has to
+       move down to the new painted edge or it covers the bar's bottom border. */
+    else if (what === 'zoomIn') setZoom(Math.min(9, wc.getZoomLevel() + 0.5));
+    else if (what === 'zoomOut') setZoom(Math.max(-8, wc.getZoomLevel() - 0.5));
+    else if (what === 'zoomReset') setZoom(0);
     else if (what === 'devTools') wc.toggleDevTools();
     else if (what === 'fullScreen') mainWindow.setFullScreen(!mainWindow.isFullScreen());
     else if (what === 'close') mainWindow.close();
@@ -721,15 +755,18 @@ ipcMain.on('anr:menu-close', (e) => { if (fromChrome(e)) closePanel(); });
    positioned and shown, so it never flashes at the wrong size or place. */
 ipcMain.on('anr:panel-size', (e, size) => {
   if (!fromPanel(e) || !panelMenuId || !mainWindow || mainWindow.isDestroyed()) return;
-  const w = Math.max(80, Math.ceil(Number(size && size.w) || 0));
-  const h = Math.max(24, Math.ceil(Number(size && size.h) || 0));
+  /* Both of these arrive as CSS pixels - the panel's own for the size, the
+     bar's for the position - and window bounds are window pixels. One origin,
+     so one factor covers both. See the note above zoomFactor. */
+  const w = Math.max(80, Math.ceil((Number(size && size.w) || 0) * zoomFactor));
+  const h = Math.max(24, Math.ceil((Number(size && size.h) || 0) * zoomFactor));
   const at = size && size.at ? size.at : { x: 0, y: 0 };
   const c = mainWindow.getContentBounds();
   const area = screen.getDisplayMatching(c).workArea;
   // Clamped to the display, so a menu near the right or bottom edge stays whole
   // rather than being cut off - a panel window is not bounded by its parent.
-  const x = Math.min(Math.max(area.x, c.x + at.x), area.x + area.width - w);
-  const y = Math.min(Math.max(area.y, c.y + at.y), area.y + area.height - h);
+  const x = Math.min(Math.max(area.x, c.x + at.x * zoomFactor), area.x + area.width - w);
+  const y = Math.min(Math.max(area.y, c.y + at.y * zoomFactor), area.y + area.height - h);
   panelWin.setBounds({ x: Math.round(x), y: Math.round(y), width: w, height: h });
   if (!panelWin.isVisible()) panelWin.show();
   if (chromeHooks) chromeHooks.pushState();
@@ -743,16 +780,54 @@ ipcMain.on('anr:panel-run', (e, id) => {
 
 ipcMain.on('anr:panel-close', (e) => { if (fromPanel(e)) closePanel(); });
 
+/* ---------------------------------------------------------------------------
+ * CSS pixels are not window pixels once the page is zoomed.
+ *
+ * The bar, the menu panels and the site are all on ONE origin, and Chromium
+ * stores the zoom level PER ORIGIN - so zooming the page zooms the chrome with
+ * it, whether or not that was asked for. A renderer then measures itself in its
+ * own zoomed CSS pixels while every bound main sets is in window pixels, and
+ * the two quietly stop agreeing.
+ *
+ * That is what took the bar's bottom border away on View > Zoom in: the bar
+ * painted 34 * 1.2 pixels tall and still reported 34, so the app view was
+ * parked at 34 and covered the rest of the bar, hairline first.
+ * ------------------------------------------------------------------------- */
+/* The one factor, held here rather than read back per call. getZoomFactor() on
+   the BAR's contents catches up a moment after the site's level is set, so
+   asking it inside the same tick lands a whole step behind - which showed up as
+   the app view overlapping the bar at one zoom step and leaving a strip of bare
+   page at another. Chromium derives the factor from the level as 1.2^level, so
+   the level we just set gives it exactly. */
+let zoomFactor = 1;
+const zoomFactorFor = (level) => Math.pow(1.2, Number(level) || 0);
+
+/* What the bar last reported, in ITS pixels. Kept apart from tbHeight so a zoom
+   change can be re-applied without asking the bar again. */
+let tbCssHeight = TB_H_DEFAULT;
+
+function applyTbHeight() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  /* CEIL, not round. A zoom factor rarely lands on a whole pixel, and rounding
+     DOWN puts the app view a fraction of a pixel over the bar - which is the
+     bar's bottom hairline and nothing else. Rounding up can only leave a
+     sub-pixel sliver of the bar's own background, which nobody can see. */
+  const h = Math.max(1, Math.ceil(tbCssHeight * zoomFactor));
+  if (h === tbHeight) return;
+  tbHeight = h;
+  if (chromeHooks) chromeHooks.layout();
+}
+
 /* The bar reports its own height, measured from --anr-tb-h in analyser.css, so
    that token stays the single source of truth for it and main never carries a
-   second copy of the number. Arrives once on load and again on a zoom or DPI
-   change. */
+   second copy of the number. Arrives once on load and again on a resize or a
+   font change. */
 ipcMain.on('anr:chrome-height', (e, px) => {
   if (!fromChrome(e)) return;
   const h = Math.max(0, Math.round(Number(px) || 0));
-  if (!h || h === tbHeight) return;
-  tbHeight = h;
-  if (chromeHooks) chromeHooks.layout();
+  if (!h) return;
+  tbCssHeight = h;
+  applyTbHeight();
 });
 
 /* The bar is up. It asks rather than being told, because it finishes loading

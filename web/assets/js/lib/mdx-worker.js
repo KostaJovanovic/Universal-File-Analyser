@@ -4,7 +4,7 @@
    the revision-pinned model, initialises one warm inference session, then drives
    the framing pipeline in mdx-separate.js. Every long phase is reported so the
    UI never leaves a completed download masquerading as a frozen job. */
-import { ORT_BASE, ORT_ENTRY, ORT_WASM_ENTRY, MDX_MODELS, MDX_MODEL } from './mdx-model.js';
+import { ORT_BASE, ORT_ENTRY, ORT_WASM_ENTRY, MDX_MODELS, MDX_MODEL, ortThreads } from './mdx-model.js';
 import { separateVocals, MDX_SR } from './mdx-separate.js';
 let ortMod = null;
 let session = null;
@@ -155,7 +155,12 @@ async function ensureModel(model, report, forceWasm = false) {
         // Its binary is roughly half the JSEP build loaded by WebGPU-capable browsers.
         ortMod = await import(/* @vite-ignore */ (webkit ? ORT_WASM_ENTRY : ORT_ENTRY));
         ortMod.env.wasm.wasmPaths = ORT_BASE;
-        ortMod.env.wasm.numThreads = 1;
+        // 1 on the website (no SharedArrayBuffer without cross-origin isolation),
+        // half the cores in the desktop app, which grants SAB. See ortThreads().
+        // This is the fallback path's speed - WebGPU below is still preferred - and
+        // it is the ONLY speed DeepFilterNet3 has, since dfn-worker pins itself to
+        // WASM for correctness.
+        ortMod.env.wasm.numThreads = ortThreads();
         ortMod.env.wasm.simd = true;
         ortMod.env.wasm.proxy = false;
         try {

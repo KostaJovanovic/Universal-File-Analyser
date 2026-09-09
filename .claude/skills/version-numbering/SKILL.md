@@ -20,9 +20,10 @@ Every commit is its own version. The number after the dot is the commit's
   0.02.) If the value can't be read, `save.bat` aborts rather than guessing.
 - `RELEASE_COMMITS` in `src/core/app.ts` is the sorted list of commit numbers
   crowned as major releases. It is currently
-  `[29, 60, 100, 151, 173, 195, 250, 256]` (commit 29 = `1.0`, 60 = `2.0`,
-  100 = `3.0`, 151 = `4.0`, 173 = `5.0`, 195 = `6.0`, 250 = `7.0`, 256 = `8.0`).
-  To crown a future `9.0`, append that commit's number - and keep the `RELEASES`
+  `[29, 60, 100, 151, 173, 195, 250, 256, 305]` (commit 29 = `1.0`, 60 = `2.0`,
+  100 = `3.0`, 151 = `4.0`, 173 = `5.0`, 195 = `6.0`, 250 = `7.0`, 256 = `8.0`,
+  305 = `9.0`).
+  To crown a future `10.0`, append that commit's number - and keep the `RELEASES`
   list in `save.bat` in sync, since it mirrors this array. The display logic
   lives in `analyserVersion()` in `src/core/app.ts`.
 - `save.bat` mirrors this with a `RELEASES=29,60,100,151,173` constant (used only

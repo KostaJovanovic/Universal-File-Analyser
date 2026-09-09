@@ -136,6 +136,87 @@ Two rules to keep:
 With no binary installed, `caps().available` is false and `video.ts` loads the
 WASM core exactly as the website does.
 
+### SharedArrayBuffer, so the on-device AI can use more than one core
+
+`main.mjs` starts Chromium with `--enable-features=SharedArrayBuffer`. That one
+line is what lets the two ONNX inference workers - MDX-Net vocal separation and
+DeepFilterNet3 denoise - run on more than a single core.
+
+The reasoning, because the alternative looks more correct and is worse:
+
+ORT ships a threaded WASM build, and the app already downloads those `-threaded`
+files. But pthreads need a shared `WebAssembly.Memory`, which needs
+`SharedArrayBuffer`, which a browser hands only to a cross-origin-isolated page.
+The website is deliberately not isolated - it sends no COOP/COEP, for the same
+reason it ships no CSP - so it has always run this on one core. A desktop app
+does not have to accept that bargain.
+
+Measured on Electron 33.4.11 (Chromium 130), reported from inside a **module
+worker** on the real `analyser://` origin. The probes are kept in
+`research/sab-probe/`, with a README on how to run them:
+
+| config | worker SAB | `crossOriginIsolated` | shared `WebAssembly.Memory` |
+|---|---|---|---|
+| nothing (what the website gets) | false | false | not available |
+| `--enable-features=SharedArrayBuffer` | **true** | false | **true** |
+| COOP + COEP `credentialless` | true | true | true |
+
+**Serving COOP/COEP would have been the wrong fix.** It buys nothing the switch
+does not already give - ORT needs SAB, not isolation - and it forces every
+cross-origin subresource to satisfy COEP. This app's service worker replays
+cached jsDelivr and HuggingFace responses for the ORT runtime and the models, so
+that route risks breaking offline AI with no build-time signal. Exactly the
+hazard the root `CLAUDE.md` describes for the missing CSP. Do not add those
+headers as a tidy-up.
+
+One thing that looked fatal and is not. ORT spawns its pthread workers from its
+own script URL, and that URL is on jsDelivr, and a cross-origin `new Worker` is
+refused outright:
+
+```
+SecurityError: Failed to construct 'Worker': Script at 'https://cdn.jsdelivr.net/
+npm/onnxruntime-web@1.20.1/dist/ort-wasm-simd-threaded.jsep.mjs' cannot be
+accessed from origin 'analyser://app'.
+```
+
+ORT works around that itself. Forcing the runtime up with deliberately invalid
+model bytes returns `ERROR_CODE: 7 ... protobuf parsing failed` - a *model*
+error, not a worker error - with `env.wasm.numThreads` still 6. The pool starts.
+If you ever move ORT off the CDN, re-run `ort-threads-probe.cjs` rather than
+assuming this still holds.
+
+The consumer is `ortThreads()` in `src/lib/mdx-model.ts`, which both workers
+call. It tests for `SharedArrayBuffer`, **not** for `window.anrDesktop`, and that
+is deliberate: these run in module workers, which never see the preload bridge,
+and any browser that grants SAB has earned the threads too. On the website the
+test fails and the value stays 1, so nothing there changes.
+
+This matters most for **denoise**, which has no GPU path at all: `dfn-worker.ts`
+is pinned to WASM because ORT-web's WebGPU backend miscomputes its GRU graph, so
+threads are the only speed it can gain. MDX separation still prefers WebGPU and
+uses threads only on its fallback path - so on a machine with a working GPU,
+**separation speed is unchanged by any of this**. Do not claim otherwise.
+
+**The thread cap is 4. Measurement set it, not judgement.**
+`research/sab-probe/dfn-bench.cjs` times the real DFN3 graph over 1000 frames
+(10 s of audio) per run, on a 12-core machine:
+
+| threads | median | vs 1 thread |
+|---|---|---|
+| 1 | 276 ms | 1.00x |
+| 2 | 227 ms | 1.22x |
+| 3 | 158 ms | **1.75x** |
+| 4 | 174 ms | 1.59x |
+| 5 | 161 ms | 1.71x |
+| 6 | 173 ms | 1.60x |
+| 8 | 221 ms | 1.22x |
+
+The gain saturates around three or four threads and then goes backwards. Small
+tensors on a partly sequential graph: past that point ORT spends more on
+synchronising the pool than the split saves. So `ortThreads()` asks for half the
+logical cores **capped at 4** - giving it half of a big machine would be slower.
+If you change that constant, re-run the benchmark rather than reasoning about it.
+
 ### The `analyser://` scheme
 
 `file://` was never an option: the app uses root-relative URLs, ES modules,
@@ -324,6 +405,18 @@ The rest:
 - **The bar reports its own height** through `anr:chrome-height`, measured from
   `--anr-tb-h` in `analyser.css`, so that token stays the single source of truth
   and main never carries a second copy of the number.
+- **View > Zoom zooms the BAR too, and main has to compensate.** Chromium stores
+  the zoom level per ORIGIN, and the bar, the panel and the site are all
+  `analyser://localhost`, so zooming the page zooms the chrome with it. The bar
+  then paints `34 x factor` px tall while still reporting 34 CSS px, and the view
+  parked at 34 covers its bottom hairline. `main.mjs` keeps `tbCssHeight` (what
+  the bar reported) apart from `tbHeight` (what `layout()` uses) and multiplies by
+  a `zoomFactor` it computes as `1.2 ^ level` at the moment it sets the level -
+  Chromium's exact ratio. Do NOT read the factor back with `getZoomFactor()`
+  instead: it lags the call by a step and the border tears at every other zoom.
+  `Math.ceil`, not `Math.round`, so the rounding error is always a spare pixel of
+  bar rather than a covered border. The panel window's size and position scale by
+  the same factor.
 - **Narrow windows shed parts in a fixed order** - section, wordmark, arrows,
   file name - at the breakpoints at the very END of the DESKTOP WINDOW CHROME
   block. They are last in the file on purpose: they override the component rules

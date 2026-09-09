@@ -145,20 +145,23 @@ body {
      the gutter instead of a 13px slab: the track shows through the border.
      Each state below has to restate background-clip, because the `background`
      shorthand resets it back to border-box.
-     The leading border is 5px, not 4: the thumb is laid out across the whole
-     13px, but the track spends its first pixel on the hairline, so an even 4px
-     all round would leave 3px of gutter on the hairline side and 4px on the
-     other. 5 + 4 + 4 = 13 puts a real 4px on both sides of a 4px thumb. The
-     horizontal bar rules the same way one axis over, since its track moves the
-     hairline from the left edge to the top. */
-  border: 4px solid var(--bg);
-  border-left-width: 5px;
+     The border must be TRANSPARENT, not var(--bg). The thumb is laid out across
+     the whole 13px, hairline included, so a solid border paints over the track's
+     rule and the scrollbar loses its left edge for exactly the length of the
+     thumb. Transparent lets the track - background AND hairline - show through.
+     The border is an even 4px, and the extra pixel the leading edge used to
+     carry is gone. That pixel kept the gap MEASURED FROM THE HAIRLINE equal on
+     both sides, which is right on paper and wrong on screen: the rule is a very
+     quiet colour against the gutter (38,38,38 on 10,10,10 in the dark theme), so
+     the eye counts it as more gutter and reads a 5px dark band on the left
+     against 4px on the right - a thumb visibly pushed right. An even 4px puts 4
+     dark pixels on each side, hairline included, and centres the 5px thumb
+     exactly in the 13px gutter. Measured off a real window capture, not the DOM:
+     a scrollbar is invisible to the DOM AND to CDP screenshots, so
+     research/anr-shot.ps1 is the only way to check a change here. */
+  border: 4px solid transparent;
   background-clip: padding-box;
   transition: background-color var(--dur-fast) ease;
-}
-::-webkit-scrollbar-thumb:horizontal {
-  border-left-width: 4px;
-  border-top-width: 5px;
 }
 ::-webkit-scrollbar-thumb:hover  { background: var(--fg);     background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:active { background: var(--accent);  background-clip: padding-box; }
@@ -9720,6 +9723,11 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
   position: relative;          /* positioning context for the depth tag */
   display: flex;
   flex-direction: column;
+  /* A chip is a <button>, and Chromium's UA sheet sets align-items: flex-start
+     on one. Without this the rows shrink-wrap their text and hug the left edge
+     instead of filling the tile, so every extension reads 30-40px left of
+     centre - and the wider the tile, the worse it looks. */
+  align-items: stretch;
   width: 132px;
   height: 132px;
   padding: 0;
