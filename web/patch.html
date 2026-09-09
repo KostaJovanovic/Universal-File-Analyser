@@ -127,8 +127,9 @@
                and CLAUDE.md "Version numbering"). After it: 1.01, 1.02, 1.03 ...
                Commit #60 was crowned 2.0, #100 was crowned 3.0, #151 was crowned
                4.0, #173 was crowned 5.0, #195 was crowned 6.0, #250 was crowned
-               7.0 and #256 was crowned 8.0. To crown a future 9.0, add that commit
-               number to RELEASE_COMMITS (and mirror it in save.bat's RELEASES).
+               7.0, #256 was crowned 8.0 and #305 was crowned 9.0. To crown a
+               future 10.0, add that commit number to RELEASE_COMMITS (and mirror
+               it in save.bat's RELEASES).
 
              ADDING AN ENTRY (do this on every commit)
                1. Insert the new entry at the TOP, directly under this comment.
@@ -211,6 +212,22 @@
                - let the newest version here disagree with app.js.
              ===================================================================== -->
 
+        <div class="patch-entry patch-milestone">
+          <p class="patch-version" data-badge="No browser required.">9.0</p>
+          <p class="patch-name">Off the Web</p>
+          <p class="patch-date">9 September 2026</p>
+          <ul class="patch-list">
+            <li><strong>Ninth milestone: Analyser leaves the browser. There is a Windows app now - the same tool, the same formats, the same nothing-ever-leaves-your-machine - with your graphics card doing the video work, a window of its own, and a copy that runs from a USB stick. The website itself is unchanged.</strong></li>
+            <li><span class="patch-tag">New</span><strong>A Windows app,</strong> wrapping the very analyser this site serves - every format, viewer and reading is the one you already know. Drop a file on the window, or drag it onto the app&rsquo;s icon. The <a href="/docs/desktop">documentation</a> covers the rest.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Video conversion runs on your graphics card,</strong> which a browser cannot do at all: the same ten-second clip took <em>30.5 s</em> in the browser and <em>0.58 s</em> in the app, about <strong>52&times;</strong> faster. A job the driver refuses is quietly redone in software, so a hardware quirk never loses one.</li>
+            <li><span class="patch-tag">New</span><strong>A portable copy runs from a USB stick,</strong> keeping its cache, history, theme and window position beside the program rather than on the computer you plugged it into.</li>
+            <li><span class="patch-tag">New</span><strong>The app draws its own window</strong> - the menus, the back and forward arrows, the name of the open file and the window buttons in one slim strip, in the site&rsquo;s own type and colours.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Splitting a song and cleaning up noise use several cores in the app,</strong> about <em>1.7&times;</em> quicker. A browser allows the on-device AI a single core.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The volume slider has room at the quiet end.</strong> Loudness is heard in steps rather than in even amounts, and the travel follows that now instead of spending half of itself on the top few per cent.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Saving uses the real Save dialog, the <a href="/samples">sample</a> cards centre their writing again, and the scrollbar keeps its edge line where the handle passes over it.</li>
+          </ul>
+        </div>
+
         <div class="patch-entry">
           <p class="patch-version">8.46</p>
           <p class="patch-name">Who Made This</p>
@@ -244,6 +261,9 @@
             <li><strong>Maintenance:</strong> one of these two updates carried only refreshed sitemaps. These notes cover both.</li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">8.31 - 8.43</p>
@@ -292,9 +312,6 @@
             <li><strong>One deliberate gap:</strong> <a href="/about#ext-fig">Figma files</a> read out their outer details but not their contents. Figma describes itself differently in every version, so there is nothing dependable to read.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">8.23 - 8.30</p>

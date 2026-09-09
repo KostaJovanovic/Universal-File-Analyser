@@ -68,6 +68,16 @@ the desktop. `lib/dfn-worker.ts` is pinned to WASM on purpose - ORT-web's WebGPU
 backend miscomputes its GRU graph. That is a correctness decision, not an
 oversight, so do not "optimise" it to WebGPU.
 
+Their WASM **thread count** is `ortThreads()` in `lib/mdx-model.ts`, which both
+workers call in place of the old hardcoded `numThreads = 1`. ORT's threaded WASM
+needs `SharedArrayBuffer`, which needs a cross-origin-isolated page, which this
+site deliberately is not - so on the website it returns 1 and nothing changed.
+The desktop starts Chromium with `--enable-features=SharedArrayBuffer`, so there
+it returns half the logical cores. Note it is a **capability check, not a
+`window.anrDesktop` guard**: workers never see the preload bridge, and the guard
+would be wrong here anyway. This is the only speed `dfn-worker.ts` can gain,
+since it has no GPU path. Full measurements in `desktop/README.md`.
+
 ```
 js/
   core/

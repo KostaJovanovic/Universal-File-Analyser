@@ -22,8 +22,8 @@
 // Reuse the exact ONNX Runtime the MDX separator uses (same pinned version, same
 // WebGPU/WASM entry + wasm files). Sharing means the ~21 MB runtime is downloaded
 // and cached once for both AI audio features.
-import { ORT_BASE, ORT_ENTRY } from './mdx-model.js';
-export { ORT_BASE, ORT_ENTRY };
+import { ORT_BASE, ORT_ENTRY, ortThreads } from './mdx-model.js';
+export { ORT_BASE, ORT_ENTRY, ortThreads };
 
 // The single combined DeepFilterNet3 graph. Inputs feat_erb [1,1,T,32] and
 // feat_spec [1,2,T,96] (real then imag); outputs erb_mask [1,1,T,32] and

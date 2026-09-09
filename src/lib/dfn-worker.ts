@@ -10,7 +10,7 @@
    downloaded the whole thing works offline. The runtime is shared with the MDX
    worker's download (same ORT files / CDN). */
 
-import { ORT_BASE, ORT_ENTRY, DFN_MODEL } from './dfn-model.js';
+import { ORT_BASE, ORT_ENTRY, DFN_MODEL, ortThreads } from './dfn-model.js';
 import { DFN } from './dfn-dsp.js';
 import { enhanceAudio } from './dfn-enhance.js';
 
@@ -136,7 +136,11 @@ async function ensureModel(report?: (phase: string, frac: number) => void) {
     if (report) report('runtime', 0);
     ortMod = await import(/* @vite-ignore */ ORT_ENTRY);
     ortMod.env.wasm.wasmPaths = ORT_BASE;
-    ortMod.env.wasm.numThreads = 1;
+    // This one matters more than it does in mdx-worker. DFN3 is pinned to WASM
+    // for correctness (see the note below the session create), so threads are
+    // the only speed available to it - there is no GPU path to fall back on.
+    // 1 on the website, half the cores in the desktop app. See ortThreads().
+    ortMod.env.wasm.numThreads = ortThreads();
     ortMod.env.wasm.simd = true;
     ortMod.env.wasm.proxy = false;
     try { ortMod.env.logLevel = 'error'; } catch (_) {}

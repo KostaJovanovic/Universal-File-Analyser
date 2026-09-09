@@ -148,7 +148,11 @@ ended) replay from the start; drag the seek track to scrub. The volume
 button opens a popup with a vertical slider (0-225%, so audio can be
 boosted past its native level) and mute toggle - volume is shared across
 every player on the page via a small registry (`registerVolPlayer`), so
-setting it once applies everywhere.
+setting it once applies everywhere. The slider is logarithmic: hearing is
+roughly logarithmic too, so position maps to gain through a dB scale
+(-40 dB up to the 100% tick, then 0 to +7 dB above it) rather than
+straight through. A linear track spends most of its length on the top few
+dB and leaves no room to set a quiet level.
 
 ### Frequency isolation (band-stop EQ)
 

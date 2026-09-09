@@ -41,6 +41,58 @@ export const ORT_WASM_FILES = [
 // Complete offline support includes both variants because the execution path is
 // chosen at runtime: JSEP for WebGPU-capable browsers, plain WASM for WebKit.
 export const ORT_FILES = [...ORT_JSEP_FILES, ...ORT_WASM_FILES];
+/**
+ * How many threads ORT's WASM backend may use. Both inference workers call this.
+ *
+ * ORT ships a threaded WASM build (the `-threaded` files listed above are the
+ * ones we already load), but pthreads need a shared WebAssembly.Memory, which
+ * needs SharedArrayBuffer, which a browser only grants a cross-origin-isolated
+ * page. This site is deliberately not isolated - it sends no COOP/COEP, for the
+ * same reason it sends no CSP - so on the website this returns 1 and the
+ * behaviour is exactly what it has always been.
+ *
+ * The desktop app is not a browser tab, and does not have to accept that. It
+ * starts Chromium with --enable-features=SharedArrayBuffer (see main.mjs), which
+ * grants SAB and a shared WebAssembly.Memory WITHOUT cross-origin isolation.
+ * Measured on Electron 33: SAB present, shared memory allocates, and the service
+ * worker keeps replaying its cached CDN responses, which serving COOP/COEP would
+ * have put at risk. The same code then lights up and the WASM path stops running
+ * on a single core.
+ *
+ * This is a CAPABILITY check, not a `window.anrDesktop` guard, and that is the
+ * point: these run in module workers, which never see the preload bridge, and a
+ * browser that does grant SAB has earned the threads too.
+ *
+ * The CAP OF 4 IS MEASURED, not guessed, and it is lower than it looks like it
+ * should be. Benchmarked on the real DeepFilterNet3 graph, 1000 frames (10 s of
+ * audio) per run, on a 12-core machine - the harness is
+ * research/sab-probe/dfn-bench.cjs:
+ *
+ *     1 thread  276 ms   1.00x
+ *     2         227 ms   1.22x
+ *     3         158 ms   1.75x
+ *     4         174 ms   1.59x
+ *     5         161 ms   1.71x
+ *     6         173 ms   1.60x
+ *     8         221 ms   1.22x   (separate run)
+ *
+ * The gain saturates at three or four threads and then goes BACKWARDS. These are
+ * small tensors on a partly sequential graph, so past that point ORT spends more
+ * on synchronising the pool than the split saves. Handing it half a big machine
+ * would be slower than handing it four cores. Half the logical count is still the
+ * floor-side rule, so a 4-core laptop asks for 2 and a 2-core one asks for 1.
+ */
+export function ortThreads() {
+    try {
+        if (typeof SharedArrayBuffer === 'undefined')
+            return 1;
+        const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 0;
+        return cores ? Math.max(1, Math.min(4, Math.floor(cores / 2))) : 1;
+    }
+    catch (_) {
+        return 1; // any surprise here means the safe old single-threaded path
+    }
+}
 // Two selectable models, a quality/size trade-off. Both are Vocals-primary
 // MDX-Net separators from the same CORS-enabled HuggingFace mirror, so the
 // pipeline (mdx-separate.js) drives either straight from these geometry fields -

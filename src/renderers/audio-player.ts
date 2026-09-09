@@ -195,6 +195,44 @@ const VOL_KEY = 'anr-volume';
 // just recorded too quiet - but 100% (unity gain, no boost applied) is always
 // the default a fresh player starts at.
 const MAX_VOL = 2.25;
+
+// The slider is LOGARITHMIC, not linear. Gain multiplies amplitude, but hearing is
+// roughly logarithmic (~10 dB per perceived doubling), so mapping track position
+// straight to gain put everything below -12 dB in the bottom 11 pixels of a 96px
+// track and spent the whole top half of the travel on the last 3 dB. Position now
+// maps through a dB-linear taper on each side of unity: MIN_DB..0 dB below the 100%
+// tick, 0..MAX_DB (+7.04 dB, i.e. MAX_VOL) above it.
+//
+// Only the SLIDER is tapered. sharedVol and every consumer of it stay in plain gain
+// units, so the % readout, applyVolumeTo, the boost limiter, onSharedVolume and the
+// volumechange read-back all keep working on the same numbers as before.
+//
+// UNITY_POS must match the `bottom` of .anr-player-voltrack::after - that tick is
+// the 100% mark drawn on the track, and it is where the detent snaps to.
+const UNITY_POS = 0.4444;
+// The floor is -40 dB rather than a deeper one so the quietest audible step still
+// reads as 1% instead of rounding the percentage readout down to a lying "0%". True
+// silence is the bottom ZERO_POS of the track (and the mute button).
+const MIN_DB = -40, ZERO_POS = 0.02, DETENT_POS = 0.03;
+const MAX_DB = 20 * Math.log10(MAX_VOL);
+// Track position (0 = bottom, 1 = top) -> gain, and the inverse for the fill height.
+function posToGain(frac: number) {
+  if (frac <= ZERO_POS) return 0;
+  if (Math.abs(frac - UNITY_POS) <= DETENT_POS) return 1;
+  const db = frac < UNITY_POS
+    ? MIN_DB * (1 - frac / UNITY_POS)
+    : MAX_DB * ((frac - UNITY_POS) / (1 - UNITY_POS));
+  return Math.pow(10, db / 20);
+}
+function gainToPos(gain: number) {
+  if (gain <= 0) return 0;
+  const db = 20 * Math.log10(gain);
+  const frac = db < 0
+    ? UNITY_POS * (1 - db / MIN_DB)
+    : UNITY_POS + (1 - UNITY_POS) * (db / MAX_DB);
+  return Math.max(0, Math.min(1, frac));
+}
+
 // The level is NOT remembered across page loads: every fresh load starts at exactly
 // 100% (unity). A boost is a per-clip fix for one quiet recording, and a persisted
 // mute/level is the classic "no sound anywhere" footgun (it survives cache/script
@@ -351,7 +389,7 @@ function makeVolume(mediaEl: HTMLMediaElement, signal?: AbortSignal) {
 
   function sync() {
     const v = sharedMuted ? 0 : sharedVol;
-    const frac = Math.min(1, v / MAX_VOL);
+    const frac = gainToPos(v);
     volFill.style.height = (frac * 100) + '%';
     volFill.classList.toggle('is-boosted', v > 1);
     pctEl.textContent = Math.round(v * 100) + '%';
@@ -411,9 +449,8 @@ function makeVolume(mediaEl: HTMLMediaElement, signal?: AbortSignal) {
   function setVol(clientY: number) {
     const rect = volTrack.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (rect.bottom - clientY) / rect.height));
-    let v = frac * MAX_VOL;
-    if (Math.abs(v - 1) <= 0.06) v = 1;   // detent at the 100% slit (see the ::after tick)
-    setShared(v, false);
+    // posToGain carries the taper, the zero floor and the detent at the 100% slit.
+    setShared(posToGain(frac), false);
   }
   function onMove(e: MouseEvent) { if (dragging) setVol(e.clientY); }
   function onUp() {

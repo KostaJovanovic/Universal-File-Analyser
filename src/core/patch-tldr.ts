@@ -337,6 +337,12 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+  { range: '9.0', milestone: true, notes: [
+    'Analyser leaves the browser. There is a **Windows app** now, wrapping the very tool this site serves - the same formats, the same viewers, and the same promise that nothing you open ever leaves your machine.',
+    'Video conversion runs on the **graphics card** there, which a browser cannot do at all: the same ten-second clip took 30.5 s in the browser and 0.58 s in the app, about **52 times faster**. A job the driver refuses is quietly redone in software, so a hardware quirk never loses one.',
+    'A **portable copy runs from a USB stick**, keeping its cache, history, theme and window position beside the program rather than on the computer you plugged it into. The app also **draws its own window**, with the menus, the arrows, the open file and the window buttons in one slim strip.',
+    'Splitting a song and cleaning up noise **spread across several cores** there, roughly 1.7 times quicker, where a browser allows the on-device AI a single core. On the website, the **volume slider** finally has room at the quiet end, since loudness is heard in steps rather than in even amounts.',
+  ] },
   { range: '8.46', notes: [
     'Video now gets the same **provenance** reading photos do: a clip signed by its camera or by a generative tool - **Veo, Sora, Kling, Runway** and the rest - lays out the sealed record of what made it, what was done to it since and what it was built from, with the **AI-generation** indicators gathered beside it.',
     'That record is found in far more files than before (**MP4, MOV, HEIC, AVIF and WebP**, where only JPEG and PNG were opened), read properly when written to the current **C2PA 2.x** standard, and taken out of a multi-gigabyte video by reading only its two ends - and it stays what the file says about itself, since the signature is read rather than checked against anyone.',
