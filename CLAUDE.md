@@ -293,7 +293,16 @@ The five things worth knowing before you touch anything:
   the root `package.json` keeps its single `typescript` devDependency and
   `save.bat`'s generator chain never sees them. `desktop/node_modules/` and
   `desktop/dist/` are gitignored, everything else in `desktop/` is tracked.
-  Run it with `cd desktop && npm install && npm start`; build with `npm run dist`.
+  Run it with **`desktop.bat`** in the repo root - the counterpart to
+  `server.bat`: it installs `desktop/`'s dependencies on first run, builds
+  `src/`, leaves two `tsc --watch` processes running *inside its own console*
+  (`start /b`, so no extra windows - and it stops them again when the app quits,
+  unless `server.bat` already had a pair up), then opens the window. A file path
+  passed to it, including one dragged onto the `.bat`, is opened in the app.
+  The edit loop is **save, then Ctrl+R in the app**; HTML and CSS need only the
+  Ctrl+R, since the `analyser://` handler reads `web/` straight off disk.
+  (`cd desktop && npm start` still works and skips the install, the build and
+  the watchers.) Build the installer with `npm run dist` from `desktop/`.
 - **`desktop/router.mjs` is a port of `serve.py`'s `_route()`.** `serve.py`
   stays the spec - change one and change the other. Two deliberate differences:
   `/x.html` is served directly rather than redirected, and `/api/*` is proxied
@@ -306,10 +315,13 @@ The five things worth knowing before you touch anything:
   the device tier), `export-data.ts` (native save dialog), the native-FFmpeg
   shim in `video.ts` and the open-by-path glue in `app.ts` + `folder.ts`. Keep
   new ones equally narrow, and prefer a guarded branch in an existing module to
-  a new one. **One deliberate exception**: `core/desktop-chrome.ts`, the
-  frameless window's own title bar and page scrollbar. It has no owning module -
-  the desktop can land on `app.ts` or `docs.ts` - so both `import()` it
-  dynamically inside the guard, and a browser never fetches it.
+  a new one. There is no exception any more: **the title bar is not part of the
+  app at all**. It is the window's own web contents (`desktop/chrome/`), and the
+  site runs in a child `WebContentsView` positioned below it, so the app gets an
+  ordinary full viewport and `position: fixed`, `100vh` and `window.innerHeight`
+  are all correct by construction. See "the window chrome" in `desktop/README.md`
+  before adding any CSS that offsets something by the bar's height - that offset
+  is the symptom of the old design and should not come back.
 - **The desktop runs a real FFmpeg binary, not the WASM one.**
   `desktop/ffmpeg-native.mjs` finds a binary, PROBES which hardware encoders
   actually work (by encoding a throwaway frame - `ffmpeg -encoders` lists
@@ -345,6 +357,11 @@ save.bat            — commit + version bump + push (the only way to commit; bu
                       COMMIT_COUNT in src/core/app.ts and the cache epoch in
                       web/sw.js, then runs the tsc build before every generator)
 server.bat          — launch serve.py on :3000 + two tsc --watch windows
+desktop.bat         — run the Electron desktop app (installs desktop/'s deps on
+                      first run, builds src/, starts two tsc --watch processes
+                      in its own console via start /b - no extra windows - then
+                      opens the window; edit loop is save + Ctrl+R). Drag a file
+                      onto it to open that file.
 serve.py            — local dev server mirroring Cloudflare clean-URL routing
                       (its document root is web/)
 src/                — THE APP SOURCE (TypeScript). Mirrors the old
@@ -422,7 +439,10 @@ desktop/            — Electron desktop shell (Windows). Its OWN package.json a
                       devDep. It wraps the same web/ tree - no fork of the app
                       code. main.mjs (scheme handlers, window, security),
                       router.mjs (a 1:1 port of serve.py's _route), preload.cjs
-                      (the one bridge: window.anrDesktop), menu.mjs,
+                      (the site's bridge: window.anrDesktop), menu.mjs (one menu
+                      tree, three consumers), chrome/ (the window's OWN contents:
+                      titlebar.html + titlebar.js + preload.cjs, bridged as
+                      window.anrChrome and served from analyser://.../__chrome/),
                       electron-builder.yml, build/icon.png,
                       tools/stamp-version.mjs. desktop/node_modules/ and
                       desktop/dist/ are gitignored; everything else is tracked.

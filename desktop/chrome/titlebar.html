@@ -1,0 +1,55 @@
+<!doctype html>
+<!--
+  Analyser desktop - the window's title bar.
+
+  This page IS the window's own web contents. The site runs in a WebContentsView
+  parked below it, so the app's viewport genuinely starts under the bar and
+  nothing in the page can position itself into the chrome. See the note at the
+  top of desktop/main.mjs for why it is this way round rather than the other.
+
+  It is served from desktop/chrome/ on the app's own origin (the /__chrome/
+  prefix in main.mjs) and is NOT part of web/ - the website must never serve it.
+  Same origin buys two things: the site's stylesheet, so the bar is drawn from
+  the same tokens as everything else, and the same localStorage, so the theme
+  the app wrote is the theme the bar reads.
+-->
+<html lang="en" class="anr-desktop">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analyser</title>
+<!-- The same theme bootstrap every page of the site runs (THEME_SCRIPT in
+     tools/prerender-common.mjs), so the bar paints in the right theme on its
+     first frame instead of flashing light and correcting. Kept in step by hand:
+     this file is not in stamp-head's PAGES, because it is not part of web/. -->
+<script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+<!-- BOTH sheets, in this order, exactly as every page of the site loads them.
+     analyser.css names Geist Mono in --font-mono but declares no @font-face:
+     those live in fonts.css. Alone, the bar silently fell back to Consolas and
+     read as a different piece of software from the window below it. -->
+<link rel="stylesheet" href="/assets/css/fonts.css">
+<link rel="stylesheet" href="/assets/css/analyser.css">
+<style>
+  /* The bar's own page furniture only. Everything that draws the bar itself
+     lives in the DESKTOP WINDOW CHROME block of analyser.css, so /test can go on
+     showing it beside the rest of the site's components.
+
+     The page fills the window even though the bar is only --anr-tb-h tall: the
+     app view covers everything below, so the remainder is never seen. It is
+     painted in the page background anyway, for the instant before the app view
+     has anything on it. */
+  html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  /* No scroll chaining, no rubber band, no text selection on a bar the user is
+     mostly going to be dragging. */
+  body { overscroll-behavior: none; }
+</style>
+</head>
+<body>
+<script type="module" src="/__chrome/titlebar.js"></script>
+</body>
+</html>

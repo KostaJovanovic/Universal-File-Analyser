@@ -33,17 +33,6 @@
 <script type="module">
   import { setupNotFoundFx } from './assets/js/core/effects.js';
   setupNotFoundFx();
-
-  /* Desktop shell: this page loads neither app.js nor docs.js, which is where
-     every other page mounts the frameless window's title bar. Without this the
-     window has a 34px gap where the bar should be and no way to move or close
-     it. The guard is a global no browser defines, so nothing is fetched here on
-     the website. */
-  if (window.anrDesktop) {
-    import('./assets/js/core/desktop-chrome.js')
-      .then((m) => m.mountDesktopChrome())
-      .catch(() => { /* no title bar is survivable; the menu still works */ });
-  }
 </script>
 
 </body>

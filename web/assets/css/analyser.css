@@ -84,8 +84,11 @@
   --rule-band-h: calc(var(--nav-offset) / 2);
   --radius:     0;
   /* Desktop window chrome (Electron only - see DESKTOP WINDOW CHROME at the end
-     of this file): the app-drawn title bar's height, and the room macOS needs
-     left of it for the native traffic lights. Zero everywhere else. */
+     of this file): the title bar's height, and the room macOS needs left of it
+     for the native traffic lights. Read by no page of the site - the bar is its
+     own document - but kept here so it is themed and tokenised like everything
+     else, and because desktop/main.mjs sizes the app's view from the height the
+     bar measures out of it. */
   --anr-tb-h:    34px;
   --anr-tb-lead: 0px;
 
@@ -138,13 +141,24 @@ body {
 ::-webkit-scrollbar-button { display: none; }
 ::-webkit-scrollbar-thumb {
   background: var(--muted);
-  /* The padding-box border is what turns the thumb into a 5px bar centred in
+  /* The padding-box border is what turns the thumb into a thin bar centred in
      the gutter instead of a 13px slab: the track shows through the border.
      Each state below has to restate background-clip, because the `background`
-     shorthand resets it back to border-box. */
+     shorthand resets it back to border-box.
+     The leading border is 5px, not 4: the thumb is laid out across the whole
+     13px, but the track spends its first pixel on the hairline, so an even 4px
+     all round would leave 3px of gutter on the hairline side and 4px on the
+     other. 5 + 4 + 4 = 13 puts a real 4px on both sides of a 4px thumb. The
+     horizontal bar rules the same way one axis over, since its track moves the
+     hairline from the left edge to the top. */
   border: 4px solid var(--bg);
+  border-left-width: 5px;
   background-clip: padding-box;
   transition: background-color var(--dur-fast) ease;
+}
+::-webkit-scrollbar-thumb:horizontal {
+  border-left-width: 4px;
+  border-top-width: 5px;
 }
 ::-webkit-scrollbar-thumb:hover  { background: var(--fg);     background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:active { background: var(--accent);  background-clip: padding-box; }
@@ -6623,8 +6637,17 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   user-select: none;
   -webkit-user-drag: none;
 }
+/* The three pieces of furniture below - close, prev/next, caption - are ABSOLUTE
+   rather than fixed, and the distinction is meaning, not style: they belong to
+   the lightbox, so they are placed against the lightbox's box. `fixed` placed
+   them against the VIEWPORT, which happens to be the same rectangle and so read
+   as correct until the day it was not - the desktop's title bar covered the top
+   of the viewport, the overlay started below it, and the close button stayed up
+   in the chrome on its own. `.lightbox` is itself fixed and therefore already a
+   containing block for these. Same reasoning as .lightbox-peaking / -focus-map /
+   -focus-dot, absolute from the start. Keep new lightbox furniture absolute. */
 .lightbox-close {
-  position: fixed;
+  position: absolute;
   top: 16px; right: 16px;
   z-index: 10;
   /* Solid high-contrast chip so it stays legible over a zoomed-in image of any
@@ -6711,7 +6734,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
    high-contrast chip treatment as .lightbox-close so they stay legible over any
    image. Sharp-cornered, per the site's no-rounded-corners rule. */
 .lightbox-nav {
-  position: fixed;
+  position: absolute;                 /* the lightbox's box, not the viewport - see .lightbox-close */
   top: 50%;
   transform: translateY(-50%);
   z-index: 10;
@@ -6756,7 +6779,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   border-color: var(--on-dark);
 }
 .lightbox-meta {
-  position: fixed;
+  position: absolute;                 /* the lightbox's box, not the viewport - see .lightbox-close */
   bottom: 16px; left: 50%;
   transform: translateX(-50%);
   color: rgba(255, 255, 255, 0.78);
@@ -9850,22 +9873,27 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
 /* =========================================================
    DESKTOP WINDOW CHROME  (Electron shell only)
    =========================================================
-   The desktop window is frameless off macOS and draws its own title bar and
-   page scrollbar (src/core/desktop-chrome.ts).
+   The desktop window is frameless off macOS and draws its own title bar
+   (desktop/chrome/titlebar.js).
 
-   Two kinds of rule live here, split on purpose. The COMPONENT rules
-   (.anr-titlebar, .anr-tb-*, .anr-scrollbar*) are unscoped, so /test can show
-   them like any other element - nothing on the website carries those classes,
-   because only that module ever writes them. The LAYOUT rules - the room the
-   page has to leave for the bar, and hiding the native root scrollbar - are
-   scoped under `html.anr-desktop`, a class the desktop's preload adds before
-   any page script runs, so a browser is untouched by them.
+   NOTHING HERE APPLIES TO A PAGE OF THE SITE, and that is the point. The bar is
+   its own web contents - the window's own - and the site runs in a view parked
+   below it, so the app has an ordinary full viewport and needs no allowance for
+   the bar at all. There used to be a second half to this block: body padding, a
+   top offset for every sticky band and full-window overlay, and a hand-drawn
+   page scrollbar to replace the native one the bar cut through. All of it is
+   gone, because the reason for it is. If you find yourself about to add
+   `html.anr-desktop something { top: ... }` here, the split is not working and
+   the fix is in desktop/main.mjs, not in this file.
+
+   The rules are therefore unscoped, which also lets /test show the bar like any
+   other component - nothing on the website carries these classes.
 
    Deliberately not a floating chrome bar: it reads as one more hairline band in
    the same grammar as the navbar - square, mono, uppercase, a hairline seam
-   underneath, the red mark borrowed from the site's accent.
+   underneath, and hairline rules between its groups.
 
-   On macOS the native frame stays (so the traffic lights survive), the app's
+   On macOS the native frame stays (so the traffic lights survive), the bar's
    own buttons hide themselves, and --anr-tb-lead reserves the room the lights
    sit in. */
 html.anr-desktop--mac { --anr-tb-lead: 78px; }
@@ -9873,8 +9901,8 @@ html.anr-desktop--mac { --anr-tb-lead: 78px; }
 .anr-titlebar {
   position: fixed;
   top: 0; left: 0; right: 0;
-  height: var(--anr-tb-h);
-  z-index: 1000;                      /* over the navbar (20/30) and the wide-screen margin fillers (25) */
+  height: var(--anr-tb-h);            /* main.mjs measures this and sizes the app view from it */
+  z-index: 1000;
   display: flex;
   align-items: stretch;
   padding-left: var(--anr-tb-lead);
@@ -9887,57 +9915,52 @@ html.anr-desktop--mac { --anr-tb-lead: 78px; }
   user-select: none;
   -webkit-app-region: drag;           /* the whole bar drags; the controls opt out */
 }
-/* Unfocused, the bar recedes rather than changing shape. Driven by a class on
-   <html> because that is where the window state lands; `.is-unfocused` is the
-   same look as a plain modifier, which is what /test uses to show it. */
+/* Unfocused, the bar recedes rather than changing shape. The window state lands
+   as a class on the BAR page's own <html>; `.is-unfocused` is the same look as a
+   plain modifier, which is what /test uses to show it. */
 html.anr-desktop:not(.anr-win-focused) .anr-titlebar,
 .anr-titlebar.is-unfocused { color: var(--muted); }
-html.anr-desktop:not(.anr-win-focused) .anr-tb-mark,
-.anr-titlebar.is-unfocused .anr-tb-mark { background: var(--muted); }
-
-/* The whole page sits below the bar. A single padding on body rather than a
-   spacer element, so nothing in the document tree shifts. */
-html.anr-desktop body { padding-top: var(--anr-tb-h); }
-
-/* Everything the site pins to the top of the VIEWPORT has to clear the bar.
-   These are the only four: the navbar (which re-asserts top:0 in its own mobile
-   media query, hence the class-qualified selector), the drill-down back bar,
-   the /compare control strip and the phone search overlay. */
-html.anr-desktop .site-nav,
-html.anr-desktop .anr-back-bar,
-html.anr-desktop .anr-cmp-controls,
-html.anr-desktop .search-overlay { top: var(--anr-tb-h); }
+html.anr-desktop:not(.anr-win-focused) .anr-tb-brand,
+html.anr-desktop:not(.anr-win-focused) .anr-tb-file,
+.anr-titlebar.is-unfocused .anr-tb-brand,
+.anr-titlebar.is-unfocused .anr-tb-file { color: var(--muted); }
 
 /* ---- identity ---- */
 .anr-tb-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+  padding: 0 14px 0 12px;
   color: var(--fg);
   font-weight: 600;
-}
-.anr-tb-mark {
-  width: 8px; height: 8px;
-  background: var(--accent);
   flex: none;
 }
+/* What the window is showing: the section, then the analysed file when there is
+   one. The file name is the useful half - once you have scrolled into a long
+   analysis it is the only thing on screen that still names the file. */
 .anr-tb-sub {
   display: flex;
   align-items: center;
+  gap: 8px;
+  min-width: 0;
   padding: 0 12px;
   border-left: var(--bd-rule);
   color: var(--muted);
   font-weight: 400;
 }
-/* Below this the window is too narrow for both the section name and the
-   controls; the name is the one that can go. */
-@media (max-width: 560px) {
-  .anr-tb-sub { display: none; }
+.anr-tb-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+  text-transform: none;      /* a file name is not the site's copy - show it verbatim */
+  letter-spacing: 0;
 }
-
-/* The flexible middle is pure drag surface. Double-clicking it maximises, which
-   the OS handles for a drag region - no script involved. */
+/* A dot between the two, and only when both are there. */
+.anr-tb-file:not([hidden])::before { content: '/'; margin-right: 8px; color: var(--muted); }
+/* The flexible middle is pure drag surface. Double-clicking anywhere on the bar
+   that is not a button maximises it (titlebar.js) - the OS does that itself only
+   when it draws the frame. */
 .anr-tb-space { flex: 1 1 auto; min-width: 12px; }
 
 /* ---- buttons ---- */
@@ -9964,11 +9987,118 @@ html.anr-desktop .search-overlay { top: var(--anr-tb-h); }
 .anr-tb-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: -3px; }
 .anr-tb-btn svg { display: block; }
 
-/* The menu button is the only route to the application menu once the frame is
-   gone, so it is labelled rather than left as a bare glyph. */
-.anr-tb-menu { gap: 8px; border-left: 0; border-right: var(--bd-rule); }
+.anr-tb-btn[disabled] { opacity: 0.35; cursor: default; pointer-events: none; }
 
-.anr-tb-ctl { display: flex; align-items: stretch; }
+/* ---- the menu bar ----
+   Drawn rather than popped from the OS, so it is the site's type and hairlines.
+   The window is frameless and has no menu bar of its own, and these are titles
+   rather than one aggregate button because a real menu bar is what makes the
+   entries findable. The tree is defined once, in desktop/menu.mjs. */
+/* While a menu is down the whole bar stops being a drag region, or the menu
+   cannot be dismissed by clicking the bar: the OS takes a mousedown on a drag
+   region before the page sees it, so the click starts a window drag and the
+   menu stays up. titlebar.js sets the class. A native menu bar gives up
+   dragging on the same terms. */
+html.anr-menu-open .anr-titlebar { -webkit-app-region: no-drag; }
+
+.anr-tb-menubar { display: flex; align-items: stretch; flex: none; }
+.anr-tb-menu { position: relative; display: flex; align-items: stretch; }
+.anr-tb-menu-title { padding: 0 12px; }
+.anr-tb-menu.is-open .anr-tb-menu-title { background: var(--fg); color: var(--bg); }
+
+/* The panel hangs off the bottom of its title, aligned to the title's left edge
+   the way a menu bar's always has. It is a popover on the site's own terms: a
+   hairline box on the page background, square, with the popover shadow. */
+.anr-tb-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 1;
+  min-width: 220px;
+  padding: 4px 0;
+  background: var(--bg);
+  border: var(--bd-rule);
+  box-shadow: var(--shadow-popover);
+  -webkit-app-region: no-drag;
+}
+.anr-tb-panel[hidden] { display: none; }
+
+/* ---- the panel when it IS the window ----
+   An open menu is its own small window, because it cannot be anything else: the
+   bar is the main window's own web contents and the site is a CHILD view, and a
+   child view always composites ABOVE the contents it was added to. A panel
+   dropped below the bar lands underneath the site and cannot be seen - and the
+   DOM reports it as perfectly on-screen the whole time, because a page has no
+   idea another native view is on top of it. See ensurePanelWindow() in
+   desktop/main.mjs. The rules above still draw it; these only turn a popover
+   hanging off a title into the whole of a window. */
+html.anr-tb-panel-window,
+html.anr-tb-panel-window body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); }
+/* There is no .anr-titlebar ancestor here to inherit the bar's type from, so
+   the page carries it: same family, size, tracking and case. */
+html.anr-tb-panel-window body {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  letter-spacing: var(--ls-micro);
+  text-transform: uppercase;
+}
+/* Its NATURAL size, always - never stretched to the window. The window is sized
+   from this box, so if the box were sized from the window the two would define
+   each other and the first measurement would just report the window back. That
+   is exactly what happened when this was `width: 100%; height: 100%` with a
+   measuring mode toggled around the read. */
+html.anr-tb-panel-window .anr-tb-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  height: auto;
+  box-sizing: border-box;
+  /* A frameless window cannot cast a shadow outside its own bounds, so the
+     hairline border carries the edge alone. */
+  box-shadow: none;
+}
+.anr-tb-panel-item {
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  padding: 7px 14px;
+  text-align: left;
+  transition: background-color var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+.anr-tb-panel-item:hover,
+.anr-tb-panel-item:focus-visible { background: var(--fg); color: var(--bg); outline: 0; }
+/* The shortcut, set back so the label reads first. Inherits the row's colour on
+   hover, so it does not go invisible against the inverted background. */
+.anr-tb-panel-key { color: var(--muted); }
+.anr-tb-panel-item:hover .anr-tb-panel-key,
+.anr-tb-panel-item:focus-visible .anr-tb-panel-key { color: inherit; opacity: 0.7; }
+.anr-tb-panel-sep { height: 1px; margin: 4px 0; background: var(--hairline); }
+
+/* ---- back / forward ----
+   A frameless window has no browser chrome, so these are the only pointer route
+   back through the app's history. Disabled rather than hidden at the ends of the
+   history, so the bar never reflows as you move around. */
+.anr-tb-nav { display: flex; align-items: stretch; flex: none; }
+.anr-tb-nav .anr-tb-btn { width: 34px; padding: 0; }
+
+/* flex: none, and it is the one group that must never lose it: the controls are
+   the only way to close a frameless window, so they cannot be the thing that
+   gets pushed off the end when the window is narrow. Everything else gives way
+   first - see the breakpoints below. */
+.anr-tb-ctl { display: flex; align-items: stretch; flex: none; }
 .anr-tb-ctl .anr-tb-btn { width: 46px; padding: 0; }
 /* Close is the only destructive control on the bar, so it is the only one that
    takes the accent on hover. */
@@ -9987,20 +10117,17 @@ html.anr-win-max .anr-tb-max .anr-tb-ico-restore,
 .anr-tb-max.is-max .anr-tb-ico-restore { display: block; }
 .anr-tb-max.is-max .anr-tb-ico-max { display: none; }
 
-/* Full screen: the bar would cover the content it is supposed to frame. */
+/* Full screen: main.mjs gives the app view the whole window, so the bar is
+   covered rather than removed - but hide it anyway, so a stray repaint cannot
+   show a strip of it over the content. */
 html.anr-win-full .anr-titlebar { display: none; }
-html.anr-win-full body { padding-top: 0; }
-html.anr-win-full .site-nav,
-html.anr-win-full .anr-back-bar,
-html.anr-win-full .anr-cmp-controls,
-html.anr-win-full .search-overlay { top: 0; }
 
 /* ---- window-control glyphs ----
    On Windows these are the system ones, from the same icon font every native
    title bar draws (Segoe Fluent Icons on 11, Segoe MDL2 Assets on 10), so the
    controls match the rest of the OS exactly and stay even at any DPI. Off
-   Windows core/desktop-chrome.ts emits a small SVG set instead and this font
-   stack never applies. */
+   Windows desktop/chrome/titlebar.js emits a small SVG set instead and this
+   font stack never applies. */
 .anr-tb-ico { display: block; }
 .anr-tb-ico--font {
   /* MDL2 FIRST, and not by accident: Segoe Fluent's ChromeMaximize carries a
@@ -10015,40 +10142,36 @@ html.anr-win-full .search-overlay { top: 0; }
 }
 .anr-tb-menu .anr-tb-ico--font { font-size: 12px; }
 
-/* ---- the page scrollbar ----
-   A native scrollbar is the full height of the viewport and no CSS can shorten
-   it, so it runs up beside the title bar and breaks its line. The root one is
-   hidden and core/desktop-chrome.ts draws the rail below, which starts under
-   the bar. Root scroller ONLY - every inner pane keeps the styled native bar
-   from the SCROLLBARS block near the top of this file, and the two are drawn to
-   the same measurements (13px rail, 5px thumb, 4px inset). */
-html.anr-desktop { scrollbar-width: none; }
-html.anr-desktop::-webkit-scrollbar { width: 0; height: 0; display: none; }
-
-.anr-scrollbar {
-  position: fixed;
-  top: var(--anr-tb-h);
-  right: 0;
-  bottom: 0;
-  width: 13px;
-  z-index: 999;                       /* under the title bar (1000), over everything else */
-  background: var(--bg);
-  border-left: var(--bd-rule);
+/* ---- narrow windows ----
+   Every group on the bar has an intrinsic width, so a narrow window has to shed
+   parts in a fixed order or the controls end up outside it - and then there is
+   no way to close a frameless window. Measured with research/tb-sizes.mjs, not
+   guessed: the full bar needs about 630px and the window's own minWidth is 360.
+   The order is least-useful first; the controls never go.
+     700  the section name - the file name beside it says more
+     620  the wordmark - the taskbar entry already says Analyser
+     560  back and forward - both are in the Go menu, with accelerators
+     460  the file name
+     400  the menu titles and controls tighten up
+   LAST in the file on purpose. These override the component rules above and
+   carry the same specificity, so source order is what decides. Adding one of
+   these breakpoints anywhere earlier silently does nothing. */
+@media (max-width: 700px) {
+  .anr-tb-section { display: none; }
+  /* The separator belongs to the pair, so it goes with the section. Matched at
+     the same specificity as the rule that draws it, or it would not win. */
+  .anr-tb-file:not([hidden])::before { content: none; }
 }
-/* Nothing to scroll: the rail would read as an empty gutter. */
-.anr-scrollbar.is-idle { display: none; }
-
-.anr-scrollbar-thumb {
-  position: absolute;
-  top: 0;
-  left: 4px;
-  width: 5px;
-  background: var(--muted);
-  transition: background-color var(--dur-fast) ease;
-  will-change: transform;
+@media (max-width: 620px) {
+  .anr-tb-brand { display: none; }
 }
-.anr-scrollbar:hover .anr-scrollbar-thumb { background: var(--fg); }
-.anr-scrollbar.is-dragging .anr-scrollbar-thumb { background: var(--accent); }
-
-/* Full screen has no title bar to clear. */
-html.anr-win-full .anr-scrollbar { top: 0; }
+@media (max-width: 560px) {
+  .anr-tb-nav { display: none; }
+}
+@media (max-width: 460px) {
+  .anr-tb-sub { display: none; }
+}
+@media (max-width: 400px) {
+  .anr-tb-menu-title { padding: 0 8px; }
+  .anr-tb-ctl .anr-tb-btn { width: 40px; }
+}

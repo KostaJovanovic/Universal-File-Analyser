@@ -8,6 +8,21 @@ Everything here is dev-only. `web/` never sees it, and `save.bat` does not run i
 
 ## Run it
 
+`desktop.bat` in the REPO ROOT is the one-step way, and the counterpart to
+`server.bat`. It installs this folder's dependencies on the first run, builds
+`src/` (`web/assets/js/` is build output, so an edit in `src/` does nothing until
+`tsc` runs), then opens the window. A file path passed to it - including one
+dragged onto the `.bat` - is opened in the app.
+
+It also leaves two `tsc --watch` processes running, so the loop is **save, then
+Ctrl+R in the app**. They run with `start /b`, inside the launcher's own console
+rather than in two extra windows, and they are stopped when the app quits -
+unless `server.bat` already had a pair up, in which case those are reused and
+left alone. HTML and CSS need no watcher at all: Ctrl+R is enough, because the
+`analyser://` handler reads `../web` straight off disk.
+
+The two steps by hand, from this folder:
+
 ```
 npm install          # once, in this folder
 npm start            # electron .  ->  analyser://localhost/
@@ -16,6 +31,12 @@ npm start            # electron .  ->  analyser://localhost/
 `npm start` serves `../web` straight off disk, so the loop is `server.bat`'s two
 `tsc --watch` windows plus Ctrl+R in the app. No dev server is involved - the
 `analyser` scheme handler reads the files itself.
+
+One environment trap, because the failure is baffling: **`ELECTRON_RUN_AS_NODE`
+must not be set.** It turns `electron.exe` into a plain Node runtime, so
+`main.mjs` resolves `import { app } from 'electron'` to the npm shim and dies
+with `Cannot read properties of undefined (reading 'exports')` instead of
+opening a window. Some tooling exports it. `desktop.bat` clears it.
 
 ## Build an installer
 
@@ -230,41 +251,84 @@ not exist in a browser, so the website is unaffected:
   `about:blank` child window kept as the fallback.
 - `core/app.ts` and `renderers/folder.ts` - the open-by-path plumbing described
   above.
-- `core/desktop-chrome.ts` - the title bar and page scrollbar. The one
-  desktop-only MODULE rather than a guarded branch, because the desktop can land
-  on either entry point (`core/app.ts` or `core/docs.ts`) and a title bar
-  duplicated across both is worse than a file. Both `import()` it dynamically
-  inside the guard, so a browser never fetches it.
-
 ## Window chrome
 
 `frame: false` everywhere except macOS, where the frame stays so the traffic
 lights survive (`titleBarStyle: 'hidden'` plus `trafficLightPosition`, and the
 CSS hides the app's own buttons and reserves `--anr-tb-lead` for the native
-ones). Three consequences worth knowing:
+ones).
 
-- **The native menu bar is unreachable without a frame.** `autoHideMenuBar` is
-  on and the bar's MENU button pops `Menu.getApplicationMenu()` through
-  `anr:win-menu` instead, so `menu.mjs` stays the single definition of the menu
-  and its accelerators.
+**The bar is not part of the app.** The window holds TWO web contents:
+
+- the **window's own** contents are the bar - `desktop/chrome/titlebar.html` +
+  `titlebar.js`, served from `analyser://<host>/__chrome/`, bridged by
+  `chrome/preload.cjs` as `window.anrChrome`;
+- the **site** is a child `WebContentsView`, bridged by `preload.cjs` as
+  `window.anrDesktop`, positioned by `layout()` at `y = tbHeight`.
+
+That orientation is load-bearing. Do not swap it: on Windows the OS computes the
+drag hit-test from the window's own web contents, so `-webkit-app-region: drag`
+has to live there or the bar stops moving the window.
+
+The payoff is that the app has an ORDINARY viewport that starts below the bar.
+`position: fixed`, `100vh`, `window.innerHeight` and the native scrollbar are all
+correct by construction, and no page element needs to know the bar exists. That
+deleted about 200 lines of offsets - the sticky bands, the full-window overlays
+(`.page-drop`, `.lightbox`, `.splash`), the `html.anr-win-full` resets - and the
+whole app-drawn scrollbar, which only existed because a native one ran the full
+height of a viewport that started at the top of the window.
+
+**If you find yourself writing `html.anr-desktop something { top: ... }`, the
+split is not working and the fix belongs in `main.mjs`, not in the CSS.**
+
+The rest:
+
+- **The menu is drawn, not popped.** `menu.mjs` defines the tree ONCE and has
+  three consumers: `buildMenu()` builds a real `Menu` purely to register the
+  accelerators, `menuModel()` hands the same tree to the bar as plain data, and
+  `runMenuItem()` checks an id the bar sends back against that tree before it
+  runs anything. So the menus carry the site's own type and hairlines, and one
+  definition still covers all three.
+- **An open menu panel is its OWN WINDOW** (`chrome/panel.html` + `panel.js`,
+  built by `ensurePanelWindow()`). It has to be. A child view always composites
+  ABOVE the contents it was added to, so a panel drawn in the bar's page lands
+  underneath the site and cannot be seen - and nothing in the page can detect
+  that, because the DOM has no idea a native view is on top of it. The panel
+  measured as perfectly on-screen the whole time it was invisible, which is why
+  the width sweep and every `getBoundingClientRect()` check passed while the
+  menus did nothing. **Any test of the bar that only reads geometry from the DOM
+  cannot see this class of fault.**
+  Three things about that window are load-bearing:
+  - It is created at start-up, hidden, and reused. Created on the first click
+    instead, it spends a second loading two stylesheets and the fonts, shows
+    nothing, and the user's second click toggles it straight back off.
+  - The panel keeps its NATURAL size (`width: max-content`), never the window's.
+    Sizing it to the window and toggling a measuring mode around the read makes
+    the two define each other, and the first measurement just reports the window
+    back - a 220x100 panel whatever the menu.
+  - `blur` on that window is the whole of "click outside to close", and
+    `pushState` counts the panel's focus as the main window's, or the bar
+    recedes exactly while a menu is being used.
 - **Minimise, maximise and close have no native affordance left.** They go
-  through `anr:win`, which checks the sender is our own window. Main pushes
-  `anr:win-state` on maximize, unmaximize, full screen and focus, because the
-  bar has to redraw for state changes it did not cause - Win+Up, Snap, a
-  double-click on the drag region.
-- **`.anr-desktop` goes on `<html>` in the PRELOAD, not in the module.** The CSS
-  reserves the bar's height with `html.anr-desktop body { padding-top }`, and
-  the preload runs before any page script, so the page lays out with the room
-  already made. Adding the class later shifts the whole page down on every load.
-
-The page scrollbar is drawn too, and for a specific reason: a native scrollbar
-is the full height of the viewport and nothing in CSS can shorten it, so it runs
-up beside the title bar and breaks its line. The root one is hidden and
-`desktop-chrome.ts` draws a rail starting below the bar. It deliberately does
-NOT move the scroll onto a wrapper element - `window` stays the scrolling
-element, so `window.scrollY`, every scroll listener and all the `scrollIntoView`
-calls behave exactly as they do on the website. Inner panes keep the styled
-native scrollbar, drawn to the same measurements.
+  through `anr:win`, which checks the sender. Main pushes `anr:win-state` on
+  maximize, unmaximize, full screen and focus, because the bar has to redraw for
+  state changes it did not cause - Win+Up, Snap, a double-click on the drag
+  region.
+- **Full screen is tracked from the events, not read back.** Electron on Windows
+  emits `enter-full-screen` and `leave-full-screen` BEFORE `isFullScreen()`
+  returns the new value. `layout()` survived that because the resize that follows
+  re-runs it. Main tells the bar once, so the bar latched the wrong state, hid
+  itself in a window that was not full screen, and left nothing to close the
+  window with. `main.mjs` now keeps its own flag, and those two events set it
+  first.
+- **The bar reports its own height** through `anr:chrome-height`, measured from
+  `--anr-tb-h` in `analyser.css`, so that token stays the single source of truth
+  and main never carries a second copy of the number.
+- **Narrow windows shed parts in a fixed order** - section, wordmark, arrows,
+  file name - at the breakpoints at the very END of the DESKTOP WINDOW CHROME
+  block. They are last in the file on purpose: they override the component rules
+  at the same specificity, so source order decides. The window controls never
+  shrink away, because they are the only way to close a frameless window.
 
 ## Not done yet
 

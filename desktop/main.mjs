@@ -12,7 +12,7 @@
  * See README.md in this folder for how to run and build.
  */
 
-import { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, shell } from 'electron';
+import { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, net, protocol, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { totalmem } from 'node:os';
@@ -20,7 +20,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { looksLikeWebRoot, mimeFor, route } from './router.mjs';
-import { buildMenu } from './menu.mjs';
+import { buildMenu, menuModel, runMenuItem } from './menu.mjs';
 import * as ffnative from './ffmpeg-native.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -32,6 +32,39 @@ const SITE = 'https://analyser.valjdakosta.com';
 /* macOS keeps its native frame so the traffic lights survive; every other
    platform is frameless and draws the whole title bar itself. */
 const isMac = process.platform === 'darwin';
+
+/* ---------------------------------------------------------------------------
+ * Two web contents, not one - and this is the important structural decision in
+ * the file.
+ *
+ * The title bar used to be drawn by the app's own page, at the top of its own
+ * viewport. That works until something else in the page asks to sit at the top
+ * of the window: `position: fixed`, `100vh` and window.innerHeight all still
+ * counted the strip the bar covers, because a page has no way to learn that
+ * part of its viewport is chrome. Every full-window overlay then needed its own
+ * hand-written offset, and the one that got missed put the image lightbox's
+ * close button inside the title bar.
+ *
+ * So the bar and the app are separate web contents now:
+ *
+ *   - the WINDOW's own contents is the title bar page (desktop/chrome/), and
+ *   - the app runs in a WebContentsView parked below it.
+ *
+ * The app's viewport therefore starts under the bar for real. Nothing in the
+ * page can reach the bar, no offsets exist to forget, and the native scrollbar
+ * begins in the right place - which is why the app-drawn scrollbar this used to
+ * need is gone entirely.
+ *
+ * That the bar is the WINDOW's contents rather than the other way round is also
+ * deliberate: on Windows the OS drag hit-test is computed from the window's own
+ * web contents, so `-webkit-app-region: drag` has to live there or the bar
+ * stops moving the window.
+ * ------------------------------------------------------------------------- */
+
+/* The bar's height in CSS pixels. Only a starting value: the bar page measures
+   itself from --anr-tb-h in analyser.css and reports the real number through
+   anr:chrome-height, so the token stays the single source of truth. */
+const TB_H_DEFAULT = 34;
 
 /* Dev serves from ../web, the packaged build from resources/web (the assets go
    in as extraResources rather than into the asar - see electron-builder.yml). */
@@ -45,6 +78,19 @@ const WEB_DIR = app.isPackaged
    change for either. */
 const HOST = app.isPackaged ? 'app' : 'localhost';
 const ORIGIN = 'analyser://' + HOST;
+
+/* Where the title bar page lives. It is served from desktop/chrome/, NOT from
+   web/ - it is not part of the website and must never appear on it - but it is
+   served on the app's own origin so it can link the site's stylesheet and read
+   the same localStorage theme the app wrote.
+   The prefix is handled before router.mjs is consulted, so that file stays a
+   pure port of serve.py rather than gaining a third deliberate difference.
+   Nothing under web/ may ever use this path. */
+const CHROME_PATH = '/__chrome/';
+const CHROME_DIR = join(HERE, 'chrome');
+/* An allow-list, not a path join: the page is three files and this handler must
+   not become a way to read anything else beside it. */
+const CHROME_FILES = new Set(['titlebar.html', 'titlebar.js', 'panel.html', 'panel.js', 'accel.js']);
 
 /* Cap the "open a folder" walk at the same number the in-page folder walk uses
    (FOLDER_ENTRY_CAP in src/renderers/folder.ts). Keep the two in step. */
@@ -188,6 +234,15 @@ function writeState(win) {
 // Window
 // ---------------------------------------------------------------------------
 let mainWindow = null;
+/** The view the SITE runs in. Everything that talks to the page talks to this,
+ *  not to mainWindow.webContents - that one is the title bar. */
+let appView = null;
+/** Shorthand for the app's web contents, or null before the window exists. */
+const appContents = () => (appView && !appView.webContents.isDestroyed() ? appView.webContents : null);
+let tbHeight = TB_H_DEFAULT;
+/** Set by createWindow. The title bar's IPC lives at module scope so `activate`
+ *  re-creating the window cannot stack a second set of listeners. */
+let chromeHooks = null;
 
 function createWindow() {
   const st = readState();
@@ -219,13 +274,13 @@ function createWindow() {
     backgroundColor: '#0a0a0a',
     show: false,
     title: 'Analyser',
-    // The window draws its own title bar (src/core/desktop-chrome.ts), so the
-    // OS one is removed entirely. On macOS `frame: false` would take the
-    // traffic lights with it, so there the frame stays and only the bar is
-    // hidden - our own buttons hide themselves on darwin and the CSS leaves a
-    // gap for the native ones. `autoHideMenuBar` matters on Windows/Linux: the
-    // native menu bar is unreachable without a frame, so the MENU button in
-    // the custom bar pops the same menu up instead (see anr:win-menu).
+    // The window draws its own title bar (chrome/titlebar.js, which IS this
+    // window's web contents), so the OS one is removed entirely. On macOS
+    // `frame: false` would take the traffic lights with it, so there the frame
+    // stays and only the bar is hidden - our own buttons hide themselves on
+    // darwin and the CSS leaves a gap for the native ones. `autoHideMenuBar`
+    // matters on Windows/Linux: the native menu bar is unreachable without a
+    // frame, and the bar draws the menus itself from menu.mjs's tree instead.
     frame: isMac,
     titleBarStyle: isMac ? 'hidden' : 'default',
     trafficLightPosition: isMac ? { x: 14, y: 11 } : undefined,
@@ -233,6 +288,22 @@ function createWindow() {
     // Dev only: build/ is not inside the asar, and a packaged window takes its
     // icon from the executable that electron-builder stamped.
     icon: app.isPackaged ? undefined : join(HERE, 'build', 'icon.png'),
+    // The window's own page is the TITLE BAR (see the note at the top of this
+    // file). It gets its own small preload: nothing in chrome/ has any business
+    // reaching the file dialogs, ffmpeg or the open-by-path bridge.
+    webPreferences: {
+      preload: join(HERE, 'chrome', 'preload.cjs'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      webviewTag: false,
+      spellcheck: false,
+    },
+  });
+
+  // The site. A child view rather than the window's own contents, so its
+  // viewport genuinely starts below the bar.
+  const view = new WebContentsView({
     webPreferences: {
       preload: join(HERE, 'preload.cjs'),
       contextIsolation: true,
@@ -247,9 +318,58 @@ function createWindow() {
       additionalArguments: ['--anr-desktop=' + encodeURIComponent(JSON.stringify(bootInfo))],
     },
   });
+  win.contentView.addChildView(view);
+  appView = view;
+
+  /* Full screen is tracked from the events, NOT read back from the window.
+     Electron on Windows emits enter-full-screen and leave-full-screen BEFORE
+     win.isFullScreen() starts returning the new value, so a listener that asks
+     the window inside one of those handlers gets the state it had a moment ago.
+     layout() only got away with that because the resize that follows re-runs it
+     with the truth; the bar is told once and has no second event to correct it,
+     so it latched "full screen" while windowed, hid itself, and left the window
+     with no way to be moved, minimised or closed. Registered FIRST, so every
+     listener below reads the new value. */
+  let fullScreen = win.isFullScreen();
+  win.on('enter-full-screen', () => { fullScreen = true; });
+  win.on('leave-full-screen', () => { fullScreen = false; });
+
+  /* Put the app view under the bar, and give it the whole window in full
+     screen, where there is no bar to clear. Runs on every geometry change:
+     a child view has no layout of its own, so nothing else moves it. */
+  const layout = () => {
+    if (win.isDestroyed()) return;
+    const { width, height } = win.getContentBounds();
+    const top = fullScreen ? 0 : tbHeight;
+    view.setBounds({ x: 0, y: top, width, height: Math.max(0, height - top) });
+  };
+  win.on('resize', layout);
+  win.on('maximize', layout);
+  win.on('unmaximize', layout);
+  win.on('enter-full-screen', layout);
+  win.on('leave-full-screen', layout);
+  layout();
+
+  /* An open menu panel is a separate window pinned to a point on this one, so
+     it cannot follow a window that moves or resizes. Native menus close on the
+     same events. */
+  for (const ev of ['move', 'resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'minimize']) {
+    win.on(ev, () => closePanel());
+  }
 
   if (st.maximized) win.maximize();
-  win.once('ready-to-show', () => win.show());
+  // Wait for the SITE to paint, not the bar: the bar is ready almost at once,
+  // and showing then would flash an empty window for as long as the app takes.
+  view.webContents.once('did-finish-load', () => {
+    layout();
+    win.show();
+    /* Build the menu panel's window now, hidden and empty. It has two
+       stylesheets and the fonts to load, and on a cold start that takes longer
+       than the gap between clicking File and expecting to see it - so the first
+       menu opened at the size the window was created at. Warmed up here, every
+       open is the same speed. */
+    ensurePanelWindow();
+  });
 
   let saveTimer = null;
   const queueSave = () => {
@@ -261,22 +381,52 @@ function createWindow() {
   win.on('close', () => writeState(win));
   win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
 
-  /* The custom title bar draws its own maximise/restore glyph and inset, so it
-     has to hear about every state change - including the ones it did not cause
-     (Win+Up, Snap, a double-click on the drag region, exiting full screen). */
+  /* The title bar draws its own maximise/restore glyph and recedes when the
+     window loses focus, so it has to hear about every state change - including
+     the ones it did not cause (Win+Up, Snap, a double-click on the drag region,
+     exiting full screen). */
   const pushState = () => {
     if (win.isDestroyed()) return;
     win.webContents.send('anr:win-state', {
       maximized: win.isMaximized(),
-      fullScreen: win.isFullScreen(),
-      focused: win.isFocused(),
+      fullScreen,   // the tracked flag - see why above layout()
+      // An open menu panel is a window of its own and takes the focus, which
+      // would otherwise make the bar recede exactly while it is being used.
+      focused: win.isFocused() || panelFocused(),
     });
   };
   for (const ev of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'focus', 'blur']) {
     win.on(ev, pushState);
   }
 
-  win.loadURL(ORIGIN + '/');
+  /* The bar names the section the app is on and lights its own back/forward
+     arrows, and it cannot read either from the app any more - separate contents,
+     and deliberately so. `did-navigate-in-page` is the one that matters most:
+     the site is an SPA (core/navigate.ts), so most moves never fire a real
+     navigation. There is no browser chrome in a frameless window, so those two
+     arrows are the only way back short of the keyboard. */
+  const pushNav = () => {
+    if (win.isDestroyed() || view.webContents.isDestroyed()) return;
+    const h = view.webContents.navigationHistory;
+    let path = '/';
+    try { path = new URL(view.webContents.getURL()).pathname; } catch (_) { /* about:blank */ }
+    win.webContents.send('anr:chrome-nav', {
+      path,
+      canBack: h.canGoBack(),
+      canForward: h.canGoForward(),
+    });
+  };
+  view.webContents.on('did-navigate', pushNav);
+  view.webContents.on('did-navigate-in-page', pushNav);
+
+  // Handed to the module-level IPC below. The bar comes up before the app does,
+  // so it asks for everything once it is ready rather than racing it.
+  chromeHooks = { pushState, pushNav, layout };
+
+  win.loadURL(ORIGIN + CHROME_PATH + 'titlebar.html');
+  view.webContents.loadURL(ORIGIN + '/');
+  // A load that never finishes must not leave an invisible window behind.
+  setTimeout(() => { if (!win.isDestroyed() && !win.isVisible()) win.show(); }, 4000);
   return win;
 }
 
@@ -320,8 +470,9 @@ function hardenWebContents(wc) {
  *  wraps the blob in a File and hands it to window._anrHandleFile. */
 function sendFile(path) {
   const info = approve(path);
-  if (!info || !mainWindow) return;
-  mainWindow.webContents.send('anr:open', { kind: 'file', ...info });
+  const wc = appContents();
+  if (!info || !wc) return;
+  wc.send('anr:open', { kind: 'file', ...info });
 }
 
 /** Breadth-first walk, mirroring walkTree() in src/renderers/folder.ts: the
@@ -359,8 +510,9 @@ function walkFolder(root) {
 }
 
 function sendFolder(path) {
-  if (!mainWindow) return;
-  mainWindow.webContents.send('anr:open', walkFolder(path));
+  const wc = appContents();
+  if (!wc) return;
+  wc.send('anr:open', walkFolder(path));
 }
 
 /** Route a path from the command line, a second instance or macOS open-file.
@@ -403,10 +555,29 @@ const actions = {
     if (picked && picked[0]) sendFolder(picked[0]);
   },
   go(path) {
-    if (mainWindow) mainWindow.loadURL(ORIGIN + path);
+    const wc = appContents();
+    if (wc) wc.loadURL(ORIGIN + path);
   },
   external(url) {
     shell.openExternal(url).catch(() => {});
+  },
+  /* Window and page commands. These were Electron menu ROLES, which the drawn
+     menu cannot use - a role only means something inside a real Menu - so each
+     one is spelled out against the app's view. Zoom moves in the same steps
+     Chromium's own does. */
+  view(what) {
+    const wc = appContents();
+    if (!wc || !mainWindow) return;
+    if (what === 'reload') wc.reload();
+    else if (what === 'back') wc.navigationHistory.goBack();
+    else if (what === 'forward') wc.navigationHistory.goForward();
+    else if (what === 'zoomIn') wc.setZoomLevel(Math.min(9, wc.getZoomLevel() + 0.5));
+    else if (what === 'zoomOut') wc.setZoomLevel(Math.max(-8, wc.getZoomLevel() - 0.5));
+    else if (what === 'zoomReset') wc.setZoomLevel(0);
+    else if (what === 'devTools') wc.toggleDevTools();
+    else if (what === 'fullScreen') mainWindow.setFullScreen(!mainWindow.isFullScreen());
+    else if (what === 'close') mainWindow.close();
+    else if (what === 'quit') app.quit();
   },
   /* "Where my data is stored". The whole promise of the portable build is that
      it leaves the host machine as it found it, so make that checkable rather
@@ -428,16 +599,21 @@ const actions = {
 };
 
 // ---------------------------------------------------------------------------
-// Window controls for the custom title bar (src/core/desktop-chrome.ts).
+// The title bar (desktop/chrome/).
 //
 // The window is frameless everywhere except macOS, so minimise / maximise /
 // close have no native affordance left and arrive here instead. `menu` pops the
 // application menu under the bar's MENU button: with no frame there is no menu
 // bar to drop it from, and Menu.getApplicationMenu() still holds the one
 // buildMenu() made, so the accelerators and the entries stay in one place.
+//
+// Every one of these checks the sender is the BAR's contents, not the app's -
+// the site is a separate web contents and has no business moving the window.
 // ---------------------------------------------------------------------------
+const fromChrome = (e) => !!mainWindow && !mainWindow.isDestroyed() && e.sender === mainWindow.webContents;
+
 ipcMain.handle('anr:win', (e, action) => {
-  if (!mainWindow || e.sender !== mainWindow.webContents) return null;
+  if (!fromChrome(e)) return null;
   const w = mainWindow;
   if (action === 'minimize') w.minimize();
   else if (action === 'maximize') { w.isMaximized() ? w.unmaximize() : w.maximize(); }
@@ -445,23 +621,172 @@ ipcMain.handle('anr:win', (e, action) => {
   return { maximized: w.isMaximized(), fullScreen: w.isFullScreen(), focused: w.isFocused() };
 });
 
-ipcMain.handle('anr:win-menu', (e, { x, y }) => {
-  if (!mainWindow || e.sender !== mainWindow.webContents) return false;
-  const menu = Menu.getApplicationMenu();
-  if (!menu) return false;
-  // CSS pixels from the page; popup() wants window coordinates, and the two
-  // differ the moment someone zooms the page (Ctrl+= is in the View menu).
-  const z = mainWindow.webContents.getZoomFactor() || 1;
-  menu.popup({ window: mainWindow, x: Math.round(x * z), y: Math.round(y * z) });
-  return true;
+/* The menu, as data. The bar draws it itself - see menu.mjs for why the tree has
+   one definition and two consumers. */
+ipcMain.handle('anr:menu-model', (e) => (fromChrome(e) ? menuModel(actions) : []));
+
+/* A click in the drawn menu. The id is checked against the tree rather than
+   trusted, because it arrives from a renderer. */
+ipcMain.handle('anr:menu-run', (e, id) => (fromChrome(e) ? runMenuItem(actions, String(id || '')) : false));
+
+/* ---------------------------------------------------------------------------
+ * The menu panels, each in its own small window.
+ *
+ * They cannot be drawn in the bar's page. The bar IS the window's own web
+ * contents and the site is a CHILD view, and a child view always composites
+ * ABOVE the contents it was added to - so a panel dropped below the bar lands
+ * underneath the site and is invisible. Nothing in CSS can reach across that:
+ * the DOM has no idea another native view is on top of it, which is why the
+ * panel measured as perfectly on-screen while showing nothing at all.
+ *
+ * The other way round is worse. Moving the bar into a child view would let the
+ * panel draw, but on Windows the OS computes the drag hit-test from the
+ * window's own web contents, so -webkit-app-region would stop moving the
+ * window - see the note at the top of this file.
+ *
+ * So the panel gets a window. One window, reused: it is repositioned and
+ * refilled as the user slides along the menu bar, rather than made and
+ * destroyed four times.
+ * ------------------------------------------------------------------------- */
+let panelWin = null;
+let panelMenuId = '';
+/* Clicking an open menu's own title must CLOSE it. The click blurs the panel
+   window first, which closes it, and the title's click handler then arrives at
+   an already-closed menu and would open it straight back up. So a re-open of
+   the menu that just closed is ignored for a moment. */
+let panelClosedId = '';
+let panelClosedAt = 0;
+
+const fromPanel = (e) => !!panelWin && !panelWin.isDestroyed() && e.sender === panelWin.webContents;
+const panelFocused = () => !!panelWin && !panelWin.isDestroyed() && panelWin.isFocused();
+
+function closePanel() {
+  if (panelMenuId) { panelClosedId = panelMenuId; panelClosedAt = Date.now(); }
+  panelMenuId = '';
+  if (panelWin && !panelWin.isDestroyed() && panelWin.isVisible()) panelWin.hide();
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('anr:menu-closed');
+}
+
+function ensurePanelWindow() {
+  if (panelWin && !panelWin.isDestroyed()) return panelWin;
+  panelWin = new BrowserWindow({
+    parent: mainWindow,     // keeps it above the window it belongs to
+    show: false,
+    frame: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    backgroundColor: '#00000000',
+    width: 220,
+    height: 100,
+    webPreferences: {
+      preload: join(HERE, 'chrome', 'preload.cjs'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      spellcheck: false,
+    },
+  });
+  // Clicking anywhere else - the bar, the page, another app - dismisses it,
+  // which is the whole of "click outside to close" in one line.
+  panelWin.on('blur', () => { closePanel(); if (chromeHooks) chromeHooks.pushState(); });
+  panelWin.on('closed', () => { panelWin = null; panelMenuId = ''; });
+  panelWin.loadURL(ORIGIN + CHROME_PATH + 'panel.html');
+  return panelWin;
+}
+
+/* The bar asks for a menu, giving the title's position in ITS OWN client
+   coordinates. Main turns that into screen coordinates, because only main knows
+   where the window is. */
+ipcMain.on('anr:menu-open', (e, req) => {
+  if (!fromChrome(e) || !mainWindow || mainWindow.isDestroyed()) return;
+  const id = String((req && req.id) || '');
+  const model = menuModel(actions);
+  const menu = model.find((m) => m.id === id);
+  if (!menu) return;
+  if (id === panelClosedId && Date.now() - panelClosedAt < 250) { panelClosedId = ''; return; }
+  panelMenuId = id;
+  const win = ensurePanelWindow();
+  const at = { x: Math.round(Number(req.x) || 0), y: Math.round(Number(req.y) || 0) };
+  const send = () => win.webContents.send('anr:panel-menu', { menu, at });
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send); else send();
+});
+
+ipcMain.on('anr:menu-close', (e) => { if (fromChrome(e)) closePanel(); });
+
+/* The panel has laid itself out and reports the size it needs. Only now is it
+   positioned and shown, so it never flashes at the wrong size or place. */
+ipcMain.on('anr:panel-size', (e, size) => {
+  if (!fromPanel(e) || !panelMenuId || !mainWindow || mainWindow.isDestroyed()) return;
+  const w = Math.max(80, Math.ceil(Number(size && size.w) || 0));
+  const h = Math.max(24, Math.ceil(Number(size && size.h) || 0));
+  const at = size && size.at ? size.at : { x: 0, y: 0 };
+  const c = mainWindow.getContentBounds();
+  const area = screen.getDisplayMatching(c).workArea;
+  // Clamped to the display, so a menu near the right or bottom edge stays whole
+  // rather than being cut off - a panel window is not bounded by its parent.
+  const x = Math.min(Math.max(area.x, c.x + at.x), area.x + area.width - w);
+  const y = Math.min(Math.max(area.y, c.y + at.y), area.y + area.height - h);
+  panelWin.setBounds({ x: Math.round(x), y: Math.round(y), width: w, height: h });
+  if (!panelWin.isVisible()) panelWin.show();
+  if (chromeHooks) chromeHooks.pushState();
+});
+
+ipcMain.on('anr:panel-run', (e, id) => {
+  if (!fromPanel(e)) return;
+  closePanel();
+  runMenuItem(actions, String(id || ''));
+});
+
+ipcMain.on('anr:panel-close', (e) => { if (fromPanel(e)) closePanel(); });
+
+/* The bar reports its own height, measured from --anr-tb-h in analyser.css, so
+   that token stays the single source of truth for it and main never carries a
+   second copy of the number. Arrives once on load and again on a zoom or DPI
+   change. */
+ipcMain.on('anr:chrome-height', (e, px) => {
+  if (!fromChrome(e)) return;
+  const h = Math.max(0, Math.round(Number(px) || 0));
+  if (!h || h === tbHeight) return;
+  tbHeight = h;
+  if (chromeHooks) chromeHooks.layout();
+});
+
+/* The bar is up. It asks rather than being told, because it finishes loading
+   before the app does and would otherwise be sent a state it then overwrote. */
+ipcMain.on('anr:chrome-ready', (e) => {
+  if (!fromChrome(e) || !chromeHooks) return;
+  chromeHooks.pushState();
+  chromeHooks.pushNav();
+});
+
+/* Back and forward, from the bar's own arrows. */
+ipcMain.on('anr:chrome-nav', (e, dir) => {
+  if (!fromChrome(e)) return;
+  actions.view(dir === 'forward' ? 'forward' : 'back');
+});
+
+/* What the window is currently showing, named. The app sends the file it just
+   analysed (core/app.ts, behind the window.anrDesktop guard) and an empty string
+   when it goes back to a page - a title bar that names the open file is the main
+   thing this one has over the section label alone. It also becomes the window
+   title, so the taskbar entry says the same. */
+ipcMain.on('anr:subject', (e, text) => {
+  if (e.sender !== appContents() || !mainWindow || mainWindow.isDestroyed()) return;
+  const subject = String(text || '').slice(0, 200);
+  mainWindow.setTitle(subject ? subject + ' - Analyser' : 'Analyser');
+  mainWindow.webContents.send('anr:chrome-subject', subject);
 });
 
 // ---------------------------------------------------------------------------
 // Save the exported report through a native dialog (IPC from preload).
 // ---------------------------------------------------------------------------
 ipcMain.handle('anr:save-report', async (e, { name, html }) => {
-  // Only the app's own window may ask.
-  if (!mainWindow || e.sender !== mainWindow.webContents) return { ok: false, error: 'denied' };
+  // Only the app's own view may ask.
+  if (e.sender !== appContents()) return { ok: false, error: 'denied' };
   const res = await dialog.showSaveDialog(mainWindow, {
     title: 'Save the analysis report',
     defaultPath: (name || 'analysis') + '.html',
@@ -499,9 +824,9 @@ const BUNDLED_FFMPEG = [
   PORTABLE_DIR ? join(PORTABLE_DIR, 'ffmpeg', 'bin', FF_EXE) : null,
 ].filter(Boolean);
 
-/** Every ffmpeg IPC call must come from our own window. */
+/** Every ffmpeg IPC call must come from the app's own view. */
 function fromMainWindow(e) {
-  return !!mainWindow && e.sender === mainWindow.webContents;
+  return e.sender === appContents();
 }
 
 ipcMain.handle('anr:ffmpeg-caps', async (e) => {
@@ -540,7 +865,8 @@ ipcMain.handle('anr:ffmpeg-exec', async (e, { id, args, timeout }) => {
   const caps = await ffnative.capabilities(app.getPath('userData'), BUNDLED_FFMPEG);
   if (!caps.available) return { ok: false, code: -1, log: 'no ffmpeg binary' };
   const post = (payload) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('anr:ffmpeg-event', payload);
+    const wc = appContents();
+    if (wc) wc.send('anr:ffmpeg-event', payload);
   };
   try {
     return await ffnative.runJob(id, args, {
@@ -598,6 +924,22 @@ if (!app.requestSingleInstanceLock()) {
     // ---- analyser://  - the site itself, plus the /api/* proxy -------------
     protocol.handle('analyser', async (req) => {
       const url = new URL(req.url);
+
+      // The title bar page. Read rather than streamed: it is three small files,
+      // and readFileSync sees inside the asar, which spares this the question of
+      // whether the network stack does.
+      if (url.pathname.startsWith(CHROME_PATH)) {
+        const name = url.pathname.slice(CHROME_PATH.length);
+        if (!CHROME_FILES.has(name)) return new Response('', { status: 404 });
+        try {
+          return new Response(readFileSync(join(CHROME_DIR, name)), {
+            headers: { 'content-type': mimeFor(name) || 'text/plain', 'cache-control': 'no-cache' },
+          });
+        } catch (_) {
+          return new Response('', { status: 404 });
+        }
+      }
+
       const r = route(url.pathname, WEB_DIR);
 
       if (r.proxy) {
@@ -670,14 +1012,15 @@ if (!app.requestSingleInstanceLock()) {
 
     // Only allow what the app actually uses. Everything else - notifications,
     // geolocation, media capture, MIDI, USB, HID, serial - is denied outright.
-    const sess = mainWindow.webContents.session;
+    // Both views share the default session, so one handler covers the pair.
+    const sess = appContents().session;
     sess.setPermissionRequestHandler((_wc, permission, callback) => {
       callback(permission === 'fullscreen'
         || permission === 'clipboard-read'
         || permission === 'clipboard-sanitized-write');
     });
 
-    mainWindow.webContents.once('did-finish-load', () => {
+    appContents().once('did-finish-load', () => {
       for (const p of pathsFromArgv(process.argv)) openPath(p);
       while (queuedOpen.length) openPath(queuedOpen.shift());
     });

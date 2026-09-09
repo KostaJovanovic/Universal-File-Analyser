@@ -1,0 +1,30 @@
+<!doctype html>
+<!--
+  Analyser desktop - one open menu panel, in its own window.
+
+  It has a window because it cannot have anything else. The bar is the main
+  window's own web contents and the site is a CHILD view, and a child view
+  always composites above the contents it was added to - so a panel drawn in the
+  bar's page lands underneath the site and is invisible. See the block above
+  ensurePanelWindow() in desktop/main.mjs for why the reverse arrangement is
+  worse.
+
+  Same origin and the same two stylesheets as the bar, so the panel is drawn
+  from the site's own tokens and reads the theme the app wrote.
+-->
+<html lang="en" class="anr-desktop anr-tb-panel-window">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Menu</title>
+<!-- The site's theme bootstrap, so the panel paints in the right theme on its
+     first frame. Kept in step with titlebar.html by hand. -->
+<script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+<link rel="stylesheet" href="/assets/css/fonts.css">
+<link rel="stylesheet" href="/assets/css/analyser.css">
+</head>
+<body>
+<div class="anr-tb-panel" id="anrPanel" role="menu"></div>
+<script type="module" src="/__chrome/panel.js"></script>
+</body>
+</html>
