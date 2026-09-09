@@ -73,7 +73,6 @@
     .tst-fixwrap .anr-titlebar { flex: 1 1 100%; }
     /* The desktop scrollbar rail is fixed to the window edge; pin it to the
        demo stage instead so it can be shown beside a block of content. */
-    .tst-stage--rel .anr-scrollbar { position: absolute; top: 0; }
     .tst-fixwrap { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; margin: 10px 0; }
     /* ---- Interactive layer (behaviour wired by the page script at the foot) ----
        The sheet is live: every demo responds so you can feel the real component.
@@ -941,17 +940,15 @@
     <div class="grid">
       <div class="section-content">
         <h2 class="section-head" id="window">Window chrome.</h2>
-        <p class="section-lede">Desktop app only. The Electron window is frameless off macOS, so the page draws its own title bar and page scrollbar (src/core/desktop-chrome.ts). Nothing on the website carries these classes - the shell's preload puts <code>.anr-desktop</code> on &lt;html&gt;, and that is what turns on the layout rules that leave room for the bar. The demos below are pinned into the flow; in the app both are fixed to the window edge.</p>
+        <p class="section-lede">Desktop app only. The Electron window is frameless off macOS and draws its own title bar (desktop/chrome/titlebar.js). It is not part of the site: the bar is the window's own document and the app runs in a view parked below it, which is what gives the app an ordinary full viewport with nothing reserved at the top. Nothing on the website carries these classes. The demos below are pinned into the flow; in the app the bar is fixed to the window edge.</p>
         <div class="about-block">
-          <div class="tst-sub">Title bar (.anr-titlebar), focused. Menu button, red mark, wordmark, current section, then the window controls. The whole bar is a drag region and the buttons opt out of it.</div>
+          <div class="tst-sub">Title bar (.anr-titlebar), focused. Wordmark, the drawn menu bar, back/forward, then the section and the open file, and the window controls on the right. The whole bar is a drag region and every button opts out of it.</div>
           <div class="tst-fixwrap">
             <div class="anr-titlebar">
-              <button type="button" class="anr-tb-btn anr-tb-menu" title="Application menu" aria-label="Application menu">
-                <svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M1 2.5h10M1 6h10M1 9.5h10"/></svg>
-                <span>Menu</span>
-              </button>
-              <div class="anr-tb-brand"><span class="anr-tb-mark"></span><span>Analyser</span></div>
-              <div class="anr-tb-sub">Home</div>
+              <div class="anr-tb-brand">Analyser</div>
+              <div class="anr-tb-menubar"><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">File</button></div><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">View</button></div><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">Go</button></div><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">Help</button></div></div>
+              <div class="anr-tb-nav"><button type="button" class="anr-tb-btn anr-tb-back" title="Back" aria-label="Back" disabled><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M7.5 1.5 3 6l4.5 4.5"/></svg></button><button type="button" class="anr-tb-btn anr-tb-fwd" title="Forward" aria-label="Forward" disabled><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M4.5 1.5 9 6l-4.5 4.5"/></svg></button></div>
+              <div class="anr-tb-sub"><span class="anr-tb-section">Home</span><span class="anr-tb-file" hidden></span></div>
               <div class="anr-tb-space"></div>
               <div class="anr-tb-ctl">
                 <button type="button" class="anr-tb-btn anr-tb-min" title="Minimise" aria-label="Minimise"><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M1 6.5h10"/></svg></button>
@@ -960,33 +957,48 @@
               </div>
             </div>
           </div>
-          <p class="tst-note">Glyphs shown here are the cross-platform SVG set. On Windows the module emits the system ones instead - the Segoe MDL2 Assets codepoints every native title bar uses - so the controls match the rest of the OS exactly. MDL2 is ordered ahead of Segoe Fluent Icons on purpose: Fluent's maximise glyph carries a 1px corner radius, and this site has none anywhere.</p>
+          <p class="tst-note">Glyphs shown here are the cross-platform SVG set. On Windows the bar emits the system ones instead - the Segoe MDL2 Assets codepoints every native title bar uses - so the controls match the rest of the OS exactly. MDL2 is ordered ahead of Segoe Fluent Icons on purpose: Fluent's maximise glyph carries a 1px corner radius, and this site has none anywhere.</p>
 
-          <div class="tst-sub">Unfocused (.is-unfocused - the bar recedes to muted rather than changing shape), and maximised (.is-max on the maximise button swaps in the restore glyph)</div>
+          <div class="tst-sub">Analysing a file, with history behind it: the open file's name sits after the section, and back is live. Unfocused (.is-unfocused - the bar recedes to muted rather than changing shape) and maximised (.is-max on the maximise button swaps in the restore glyph).</div>
           <div class="tst-fixwrap">
             <div class="anr-titlebar is-unfocused">
-              <button type="button" class="anr-tb-btn anr-tb-menu" title="Application menu" aria-label="Application menu">
-                <svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M1 2.5h10M1 6h10M1 9.5h10"/></svg>
-                <span>Menu</span>
-              </button>
-              <div class="anr-tb-brand"><span class="anr-tb-mark"></span><span>Analyser</span></div>
-              <div class="anr-tb-sub">Formats</div>
+              <div class="anr-tb-brand">Analyser</div>
+              <div class="anr-tb-menubar"><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">File</button></div><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">View</button></div><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">Go</button></div><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">Help</button></div></div>
+              <div class="anr-tb-nav"><button type="button" class="anr-tb-btn anr-tb-back" title="Back" aria-label="Back"><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M7.5 1.5 3 6l4.5 4.5"/></svg></button><button type="button" class="anr-tb-btn anr-tb-fwd" title="Forward" aria-label="Forward" disabled><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M4.5 1.5 9 6l-4.5 4.5"/></svg></button></div>
+              <div class="anr-tb-sub"><span class="anr-tb-section">Home</span><span class="anr-tb-file">DSC_4417.NEF</span></div>
               <div class="anr-tb-space"></div>
               <div class="anr-tb-ctl">
                 <button type="button" class="anr-tb-btn anr-tb-min" title="Minimise" aria-label="Minimise"><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M1 6.5h10"/></svg></button>
-                <button type="button" class="anr-tb-btn anr-tb-max is-max" title="Restore" aria-label="Restore"><svg class="anr-tb-ico anr-tb-ico-max" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><rect x="1.5" y="1.5" width="9" height="9"/></svg><svg class="anr-tb-ico anr-tb-ico-restore" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M3.5 3.5v-2h7v7h-2"/><rect x="1.5" y="3.5" width="7" height="7"/></svg></button>
+                <button type="button" class="anr-tb-btn anr-tb-max is-max" title="Maximise" aria-label="Maximise"><svg class="anr-tb-ico anr-tb-ico-max" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><rect x="1.5" y="1.5" width="9" height="9"/></svg><svg class="anr-tb-ico anr-tb-ico-restore" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M3.5 3.5v-2h7v7h-2"/><rect x="1.5" y="3.5" width="7" height="7"/></svg></button>
                 <button type="button" class="anr-tb-btn anr-tb-close" title="Close" aria-label="Close"><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M2 2 10 10M10 2 2 10"/></svg></button>
               </div>
             </div>
           </div>
 
-          <div class="tst-sub">Page scrollbar (.anr-scrollbar + .anr-scrollbar-thumb): resting, hovered and dragging (.is-dragging). 13px rail, 5px thumb, 4px inset - the same measurements the styled native scrollbar uses on inner panes, so the two read as one thing.</div>
-          <div class="tst-stage tst-stage--rel" style="height:200px">
-            <div class="anr-scrollbar" style="right:130px"><div class="anr-scrollbar-thumb" style="height:74px;transform:translateY(28px)"></div></div>
-            <div class="anr-scrollbar" style="right:70px"><div class="anr-scrollbar-thumb" style="height:74px;transform:translateY(28px);background:var(--fg)"></div></div>
-            <div class="anr-scrollbar is-dragging" style="right:10px"><div class="anr-scrollbar-thumb" style="height:74px;transform:translateY(28px)"></div></div>
+          <div class="tst-sub">A menu open (.anr-tb-menu.is-open + .anr-tb-panel). Drawn by the app rather than popped from the OS, so it is the site's type, hairlines and square corners. The tree has one definition, in desktop/menu.mjs.</div>
+          <div class="tst-fixwrap" style="padding-bottom:190px">
+            <div class="anr-titlebar">
+              <div class="anr-tb-brand">Analyser</div>
+              <div class="anr-tb-menubar">
+                <div class="anr-tb-menu is-open">
+                  <button type="button" class="anr-tb-btn anr-tb-menu-title">File</button>
+                  <div class="anr-tb-panel" role="menu">
+                    <button type="button" class="anr-tb-panel-item" role="menuitem"><span>Open file</span><span class="anr-tb-panel-key">Ctrl+O</span></button>
+                    <button type="button" class="anr-tb-panel-item" role="menuitem"><span>Open folder</span><span class="anr-tb-panel-key">Ctrl+Shift+O</span></button>
+                    <div class="anr-tb-panel-sep"></div>
+                    <button type="button" class="anr-tb-panel-item" role="menuitem"><span>Compare two files</span><span class="anr-tb-panel-key"></span></button>
+                    <button type="button" class="anr-tb-panel-item" role="menuitem"><span>Home</span><span class="anr-tb-panel-key"></span></button>
+                    <div class="anr-tb-panel-sep"></div>
+                    <button type="button" class="anr-tb-panel-item" role="menuitem"><span>Exit</span><span class="anr-tb-panel-key">Ctrl+Q</span></button>
+                  </div>
+                </div>
+                <div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">View</button></div>
+                <div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">Go</button></div>
+                <div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">Help</button></div>
+              </div>
+              <div class="anr-tb-space"></div>
+            </div>
           </div>
-          <p class="tst-note">Why a drawn one at all: a native scrollbar is the full height of the viewport and no CSS can shorten it, so it runs up beside the title bar and cuts its line. The desktop hides the root scrollbar and draws this instead, starting below the bar. Root scroller only - every inner pane keeps the styled native bar, which is what the SCROLLBARS block near the top of analyser.css is for.</p>
         </div>
       </div>
     </div>
@@ -1439,19 +1451,6 @@
       }
     });
   })();
-</script>
-<script type="module">
-  /* Desktop shell: this sheet loads neither app.js nor docs.js, which is where
-     every other page mounts the frameless window's title bar. Without this the
-     window has a 34px gap where the bar should be and no way to move or close
-     it. The guard is a global no browser defines, so nothing is fetched here on
-     the website - and the real bar is mounted by ID, so it never collides with
-     the static demos in the Window chrome section above. */
-  if (window.anrDesktop) {
-    import('/assets/js/core/desktop-chrome.js')
-      .then((m) => m.mountDesktopChrome())
-      .catch(() => { /* no title bar is survivable; the menu still works */ });
-  }
 </script>
 </body>
 </html>

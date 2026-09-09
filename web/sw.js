@@ -27,7 +27,6 @@ const SHELL = [
   './assets/js/core/effects.js',
   './assets/js/core/popups.js',
   './assets/js/core/export-data.js',
-  './assets/js/core/desktop-chrome.js',
   './assets/js/core/util.js',
   './assets/js/core/sanitize.js',
   './assets/js/core/limits.js',

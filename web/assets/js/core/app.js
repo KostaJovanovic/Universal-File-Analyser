@@ -681,6 +681,11 @@ function boot() {
         if (pageDropEl)
             pageDropEl.hidden = true;
         showAnalyseNext();
+        // Desktop: name the file in the window's own title bar and taskbar entry.
+        // Only the top-level file - a drill-down into an archive keeps naming the
+        // archive, which is what the Back bar says too. Absent in a browser.
+        if (!nested && window.anrDesktop)
+            window.anrDesktop.setSubject(file.name);
         // Probe that the bytes are actually readable before any renderer tries. A
         // cloud-only file (OneDrive/iCloud/etc.) whose sync app can't hydrate it has
         // a valid name+size but throws on read - show a clear warning instead of a
@@ -1936,12 +1941,9 @@ function boot() {
     // is what keeps this closure pointing at the current page's containers after
     // an SPA swap. Absent on the website, where window.anrDesktop is undefined.
     if (window.anrDesktop) {
-        // The window is frameless, so the page draws its own title bar. Re-mounted
-        // per boot rather than once: an SPA swap replaces the body content, and
-        // mountDesktopChrome() is idempotent - it re-uses a bar that survived.
-        import('./desktop-chrome.js')
-            .then((m) => m.mountDesktopChrome())
-            .catch(() => { });
+        // A page swap is not a file, so the title bar stops naming one. handleFile
+        // sets it again straight away on the restore path, which re-enters here.
+        window.anrDesktop.setSubject('');
         window.anrDesktop.onOpen(async (p) => {
             if (!p)
                 return;

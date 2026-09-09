@@ -99,7 +99,7 @@ The host is load-bearing rather than cosmetic:
 
 | Build | URL | Effect |
 |---|---|---|
-| Dev (`npm start`) | `analyser://localhost/` | `sw.js` sees hostname `localhost` and becomes a pass-through; the dev-only reset buttons appear |
+| Dev (`desktop.bat`, or `npm start`) | `analyser://localhost/` | `sw.js` sees hostname `localhost` and becomes a pass-through; the dev-only reset buttons appear |
 | Packaged | `analyser://app/` | Production behaviour, service worker active |
 
 Neither needed a line of app code to arrange.
@@ -195,30 +195,36 @@ which does not exist in a browser. The website is unaffected.
 | Device tier | Sized from real total RAM, not `navigator.deviceMemory`, which browsers clamp at 8 GB. A large machine gets the caps it deserves |
 | Export report | Offers a native save dialog, and keeps the browser path as a fallback |
 | Video encoding | Runs on your graphics hardware through a real FFmpeg binary. See the section above |
-| Title bar | The app draws its own. See below |
-| Page scrollbar | Drawn by the app so it starts below the title bar, rather than running up beside it |
+| Title bar | The window draws its own, above the page. See below |
 
 ## The title bar
 
-The window has no system frame on Windows, and the page draws the whole title
-bar itself: the menu button, the wordmark, the section you are on, and the
-minimise, maximise and close controls. It is the same hairline band as the rest
-of the site - square corners, mono type, the red mark from the site's accent -
-so the window edge and the page read as one surface instead of two.
+The window has no system frame on Windows, so it draws the whole title bar
+itself: the menu bar, the wordmark, back and forward, the section you are on,
+the name of the file you are analysing, and the minimise, maximise and close
+controls. It is the same hairline band as the rest of the site - square corners,
+mono type - so the window edge and the page read as one surface instead of two.
 
-The controls use the system glyphs, from the icon font every native Windows
-title bar draws, so they sit at the weight and size you expect. Drag anywhere on
-the bar to move the window, and double-click it to maximise. The menu button
-opens the same application menu the menu bar used to hold, with the same
-shortcuts.
+The bar is a separate layer, not part of the page. The site sits in its own view
+below it and never has to leave room for it, so anything the page pins to the
+top of the window - the navigation strip, the dashed frame that appears when you
+drag a file over the window, an image opened full size - lines up against the
+bar and stops there. The minimise, maximise and close buttons stay reachable
+whatever is open.
+
+The menus are drawn to match the site rather than popped from the system, and
+they carry the same shortcuts as before. The window controls use the system
+glyphs, from the icon font every native Windows title bar draws, so they sit at
+the weight and size you expect. Drag anywhere on the bar to move the window, and
+double-click it to maximise.
+
+Narrow the window and the bar sheds what it can spare, in order: the section
+name, then the wordmark, then the arrows, then the file name. The window
+controls always stay.
 
 macOS keeps its native frame, so the traffic lights stay where they belong and
-the app draws no buttons of its own.
-
-Because the bar covers the top of the window, the page scrollbar would run up
-behind it and cut the line. So the app hides the native one and draws a matching
-scrollbar that starts below the bar. Drag it, or click the track to move a
-screen at a time.
+the app draws no buttons of its own. In full screen the bar goes away and the
+page gets the whole screen.
 
 ## What ships in the package
 

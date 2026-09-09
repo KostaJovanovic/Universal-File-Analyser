@@ -31,16 +31,15 @@ Import from it with `import type { Row } from '../core/types.js'`.
 One module per top-level type: `classify.js` maps a dropped file to a kind,
 `ROUTES` in `core/app.js` maps that kind to a renderer here.
 
-**Desktop-only code is guarded, never a separate module** - with one deliberate
+**Desktop-only code is guarded, never a separate module** - and there is no
 exception. The Electron shell (`desktop/`) runs this exact tree, and every
 branch that only makes sense there is behind `window.anrDesktop` - a global a
 browser never defines, which is what keeps the website's behaviour unchanged.
-The exception is `core/desktop-chrome.ts`, which builds the frameless window's
-own title bar: it is the one piece with no owning module, since the desktop can
-land on either entry point (`core/app.ts` or `core/docs.ts`) and duplicating a
-title bar across both is worse than a file. Both callers `import()` it
-DYNAMICALLY inside the guard, so a browser never fetches it. Otherwise the guard
-currently touches six modules:
+The frameless window's title bar used to be the exception, as
+`core/desktop-chrome.ts`. It is gone: the bar is now the WINDOW's own web
+contents (`desktop/chrome/`) and the site runs in a child view below it, so the
+app never draws or offsets around it. Nothing here should carry the bar's height
+again. The guard currently touches six modules:
 `core/popups.ts` (ping the live site for the online probe; skip the Turnstile
 challenge, which cannot verify on an `analyser://` origin, and open the mailto
 directly), `core/offline-tiers.ts` (hide the PWA install button, keep the
@@ -105,12 +104,6 @@ js/
                     toggle, sidebar filter, footer contact). The docs pages
                     don't load app.js, so this stands in for it there.
     export-data.js — "export analysis data" (JSON/hash) builder
-    desktop-chrome.js — the Electron window's own title bar (identity, section
-                    label, application-menu button, minimise/maximise/close).
-                    Desktop only: the window is frameless off macOS, and both
-                    app.js and docs.js import this dynamically behind
-                    `window.anrDesktop`. Styles live in the DESKTOP TITLE BAR
-                    block at the end of analyser.css, scoped to html.anr-desktop
     video-sync.js — shared video↔analysis scrubbing/sync helpers
     util.js       — shared DOM helpers (el, fileExt, …) and formatters
     binutil.js    — shared binary toolkit (cursor reader, decoders, magic)
