@@ -242,8 +242,8 @@ builds, and puts it in the same release as `Analyser-android.apk`. The Android
 job does three things:
 
 1. It restores the FFmpeg binary from the Actions cache. When
-   `ffmpeg/build-android.sh` changes, it builds the binary again (20 to 40
-   minutes). A failed FFmpeg build does not stop the release: the APK then runs
+   `ffmpeg/build-android.sh` changes, it builds the binary again (about 4
+   minutes on GitHub). A failed FFmpeg build does not stop the release: the APK then runs
    ffmpeg.wasm, and the run shows a warning.
 2. It runs `npm run sync`, then `gradlew testReleaseUnitTest assembleRelease`
    with the release key.

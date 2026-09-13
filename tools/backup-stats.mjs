@@ -1,7 +1,7 @@
 /* Download the live usage stats to local CSV files (read-only backup).
    ============================================================================
    WHY: the only copy of the counters lives in Cloudflare D1 (worker/index.js).
-   This pulls a snapshot to stats-backup/*.csv so there's an off-database copy
+   This pulls a snapshot to research/stats-backup/*.csv so there's an off-database copy
    for safekeeping / analysis. It only READS (GET /api/stats) - it never deletes
    or changes anything in D1, and needs no wrangler auth.
 
@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = join(ROOT, 'stats-backup');
+const OUT = join(ROOT, 'research', 'stats-backup');
 const SITE = (process.argv[2] || process.env.ANALYSER_SITE || 'https://analyser.valjdakosta.com').replace(/\/$/, '');
 
 // RFC-4180-ish CSV: quote a cell only when it contains a comma, quote or newline.

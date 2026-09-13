@@ -11,7 +11,7 @@ who need to run the site locally or understand what a commit actually does.
 `python -m http.server`. It kills whatever already holds port 3000 (via a
 PowerShell `Get-NetTCPConnection`/`Stop-Process` one-liner, so every launch
 is a fresh instance), finds the machine's local IP for phone testing, opens
-`http://localhost:3000` in a browser, and runs `python serve.py 3000
+`http://localhost:3000` in a browser, and runs `python tools/serve.py 3000
 <LOCAL_IP>`.
 
 `serve.py` exists because a plain static file server serves files

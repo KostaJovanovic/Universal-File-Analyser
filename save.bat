@@ -225,7 +225,7 @@ echo [chk]  offline manifests
 node --no-warnings tools/check-shell.mjs
 if errorlevel 1 echo [warn] offline manifest gaps reported above - see tools/check-shell.mjs
 
-rem Optional read-only stats snapshot to stats-backup\ (gitignored, kept local).
+rem Optional read-only stats snapshot to research\stats-backup\ (gitignored, kept local).
 rem Pulls from the live /api/stats; non-fatal and skipped by default. The full
 rem Save (option 1 / `save` / --force) skips it entirely; only the commit-only
 rem path still offers it. Use menu option 5 (Backup) to snapshot on demand.
@@ -364,10 +364,10 @@ if errorlevel 1 (
 )
 goto end
 
-rem Read-only snapshot of the live counters to stats-backup\*.csv. Non-fatal:
+rem Read-only snapshot of the live counters to research\stats-backup\*.csv. Non-fatal:
 rem a warning (offline / API down) never blocks a commit when called from :save.
 :runbackup
-echo [net]  download live stats -^> stats-backup\
+echo [net]  download live stats -^> research\stats-backup\
 node --no-warnings tools/backup-stats.mjs
 if errorlevel 1 echo [warn] stats backup failed - is the network up?
 exit /b 0
