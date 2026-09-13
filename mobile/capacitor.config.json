@@ -1,0 +1,20 @@
+{
+  "appId": "com.valjdakosta.analyser",
+  "appName": "Analyser",
+  "webDir": "www",
+  "server": {
+    "hostname": "app",
+    "androidScheme": "https"
+  },
+  "android": {
+    "minWebViewVersion": 110,
+    "resolveServiceWorkerRequests": false,
+    "allowMixedContent": false,
+    "captureInput": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "disable"
+    }
+  }
+}

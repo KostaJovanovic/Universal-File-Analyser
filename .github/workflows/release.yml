@@ -1,0 +1,285 @@
+# Build every app and publish them all to ONE GitHub release.
+#
+# MANUAL ONLY: Actions tab -> "Release apps" -> Run workflow, or
+# `gh workflow run release.yml`. It never runs on a push, so a save.bat push
+# costs nothing here.
+#
+# One run builds, in parallel, each on its own GitHub machine:
+#   windows  NSIS installer, portable .exe and zip          (desktop/, electron-builder)
+#   macos    .dmg and .zip, for Apple silicon and Intel
+#   linux    AppImage and .deb
+#   android  a signed APK, with the native FFmpeg when that builds   (mobile/)
+# Then the publish job creates the release v<version> with every file at once.
+# All at once on purpose: the installed apps read the latest release, and a
+# half-uploaded one would point them at a file that is not there yet.
+#
+# The version comes from COMMIT_COUNT in src/core/app.ts, through the two
+# stamp-version scripts, so the release, the installers and the footer agree.
+# A second run on the same commit uploads into the same release again.
+#
+# The installed apps update from this release:
+#   desktop  electron-updater reads latest.yml, latest-mac.yml, latest-linux.yml
+#            (desktop/updater.mjs)
+#   android  AnrUpdate.java reads latest-android.json
+# The file names carry no version, so docs/download.md can link to
+# releases/latest/download/<name>. Keep them stable.
+#
+# Secrets (already set in this repository):
+#   ANDROID_KEYSTORE_BASE64    the release keystore, base64
+#   ANDROID_KEYSTORE_PASSWORD  its password, also used for the key...
+#   ANDROID_KEY_PASSWORD       ...unless this optional one is set
+#   ANDROID_KEY_ALIAS          the key alias
+# Keep the SAME keystore forever: Android refuses an update signed with another key.
+name: Release apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      # Untick for a test build. Every file still lands on the run page as an
+      # artifact, but no release appears, so no installed app sees an update.
+      publish:
+        description: Publish the release
+        type: boolean
+        default: true
+
+# Two runs at once would race to create the same release.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  REPO_URL: https://github.com/${{ github.repository }}
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      label: ${{ steps.v.outputs.label }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Read the version
+        id: v
+        run: |
+          node desktop/tools/stamp-version.mjs
+          version="$(node -p "require('./desktop/package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # 9.1.0 -> 9.1, the label the footer shows.
+          echo "label=${version%.0}" >> "$GITHUB_OUTPUT"
+          echo "Release v$version"
+      # The one runnable check this repository has for the ffmpeg bridge. A
+      # build that would ship a hole in it stops here.
+      - name: The ffmpeg safety checks
+        run: node desktop/tools/check-ffmpeg-args.mjs
+
+  desktop:
+    needs: version
+    strategy:
+      # One system failing leaves the others to finish, so "Re-run failed
+      # jobs" is enough to recover.
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            target: --win
+          - name: macos
+            os: macos-latest
+            target: --mac
+          - name: linux
+            os: ubuntu-24.04
+            target: --linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - run: node tools/stamp-version.mjs
+      - name: Build
+        env:
+          # No Apple certificate: electron-builder.yml sets mac.identity to null
+          # and tools/after-pack.cjs signs ad-hoc. This stops the keychain search.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder ${{ matrix.target }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.name }}
+          path: |
+            desktop/dist/Analyser-*
+            desktop/dist/latest*.yml
+          if-no-files-found: error
+          # Installers and zips are compressed already.
+          compression-level: 0
+
+  android:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      # Gradle needs JDK 21 for Capacitor 8.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # The FFmpeg executable takes 20 to 40 minutes, so it is cached on the
+      # build script and rebuilds only when that script changes.
+      - name: Restore FFmpeg
+        id: ffcache
+        uses: actions/cache/restore@v4
+        with:
+          path: mobile/ffmpeg/out
+          key: android-ffmpeg-${{ hashFiles('mobile/ffmpeg/build-android.sh') }}
+      - name: Build FFmpeg
+        id: ffbuild
+        if: steps.ffcache.outputs.cache-hit != 'true'
+        # A failed FFmpeg build must not block the release. The APK then runs
+        # ffmpeg.wasm, as the website does, and the next step says so.
+        continue-on-error: true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config meson ninja-build xz-utils
+          ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" bash mobile/ffmpeg/build-android.sh
+      - name: Save FFmpeg
+        if: steps.ffbuild.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: mobile/ffmpeg/out
+          key: ${{ steps.ffcache.outputs.cache-primary-key }}
+      - name: Report a missing FFmpeg
+        if: steps.ffbuild.outcome == 'failure'
+        run: echo "::warning title=No native FFmpeg::The FFmpeg build failed, so this APK uses ffmpeg.wasm. Read the Build FFmpeg step."
+
+      - name: Stage the site and sync the project
+        working-directory: mobile
+        run: |
+          npm ci
+          npm run sync
+
+      - name: Write the keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error title=No keystore::Set the ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS secrets. See mobile/README.md."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "ANR_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Test and build the APK
+        working-directory: mobile/android
+        env:
+          ANR_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANR_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANR_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        # -PanrUpdateFeed turns the updater on (AnrUpdate.java). Only this build
+        # passes it: a mobile.bat build never checks for updates.
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon testReleaseUnitTest assembleRelease \
+            -PanrUpdateFeed="$REPO_URL/releases/latest/download/latest-android.json"
+
+      - name: Name the APK and write the update feed
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          LABEL: ${{ needs.version.outputs.label }}
+        run: |
+          mkdir -p out
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk out/Analyser-android.apk
+          code="$(grep -oP 'versionCode\s+\K\d+' mobile/android/app/build.gradle)"
+          sha="$(sha256sum out/Analyser-android.apk | cut -d' ' -f1)"
+          size="$(stat -c %s out/Analyser-android.apk)"
+          cat > out/latest-android.json <<EOF
+          {
+            "version": "$LABEL",
+            "versionCode": $code,
+            "url": "$REPO_URL/releases/download/v$VERSION/Analyser-android.apk",
+            "size": $size,
+            "sha256": "$sha"
+          }
+          EOF
+          cat out/latest-android.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: out/
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    needs: [version, desktop, android]
+    # Off for a test build: the files stay on the run page only.
+    if: ${{ inputs.publish }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: files
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.version.outputs.version }}
+          LABEL: ${{ needs.version.outputs.label }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          dl="$REPO_URL/releases/download/$tag"
+          ls -l files
+          cat > notes.md <<EOF
+          Every Analyser app, in one place. Pick the file for your system.
+
+          | System | Download | Updates |
+          |---|---|---|
+          | Windows 10 and 11 | [Analyser-Setup-x64.exe]($dl/Analyser-Setup-x64.exe) | Installs itself |
+          | Windows, portable | [Analyser-Portable-x64.exe]($dl/Analyser-Portable-x64.exe) | Tells you |
+          | Windows, zip | [Analyser-win-x64.zip]($dl/Analyser-win-x64.zip) | Tells you |
+          | macOS, Apple silicon | [Analyser-mac-arm64.dmg]($dl/Analyser-mac-arm64.dmg) | Tells you |
+          | macOS, Intel | [Analyser-mac-x64.dmg]($dl/Analyser-mac-x64.dmg) | Tells you |
+          | Linux | [Analyser-linux-x64.AppImage]($dl/Analyser-linux-x64.AppImage) | Installs itself |
+          | Linux, Debian and Ubuntu | [Analyser-linux-x64.deb]($dl/Analyser-linux-x64.deb) | Tells you |
+          | Android 7 and later | [Analyser-android.apk]($dl/Analyser-android.apk) | Asks, then installs |
+
+          "Installs itself" means the app downloads the new version in the background and installs it when you quit. "Tells you" means a message offers to open this page.
+
+          What changed: https://analyser.valjdakosta.com/patch
+
+          No build carries a paid signing certificate yet, so each system asks once:
+
+          - **Windows:** SmartScreen stops the first run. Click **More info**, then **Run anyway**.
+          - **macOS:** open the app once and close the warning. Then open **System Settings > Privacy & Security** and click **Open Anyway**.
+          - **Linux:** make the AppImage executable with chmod +x, then run it.
+          - **Android:** when Android asks, allow your browser or file manager to install apps.
+
+          The other files (latest*.yml, latest-android.json, the .blockmap files and the macOS .zip files) feed the update checks inside the apps.
+          EOF
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" files/* --clobber
+            gh release edit "$tag" --notes-file notes.md --latest
+          else
+            gh release create "$tag" files/* --title "Analyser $LABEL" --notes-file notes.md --target "$GITHUB_SHA" --latest
+          fi

@@ -2,7 +2,7 @@
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v305';
+const VERSION = 'analyser-v306';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -296,6 +296,12 @@ self.addEventListener('fetch', (e) => {
   // this also lets GET /api/stats hit the network (and fail cleanly when offline,
   // which the /stats page handles) instead of being served a stale cached copy.
   if (url.pathname.startsWith('/api/')) return;
+
+  // /__anr/* exists only inside the Android app (mobile/), where the native side
+  // serves ffmpeg output and files opened from other apps under it. Those are
+  // the user's own bytes, often hundreds of MB, and never the same twice - so
+  // they must never land in a cache. Nothing on the website lives there.
+  if (url.pathname.startsWith('/__anr/')) return;
 
   // The connectivity probe (core/popups.js probeOnline) must always hit the
   // network - a cached answer would report Online with the cable out. It is a

@@ -37,6 +37,15 @@ graphify-out/
 desktop/node_modules/
 desktop/dist/
 
+# Android shell (Capacitor): the source in mobile/ IS tracked, including the
+# android/ project and its Java. Its npm dependencies, the staged copy of web/,
+# and the FFmpeg build tree are not. mobile/android/.gitignore covers the
+# Gradle output and the assets `cap sync` and stage-web.mjs write.
+mobile/node_modules/
+mobile/www/
+mobile/ffmpeg/out/
+mobile/ffmpeg/work/
+
 # npm: exists only so tsc can build src/*.ts -> web/assets/js/*.js.
 # The compiled output IS committed (like web/formats/ and web/docs/) so the
 # Cloudflare deploy stays a pure static upload of web/ with no build step.

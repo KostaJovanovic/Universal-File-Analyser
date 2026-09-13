@@ -1,8 +1,8 @@
 # Analyser desktop (Electron)
 
-The Windows desktop build of Analyser. It wraps the same `web/` tree Cloudflare
-serves - there is no fork of the app code and nothing in the analysis pipeline
-changes. The site keeps deploying exactly as it did.
+The desktop build of Analyser, for Windows, macOS and Linux. It wraps the same
+`web/` tree Cloudflare serves - there is no fork of the app code and nothing in
+the analysis pipeline changes. The site keeps deploying exactly as it did.
 
 Everything here is dev-only. `web/` never sees it, and `save.bat` does not run it.
 
@@ -41,13 +41,18 @@ opening a window. Some tooling exports it. `desktop.bat` clears it.
 ## Build an installer
 
 ```
-npm run dist         # stamp the version, then NSIS installer + portable exe (x64)
+npm run dist         # stamp the version, then the NSIS installer, the portable exe and the zip (x64)
+npm run dist:mac     # on a Mac: dmg and zip for arm64 and x64
+npm run dist:linux   # on Linux or WSL: AppImage and deb (x64)
 npm run pack         # unpacked build in dist/win-unpacked, faster for a smoke test
 ```
 
-Output lands in `desktop/dist/` (gitignored). Both builds are **unsigned**, so
-Windows SmartScreen warns on first run. Signing is a Phase 4 decision - see
-`research/ELECTRON-PLAN.md`.
+Output lands in `desktop/dist/` (gitignored). No build carries a paid
+certificate, so Windows SmartScreen warns on the first run and macOS asks for
+"Open Anyway". Signing is a Phase 4 decision - see `research/ELECTRON-PLAN.md`.
+
+The builds people download come from GitHub, not from this machine. See
+"Releases and updates" below.
 
 ## How it fits together
 
@@ -57,9 +62,13 @@ Windows SmartScreen warns on first run. Signing is a Phase 4 decision - see
 | `router.mjs` | `route(pathname, webDir)` - a one-to-one port of `serve.py`'s `_route()` |
 | `preload.cjs` | The only bridge to the page: one frozen object, `window.anrDesktop` |
 | `menu.mjs` | File / Edit / View / Go / Help menu |
+| `updater.mjs` | Checks the GitHub release for a new version, and installs it where the copy allows |
 | `ffmpeg-native.mjs` | Finds an ffmpeg binary, probes its working hardware encoders, runs jobs |
-| `electron-builder.yml` | Targets, `extraResources`, NSIS options |
+| `ffmpeg-accel.mjs` | Pure: the encoder families, the argument rewrite, and the safety checks. Shared with `mobile/` |
+| `tools/check-ffmpeg-args.mjs` | Runs the safety checks against every argument list in `src/`, and against the attacks |
+| `electron-builder.yml` | Targets for Windows, macOS and Linux, `extraResources`, NSIS options, the update feed |
 | `tools/stamp-version.mjs` | Writes `major.minor.0` into `package.json` from `COMMIT_COUNT` |
+| `tools/after-pack.cjs` | Gives the macOS app an ad-hoc signature, because there is no Apple certificate |
 | `build/icon.png` | The site mark, used for the window and the installer |
 
 ### Portable mode
@@ -135,6 +144,42 @@ Two rules to keep:
 
 With no binary installed, `caps().available` is false and `video.ts` loads the
 WASM core exactly as the website does.
+
+The families and `accelerate()` live in `ffmpeg-accel.mjs`, a pure module with
+no Node imports, like `router.mjs`. The Android shell inlines the same file
+into its bridge (`mobile/tools/stage-web.mjs`), so keep it import-free and use
+only plain `export const` / `export function` exports.
+
+### The safety checks
+
+The page chooses ffmpeg's arguments, and a crafted file that finds an XSS in a
+renderer controls the page. Before this check, such a page could read any file
+the user can read (`-i C:\...`), write anywhere (`-y C:\Windows\...`), grab the
+screen or the camera (`-f gdigrab`, `-f dshow`), open the network, or load a
+native library (`-vf frei0r=...`).
+
+So `runJob()` calls `checkArgs()` and `checkInputs()` before anything spawns.
+They refuse:
+
+- absolute paths, drive paths, drive-relative paths and `..` steps
+- URLs and every ffmpeg protocol (`file:`, `concat:`, `subfile,`, `pipe:`, ...)
+- capture and playback devices after `-f`
+- filters that load code or open a socket (`frei0r`, `ladspa`, `lv2`, `zmq`,
+  `sendcmd`)
+- options that read more options from a file (`-/opt`, `-filter_script`)
+- inside any small text input: a concat list entry that is not a bare session
+  file, an `option` directive, or a playlist or manifest line with a path or URL.
+  The reverse in `video.ts` feeds `-f concat -safe 0` a list it wrote itself,
+  and that stays allowed.
+
+The checks run in the main process, never the page. A refused job resolves with
+code 1 and a log line, which `video.ts` treats as a clean failure. Never return
+-1, which it reads as a dead instance.
+
+`node desktop/tools/check-ffmpeg-args.mjs` runs every argument list in `src/`
+and every attack through the checks. Add a new ffmpeg call's shape there before
+you ship it. The Android shell has a Java port (`AnrFfmpegChecks.java`, tested
+by `AnrFfmpegChecksTest`) against the same vectors.
 
 ### SharedArrayBuffer, so the on-device AI can use more than one core
 
@@ -304,6 +349,45 @@ checked in and no image dependency is needed.
 To supply a hand-made icon instead, drop a real multi-resolution `build/icon.ico`
 (16, 32, 48, 64, 128 and 256 px) next to it and point `win.icon` in
 `electron-builder.yml` at it. Nothing else changes.
+
+## Releases and updates
+
+`.github/workflows/release.yml` is the only release path, and it is manual:
+open the Actions tab, pick **Release apps**, then **Run workflow**. One run:
+
+1. reads the version and runs `tools/check-ffmpeg-args.mjs`,
+2. builds Windows, macOS and Linux in parallel, each on its own GitHub machine,
+   with `electron-builder --<os> --publish never`,
+3. builds the signed Android APK (see `mobile/README.md`),
+4. creates the release `v<version>` with every file at once.
+
+The last step uploads everything at once on purpose. An installed app reads the
+latest release, and a half-uploaded one would point it at a missing file. A
+second run on the same commit uploads into the same release again.
+
+The file names carry no version (`Analyser-Setup-x64.exe`,
+`Analyser-mac-arm64.dmg` and so on), so `docs/download.md` can link to
+`releases/latest/download/<name>`. Keep them stable. electron-updater finds
+each file through `latest.yml`, `latest-mac.yml` and `latest-linux.yml`, which
+electron-builder writes because of the `publish` block.
+
+`updater.mjs` does the rest, with electron-updater, in a packaged app only:
+
+| Copy | What happens |
+| --- | --- |
+| NSIS install (its uninstaller sits beside the exe) | Downloads in the background, installs on quit, offers "Restart now" |
+| AppImage (`APPIMAGE` is set) | The same |
+| Portable exe, zip, `.deb`, macOS | Says a new version is out, and opens the release page |
+
+macOS cannot install an update by itself until the app has an Apple Developer
+ID signature, because Squirrel.Mac checks it. `mac.identity: null` skips
+signing, and `tools/after-pack.cjs` applies an ad-hoc signature instead, so
+macOS offers "Open Anyway" rather than calling the app damaged. The `.deb`
+needs a password prompt to install.
+
+The first check runs 20 seconds after start-up, then one every six hours.
+**Help > Check for updates** runs one at once. A check is one HTTPS request to
+github.com, and a development copy never checks.
 
 ## Versioning
 
