@@ -2,14 +2,17 @@
 #
 # MANUAL ONLY: Actions tab -> "Release apps" -> Run workflow, or
 # `gh workflow run release.yml`. It never runs on a push, so a save.bat push
-# costs nothing here.
+# costs nothing here. Untick "Publish the release" for a test build.
 #
-# One run builds, in parallel, each on its own GitHub machine:
-#   windows  NSIS installer, portable .exe and zip          (desktop/, electron-builder)
-#   macos    .dmg and .zip, for Apple silicon and Intel
-#   linux    AppImage and .deb
-#   android  a signed APK, with the native FFmpeg when that builds   (mobile/)
-# Then the publish job creates the release v<version> with every file at once.
+# One run builds, in parallel, each on its own GitHub machine, ONE file per
+# system:
+#   windows  Analyser-Windows.exe         installs, or unpacks a portable copy
+#                                          (desktop/build/installer.nsh)
+#   macos    Analyser-mac-universal.dmg   Apple silicon and Intel in one app
+#   linux    Analyser-linux-x64.AppImage
+#   android  Analyser-android.apk         signed, with the native FFmpeg when
+#                                          that builds (mobile/)
+# Then the publish job creates the release v<version> with all four at once.
 # All at once on purpose: the installed apps read the latest release, and a
 # half-uploaded one would point them at a file that is not there yet.
 #
@@ -17,12 +20,12 @@
 # stamp-version scripts, so the release, the installers and the footer agree.
 # A second run on the same commit uploads into the same release again.
 #
-# The installed apps update from this release:
-#   desktop  electron-updater reads latest.yml, latest-mac.yml, latest-linux.yml
-#            (desktop/updater.mjs)
-#   android  AnrUpdate.java reads latest-android.json
-# The file names carry no version, so docs/download.md can link to
-# releases/latest/download/<name>. Keep them stable.
+# There is no update file in the release. The apps ask GitHub's API for the
+# latest release (desktop/updater.mjs, AnrUpdate.java), and the answer gives
+# every file's download URL and the SHA-256 digest GitHub computed for it. The
+# apps find their file by NAME, and docs/download.md links to
+# releases/latest/download/<name>, so the names carry no version. Keep them
+# stable.
 #
 # Secrets (already set in this repository):
 #   ANDROID_KEYSTORE_BASE64    the release keystore, base64
@@ -116,14 +119,16 @@ jobs:
           # and tools/after-pack.cjs signs ad-hoc. This stops the keychain search.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx electron-builder ${{ matrix.target }} --publish never
+      # The one file per system, by extension: nothing else in dist/ ships.
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.name }}
           path: |
-            desktop/dist/Analyser-*
-            desktop/dist/latest*.yml
+            desktop/dist/Analyser-*.exe
+            desktop/dist/Analyser-*.dmg
+            desktop/dist/Analyser-*.AppImage
           if-no-files-found: error
-          # Installers and zips are compressed already.
+          # Installers and disk images are compressed already.
           compression-level: 0
 
   android:
@@ -194,37 +199,22 @@ jobs:
           ANR_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANR_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANR_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        # -PanrUpdateFeed turns the updater on (AnrUpdate.java). Only this build
-        # passes it: a mobile.bat build never checks for updates.
+        # -PanrUpdateFeed turns the updater on (AnrUpdate.java): the GitHub API
+        # answer for the latest release. Only this build passes it, so a
+        # mobile.bat build never checks for updates.
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon testReleaseUnitTest assembleRelease \
-            -PanrUpdateFeed="$REPO_URL/releases/latest/download/latest-android.json"
+            -PanrUpdateFeed="https://api.github.com/repos/${{ github.repository }}/releases/latest"
 
-      - name: Name the APK and write the update feed
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-          LABEL: ${{ needs.version.outputs.label }}
+      - name: Name the APK
         run: |
           mkdir -p out
           cp mobile/android/app/build/outputs/apk/release/app-release.apk out/Analyser-android.apk
-          code="$(grep -oP 'versionCode\s+\K\d+' mobile/android/app/build.gradle)"
-          sha="$(sha256sum out/Analyser-android.apk | cut -d' ' -f1)"
-          size="$(stat -c %s out/Analyser-android.apk)"
-          cat > out/latest-android.json <<EOF
-          {
-            "version": "$LABEL",
-            "versionCode": $code,
-            "url": "$REPO_URL/releases/download/v$VERSION/Analyser-android.apk",
-            "size": $size,
-            "sha256": "$sha"
-          }
-          EOF
-          cat out/latest-android.json
       - uses: actions/upload-artifact@v4
         with:
           name: release-android
-          path: out/
+          path: out/Analyser-android.apk
           if-no-files-found: error
           compression-level: 0
 
@@ -255,14 +245,12 @@ jobs:
 
           | System | Download | Updates |
           |---|---|---|
-          | Windows 10 and 11 | [Analyser-Setup-x64.exe]($dl/Analyser-Setup-x64.exe) | Installs itself |
-          | Windows, portable | [Analyser-Portable-x64.exe]($dl/Analyser-Portable-x64.exe) | Tells you |
-          | Windows, zip | [Analyser-win-x64.zip]($dl/Analyser-win-x64.zip) | Tells you |
-          | macOS, Apple silicon | [Analyser-mac-arm64.dmg]($dl/Analyser-mac-arm64.dmg) | Tells you |
-          | macOS, Intel | [Analyser-mac-x64.dmg]($dl/Analyser-mac-x64.dmg) | Tells you |
+          | Windows 10 and 11 | [Analyser-Windows.exe]($dl/Analyser-Windows.exe) | Installs itself |
+          | macOS, Apple silicon and Intel | [Analyser-mac-universal.dmg]($dl/Analyser-mac-universal.dmg) | Tells you |
           | Linux | [Analyser-linux-x64.AppImage]($dl/Analyser-linux-x64.AppImage) | Installs itself |
-          | Linux, Debian and Ubuntu | [Analyser-linux-x64.deb]($dl/Analyser-linux-x64.deb) | Tells you |
           | Android 7 and later | [Analyser-android.apk]($dl/Analyser-android.apk) | Asks, then installs |
+
+          The Windows installer asks first: install Analyser, or put a portable copy in a folder, for example on a USB stick. A portable copy writes nothing to the computer and tells you when a new version is out.
 
           "Installs itself" means the app downloads the new version in the background and installs it when you quit. "Tells you" means a message offers to open this page.
 
@@ -274,8 +262,6 @@ jobs:
           - **macOS:** open the app once and close the warning. Then open **System Settings > Privacy & Security** and click **Open Anyway**.
           - **Linux:** make the AppImage executable with chmod +x, then run it.
           - **Android:** when Android asks, allow your browser or file manager to install apps.
-
-          The other files (latest*.yml, latest-android.json, the .blockmap files and the macOS .zip files) feed the update checks inside the apps.
           EOF
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" files/* --clobber

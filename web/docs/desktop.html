@@ -88,21 +88,22 @@
 </section>
 <section class="docs-card">
 <h2 id="portable-use">Portable use<a class="h-anchor" href="#portable-use" aria-label="Link to this section">#</a></h2>
-<p>There are three Windows downloads, and two of them leave the computer as they found it.</p>
-<div class="docs-table-wrap"><table><thead><tr><th>Build</th><th>What it is</th></tr></thead><tbody><tr><td><code>Analyser-Setup-x64.exe</code></td><td>The normal installer. Settings go in your user profile</td></tr><tr><td><code>Analyser-Portable-x64.exe</code></td><td>One file. Run it from anywhere, including a USB stick</td></tr><tr><td><code>Analyser-win-x64.zip</code></td><td>Unzip and run. Nothing is extracted at start-up, so it opens quicker</td></tr></tbody></table></div>
+<p>Windows has one download, <code>Analyser-Windows.exe</code>. Its first page asks how to set Analyser up:</p>
+<ul><li><strong>Install Analyser</strong> adds it to the Start menu and the desktop, keeps its settings in your user profile, and updates itself.</li><li><strong>Portable copy</strong> puts the program in a folder you choose, for example on a USB stick. It writes nothing to the computer: no Start menu entry, no registry key and no uninstaller. To remove it, delete the folder.</li></ul>
 <p>A portable copy keeps <strong>everything</strong> in a folder called <code>Analyser-data</code>, beside the program. That covers the offline downloads, the recently-analysed list, the theme and the window size. Delete the folder and no trace of your use remains. Files you analyse are never stored by any build.</p>
-<p>For the zip, put an empty file named <code>portable.txt</code> next to <code>Analyser.exe</code>. That is the switch that turns portable storage on. Without it a copied folder behaves like an installed copy.</p>
+<p>The switch is a file named <code>portable.txt</code> next to <code>Analyser.exe</code>, which the installer writes. Delete it and the copy behaves like an installed one.</p>
 <p>To check any of this, open <strong>Help</strong>, then <strong>Where my data is stored</strong>. It names the exact folder and offers to open it.</p>
-<p>Two details worth knowing. The single-file build unpacks itself to a temporary folder the first time each version runs, then reuses it, so only the first start-up is slow. And a portable copy runs alongside an installed one, because the two keep separate settings.</p>
+<p>A portable copy runs alongside an installed one, because the two keep separate settings. To update a portable copy, run the new installer, choose <strong>Portable copy</strong> and pick the same folder. The installer replaces the program and keeps <code>Analyser-data</code>.</p>
 <p>You can also drop an <code>ffmpeg.exe</code> next to the portable program, or in an <code>ffmpeg</code> folder there. The app prefers that one, so the stick carries its own hardware video support rather than relying on the computer it is plugged into.</p>
 </section>
 <section class="docs-card">
 <h2 id="updates">Updates<a class="h-anchor" href="#updates" aria-label="Link to this section">#</a></h2>
 <p>Every build is on one page, the <a href="https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest">latest release</a> on GitHub. The <a href="/docs/download">download page</a> says which file to pick.</p>
 <p>The app looks for a new version 20 seconds after it starts, then every six hours. <strong>Help &gt; Check for updates</strong> looks at once. What happens next depends on the copy you run:</p>
-<div class="docs-table-wrap"><table><thead><tr><th>Copy</th><th>When a new version is out</th></tr></thead><tbody><tr><td>Windows installer</td><td>It downloads in the background and installs when you quit. A message offers to restart at once</td></tr><tr><td>Linux AppImage</td><td>The same</td></tr><tr><td>Windows portable and zip, Linux <code>.deb</code>, macOS</td><td>A message offers to open the download page</td></tr></tbody></table></div>
-<p>The copies in the last row cannot replace themselves. A portable copy has no installer, and a <code>.deb</code> needs your password to install. macOS installs an update by itself only for an app with a paid Apple signature, and this one has none yet.</p>
-<p>A check asks GitHub for one small file that names the latest version. It sends nothing about you or your files. A copy you run from the source code (<code>desktop.bat</code>) never checks.</p>
+<div class="docs-table-wrap"><table><thead><tr><th>Copy</th><th>When a new version is out</th></tr></thead><tbody><tr><td>Windows, installed</td><td>It downloads in the background and installs when you quit. A message offers to restart at once</td></tr><tr><td>Linux AppImage</td><td>The same</td></tr><tr><td>Windows portable copy, macOS</td><td>A message offers to open the download page</td></tr></tbody></table></div>
+<p>The copies in the last row cannot replace themselves. For a portable copy, run the new installer, choose <strong>Portable copy</strong> and pick the same folder. macOS installs an update by itself only for an app with a paid Apple signature, and this one has none yet.</p>
+<p>The app checks every download against the checksum that GitHub publishes for the file, and throws away a download that does not match.</p>
+<p>A check asks GitHub which release is the latest. It sends nothing about you or your files. A copy you run from the source code (<code>desktop.bat</code>) never checks.</p>
 </section>
 <section class="docs-card">
 <h2 id="why-a-custom-scheme-instead-of-file">Why a custom scheme instead of <code>file://</code><a class="h-anchor" href="#why-a-custom-scheme-instead-of-file" aria-label="Link to this section">#</a></h2>

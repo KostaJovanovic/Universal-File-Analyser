@@ -41,9 +41,9 @@ opening a window. Some tooling exports it. `desktop.bat` clears it.
 ## Build an installer
 
 ```
-npm run dist         # stamp the version, then the NSIS installer, the portable exe and the zip (x64)
-npm run dist:mac     # on a Mac: dmg and zip for arm64 and x64
-npm run dist:linux   # on Linux or WSL: AppImage and deb (x64)
+npm run dist         # stamp the version, then the Windows installer (x64): install or portable
+npm run dist:mac     # on a Mac: one universal dmg (Apple silicon and Intel)
+npm run dist:linux   # on Linux or WSL: the AppImage (x64)
 npm run pack         # unpacked build in dist/win-unpacked, faster for a smoke test
 ```
 
@@ -66,15 +66,16 @@ The builds people download come from GitHub, not from this machine. See
 | `ffmpeg-native.mjs` | Finds an ffmpeg binary, probes its working hardware encoders, runs jobs |
 | `ffmpeg-accel.mjs` | Pure: the encoder families, the argument rewrite, and the safety checks. Shared with `mobile/` |
 | `tools/check-ffmpeg-args.mjs` | Runs the safety checks against every argument list in `src/`, and against the attacks |
-| `electron-builder.yml` | Targets for Windows, macOS and Linux, `extraResources`, NSIS options, the update feed |
+| `electron-builder.yml` | One target per system, `extraResources`, NSIS options, `publish: null` |
+| `build/installer.nsh` | The Windows installer's first page, "Install Analyser" or "Portable copy", and the portable section |
 | `tools/stamp-version.mjs` | Writes `major.minor.0` into `package.json` from `COMMIT_COUNT` |
 | `tools/after-pack.cjs` | Gives the macOS app an ad-hoc signature, because there is no Apple certificate |
 | `build/icon.png` | The site mark, used for the window and the installer |
 
 ### Portable mode
 
-`npm run dist` emits three artefacts: the NSIS installer, a self-extracting
-`portable.exe`, and a `win.zip` of the unpacked folder.
+Windows ships one file, `Analyser-Windows.exe`. Its first page asks "Install
+Analyser" or "Portable copy" - see "One Windows file" below.
 
 By default Electron puts `userData` in `%APPDATA%`, which for this app means the
 offline cache, the analysed history, the theme and the window position get
@@ -85,12 +86,12 @@ before anything reads a path.
 
 Two ways to be portable, both handled by `portableRoot()`:
 
-1. **`PORTABLE_EXECUTABLE_DIR`** - electron-builder's `portable` target sets this
-   at runtime to the directory the `.exe` was launched from. It is the only way
-   to find that place: the app itself is unpacked to a temp folder, so
-   `process.resourcesPath` points somewhere else entirely.
-2. **A `portable.txt` marker** beside the executable. This is what makes the zip
-   (or any copied `win-unpacked/`) portable, with no special build.
+1. **A `portable.txt` marker** beside the executable. The installer writes it
+   for a portable copy, and any copied `win-unpacked/` folder with the file is
+   portable too.
+2. **`PORTABLE_EXECUTABLE_DIR`** - electron-builder's self-extracting
+   `portable` target sets this at runtime. No release builds that target any
+   more, but 9.1 shipped one, so the check stays for copies of it.
 
 Consequences worth keeping in mind:
 
@@ -101,12 +102,37 @@ Consequences worth keeping in mind:
 - A read-only stick makes `mkdirSync` throw. That is caught, and the app starts
   in normal (non-portable) mode rather than failing - Help > "Where my data is
   stored" then reports the real location, so the user is never misled.
-- `unpackDirName` stays at its default, a uuid regenerated per BUILD rather than
-  per launch, so a given version extracts once and reuses it. Setting it to
-  `false` would leave no persistent temp folder but re-extract 118 MB every run.
 - A portable copy prefers an `ffmpeg.exe` sitting next to it (or under
   `ffmpeg/` or `ffmpeg/bin/`) over whatever is on the host's PATH, so the stick
   can carry its own hardware video path.
+
+### One Windows file (`build/installer.nsh`)
+
+electron-builder has no installer that offers "install or portable", so
+`build/installer.nsh` adds the choice to its NSIS template through the hooks
+the template offers:
+
+- `customWelcomePage` adds the first page: **Install Analyser** or **Portable
+  copy**. A silent run (`/S --updated`, which is how `updater.mjs` installs an
+  update) never sees it, and `customInit` keeps the portable section off for
+  that case.
+- `customInstallMode` skips the "only for me / for everyone" page for a
+  portable copy, and points the folder beside the installer.
+- `customHeader` declares section 0. It unpacks the app package into the
+  chosen folder and writes `portable.txt`. For a portable copy the template's
+  own install section (section 1) is switched off. That section always runs
+  the uninstaller of an installed copy first, then writes registry keys and
+  shortcuts, and a portable copy must do none of that.
+
+The section numbers are literals, so `customInstall` fails the build if the
+install section ever stops being section 1. `customHeader` fails it if either
+hook is not expanded. The portable section uses the same `File` line as the
+template, so NSIS stores the app package only once.
+
+A portable copy updates the way it installs: run the new installer, pick
+**Portable copy** and the same folder. The section refuses to overwrite a
+running copy, clears the old `resources/` and `locales/`, and leaves
+`Analyser-data` alone.
 
 ### Native FFmpeg (`ffmpeg-native.mjs`)
 
@@ -365,29 +391,35 @@ The last step uploads everything at once on purpose. An installed app reads the
 latest release, and a half-uploaded one would point it at a missing file. A
 second run on the same commit uploads into the same release again.
 
-The file names carry no version (`Analyser-Setup-x64.exe`,
-`Analyser-mac-arm64.dmg` and so on), so `docs/download.md` can link to
-`releases/latest/download/<name>`. Keep them stable. electron-updater finds
-each file through `latest.yml`, `latest-mac.yml` and `latest-linux.yml`, which
-electron-builder writes because of the `publish` block.
+A release holds ONE file per system and nothing else:
+`Analyser-Windows.exe`, `Analyser-mac-universal.dmg`,
+`Analyser-linux-x64.AppImage` and `Analyser-android.apk`. There is no
+`latest*.yml` and no `.blockmap`: `publish: null`,
+`nsis.differentialPackage: false` and `dmg.writeUpdateInfo: false` keep
+electron-builder from writing them. The names carry no version, because the
+apps find their file by name and `docs/download.md` links to
+`releases/latest/download/<name>`. Keep them stable.
 
-`updater.mjs` does the rest, with electron-updater, in a packaged app only:
+`updater.mjs` does the rest, in a packaged app only. It asks the GitHub API
+for the latest release, which gives the tag, every download URL and the
+SHA-256 digest that GitHub computed for each file:
 
 | Copy | What happens |
 | --- | --- |
-| NSIS install (its uninstaller sits beside the exe) | Downloads in the background, installs on quit, offers "Restart now" |
-| AppImage (`APPIMAGE` is set) | The same |
-| Portable exe, zip, `.deb`, macOS | Says a new version is out, and opens the release page |
+| NSIS install (its uninstaller sits beside the exe) | Downloads the new installer and checks the digest. The installer runs with `/S --updated` when the app quits, or at once on "Restart now" |
+| AppImage (`APPIMAGE` is set) | Downloads beside the running file, checks the digest and replaces the file. "Restart now" starts it through `app.relaunch` |
+| Portable copy, macOS | Says a new version is out, and opens the release page |
 
-macOS cannot install an update by itself until the app has an Apple Developer
-ID signature, because Squirrel.Mac checks it. `mac.identity: null` skips
-signing, and `tools/after-pack.cjs` applies an ad-hoc signature instead, so
-macOS offers "Open Anyway" rather than calling the app damaged. The `.deb`
-needs a password prompt to install.
+A download that does not match its digest never takes over, and a release
+without a digest never installs. macOS cannot install an update by itself
+until the app has an Apple Developer ID signature. `mac.identity: null` skips
+signing, and `tools/after-pack.cjs` applies an ad-hoc signature to the merged
+universal app instead, so macOS offers "Open Anyway" rather than calling the
+app damaged.
 
 The first check runs 20 seconds after start-up, then one every six hours.
 **Help > Check for updates** runs one at once. A check is one HTTPS request to
-github.com, and a development copy never checks.
+api.github.com, and a development copy never checks.
 
 ## Versioning
 
@@ -509,6 +541,7 @@ The rest:
 
 ## Not done yet
 
-File associations, a bundled ffmpeg core and OCCT, cross-origin isolation, CI
-and code signing, and auto-update. All of them need a decision first - see
-`research/ELECTRON-PLAN.md`, Phase 3 and Phase 4.
+File associations, a bundled ffmpeg core and OCCT, cross-origin isolation, and
+code signing. A certificate would also let macOS install its own updates. All
+of them need a decision first - see `research/ELECTRON-PLAN.md`, Phase 3 and
+Phase 4.
