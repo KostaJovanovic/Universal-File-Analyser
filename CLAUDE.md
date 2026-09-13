@@ -81,7 +81,7 @@ lines and aborts. And `tools/check-build.mjs` fails when output is missing or
 stale relative to `src/`. Type errors are reported loudly but don't block.
 
 - **Run locally**: `server.bat` launches
-  `serve.py` on port **3000** and opens a browser. Use this, not
+  `tools/serve.py` on port **3000** and opens a browser. Use this, not
   `python -m http.server`: `serve.py` mirrors production Cloudflare routing
   (clean URLs — `/about` serves `about.html`, `/about.html` 308-redirects to
   `/about` — plus the SPA fallback). A plain static server 404s `/about` and
@@ -438,14 +438,12 @@ REPO ROOT           — deploy config, dev/app scripts, and the folders below.
 save.bat            — commit + version bump + push (the only way to commit; bumps
                       COMMIT_COUNT in src/core/app.ts and the cache epoch in
                       web/sw.js, then runs the tsc build before every generator)
-server.bat          — launch serve.py on :3000 + two tsc --watch windows
+server.bat          — launch tools/serve.py on :3000 + two tsc --watch windows
 desktop.bat         — run the Electron desktop app (installs desktop/'s deps on
                       first run, builds src/, starts two tsc --watch processes
                       in its own console via start /b - no extra windows - then
                       opens the window; edit loop is save + Ctrl+R). Drag a file
                       onto it to open that file.
-serve.py            — local dev server mirroring Cloudflare clean-URL routing
-                      (its document root is web/)
 src/                — THE APP SOURCE (TypeScript). Mirrors the old
                       web/assets/js/ tree exactly: core/ renderers/ parsers/
                       lib/ games/. tsc compiles it 1:1 into web/assets/js/.
@@ -467,18 +465,19 @@ README.md           — public GitHub readme (visitor-facing overview; this
                       file is the real working guidance)
 AGENTS.md           — condensed agent guidance for other tools. Overlaps this
                       file; keep the two consistent when changing conventions.
-FEATURES.md         — plain-language inventory of everything the app does
-                      (visitor-readable; not generated, not served)
-FEATURE-IDEAS.md    — backlog checklist of unbuilt ideas with effort estimates
 docs/               — project reference docs (Markdown). SOURCE for the public
                       /docs site - see "The docs site" above. Never edit the
                       generated web/docs*.html; edit these. Publication is
                       opt-in: only files listed in the NAV array of
                       tools/build-docs-html.mjs become /docs/<slug> pages, so a
                       new docs/*.md emits nothing until you add it there.
-                      Currently NAV covers all of them - the 16 top-level pages,
-                      the 9 under features/, plus FEATURE-INVENTORY.md
-                      (/docs/feature-inventory) and PROGRESS.md (/docs/progress).
+                      NAV covers the 16 top-level pages, the 9 under features/,
+                      plus FEATURE-INVENTORY.md (/docs/feature-inventory) and
+                      PROGRESS.md (/docs/progress). Two files are deliberately
+                      NOT in NAV and stay unpublished: FEATURES.md (plain-
+                      language inventory of everything the app does) and
+                      FEATURE-IDEAS.md (backlog of unbuilt ideas with effort
+                      estimates).
 research/           — gitignored. Working notes, plans and reverse-engineering
                       scratch go HERE, not in a temp dir - they're worth keeping
                       across sessions but are not part of the shipped site.
@@ -498,9 +497,11 @@ research/           — gitignored. Working notes, plans and reverse-engineering
                       macOS, Linux and Android and publishes ONE GitHub release,
                       which the apps update from) and android-ffmpeg.yml (manual
                       - the Android FFmpeg binary, for a local build)
-tools/              — Node generator scripts (dev-only, never served). They read
+tools/              — Node generator scripts (dev-only, never served), plus
+                      serve.py, the local dev server that mirrors Cloudflare
+                      clean-URL routing (its document root is web/). They read
                       website files via a WEB = join(ROOT, 'web') constant, while
-                      tools/ + worker/ + stats-backup/ paths stay under the root.
+                      tools/ + worker/ + research/ paths stay under the root.
                       Eight are the save.bat chain (see Commands); the rest are
                       inputs or standalone: prerender-common.mjs (shared esc/
                       THEME_SCRIPT/badge helpers), format-page-content.mjs +
@@ -509,8 +510,8 @@ tools/              — Node generator scripts (dev-only, never served). They re
                       ext missing from format-page-content.mjs gets a thin generic
                       page and is warned about at generation time),
                       backup-stats.mjs (read-only D1 stats snapshot to
-                      stats-backup/*.csv - gitignored and absent until you run it,
-                      so a missing stats-backup/ is normal; run from the save.bat
+                      research/stats-backup/*.csv - gitignored and absent until you
+                      run it, so a missing one is normal; run from the save.bat
                       menu, not the commit path) and disperse-unsupported.mjs
                       (re-checks the stats "unsupported" dogpile against the live
                       catalog). Two subfolders: partials/ (footer-shared.html, the

@@ -143,8 +143,8 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      # The FFmpeg executable takes 20 to 40 minutes, so it is cached on the
-      # build script and rebuilds only when that script changes.
+      # The FFmpeg executable takes about 4 minutes (3.5 measured), so it is
+      # cached on the build script and rebuilds only when that script changes.
       - name: Restore FFmpeg
         id: ffcache
         uses: actions/cache/restore@v4

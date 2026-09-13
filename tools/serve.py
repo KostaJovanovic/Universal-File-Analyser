@@ -12,7 +12,7 @@
   /anything-else (no matching file) -> 404.html (404), the custom error page
      (wrangler.jsonc not_found_handling = "404-page")
 
-Run: python serve.py [port]   (defaults to 3000, binds 0.0.0.0 for phone access)
+Run: python tools/serve.py [port]   (defaults to 3000, binds 0.0.0.0 for phone access)
 """
 import datetime
 import json
@@ -87,10 +87,10 @@ MOCK_STATS = {
 }
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
-# The website now lives under web/ (serve.py stays in the repo root but its
-# document root is web/, so clean-URL routing mirrors the Cloudflare deploy,
-# which serves the contents of web/ at "/").
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
+# The website lives under web/ (serve.py lives in tools/ but its document root
+# is web/, so clean-URL routing mirrors the Cloudflare deploy, which serves the
+# contents of web/ at "/").
+ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'web')
 
 
 class CleanURLHandler(SimpleHTTPRequestHandler):

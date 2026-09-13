@@ -44,5 +44,5 @@ start "" "http://localhost:%PORT%"
 rem serve.py mirrors the production Cloudflare routing (clean URLs + .html
 rem redirects + SPA fallback), so local dev matches analyser.valjdakosta.com exactly.
 rem It prints a scannable QR for the Network URL at startup (LOCAL_IP passed in).
-python serve.py %PORT% %LOCAL_IP%
+python tools\serve.py %PORT% %LOCAL_IP%
 pause
