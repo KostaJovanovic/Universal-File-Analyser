@@ -164,6 +164,14 @@ public class AnrFfmpeg extends Plugin {
         call.resolve();
     }
 
+    /** The user swiped the app away (AnrJobService.onTaskRemoved): the page
+     *  that waits for these results is gone, so end every job now. */
+    static void stopAll() {
+        for (Session s : SESSIONS.values()) {
+            for (Process p : s.procs) p.destroy();
+        }
+    }
+
     // ---- capabilities --------------------------------------------------------
 
     @PluginMethod
@@ -357,6 +365,18 @@ public class AnrFfmpeg extends Plugin {
             return result(false, -1, String.valueOf(e.getMessage()));
         }
         s.procs.add(p);
+        // Keeps the app, and so this child, alive if the user switches away.
+        final String job = UUID.randomUUID().toString();
+        AnrJobService.begin(getContext(), job);
+        AnrJobService.askForNotifications(getActivity());
+        try {
+            return runProcess(id, job, s, p, timeout);
+        } finally {
+            AnrJobService.end(job);
+        }
+    }
+
+    private JSObject runProcess(String id, String job, Session s, Process p, int timeout) {
         drain(p.getInputStream());
 
         final boolean[] timedOut = { false };
@@ -390,7 +410,9 @@ public class AnrFfmpeg extends Plugin {
                     long now = System.currentTimeMillis();
                     if (t >= 0 && now - lastProgress > 200) {
                         lastProgress = now;
-                        emitProgress(id, Math.max(0, Math.min(1, t / duration)));
+                        double fraction = Math.max(0, Math.min(1, t / duration));
+                        emitProgress(id, fraction);
+                        AnrJobService.progress(job, fraction);
                     }
                 }
             }

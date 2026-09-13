@@ -7,12 +7,13 @@
 #
 # One run builds, in parallel, each on its own GitHub machine, ONE file per
 # system:
-#   windows  Analyser-Windows.exe         installs, or unpacks a portable copy
-#                                          (desktop/build/installer.nsh)
-#   macos    Analyser-mac-universal.dmg   Apple silicon and Intel in one app
-#   linux    Analyser-linux-x64.AppImage
-#   android  Analyser-android.apk         signed, with the native FFmpeg when
-#                                          that builds (mobile/)
+#   windows  Analyser-Windows-<version>.exe         installs, or unpacks a
+#                                                   portable copy
+#                                                   (desktop/build/installer.nsh)
+#   macos    Analyser-mac-universal-<version>.dmg   Apple silicon and Intel
+#   linux    Analyser-linux-x64-<version>.AppImage
+#   android  Analyser-android-<version>.apk         signed, with the native
+#                                                   FFmpeg when that builds
 # Then the publish job creates the release v<version> with all four at once.
 # All at once on purpose: the installed apps read the latest release, and a
 # half-uploaded one would point them at a file that is not there yet.
@@ -24,9 +25,8 @@
 # There is no update file in the release. The apps ask GitHub's API for the
 # latest release (desktop/updater.mjs, AnrUpdate.java), and the answer gives
 # every file's download URL and the SHA-256 digest GitHub computed for it. The
-# apps find their file by NAME, and docs/download.md links to
-# releases/latest/download/<name>, so the names carry no version. Keep them
-# stable.
+# apps find their file by the part of the name before the version, so keep
+# that part - "Analyser-Windows", "Analyser-android" - exactly as it is.
 #
 # Secrets (already set in this repository):
 #   ANDROID_KEYSTORE_BASE64    the release keystore, base64
@@ -209,13 +209,15 @@ jobs:
             -PanrUpdateFeed="https://api.github.com/repos/${{ github.repository }}/releases/latest"
 
       - name: Name the APK
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           mkdir -p out
-          cp mobile/android/app/build/outputs/apk/release/app-release.apk out/Analyser-android.apk
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk "out/Analyser-android-$VERSION.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: release-android
-          path: out/Analyser-android.apk
+          path: out/Analyser-android-*.apk
           if-no-files-found: error
           compression-level: 0
 
@@ -246,10 +248,10 @@ jobs:
 
           | System | Download | Updates |
           |---|---|---|
-          | Windows 10 and 11 | [Analyser-Windows.exe]($dl/Analyser-Windows.exe) | Installs itself |
-          | macOS, Apple silicon and Intel | [Analyser-mac-universal.dmg]($dl/Analyser-mac-universal.dmg) | Tells you |
-          | Linux | [Analyser-linux-x64.AppImage]($dl/Analyser-linux-x64.AppImage) | Installs itself |
-          | Android 7 and later | [Analyser-android.apk]($dl/Analyser-android.apk) | Asks, then installs |
+          | Windows 10 and 11 | [Analyser-Windows-$VERSION.exe]($dl/Analyser-Windows-$VERSION.exe) | Installs itself |
+          | macOS, Apple silicon and Intel | [Analyser-mac-universal-$VERSION.dmg]($dl/Analyser-mac-universal-$VERSION.dmg) | Tells you |
+          | Linux | [Analyser-linux-x64-$VERSION.AppImage]($dl/Analyser-linux-x64-$VERSION.AppImage) | Installs itself |
+          | Android 7 and later | [Analyser-android-$VERSION.apk]($dl/Analyser-android-$VERSION.apk) | Asks, then installs |
 
           No build carries a paid signing certificate yet, so each system asks once:
 

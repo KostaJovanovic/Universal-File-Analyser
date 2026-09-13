@@ -62,6 +62,7 @@ treat a LAN address as dev. The bridge and the native FFmpeg still work, because
 | `android/.../AnrBytes.java` | The byte channel, page to native (`window.anrBytes`) |
 | `android/.../AnrFfmpeg.java` | Native FFmpeg: sessions, the encoder probe, jobs as child processes |
 | `android/.../AnrFfmpegChecks.java` | The ffmpeg safety checks, a port of `desktop/ffmpeg-accel.mjs` |
+| `android/.../AnrJobService.java` | The foreground service that keeps an ffmpeg job alive in the background, with the progress notification |
 | `android/.../AnrUpdate.java` | Release builds only: checks the GitHub release for a newer APK, then downloads, checks and installs it. The footer's "Check for updates" button runs it at once |
 
 ## The bridge
@@ -225,6 +226,23 @@ vectors as `desktop/tools/check-ffmpeg-args.mjs`. Change one, change all
 three. A refused job returns code 1, a clean failure, and the bridge does not
 retry it.
 
+**Jobs survive the background** through `AnrJobService`, a foreground service.
+A job is a child process, so when Android kills the app in the background to
+free memory, the job dies too. Android 12 and later also kill the child
+processes of a background app that use much CPU. The service lifts the app to
+foreground importance, which stops both. `AnrFfmpeg.run()` calls `begin()` and
+`end()` around each job. The service starts with the first job and stops 10
+seconds after the last one. Android 12+ refuses to start a foreground service
+from the background, and the bridge's software retry starts its job from
+JavaScript, maybe with the app in the background. The 10 seconds keep the
+service running across that gap. Its type is `mediaProcessing` on Android 15
+and later, which allows six hours a day, and `dataSync` below that. Android 12+
+holds the notification back for 10 seconds, so a short job shows none. On
+older versions the service starts 3 seconds after the job for the same effect.
+`POST_NOTIFICATIONS` is asked for once, at the first job, and a no hides only
+the notification. A swipe away in the recent apps ends the jobs
+(`onTaskRemoved`), because the page that waits for them is gone.
+
 ## Security
 
 The threat model is the same as on the desktop. `core/sanitize.js` stays the only XSS
@@ -245,7 +263,7 @@ plugin takes only what it needs:
 ## Releases and updates
 
 `.github/workflows/release.yml` builds the APK on GitHub, next to the desktop
-builds, and puts it in the same release as `Analyser-android.apk`. The Android
+builds, and puts it in the same release as `Analyser-android-<version>.apk`. The Android
 job does two things:
 
 1. It restores the FFmpeg binary from the Actions cache. When
@@ -253,7 +271,7 @@ job does two things:
    minutes on GitHub). A failed FFmpeg build does not stop the release: the APK then runs
    ffmpeg.wasm, and the run shows a warning.
 2. It runs `npm run sync`, then `gradlew testReleaseUnitTest assembleRelease`
-   with the release key, and names the APK `Analyser-android.apk`.
+   with the release key, and names the APK `Analyser-android-<version>.apk`.
 
 The key comes from the repository secrets `ANDROID_KEYSTORE_BASE64`,
 `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_ALIAS`, plus
@@ -268,16 +286,23 @@ holds a URL, and only the workflow sets one (`-PanrUpdateFeed`): the GitHub API
 address of the latest release. The release holds no update file. At start-up,
 at most once every six hours, the updater reads that API answer. A newer tag
 than the installed `versionName` asks the user first. **Update** downloads the
-asset named `Analyser-android.apk` into the cache, with a progress bar. Then
+asset named `Analyser-android-<version>.apk` into the cache, with a progress bar. Then
 the updater checks it against the SHA-256 digest that GitHub gives for the
-asset, checks the package name and that the `versionCode` is higher, and opens
-the system installer through the FileProvider. That step needs
-`REQUEST_INSTALL_PACKAGES`. Android checks the signature itself.
+asset, checks the package name and that the `versionCode` is higher, and writes
+the APK into a `PackageInstaller` session. On Android 12 and later the session
+sets `USER_ACTION_NOT_REQUIRED`, which Android grants to an app that updates
+itself: the update installs with no confirm screen, and the app closes. When
+Android still wants a yes, the session reports `STATUS_PENDING_USER_ACTION` to
+`AnrUpdate.InstallStatus` (a receiver that is not exported), which opens the
+confirm screen. Sessions need `REQUEST_INSTALL_PACKAGES`. Android checks the
+signature itself, and Play Protect can still scan the new APK. The FileProvider
+stays for Capacitor, which uses it for photos taken through a file input.
 `AnrUpdateTest` covers the version comparison.
 
 A Google Play build must not pass the feed, and must drop
 `REQUEST_INSTALL_PACKAGES` from the manifest: Play forbids an app that updates
-itself.
+itself. Play also asks for a declaration of the foreground service types
+(`AnrJobService`) in the Play Console.
 
 ## Versioning
 
@@ -294,5 +319,4 @@ grows, and Android needs exactly that for an update.
 - **The FFmpeg binary.** The build script and the workflows exist, but no one
   built or measured a binary yet. The first question is whether
   `h264_mediacodec` works from a standalone executable on real chipsets.
-- A foreground service for long transcodes, a folder picker, bundled OCCT and
-  ONNX Runtime, a store listing, and iOS.
+- A folder picker, bundled OCCT and ONNX Runtime, a store listing, and iOS.

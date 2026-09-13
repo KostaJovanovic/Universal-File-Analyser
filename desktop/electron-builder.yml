@@ -7,10 +7,10 @@
 #
 # ONE file per system, on purpose - a release page is for people, not for
 # tooling:
-#   Analyser-Windows.exe         installs, OR unpacks a portable copy
-#                                (build/installer.nsh)
-#   Analyser-mac-universal.dmg   Apple silicon and Intel in one app
-#   Analyser-linux-x64.AppImage
+#   Analyser-Windows-<version>.exe         installs, OR unpacks a portable
+#                                          copy (build/installer.nsh)
+#   Analyser-mac-universal-<version>.dmg   Apple silicon and Intel in one app
+#   Analyser-linux-x64-<version>.AppImage
 # So there is no update file (latest*.yml) and no blockmap: updater.mjs asks
 # GitHub's API for the latest release, which gives each download URL and its
 # SHA-256 digest. `publish: null` keeps electron-builder from inferring a
@@ -25,10 +25,10 @@
 # src/core/app.ts, so the installer and the number in the app's own footer
 # always agree. `npm run dist` runs it first.
 #
-# The file names carry NO version. The apps find their file in a release by
-# name, and docs/download.md links to releases/latest/download/<name>, so the
-# names must stay the same from one release to the next. The release tag holds
-# the version.
+# The file names end in the version (9.9.0, the release tag without its v), so
+# a downloaded file says what it is. The apps find their file in a release by
+# the part before the version (updater.mjs, AnrUpdate.java), so keep that part
+# - "Analyser-Windows", "Analyser-linux-x64" - exactly as it is.
 
 appId: com.valjdakosta.analyser
 productName: Analyser
@@ -47,6 +47,10 @@ files:
   - ffmpeg-native.mjs
   - ffmpeg-accel.mjs
   - preload.cjs
+  # The title bar is the window's own page, served from here (main.mjs reads
+  # chrome/ out of the asar). Without it a packaged copy has no title bar at
+  # all, which is what 9.8 shipped.
+  - chrome/**
   - package.json
 
 publish: null
@@ -86,7 +90,10 @@ win:
   target:
     - target: nsis
       arch: [x64]
-  icon: build/icon.png
+  # A hand-built .ico, drawn afresh at every size from 16 to 256 px, so the
+  # thin strokes stay sharp (tools/make-icon.mjs). Converting icon.png made
+  # the small sizes soft.
+  icon: build/icon.ico
   # Unsigned for now. Windows SmartScreen will warn on first run until a
   # certificate is in place - see the note in README.md.
 
@@ -97,12 +104,15 @@ nsis:
   include: build/installer.nsh
   oneClick: false
   perMachine: false
-  allowToChangeInstallationDirectory: true
+  # No folder page: an install goes to the usual per-user folder, and page 1
+  # of installer.nsh picks the portable folder itself. installer.nsh stops the
+  # build if this is turned back on.
+  allowToChangeInstallationDirectory: false
   allowElevation: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Analyser
-  artifactName: Analyser-Windows.exe
+  artifactName: Analyser-Windows-${version}.${ext}
   uninstallDisplayName: Analyser
   # No .blockmap. updater.mjs downloads the whole installer, which is simpler
   # than a patch and keeps the release to one Windows file.
@@ -114,7 +124,7 @@ mac:
       arch: [universal]
   icon: build/icon.png
   category: public.app-category.utilities
-  artifactName: Analyser-mac-universal.${ext}
+  artifactName: Analyser-mac-universal-${version}.${ext}
   # No Apple Developer ID yet. null makes electron-builder skip signing, and
   # tools/after-pack.cjs signs ad-hoc instead. Remove both once a certificate
   # exists: notarisation becomes possible then, and so do installed updates.
@@ -134,7 +144,7 @@ linux:
   # Without this the binary takes the npm package name, analyser-desktop.
   executableName: analyser
   synopsis: Drop a file and see what it is. Nothing leaves your computer.
-  artifactName: Analyser-linux-x64.${ext}
+  artifactName: Analyser-linux-x64-${version}.${ext}
 
 # File associations are deliberately absent. Claiming .pdf or .jpg on install
 # would be hostile, and the format catalog is far too broad to register wholesale.

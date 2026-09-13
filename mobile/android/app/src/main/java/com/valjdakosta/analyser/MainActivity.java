@@ -3,6 +3,7 @@ package com.valjdakosta.analyser;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -101,6 +102,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        setBarColor(barColor);
         applyFullscreen(newConfig);
     }
 
@@ -127,14 +129,22 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    /** The last page background the bridge reported, re-applied after a turn. */
+    private int barColor = Color.BLACK;
+
     /** The padded bands show the decor view's background, so it takes the
      *  page's own background colour (reported by the bridge on every theme
      *  change), and the bar icons flip to stay readable on it. */
     void setBarColor(int color) {
+        barColor = color;
         runOnUiThread(() -> {
             Window window = getWindow();
             View decor = window.getDecorView();
-            decor.setBackgroundColor(color);
+            // The WINDOW background, not the decor view's alone. A turn of the
+            // phone resets the decor view to the window background, and the
+            // DayNight theme makes that #303030 in dark mode - the grey strip
+            // beside the camera. A window background survives the turn.
+            window.setBackgroundDrawable(new ColorDrawable(color));
             boolean light = ColorUtils.calculateLuminance(color) > 0.5;
             WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, decor);
             controller.setAppearanceLightStatusBars(light);
