@@ -10,7 +10,7 @@ Drop in any file and it is classified, parsed and visualised on your device. Not
 
 [**Open Analyser**](https://analyser.valjdakosta.com) · [Supported formats](https://analyser.valjdakosta.com/formats) · [Samples](https://analyser.valjdakosta.com/samples) · [About](https://analyser.valjdakosta.com/about) · [Changelog](https://analyser.valjdakosta.com/patch)
 
-**Download the app:** [Windows](https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest/download/Analyser-Setup-x64.exe) · [macOS (Apple silicon)](https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest/download/Analyser-mac-arm64.dmg) · [macOS (Intel)](https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest/download/Analyser-mac-x64.dmg) · [Linux](https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest/download/Analyser-linux-x64.AppImage) · [Android](https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest/download/Analyser-android.apk) · [**All downloads**](https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest)
+[**Download the apps**](https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest)
 
 <img src="tools/readme-assets/samples.jpg" alt="See it work, before you drop a thing, the samples gallery" width="720">
 
