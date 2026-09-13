@@ -18,7 +18,7 @@ Drop in any file and it is classified, parsed and visualised on your device. Not
 
 ## Download the apps
 
-The Windows, macOS, Linux and Android apps are all on one page: the [latest release](https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest). The installed apps check that page and update from it. [The download page](https://analyser.valjdakosta.com/docs/download) says which file to pick. One manual workflow, `.github/workflows/release.yml`, builds all of them on GitHub and publishes the release.
+Download stable release: https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest
 
 ## Why
 
