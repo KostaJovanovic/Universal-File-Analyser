@@ -361,10 +361,11 @@ something actually reads it. The one place that costs is the folder view's
 files rather than inside the asar - which keeps `net.fetch(pathToFileURL(...))`
 trivial and sidesteps asar quirks around the 72 MB of vendor WASM.
 
-Left out: `samples/**` (19 MB of gallery example files - which is why the menu
-has no Samples entry), `**/*.map`, `sitemap*.xml`, `robots.txt`, `llms.txt` and
-`_headers`. `formats/**` is kept: the `/formats` hub links straight at those
-pages, and a hub full of dead links is a worse trade than the 25 MB.
+Left out: `**/*.map`, `sitemap*.xml`, `robots.txt`, `llms.txt` and `_headers`.
+`formats/**` is kept: the `/formats` hub links straight at those pages, and a
+hub full of dead links is a worse trade than the 25 MB. `samples/**` (18 MB) is
+kept too: the `/samples` page opens those files, and the Everything offline
+download lists them.
 
 ## Icons
 

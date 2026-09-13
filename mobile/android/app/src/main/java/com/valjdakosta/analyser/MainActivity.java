@@ -7,6 +7,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.Window;
+import android.view.WindowManager;
 import androidx.activity.OnBackPressedCallback;
 import androidx.core.graphics.ColorUtils;
 import androidx.core.graphics.Insets;
@@ -40,6 +41,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AnrFfmpeg.class);
         super.onCreate(savedInstanceState);
         setUpInsets();
+        applyFullscreen(getResources().getConfiguration());
         setUpBack();
         // Returns at once. Does nothing unless the build has an update feed.
         AnrUpdate.maybeCheck(this);
@@ -65,6 +67,13 @@ public class MainActivity extends BridgeActivity {
     private void setUpInsets() {
         Window window = getWindow();
         WindowCompat.setDecorFitsSystemWindows(window, false);
+        if (Build.VERSION.SDK_INT >= 28) {
+            // Draw beside the camera in landscape too, so the strip that keeps
+            // text clear of it takes the page colour, not the system's black.
+            WindowManager.LayoutParams lp = window.getAttributes();
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            window.setAttributes(lp);
+        }
         if (Build.VERSION.SDK_INT < 35) {
             // Android 15+ draws transparent bars itself; older versions need telling.
             window.setStatusBarColor(Color.TRANSPARENT);
@@ -85,6 +94,37 @@ public class MainActivity extends BridgeActivity {
             // it breaks the WebView's own inset recalculation (Chromium 461332423).
             return new WindowInsetsCompat.Builder(insets).setInsets(bars, Insets.NONE).build();
         });
+    }
+
+    /** The manifest handles orientation changes itself (configChanges), so the
+     *  activity lives on and this is where a turn of the phone lands. */
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        applyFullscreen(newConfig);
+    }
+
+    /** Coming back from another app can bring the bars back. */
+    @Override
+    public void onResume() {
+        super.onResume();
+        applyFullscreen(getResources().getConfiguration());
+    }
+
+    /** Landscape is true fullscreen: the status bar and the gesture bar hide,
+     *  and a swipe in from the edge shows them for a moment. Portrait keeps
+     *  them, in the page colour. Hidden bars report zero insets, so the padding
+     *  above shrinks to the camera cutout alone - text never sits under the
+     *  camera, and the page fills the rest of the screen. */
+    private void applyFullscreen(Configuration config) {
+        Window window = getWindow();
+        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, window.getDecorView());
+        if (config.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            controller.hide(WindowInsetsCompat.Type.systemBars());
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars());
+        }
     }
 
     /** The padded bands show the decor view's background, so it takes the

@@ -68,8 +68,7 @@ export function menuTree(actions) {
         { id: 'go.forward', label: 'Forward', accel: 'Alt+Right', run: () => actions.view('forward') },
         SEP,
         { id: 'go.formats', label: 'Formats', run: () => actions.go('/formats') },
-        // No Samples entry: web/samples/ is left out of the package (19 MB of
-        // example files), so the gallery has nothing to hand out here.
+        { id: 'go.samples', label: 'Samples', run: () => actions.go('/samples') },
         { id: 'go.docs', label: 'Documentation', run: () => actions.go('/docs') },
         { id: 'go.stats', label: 'Statistics', run: () => actions.go('/stats') },
         { id: 'go.patch', label: 'Changelog', run: () => actions.go('/patch') },

@@ -48,6 +48,13 @@ final class AnrRouter {
 
     static final Route NOT_FOUND = new Route("404.html", true);
 
+    /** The Android Gradle plugin unpacks every .gz asset and drops the
+     *  extension, so stage-web.mjs stores each .gz file with this suffix
+     *  added, and route() maps a request for x.gz to x.gz.anr. This is the
+     *  one difference from router.mjs that is not about routing: it only
+     *  undoes a packaging step. Keep it in step with GZ_SUFFIX there. */
+    static final String GZ_SUFFIX = ".anr";
+
     private final AssetManager assets;
     private final Set<String> files;
 
@@ -90,6 +97,8 @@ final class AnrRouter {
         for (String seg : rel.split("/", -1)) {
             if (seg.equals("..") || seg.equals(".") || seg.contains("\\")) return NOT_FOUND;
         }
+        // A .gz file is stored as <name>.gz.anr (stage-web.mjs says why).
+        if (rel.endsWith(".gz") && exists(rel + GZ_SUFFIX)) return new Route(rel + GZ_SUFFIX, false);
         if (exists(rel)) return new Route(rel, false);               // real asset, served as-is
         if (exists(rel + ".html")) return new Route(rel + ".html", false);  // /about -> about.html
         return NOT_FOUND;
@@ -113,12 +122,15 @@ final class AnrRouter {
             { "mp3", "audio/mpeg" }, { "wav", "audio/wav" }, { "ogg", "audio/ogg" }, { "flac", "audio/flac" },
             { "m4a", "audio/mp4" }, { "mp4", "video/mp4" }, { "webm", "video/webm" }, { "pdf", "application/pdf" },
             { "zip", "application/zip" }, { "data", "application/octet-stream" }, { "bin", "application/octet-stream" },
+            { "gz", "application/gzip" },
         };
         for (String[] row : table) MIME.put(row[0], row[1]);
     }
 
-    /** MIME type for a file name, or null when the extension is unknown. */
+    /** MIME type for a file name, or null when the extension is unknown. A
+     *  stored x.gz.anr answers as the x.gz it stands for. */
     static String mime(String name) {
+        if (name.endsWith(GZ_SUFFIX)) name = name.substring(0, name.length() - GZ_SUFFIX.length());
         int dot = name.lastIndexOf('.');
         int slash = name.lastIndexOf('/');
         if (dot < 0 || dot < slash) return null;

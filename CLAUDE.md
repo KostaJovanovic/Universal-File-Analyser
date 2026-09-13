@@ -410,7 +410,10 @@ planned but not started (it needs a Mac).
   `RouteProcessor` hook only ever receives `"/index.html"`, so it cannot route.
   `AnrWebViewClient` routes the page AND the service worker
   (`resolveServiceWorkerRequests: false` in `capacitor.config.json` stops
-  Capacitor replacing the SW client). `serve.py` stays the spec.
+  Capacitor replacing the SW client). `serve.py` stays the spec. One
+  packaging quirk sits on top: the Android Gradle plugin unpacks every `.gz`
+  asset and drops the extension, so `stage-web.mjs` stores `x.gz` as
+  `x.gz.anr` and `AnrRouter` maps the request back (`GZ_SUFFIX` in both).
 - **`/__anr/*` is the shell's own namespace** - ffmpeg outputs and files opened
   from other apps - and `sw.js` skips it, so user bytes never land in a cache.
   Capacitor's `/_capacitor_file_/` and `/_capacitor_content_/` routes answer 404

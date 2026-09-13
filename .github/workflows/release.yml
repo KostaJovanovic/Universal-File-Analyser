@@ -251,12 +251,6 @@ jobs:
           | Linux | [Analyser-linux-x64.AppImage]($dl/Analyser-linux-x64.AppImage) | Installs itself |
           | Android 7 and later | [Analyser-android.apk]($dl/Analyser-android.apk) | Asks, then installs |
 
-          The Windows installer asks first: install Analyser, or put a portable copy in a folder, for example on a USB stick. A portable copy writes nothing to the computer and tells you when a new version is out.
-
-          "Installs itself" means the app downloads the new version in the background and installs it when you quit. "Tells you" means a message offers to open this page.
-
-          What changed: https://analyser.valjdakosta.com/patch
-
           No build carries a paid signing certificate yet, so each system asks once:
 
           - **Windows:** SmartScreen stops the first run. Click **More info**, then **Run anyway**.
