@@ -187,6 +187,8 @@
 <div class="tst-swatch"><span class="tst-swatch-chip" style="background:var(--accent)"></span><code class="tst-swatch-name">--accent</code><span class="tst-swatch-vals"><code>#e60023</code><code class="tst-swatch-dark">#ff3347</code></span></div>
 <div class="tst-swatch"><span class="tst-swatch-chip" style="background:var(--accent-fg)"></span><code class="tst-swatch-name">--accent-fg</code><span class="tst-swatch-vals"><code>#ffffff</code><span class="tst-swatch-fixed">fixed</span></span></div>
 <div class="tst-swatch"><span class="tst-swatch-chip" style="background:var(--partial)"></span><code class="tst-swatch-name">--partial</code><span class="tst-swatch-vals"><code>#c47a0f</code><code class="tst-swatch-dark">#f2ad3a</code></span></div>
+<div class="tst-swatch"><span class="tst-swatch-chip" style="background:var(--go)"></span><code class="tst-swatch-name">--go</code><span class="tst-swatch-vals"><code>#15803d</code><code class="tst-swatch-dark">#22c55e</code></span></div>
+<div class="tst-swatch"><span class="tst-swatch-chip" style="background:var(--go-fg)"></span><code class="tst-swatch-name">--go-fg</code><span class="tst-swatch-vals"><code>#ffffff</code><code class="tst-swatch-dark">#0a0a0a</code></span></div>
 <div class="tst-swatch"><span class="tst-swatch-chip" style="background:var(--media-bg)"></span><code class="tst-swatch-name">--media-bg</code><span class="tst-swatch-vals"><code>#0a0a0a</code><span class="tst-swatch-fixed">fixed</span></span></div>
 <div class="tst-swatch"><span class="tst-swatch-chip" style="background:var(--on-dark)"></span><code class="tst-swatch-name">--on-dark</code><span class="tst-swatch-vals"><code>#ffffff</code><span class="tst-swatch-fixed">fixed</span></span></div>
 <div class="tst-swatch"><span class="tst-swatch-chip" style="background:var(--surface-on-dark)"></span><code class="tst-swatch-name">--surface-on-dark</code><span class="tst-swatch-vals"><code>#1a1a1a</code><span class="tst-swatch-fixed">fixed</span></span></div>
@@ -288,11 +290,12 @@
           <div class="tst-sub">.anr-btn.anr-btn--cta - the prominent red call to action</div>
           <button type="button" class="anr-btn anr-btn--cta">Analyse audio</button>
 
-          <div class="tst-sub">Header chips out of context: a plain chip, the current-page active fill (aria-current="page"), the Samples accent (href-driven), the Share chip with its icon, and .dark-toggle</div>
+          <div class="tst-sub">Header chips out of context: a plain chip, the current-page active fill (aria-current="page"), the Samples accent (href-driven), the green Get App chip (.header-btn-app, removed inside the desktop and Android apps), the Share chip with its icon, and .dark-toggle</div>
           <div class="tst-row">
             <a href="/about" class="header-btn">About</a>
             <a href="/about" class="header-btn" aria-current="page">Current</a>
             <a href="/samples" class="header-btn">Samples</a>
+            <a href="https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest" class="header-btn header-btn-app" target="_blank" rel="noopener">Get App</a>
             <button type="button" class="header-btn header-btn-share"><svg class="header-btn-ico" viewBox="0 0 50 50" fill="currentColor" aria-hidden="true" focusable="false"><path d="M15 30c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 20c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 40c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M19.007 25.885l12.88 6.44-.895 1.788-12.88-6.44z"/><path d="M30.993 15.885l.894 1.79-12.88 6.438-.894-1.79z"/></svg>Share</button>
             <button type="button" class="dark-toggle">Dark mode</button>
           </div>
@@ -1045,11 +1048,12 @@
           <div class="offline-bar"><div class="offline-bar-fill" style="width:42%"></div></div>
         </button>
       </div>
-      <div class="offline-bottom-row">
-        <button type="button" class="offline-install">Install as app</button>
-        <button type="button" class="offline-clear">Clear storage</button>
-        <details class="about-details"><summary>Dependencies</summary><dl class="about-defs"><div><dt>Metadata</dt><dd><a href="https://github.com/MikeKovarik/exifr" target="_blank" rel="noopener">exifr</a> <a class="dep-lic" href="https://github.com/MikeKovarik/exifr/blob/HEAD/LICENSE" target="_blank" rel="noopener">licence</a>. Each dependency carries a small bracketed licence link.</dd></div></dl></details>
-      </div>
+    </div>
+    <!-- Outside .offline-body: these stay shown when the section is collapsed. -->
+    <div class="offline-bottom-row">
+      <button type="button" class="offline-install">Install as app</button>
+      <button type="button" class="offline-clear">Clear storage</button>
+      <details class="about-details"><summary>Credits</summary><dl class="about-defs"><div><dt>Metadata</dt><dd><a href="https://github.com/MikeKovarik/exifr" target="_blank" rel="noopener">exifr</a> <a class="dep-lic" href="https://github.com/MikeKovarik/exifr/blob/HEAD/LICENSE" target="_blank" rel="noopener">licence</a>. Each dependency carries a small bracketed licence link.</dd></div></dl></details>
     </div>
   </div>
   <div class="footer-row footer-bottom">

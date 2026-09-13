@@ -408,6 +408,10 @@ function showShareModal(ctx?: any) {
 // Wire every nav "Share" button to the modal. Re-runs each navigation (the
 // header is swapped on SPA page change); the per-element flag guards double-wiring.
 export function wireShareButtons() {
+  // Inside the desktop and Android apps the reader already has the app, so the
+  // green "Get App" chip beside Share goes. Same per-navigation pass, since the
+  // swapped-in header brings it back.
+  if (window.anrDesktop) document.querySelectorAll('.header-btn-app').forEach((a) => a.remove());
   document.querySelectorAll('.header-btn-share').forEach((btn) => {
     if (btn._wired) return;
     btn._wired = true;

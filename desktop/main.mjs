@@ -967,6 +967,15 @@ ipcMain.handle('anr:ffmpeg-close', async (e, { id }) => {
   return true;
 });
 
+/* The footer's "Check for updates" button (core/offline-tiers.ts via the
+   preload). The same check as Help > Check for updates: updater.mjs answers
+   in a native dialog, so nothing comes back to the page. */
+ipcMain.handle('anr:check-updates', (e) => {
+  if (!fromMainWindow(e)) return false;
+  checkForUpdates().catch(() => {});
+  return true;
+});
+
 // ---------------------------------------------------------------------------
 // Single instance
 // ---------------------------------------------------------------------------

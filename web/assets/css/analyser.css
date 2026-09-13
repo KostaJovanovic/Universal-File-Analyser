@@ -25,6 +25,8 @@
   --accent:    #e60023;
   --accent-fg: #ffffff;
   --partial:   #c47a0f;   /* yellowish-orange: the in-between "Partial" depth tag */
+  --go:        #15803d;   /* green: the Get App chip. Darker than the Online dot so text on white stays readable */
+  --go-fg:     #ffffff;
 
   --font-sans: "Geist", -apple-system, "Helvetica Neue", Helvetica, "Liberation Sans", system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace;
@@ -706,6 +708,13 @@ button.header-btn { cursor: pointer; line-height: 1; }
    eye to the live demos; hover fills red to match the site's accent language. */
 .header-btn[href="/samples"] { color: var(--accent); border-color: var(--accent); }
 .header-btn[href="/samples"]:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+
+/* The Get App chip (between Samples and Share) is green, from --go: the colour
+   of the Online dot in the meta rail, darkened on the light theme so the text
+   stays readable. It links to the latest GitHub release. popups.ts removes it
+   inside the desktop and Android apps. */
+.header-btn-app { color: var(--go); border-color: var(--go); }
+.header-btn-app:hover { background: var(--go); border-color: var(--go); color: var(--go-fg); }
 
 /* Current-page nav chip: a persistent "you are here" fill (the inverted hover
    state, made permanent) so the button for the page you're on always reads as
@@ -4538,6 +4547,10 @@ details[open] summary::after { content: "\2212"; }
 .offline-toggle-ico { font-size: 0.8em; transition: transform 0.15s ease; transform: rotate(-90deg); }
 .offline-section.is-open .offline-toggle-ico { transform: rotate(0deg); }
 .offline-section:not(.is-open) .offline-body { display: none; }
+/* Install / Clear / Credits sit outside the body and stay shown when it is
+   collapsed; drop their top margin then, so they sit the heading row's own gap
+   below the heading. */
+.offline-section:not(.is-open) .offline-bottom-row { margin-top: 0; }
 /* [?] dropdown listing each download tier - only shown on mobile, where the
    per-tier descriptions are hidden. Same plain "[?]" style as the rest of the
    site (.anr-info-btn), tinted for the dark footer. */
@@ -4630,10 +4643,6 @@ details[open] summary::after { content: "\2212"; }
   /* "Dependencies" can't wrap (one word); drop the +/- marker so it fits. */
   .offline-bottom-row .about-details summary::after { display: none; }
   .offline-bottom-row .about-details summary { gap: 0; }
-  /* Install's instruction message expands full width like an opened Dependencies
-     (mobile only); Clear + Dependencies then split the row beneath it. */
-  .offline-bottom-row .offline-install.is-expanded { grid-column: 1 / -1; }
-  .offline-bottom-row:has(.offline-install.is-expanded) { grid-template-columns: repeat(2, 1fr); }
 }
 .offline-btn {
   position: relative;
@@ -5201,6 +5210,10 @@ body:has(.quickdrop-hero) .footer-nav-btn { display: none; }
   padding: 32px var(--pad-x);
   max-width: 1440px;
   margin: 0 auto;
+  /* Footer text is not selectable - a click or drag across the buttons and
+     links never highlights it. */
+  -webkit-user-select: none;
+  user-select: none;
 }
 .footer-row {
   display: flex;
@@ -6987,6 +7000,8 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   --accent:    #ff3347;
   --accent-fg: #ffffff;
   --partial:   #f2ad3a;   /* yellowish-orange: the "Partial" depth tag (dark theme) */
+  --go:        #22c55e;   /* green: the Get App chip, the same green as the Online dot */
+  --go-fg:     #0a0a0a;
   --accent-rgb: 255, 51, 71;
   --bg-rgb:     10, 10, 10;
   --shadow-color: rgba(0, 0, 0, 0.6);

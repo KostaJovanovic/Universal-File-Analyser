@@ -62,7 +62,7 @@ treat a LAN address as dev. The bridge and the native FFmpeg still work, because
 | `android/.../AnrBytes.java` | The byte channel, page to native (`window.anrBytes`) |
 | `android/.../AnrFfmpeg.java` | Native FFmpeg: sessions, the encoder probe, jobs as child processes |
 | `android/.../AnrFfmpegChecks.java` | The ffmpeg safety checks, a port of `desktop/ffmpeg-accel.mjs` |
-| `android/.../AnrUpdate.java` | Release builds only: checks the GitHub release for a newer APK, then downloads, checks and installs it |
+| `android/.../AnrUpdate.java` | Release builds only: checks the GitHub release for a newer APK, then downloads, checks and installs it. The footer's "Check for updates" button runs it at once |
 
 ## The bridge
 
@@ -70,7 +70,8 @@ treat a LAN address as dev. The bridge and the native FFmpeg still work, because
 `desktop/preload.cjs`**. Every guard in `src/` is written against that shape,
 so each one works on the phone unchanged, and each one is also right there. For
 example, the online probe pings the live site, and Turnstile is skipped
-because it cannot verify on the app origin. The install button hides, and the
+because it cannot verify on the app origin. The install button becomes
+"Check for updates", and the
 report goes through a native save. Two fields are new or differ:
 
 - `shell: 'capacitor'`. The desktop leaves it unset, so a branch that must not

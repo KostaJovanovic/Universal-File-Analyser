@@ -96,9 +96,8 @@ cumulative tiers (see [`pwa-offline.md`](pwa-offline.md) for exact contents and 
 - **Complete** - optional extras on top of Everything: OCR in 30+
   languages, and on-device AI vocal separation.
 
-Click **Install as app** to add Analyser to your home screen/app list
-(uses the browser's native install prompt where available, or shows
-platform-specific manual instructions otherwise). **Clear storage** removes
+Click **Install as app** to open the latest release on GitHub, where the
+desktop and Android apps are (see [`download.md`](download.md)). **Clear storage** removes
 everything this site has put on your device: your analysis history, all
 local/session state and databases, and the offline downloads themselves -
 the cached tiers and the AI models - so the space comes back and the tier

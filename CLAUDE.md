@@ -92,7 +92,9 @@ stale relative to `src/`. Type errors are reported loudly but don't block.
   is the **only** correct way to commit — it bumps `COMMIT_COUNT` in `app.js`
   and the `VERSION` cache epoch in `sw.js`, computes the version label, then
   `git add . && git commit && git push origin main`. `save.bat commit` commits
-  without pushing; `save.bat --force` force-pushes. Don't hand-edit
+  without pushing; `save.bat --force` force-pushes. `save.bat release` (menu
+  option 1) is a save that, after its push, starts the Release apps workflow
+  through `gh`, so the apps get a new GitHub release. Don't hand-edit
   `COMMIT_COUNT` or commit around this script.
   It also runs every generator first, in this order: `prerender-samples`,
   `prerender-formats`, `prerender-format-pages`, `stamp-counts`, `stamp-footer`,
@@ -310,8 +312,8 @@ The five things worth knowing before you touch anything:
   sets no CORS headers, so a renderer fetch would fail).
 - **Every desktop-only branch in `src/` sits behind `window.anrDesktop`**, which
   a browser never defines - that is what keeps the website's behaviour
-  unchanged. Today that is `popups.ts` (online probe + the Turnstile skip),
-  `offline-tiers.ts` (hide the PWA install button), `limits.ts` (real RAM for
+  unchanged. Today that is `popups.ts` (online probe + the Turnstile skip + removing the green Get App chip),
+  `offline-tiers.ts` (the footer install button - a link to the latest GitHub release on the website - becomes "Check for updates", via `anrDesktop.checkUpdates()`), `limits.ts` (real RAM for
   the device tier), `export-data.ts` (native save dialog), the native-FFmpeg
   shim in `video.ts` and the open-by-path glue in `app.ts` + `folder.ts`. Keep
   new ones equally narrow, and prefer a guarded branch in an existing module to

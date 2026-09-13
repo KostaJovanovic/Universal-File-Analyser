@@ -42,7 +42,7 @@ app never draws or offsets around it. Nothing here should carry the bar's height
 again. The guard currently touches six modules:
 `core/popups.ts` (ping the live site for the online probe; skip the Turnstile
 challenge, which cannot verify on an `analyser://` origin, and open the mailto
-directly), `core/offline-tiers.ts` (hide the PWA install button, keep the
+directly), `core/offline-tiers.ts` (the footer install button becomes "Check for updates", keep the
 download tiers), `core/limits.ts` (device tier from real RAM, not the clamped
 `navigator.deviceMemory`), `core/export-data.ts` (native save dialog for the
 report), `renderers/video.ts` (native FFmpeg, below) and the open-by-path glue
@@ -116,7 +116,7 @@ js/
     history.js    — anonymous analysed-count stats ping (the only network call)
                     + on-device "Recently analysed" localStorage history (metadata only)
     offline-tiers.js — "Download for offline use" footer: cumulative cache tiers,
-                    PWA install prompt, clear-storage button
+                    install button (opens the latest app release), clear-storage button
     stats-page.js — the /stats page (totals, per-ext table, leaderboard, trend chart)
     patch-tldr.js — the /patch "tl;dr" release-group digest toggle
     docs.js       — client behaviour for the generated /docs pages (theme

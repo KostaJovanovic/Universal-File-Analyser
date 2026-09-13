@@ -73,15 +73,32 @@ final class AnrUpdate {
 
     /** Called from MainActivity.onCreate. Returns at once: the work runs on NET. */
     static void maybeCheck(Activity activity) {
+        check(activity, false);
+    }
+
+    /** The footer's "Check for updates" (AnrShell.checkUpdates): no six-hour
+     *  wait, and it always answers - the update dialog, or a short message. */
+    static void checkNow(Activity activity) {
+        check(activity, true);
+    }
+
+    private static void check(Activity activity, boolean manual) {
         String feed = BuildConfig.UPDATE_FEED;
-        if (feed == null || feed.isEmpty() || !BUSY.compareAndSet(false, true)) return;
+        if (feed == null || feed.isEmpty()) {
+            if (manual) toast(activity, "Updates are off in this build of Analyser.");
+            return;
+        }
+        if (!BUSY.compareAndSet(false, true)) {
+            if (manual) toast(activity, "Analyser is already checking for an update.");
+            return;
+        }
         Context app = activity.getApplicationContext();
         SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         NET.execute(() -> {
             try {
                 // The installer copied the last update when it ran, so the file is spare now.
                 deleteQuietly(apkFile(app));
-                if (System.currentTimeMillis() - prefs.getLong("checked", 0) < EVERY_MS) return;
+                if (!manual && System.currentTimeMillis() - prefs.getLong("checked", 0) < EVERY_MS) return;
                 HttpURLConnection c = open(feed, "application/vnd.github+json");
                 JSONObject release;
                 try {
@@ -92,13 +109,23 @@ final class AnrUpdate {
                 prefs.edit().putLong("checked", System.currentTimeMillis()).apply();
                 String version = release.optString("tag_name", "").replaceFirst("^v", "");
                 JSONObject apk = asset(release, APK_NAME);
-                if (apk == null || !newer(version, installedName(app))) return;
+                if (apk == null || !newer(version, installedName(app))) {
+                    if (manual) toast(activity, "Analyser is up to date.");
+                    return;
+                }
                 activity.runOnUiThread(() -> offer(activity, version, apk));
             } catch (Exception e) {
                 // Offline, or GitHub did not answer. The next start tries again.
+                if (manual) toast(activity, "Analyser could not reach GitHub. Check the connection, then try again.");
             } finally {
                 BUSY.set(false);
             }
+        });
+    }
+
+    private static void toast(Activity activity, String text) {
+        activity.runOnUiThread(() -> {
+            if (!activity.isFinishing() && !activity.isDestroyed()) Toast.makeText(activity, text, Toast.LENGTH_LONG).show();
         });
     }
 

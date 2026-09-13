@@ -411,6 +411,17 @@ public class AnrShell extends Plugin {
         }
     }
 
+    // ---- updates -------------------------------------------------------------
+
+    /** The footer's "Check for updates" button. AnrUpdate shows the answer
+     *  itself - a dialog for a new version, a short message otherwise. */
+    @PluginMethod
+    public void checkUpdates(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity != null) AnrUpdate.checkNow(activity);
+        call.resolve();
+    }
+
     // ---- helpers -------------------------------------------------------------
 
     static String readAll(InputStream in, int max) throws IOException {
