@@ -59,8 +59,8 @@ surviving caches, then the network. `/api/*` requests are never cached, so
 
 `web/assets/js/core/offline-tiers.js` implements the "Download for offline
 use" footer section shared across pages: cumulative tier manifests, per-tier
-download/progress/"Cached" badge logic, the collapsible section, the PWA
-install button, and clear-storage. `setupOfflineTiers(COMMIT_COUNT,
+download/progress/"Cached" badge logic, the collapsible section, the
+install button (a link to the latest app release), and clear-storage. `setupOfflineTiers(COMMIT_COUNT,
 RELEASE_COMMITS, analyserVersion)` is called once from `boot()`; it queries
 its own DOM by id/class, so it's a no-op on any page missing the offline
 markup (all main pages carry it via the shared footer partial - see the
@@ -149,14 +149,15 @@ of `./`, `display: standalone`, and three icon sizes (192/512, plus a
 maskable 512 variant). `stamp-counts.mjs` (see [`tooling.md`](tooling.md)) stamps the
 supported-format count into the manifest's description at commit time.
 
-The install button in the offline-tiers footer listens for the browser's
-native `beforeinstallprompt` event (captured once, globally, guarded by
-`setupOfflineTiers._winWired` so it isn't re-registered on every SPA
-navigation) and shows the native install UI when available. On platforms
-that never fire that event (iOS, Safari, Firefox desktop), `installHint()`
-sniffs the user agent and shows a platform-specific manual instruction
-instead (e.g. "tap Share, then Add to Home Screen" on iOS; a note that
-Firefox desktop can't install web apps at all). Below 16.4, iOS also ignores
+The **Install as app** button in the offline-tiers footer does not offer a
+PWA install. On the website it opens the latest GitHub release in a new tab,
+where the desktop and Android apps are (see [`download.md`](download.md)). In
+the desktop and Android apps it becomes **Check for updates**. The site still
+catches the browser's `beforeinstallprompt` event and cancels it, so the
+browser shows no install banner of its own. It does that once, globally,
+guarded by `setupOfflineTiers._winWired`, so a later SPA navigation adds no
+second listener. The PWA still installs from the browser's own menu.
+Below 16.4, iOS ignores
 `manifest.json` entirely - `index.html`'s `apple-mobile-web-app-*` meta tags
 and `apple-touch-icon` link exist specifically to drive Add to Home Screen
 on those older versions.

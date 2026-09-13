@@ -278,6 +278,10 @@ const api = Object.freeze({
     return saveBlob(String(name || 'analysis') + '.html', new Blob([String(html || '')], { type: 'text/html' }), 'text/html');
   },
 
+  /** The footer's "Check for updates" button (core/offline-tiers.ts).
+   *  AnrUpdate.java checks at once and shows the answer natively. */
+  checkUpdates: () => call('AnrShell', 'checkUpdates'),
+
   ffmpeg: Object.freeze(ffmpeg),
 });
 

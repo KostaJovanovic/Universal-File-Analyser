@@ -68,6 +68,7 @@
         <a href="/formats" class="header-btn">Formats</a>
         <a href="/stats" class="header-btn">Stats</a>
         <a href="/samples" class="header-btn" aria-current="page">Samples</a>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest" class="header-btn header-btn-app" target="_blank" rel="noopener">Get App</a>
         <button type="button" class="header-btn header-btn-share"><svg class="header-btn-ico" viewBox="0 0 50 50" fill="currentColor" aria-hidden="true" focusable="false"><path d="M15 30c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 20c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 40c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M19.007 25.885l12.88 6.44-.895 1.788-12.88-6.44z"/><path d="M30.993 15.885l.894 1.79-12.88 6.438-.894-1.79z"/></svg>Share</button>
       </nav>
     </div>
@@ -203,7 +204,9 @@
       <!-- The heading is a toggle: the body below collapses. app.js sets the
            default open state on load - expanded when nothing is cached yet,
            collapsed once any tier is downloaded - so return visitors get a tidy
-           footer while first-timers see the options straight away. -->
+           footer while first-timers see the options straight away. Install,
+           Clear storage and Credits sit OUTSIDE the body, so they stay shown
+           when it is collapsed. -->
       <button type="button" class="offline-heading offline-toggle" id="offlineToggle" aria-expanded="true" aria-controls="offlineBody">Download for offline use<span class="offline-toggle-ico" aria-hidden="true">&#9662;</span></button>
       <!-- Mobile-only: the per-tier feature text is hidden on small screens, so
            this [?] drops down what each download includes. -->
@@ -237,6 +240,7 @@
         <span class="offline-size">345 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
+    </div>
     </div>
     <div class="offline-bottom-row">
       <button type="button" class="offline-install" id="offlineInstall">Install as app</button>
@@ -279,7 +283,6 @@
       <div><dt>Archives</dt><dd><a href="https://github.com/101arrowz/fflate" target="_blank" rel="noopener">fflate</a> <a class="dep-lic" href="https://github.com/101arrowz/fflate/blob/master/LICENSE" target="_blank" rel="noopener">licence</a> for ZIP, <a href="https://github.com/nika-begiashvili/libarchivejs" target="_blank" rel="noopener">libarchive.js</a> <a class="dep-lic" href="https://github.com/nika-begiashvili/libarchivejs/blob/master/LICENSE" target="_blank" rel="noopener">licence</a> for RAR / 7-Zip (CBR / CB7 comics), plus <a href="https://github.com/101arrowz/fzstd" target="_blank" rel="noopener">fzstd</a> <a class="dep-lic" href="https://github.com/101arrowz/fzstd/blob/master/LICENSE" target="_blank" rel="noopener">licence</a> (Zstandard), <a href="https://github.com/SteveSanderson/xzwasm" target="_blank" rel="noopener">xzwasm</a> <a class="dep-lic" href="https://spdx.org/licenses/MIT.html" target="_blank" rel="noopener">licence</a> (XZ / LZMA2) and <a href="https://github.com/jcmellado/js-lzma" target="_blank" rel="noopener">js-lzma</a> <a class="dep-lic" href="https://github.com/jcmellado/js-lzma/blob/master/LICENSE.txt" target="_blank" rel="noopener">licence</a> (legacy <code>.lzma</code>) decompressors. Loaded on demand.</dd></div>
         </dl>
       </details>
-    </div>
     </div>
   </div>
   <div class="footer-row footer-bottom">

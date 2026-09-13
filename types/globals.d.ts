@@ -66,6 +66,11 @@ declare global {
     /** Name what the window is showing - the analysed file, or '' for none.
         Reaches the title bar and the window title. Text only. */
     setSubject(text: string): void;
+    /** Check for a new version now. The shell shows the answer itself:
+        desktop/updater.mjs in a native dialog, AnrUpdate.java on Android. The
+        footer's "Install as app" button becomes "Check for updates" and calls
+        this (core/offline-tiers.ts). */
+    checkUpdates?(): Promise<unknown>;
     /** Native, hardware-accelerated FFmpeg (desktop/ffmpeg-native.mjs).
         src/renderers/video.ts wraps this into an ffmpeg.wasm-shaped object, so
         the existing call sites are untouched. Absent when no binary is found,

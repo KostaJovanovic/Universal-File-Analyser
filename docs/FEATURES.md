@@ -603,7 +603,8 @@ can expand into prose. British spelling, no em-dashes (site house style).
   encoder, the CAD kernel and the AI models are all still fetched on first use,
   so the "Download for offline use" tiers work here too.
 - **No installer footprint you did not ask for** - it claims no file
-  associations, and the "Install as app" button is hidden because you already did.
+  associations, and the "Install as app" button becomes "Check for updates"
+  because you already did.
 
 ---
 

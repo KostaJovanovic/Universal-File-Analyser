@@ -337,10 +337,11 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
-  { range: '9.01 - 9.05', notes: [
+  { range: '9.01 - 9.08', notes: [
     'The app now comes for **Windows, macOS and Linux**, with an early **Android** build beside them, all on one download page. A Mac gets one disk image for Apple silicon and Intel alike, and Linux an AppImage that runs on nearly any distribution.',
     'The apps **update themselves**: an installed Windows copy, the Linux AppImage and the Android app fetch a new version, check that it arrived intact and install it, and Android asks first. The one Windows file asks whether to install Analyser or to make a **portable copy** in a folder.',
     'Video conversion in the app now **stays in its own folder**, refusing any job that would reach another file on the computer, a network address, a camera or the screen.',
+    'A green **Get App** button at the top of every page and **Install as app** in the footer both open the latest release, and inside the apps that footer button reads **Check for updates** instead.',
   ] },
   { range: '9.0', milestone: true, notes: [
     'Analyser leaves the browser. There is a **Windows app** now, wrapping the very tool this site serves - the same formats, the same viewers, and the same promise that nothing you open ever leaves your machine.',

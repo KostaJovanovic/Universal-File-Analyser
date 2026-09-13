@@ -4,12 +4,16 @@ cd /d "%~dp0"
 
 set FORCE_MODE=0
 set COMMIT_ONLY=0
+set RELEASE_MODE=0
 set ACTION=%~1
 
-if /i "%ACTION%"=="--force"   (set FORCE_MODE=1 & set ACTION=save)
-if /i "%ACTION%"=="commit"    (set COMMIT_ONLY=1 & set ACTION=save)
-if /i "%ACTION%"=="--commit"  (set COMMIT_ONLY=1 & set ACTION=save)
-if /i "%ACTION%"=="--no-push" (set COMMIT_ONLY=1 & set ACTION=save)
+rem Quoted `set "VAR=1"` on purpose: an unquoted `set VAR=1 & ...` stores "1 "
+rem with the trailing space, and then `if "%VAR%"=="1"` never matches.
+if /i "%ACTION%"=="--force"   (set "FORCE_MODE=1" & set "ACTION=save")
+if /i "%ACTION%"=="commit"    (set "COMMIT_ONLY=1" & set "ACTION=save")
+if /i "%ACTION%"=="--commit"  (set "COMMIT_ONLY=1" & set "ACTION=save")
+if /i "%ACTION%"=="--no-push" (set "COMMIT_ONLY=1" & set "ACTION=save")
+if /i "%ACTION%"=="release"   (set "RELEASE_MODE=1" & set "ACTION=save")
 if /i "%ACTION%"=="save"   goto save
 if /i "%ACTION%"=="commit" goto save
 if /i "%ACTION%"=="push"    goto push
@@ -21,22 +25,24 @@ if /i "%ACTION%"=="samples" goto samples
 echo.
 echo === git ===
 echo.
-echo   1  save     add + commit + push
-echo   2  commit   add + commit, no push
-echo   3  push     push current branch
-echo   4  pull     pull current branch
-echo   5  backup   download stats to local csv
-echo   6  samples  rebuild /samples from samples\
-echo   7  quit
+echo   1  release  add + commit + push, then build and publish the apps on GitHub
+echo   2  save     add + commit + push
+echo   3  commit   add + commit, no push
+echo   4  push     push current branch
+echo   5  pull     pull current branch
+echo   6  backup   download stats to local csv
+echo   7  samples  rebuild /samples from samples\
+echo   8  quit
 echo.
-set /p CHOICE=select [1-7]:
-if "%CHOICE%"=="1" goto save
-if "%CHOICE%"=="2" (set COMMIT_ONLY=1 & goto save)
-if "%CHOICE%"=="3" goto push
-if "%CHOICE%"=="4" goto pull
-if "%CHOICE%"=="5" goto backup
-if "%CHOICE%"=="6" goto samples
-if "%CHOICE%"=="7" exit /b 0
+set /p CHOICE=select [1-8]:
+if "%CHOICE%"=="1" (set "RELEASE_MODE=1" & goto save)
+if "%CHOICE%"=="2" goto save
+if "%CHOICE%"=="3" (set "COMMIT_ONLY=1" & goto save)
+if "%CHOICE%"=="4" goto push
+if "%CHOICE%"=="5" goto pull
+if "%CHOICE%"=="6" goto backup
+if "%CHOICE%"=="7" goto samples
+if "%CHOICE%"=="8" exit /b 0
 echo [err]  invalid choice
 goto menu
 
@@ -226,9 +232,10 @@ node --no-warnings tools/check-shell.mjs
 if errorlevel 1 echo [warn] offline manifest gaps reported above - see tools/check-shell.mjs
 
 rem Optional read-only stats snapshot to research\stats-backup\ (gitignored, kept local).
-rem Pulls from the live /api/stats; non-fatal and skipped by default. The full
-rem Save (option 1 / `save` / --force) skips it entirely; only the commit-only
-rem path still offers it. Use menu option 5 (Backup) to snapshot on demand.
+rem Pulls from the live /api/stats; non-fatal and skipped by default. Release
+rem (option 1 / `release`) and the full Save (option 2 / `save` / --force) skip
+rem it entirely; only the commit-only path still offers it. Use menu option 6
+rem (Backup) to snapshot on demand.
 rem NB: a goto skip (not an if(...) block) - the "(y/n)" prompt text contains a
 rem ")" that would prematurely close a parenthesised block and break parsing.
 if not "%COMMIT_ONLY%"=="1" goto skipbackup
@@ -288,17 +295,42 @@ git push origin main --force
 if errorlevel 1 set SAVE_ERROR=1
 echo.
 echo [git]  force pushed origin/main
+if "%RELEASE_MODE%"=="1" if "%SAVE_ERROR%"=="0" call :runrelease
 goto end
 
 :pushed
 echo.
 echo [git]  pushed origin/main
+if "%RELEASE_MODE%"=="1" call :runrelease
 goto end
 
 :skipped
 echo.
 echo [git]  push skipped
+if "%RELEASE_MODE%"=="1" echo [warn] nothing was pushed, so no release was started
 goto end
+
+rem Option 1 (`release`): start the "Release apps" workflow once the push is in.
+rem It builds Windows, macOS, Linux and Android on GitHub and publishes one
+rem release with the four files (.github/workflows/release.yml). It needs the
+rem GitHub CLI, logged in. Non-fatal: the commit and the push already happened,
+rem and the Actions tab can still start the workflow by hand.
+:runrelease
+where gh >nul 2>nul
+if errorlevel 1 goto releasenogh
+echo.
+echo [gh]   start Release apps for v%VERLABEL%
+gh workflow run release.yml -R KostaJovanovic/Universal-File-Analyser --ref main -f publish=true
+if errorlevel 1 goto releasefail
+echo [gh]   started - the release goes live in about 8 minutes:
+echo        https://github.com/KostaJovanovic/Universal-File-Analyser/actions/workflows/release.yml
+exit /b 0
+:releasenogh
+echo [warn] gh, the GitHub CLI, is not installed - start Release apps from the Actions tab
+exit /b 0
+:releasefail
+echo [warn] gh could not start Release apps - is it logged in? Start it from the Actions tab
+exit /b 0
 
 
 :committed

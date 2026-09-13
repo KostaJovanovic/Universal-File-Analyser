@@ -482,6 +482,7 @@ function page(key, e, depth) {
         <a href="/stats" class="header-btn">Stats</a>
         <a href="/samples" class="header-btn">Samples</a>
         <a href="${escAttr(hrefOf(key))}" class="header-btn" aria-current="page">.${esc(d)}</a>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest" class="header-btn header-btn-app" target="_blank" rel="noopener">Get App</a>
         <button type="button" class="header-btn header-btn-share">${SHARE_SVG}Share</button>
       </nav>
     </div>

@@ -222,7 +222,8 @@ which does not exist in a browser. The website is unaffected.
 |---|---|
 | Header status | The Online/Offline probe pings the live site, not the local origin, which would always answer |
 | "Email me!" and "Suggest this format" | The app skips the human-check, because that widget belongs to the site's hostname and can never verify here. The mail client opens directly |
-| "Install as app" | Hidden. You already installed it |
+| "Install as app" | Becomes **Check for updates** |
+| "Get App" button | Hidden. You already have the app |
 | Download for offline use | Unchanged, and still worth doing. The ffmpeg core, OCCT, the Tesseract language data and the ONNX models all still come from the network on first use |
 | Device tier | Sized from real total RAM, not `navigator.deviceMemory`, which browsers clamp at 8 GB. A large machine gets the caps it deserves |
 | Export report | Offers a native save dialog, and keeps the browser path as a fallback |

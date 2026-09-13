@@ -378,8 +378,10 @@ To supply a hand-made icon instead, drop a real multi-resolution `build/icon.ico
 
 ## Releases and updates
 
-`.github/workflows/release.yml` is the only release path, and it is manual:
-open the Actions tab, pick **Release apps**, then **Run workflow**. One run:
+`.github/workflows/release.yml` is the only release path, and it never runs on
+a plain push. Start it with `save.bat release` (menu option 1), which saves,
+pushes and then starts it through `gh`. Or open the Actions tab, pick
+**Release apps**, then **Run workflow**. One run:
 
 1. reads the version and runs `tools/check-ffmpeg-args.mjs`,
 2. builds Windows, macOS and Linux in parallel, each on its own GitHub machine,
@@ -437,8 +439,12 @@ not exist in a browser, so the website is unaffected:
 - `core/popups.ts` - `probeOnline()` pings the live site rather than our own
   local origin, which would always answer. The Turnstile challenge is skipped
   (the widget is bound to the site's hostname and can never verify here) and the
-  `mailto:` opens directly.
-- `core/offline-tiers.ts` - the PWA install button is hidden. The download tiers
+  `mailto:` opens directly. `wireShareButtons()` also removes the green Get App
+  chip from the header, since the reader already has the app.
+- `core/offline-tiers.ts` - the footer install button (a link to the latest
+  GitHub release on the website) becomes "Check for updates",
+  which calls `anrDesktop.checkUpdates()` (IPC `anr:check-updates`, answered by
+  `updater.mjs` in a native dialog). The download tiers
   stay: the ffmpeg core, OCCT, Tesseract language data and the ONNX models are
   all still remote.
 - `core/limits.ts` - the device tier reads `anrDesktop.memoryGB`, the real

@@ -1,8 +1,8 @@
-/* Analyser - offline download tiers, PWA install prompt and clear-storage.
+/* Analyser - offline download tiers, the install button and clear-storage.
    The whole 'Download for offline use' footer section: the cumulative tier
    manifests (Essentials/Everything/Complete), per-tier download + progress +
-   'Cached' badge logic, the collapsible section, the beforeinstallprompt-based
-   install button, and the clear-storage button. setupOfflineTiers() is called
+   'Cached' badge logic, the collapsible section, the install button (a link to
+   the latest app release), and the clear-storage button. setupOfflineTiers() is called
    once from boot(); it queries its own DOM by id/class, so it is a no-op on
    pages without the offline markup. COMMIT_COUNT / RELEASE_COMMITS / analyserVersion
    are passed in (COMMIT_COUNT is bumped in app.js by save.bat, so it must live there).
@@ -17,55 +17,9 @@ import { DFN_MODEL, DFN_RETIRED_URLS } from '../lib/dfn-model.js';
 // MDX_OFFLINE_URLS), so the AI pack adds only this model file on top of the vocal
 // separator, and the Complete tier the same on top of MDX.
 const DFN_MODEL_MB = Math.round(DFN_MODEL.bytes / 1e6);
-// Browser/platform-specific "how to install" hint, shown on the install button
-// when the native install prompt is not available (iOS, Safari, Firefox, or a
-// browser that has not fired beforeinstallprompt yet). Sniffs the user agent for
-// the common cases and falls back to a generic line. British spelling, no
-// em-dashes, to match the site's user-facing copy.
-function installHint() {
-    const ua = navigator.userAgent || '';
-    // iPadOS 13+ reports a desktop Safari UA, so also treat a touch-capable Mac as iOS.
-    const isIos = /iPad|iPhone|iPod/.test(ua) ||
-        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const isAndroid = /Android/.test(ua);
-    // Order matters: Edge / Opera / Samsung user agents all also contain "Chrome".
-    const isEdge = /Edg\//.test(ua);
-    const isOpera = /OPR\//.test(ua) || /\bOPT\//.test(ua);
-    const isSamsung = /SamsungBrowser/.test(ua);
-    const isFirefox = /Firefox\//.test(ua) || /FxiOS/.test(ua);
-    const isChrome = /Chrome\//.test(ua) && !isEdge && !isOpera && !isSamsung;
-    const isSafari = /Safari/.test(ua) && !/Chrome|Chromium|Android/.test(ua);
-    const isWindows = /Windows/.test(ua);
-    if (isIos) {
-        // Since iOS 16.4, third-party browsers (Chrome, Edge, Firefox, Opera) can
-        // also add a site to the Home Screen from the Share sheet - it is no longer
-        // Safari-only - so the same instruction works everywhere.
-        return 'Tap the Share button, then "Add to Home Screen".';
-    }
-    if (isAndroid) {
-        if (isFirefox)
-            return 'Open the menu (⋮), then "Install", or "Add to Home screen".';
-        if (isSamsung)
-            return 'Open the menu (≡), then "Add page to", then "Home screen".';
-        return 'Open the menu (⋮), then "Install app", or "Add to Home screen".';
-    }
-    // Desktop.
-    if (isEdge)
-        return 'Click the app icon at the right of the address bar, or open the menu (…), then Apps, then "Install this site as an app".';
-    if (isChrome)
-        return 'Click the install icon at the right of the address bar, or open the menu (⋮), then "Cast, save and share", then "Install page as app".';
-    if (isOpera)
-        return 'Look for the install icon in the address bar, or open the menu, then "Install".';
-    if (isSafari)
-        return 'From the menu bar choose File, then "Add to Dock". (Needs Safari 17 or newer on macOS Sonoma.)';
-    // Firefox's "Add to Taskbar" web-app feature is Windows-only for now (macOS and
-    // Linux are planned but not shipped), so only point Windows users at the icon.
-    if (isFirefox)
-        return isWindows
-            ? 'Click the "Add to Taskbar" icon at the right of the address bar to add it to your taskbar.'
-            : 'Firefox on macOS and Linux cannot install web apps yet. Open this page in Chrome or Edge to install it, or just bookmark it.';
-    return 'Open your browser menu and look for "Install app" or "Add to Home Screen".';
-}
+// Where "Install as app" goes on the website: the latest GitHub release, which
+// carries the desktop and Android apps (the same link as the header's Get App chip).
+const RELEASES_URL = 'https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest';
 export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion) {
     // ----- Offline download buttons -----
     const TESS_DATA = 'assets/vendor/tesseract';
@@ -808,56 +762,37 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
         }
         refreshTierButtons();
     })();
-    // ----- PWA install prompt -----
-    // Desktop app: "Install as app" is exactly what the visitor already did, and
-    // beforeinstallprompt never fires on an analyser:// origin, so the button
-    // could only ever print an install hint for a browser they are not using.
-    // Hide it and leave the download tiers alone - those still matter here (the
+    // ----- Install as app -----
+    // Website: the button opens the latest GitHub release in a new tab, where the
+    // desktop and Android apps are. It no longer offers the browser's PWA install.
+    // Desktop app and Android: the reader already has the app, so the button
+    // becomes "Check for updates" and asks the shell (desktop/updater.mjs,
+    // AnrUpdate.java), which shows the answer itself. A shell without that
+    // method hides it. The download tiers stay - those still matter there (the
     // ffmpeg core, OCCT, Tesseract data and the ONNX models are all remote).
-    const installBtn = window.anrDesktop ? null : document.getElementById('offlineInstall');
-    if (window.anrDesktop) {
-        const b = document.getElementById('offlineInstall');
-        if (b)
-            b.hidden = true;
+    // onclick, not addEventListener: this runs on every SPA navigation, and one
+    // handler must not become several.
+    const installBtn = document.getElementById('offlineInstall');
+    if (installBtn && window.anrDesktop) {
+        const check = window.anrDesktop.checkUpdates;
+        if (check) {
+            installBtn.textContent = 'Check for updates';
+            installBtn.onclick = () => { check().catch(() => { }); };
+        }
+        else {
+            installBtn.hidden = true;
+        }
     }
-    // The beforeinstallprompt/appinstalled listeners are window-level, but
-    // setupOfflineTiers() re-runs on every SPA navigation - so wire them once (they
-    // resolve the current button by id at fire time) instead of stacking a new pair
-    // per navigation. deferredPrompt is stashed on the function object so the click
-    // handler below and a later navigation's handler share the same captured event.
+    else if (installBtn) {
+        installBtn.onclick = () => { window.open(RELEASES_URL, '_blank', 'noopener'); };
+    }
+    // Still swallow beforeinstallprompt, so the browser shows no install banner of
+    // its own: the site points at the apps now, not at a PWA install. The listener
+    // is window-level and setupOfflineTiers() re-runs on every SPA navigation, so
+    // wire it once.
     if (!setupOfflineTiers._winWired) {
         setupOfflineTiers._winWired = true;
-        window.addEventListener('beforeinstallprompt', e => {
-            e.preventDefault();
-            setupOfflineTiers._deferredPrompt = e;
-        });
-        window.addEventListener('appinstalled', () => {
-            const b = document.getElementById('offlineInstall');
-            if (b)
-                b.textContent = 'Installed ✓';
-            setupOfflineTiers._deferredPrompt = null;
-        });
-    }
-    if (installBtn) {
-        installBtn.addEventListener('click', async () => {
-            const deferredPrompt = setupOfflineTiers._deferredPrompt;
-            if (deferredPrompt) {
-                deferredPrompt.prompt();
-                const result = await deferredPrompt.userChoice;
-                if (result.outcome === 'accepted')
-                    installBtn.textContent = 'Installed ✓';
-                setupOfflineTiers._deferredPrompt = null;
-                return;
-            }
-            installBtn.textContent = installHint();
-            // Expand full width (mobile only, via CSS) so the long message fits, like
-            // an opened Dependencies. Clear + Dependencies split the row below it.
-            installBtn.classList.add('is-expanded');
-            setTimeout(() => {
-                installBtn.textContent = 'Install as app';
-                installBtn.classList.remove('is-expanded');
-            }, 5000);
-        });
+        window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); });
     }
     // ----- Clear storage: everything this site has put on the device. -----
     //        Analysis-side state (history, the queued stats pings, nudge timers, the

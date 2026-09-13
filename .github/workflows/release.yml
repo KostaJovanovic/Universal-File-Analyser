@@ -1,8 +1,9 @@
 # Build every app and publish them all to ONE GitHub release.
 #
 # MANUAL ONLY: Actions tab -> "Release apps" -> Run workflow, or
-# `gh workflow run release.yml`. It never runs on a push, so a save.bat push
-# costs nothing here. Untick "Publish the release" for a test build.
+# `gh workflow run release.yml`. save.bat option 1 (`save.bat release`) runs
+# that command after its push. A plain push never starts it, so an ordinary
+# save costs nothing here. Untick "Publish the release" for a test build.
 #
 # One run builds, in parallel, each on its own GitHub machine, ONE file per
 # system:

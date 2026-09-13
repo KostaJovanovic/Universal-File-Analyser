@@ -1,3 +1,7 @@
+## Download the apps
+
+[Download stable release](https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest)
+
 <div align="center">
 
 <img src="web/assets/img/banner.jpg" alt="Analyser banner" width="640">
@@ -18,7 +22,7 @@ Drop in any file and it is classified, parsed and visualised on your device. Not
 
 ## Download the apps
 
-Download stable release: https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest
+[Download stable release](https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest)
 
 ## Why
 

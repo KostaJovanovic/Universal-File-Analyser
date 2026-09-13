@@ -105,6 +105,13 @@ contextBridge.exposeInMainWorld('anrDesktop', {
     return ipcRenderer.invoke('anr:save-report', { name: String(name || ''), html: String(html || '') });
   },
 
+  /** Check for a new version now - the footer's "Check for updates" button
+   *  (core/offline-tiers.ts). The page only starts the check: updater.mjs in
+   *  main shows every answer in a native dialog. */
+  checkUpdates() {
+    return ipcRenderer.invoke('anr:check-updates');
+  },
+
   /** Native FFmpeg, hardware-accelerated where the machine allows it.
    *  src/renderers/video.ts wraps these into an object with the same shape as an
    *  ffmpeg.wasm instance, so the ~40 existing call sites need no changes.
