@@ -12,15 +12,18 @@ work on it has not started.
 
 ## Getting the app and updates
 
-Download `Analyser-android.apk` from the [download page](download.md) and open
+Download `Analyser-android-<version>.apk` from the [download page](download.md) and open
 it. The app needs Android 7 or later. Android asks you once to allow installs
 from your browser or file manager.
 
 The app looks for a new version when it starts, at most once every six hours.
 When one is out, it asks you first. **Update** downloads the new version with a
 progress bar and makes sure that the file is complete and really is Analyser.
-Then it opens the Android installer, which asks you to confirm. Android also
-refuses any update that does not carry the same signature as the app you have.
+Then it hands the file to Android. On Android 12 and later the update installs
+with no further question, and Analyser closes when it is done. Older versions,
+and any case Android does not allow, show the Android confirm screen first.
+Android also refuses any update that does not carry the same signature as the
+app you have. Play Protect may still check the new version.
 
 A check asks GitHub which release is the latest, and sends nothing else. A build you make yourself with `mobile.bat` never
 checks.
@@ -44,6 +47,15 @@ If the chip refuses a job, for example because of an unusual frame size, the
 app repeats it on a software encoder. You get the result either way. With no
 FFmpeg program in the build at all, the app uses the WebAssembly version,
 exactly as the website does.
+
+A long job keeps running when you switch to another app. While it runs,
+Analyser shows a notification with its progress, and a tap on it brings you
+back. Without that notification, Android could close a background app at any
+moment to free memory, and the job would stop with it. On Android 13 and later
+the app asks once, at the first job, if it may show notifications. A no stops
+only the notification: the job still runs. A short job ends before the
+notification appears. If you swipe Analyser away in the list of recent apps,
+the running jobs stop, because nothing is left to show their results.
 
 The build of the FFmpeg program leaves out every GPL part. That is why its
 software H.264 encoder is openh264, from Cisco, rather than x264.
@@ -140,5 +152,4 @@ privacy page.
 
 The app builds and its safety checks pass their tests. No one tested it on a
 range of phones yet, and no one built or measured the FFmpeg program yet. Also
-outstanding: a folder picker, keeping long video jobs running in the
-background, a store release and the iOS version.
+outstanding: a folder picker, a store release and the iOS version.

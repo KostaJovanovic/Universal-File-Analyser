@@ -55,14 +55,16 @@ a small model and the processor handles it comfortably, so correctness wins.
 
 ## Portable use
 
-Windows has one download, `Analyser-Windows.exe`. Its first page asks how to
+Windows has one download, `Analyser-Windows-<version>.exe`. Its first page asks how to
 set Analyser up:
 
-- **Install Analyser** adds it to the Start menu and the desktop, keeps its
-  settings in your user profile, and updates itself.
-- **Portable copy** puts the program in a folder you choose, for example on a
-  USB stick. It writes nothing to the computer: no Start menu entry, no
-  registry key and no uninstaller. To remove it, delete the folder.
+- **Install** adds it to the Start menu and the desktop for your user account,
+  keeps its settings in your user profile, and updates itself.
+- **Portable copy** puts the program in a folder you choose on the same page,
+  for example on a USB stick. It writes nothing to the computer: no Start menu
+  entry, no registry key and no uninstaller. To remove it, delete the folder.
+
+Then a progress page, and a last page with a box that starts Analyser.
 
 A portable copy keeps **everything** in a folder called `Analyser-data`, beside
 the program. That covers the offline downloads, the recently-analysed list, the
@@ -76,8 +78,8 @@ To check any of this, open **Help**, then **Where my data is stored**. It names
 the exact folder and offers to open it.
 
 A portable copy runs alongside an installed one, because the two keep separate
-settings. To update a portable copy, run the new installer, choose **Portable
-copy** and pick the same folder. The installer replaces the program and keeps
+settings. To update a portable copy, run the new Windows file, choose
+**Portable copy** and pick the same folder. It replaces the program and keeps
 `Analyser-data`.
 
 You can also drop an `ffmpeg.exe` next to the portable program, or in an
@@ -101,7 +103,7 @@ the copy you run:
 | Windows portable copy, macOS | A message offers to open the download page |
 
 The copies in the last row cannot replace themselves. For a portable copy, run
-the new installer, choose **Portable copy** and pick the same folder. macOS
+the new Windows file, choose **Portable copy** and pick the same folder. macOS
 installs an update by itself only for an app with a paid Apple signature, and
 this one has none yet.
 

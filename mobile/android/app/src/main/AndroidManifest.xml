@@ -39,6 +39,21 @@
             </intent-filter>
         </activity>
 
+        <!-- AnrUpdate's install session reports here. Not exported: only the
+             PendingIntent the session was committed with can reach it. -->
+        <receiver
+            android:name=".AnrUpdate$InstallStatus"
+            android:exported="false" />
+
+        <!-- AnrJobService keeps an ffmpeg job alive while the app is in the
+             background, with a progress notification. mediaProcessing is the
+             type Android 15 made for this. dataSync covers Android 10 to 14,
+             which do not know it. -->
+        <service
+            android:name=".AnrJobService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync|mediaProcessing" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -59,4 +74,11 @@
          then asks the user. A Google Play build must remove this line: Play
          forbids an app that updates itself. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- AnrJobService. A foreground service needs the first, plus one for each
+         type it runs as. The notification needs the last on Android 13 and
+         later: the app asks for it once, at the first ffmpeg job. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

@@ -1,19 +1,22 @@
 package com.valjdakosta.analyser;
 
 import android.app.Activity;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
+import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
-import android.net.Uri;
 import android.os.Build;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
-import androidx.core.content.FileProvider;
+import androidx.core.content.IntentCompat;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -40,26 +43,34 @@ import org.json.JSONObject;
  * itself.
  *
  * The feed is GitHub's API answer for the latest release. There is no update
- * file in the release: the answer gives the tag (v9.2.0), and for the asset
- * named Analyser-android.apk its download URL, its size and the SHA-256 digest
- * GitHub computed for it.
+ * file in the release: the answer gives the tag (v9.9.0), and for the asset
+ * named Analyser-android-<version>.apk its download URL, its size and the
+ * SHA-256 digest GitHub computed for it.
  *
  * At most one check every six hours, at start-up. A newer tag asks the user.
  * "Update" downloads the APK into the cache, checks its SHA-256, its package
- * name and that its versionCode is higher, and hands it to the system
- * installer, which asks again. Android itself refuses an APK signed with
- * another key, so the signature check is the platform's.
+ * name and that its versionCode is higher, and writes it into a
+ * PackageInstaller session. On Android 12 and later the session asks for no
+ * confirm screen (USER_ACTION_NOT_REQUIRED), which Android grants to an app
+ * that updates itself: the update installs and Analyser closes. Where Android
+ * still wants a yes - an older version, or a case it does not allow - the
+ * session reports that, and InstallStatus opens the confirm screen. Android
+ * itself refuses an APK signed with another key, so the signature check is
+ * the platform's. Play Protect can still scan the new APK either way.
  *
  * What a check sends: one HTTPS request to api.github.com. Nothing about any file.
  */
-final class AnrUpdate {
+// Public, because Android creates the nested InstallStatus receiver by name.
+public final class AnrUpdate {
 
     private static final String PREFS = "anr-update";
     private static final long EVERY_MS = 6L * 60 * 60 * 1000;
     /** The API answer carries the release notes and every asset. */
     private static final int FEED_MAX = 512 * 1024;
-    private static final String APK_NAME = "Analyser-android.apk";
-    private static final String APK_MIME = "application/vnd.android.package-archive";
+    /** The APK's name ends in the version (Analyser-android-9.9.0.apk), so it is
+     *  found by the part before it. The unversioned name of 9.8 and earlier
+     *  still matches. */
+    private static final Pattern APK_NAME = Pattern.compile("^Analyser-android(-\\d+(\\.\\d+)*)?\\.apk$");
     private static final Pattern DIGEST = Pattern.compile("^sha256:([0-9a-f]{64})$");
     private static final ExecutorService NET = Executors.newSingleThreadExecutor();
     /** True while a check or a download runs, so two can never overlap. */
@@ -150,12 +161,12 @@ final class AnrUpdate {
         }
     }
 
-    private static JSONObject asset(JSONObject release, String name) {
+    private static JSONObject asset(JSONObject release, Pattern name) {
         JSONArray assets = release.optJSONArray("assets");
         if (assets == null) return null;
         for (int i = 0; i < assets.length(); i++) {
             JSONObject a = assets.optJSONObject(i);
-            if (a != null && name.equals(a.optString("name"))) return a;
+            if (a != null && name.matcher(a.optString("name")).matches()) return a;
         }
         return null;
     }
@@ -166,7 +177,7 @@ final class AnrUpdate {
         String mb = size > 0 ? String.format(Locale.ROOT, " (%d MB)", Math.round(size / 1048576.0)) : "";
         new AlertDialog.Builder(activity)
             .setTitle("Analyser " + version.replaceFirst("\\.0$", "") + " is out")
-            .setMessage("Download the update now" + mb + "? Android asks you to confirm the install. Your settings and offline downloads stay.")
+            .setMessage("Download and install the update now" + mb + "? Analyser closes while it installs, and Android may ask you to confirm. Your settings and offline downloads stay.")
             .setPositiveButton("Update", (d, w) -> download(activity, apk))
             .setNegativeButton("Later", null)
             .show();
@@ -196,26 +207,32 @@ final class AnrUpdate {
         Context app = activity.getApplicationContext();
         NET.execute(() -> {
             File file = apkFile(app);
-            boolean ok = false;
+            String failed = null;
             try {
                 save(url, file, sha, cancelled, (permille) -> activity.runOnUiThread(() -> bar.setProgress(permille)));
                 verify(app, file);
-                ok = true;
             } catch (Exception e) {
-                deleteQuietly(file);
-            } finally {
-                BUSY.set(false);
+                failed = "The update did not download. Analyser tries again later.";
             }
-            final boolean done = ok;
+            if (failed == null && !cancelled.get()) {
+                try {
+                    install(app, file);
+                } catch (Exception e) {
+                    failed = "Android did not take the update. Analyser tries again later.";
+                }
+            }
+            // The session holds its own copy once written, so the cached file is spare.
+            deleteQuietly(file);
+            BUSY.set(false);
+            final String message = failed;
             activity.runOnUiThread(() -> {
                 try {
                     dialog.dismiss();
                 } catch (RuntimeException ignored) {
                     /* the activity went away while the download ran */
                 }
-                if (cancelled.get() || activity.isFinishing() || activity.isDestroyed()) return;
-                if (done) install(activity, file);
-                else Toast.makeText(activity, "The update did not download. Analyser tries again later.", Toast.LENGTH_LONG).show();
+                if (message == null || cancelled.get() || activity.isFinishing() || activity.isDestroyed()) return;
+                Toast.makeText(activity, message, Toast.LENGTH_LONG).show();
             });
         });
     }
@@ -258,13 +275,63 @@ final class AnrUpdate {
         if (versionCode(p) <= installedCode(app)) throw new IOException("not newer than the installed copy");
     }
 
-    private static void install(Activity activity, File file) {
-        Uri uri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".fileprovider", file);
-        Intent intent = new Intent(Intent.ACTION_VIEW).setDataAndType(uri, APK_MIME).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    /** Write the verified APK into a PackageInstaller session and commit it.
+     *  Runs on NET: the copy is tens of MB. Android reports the result to
+     *  InstallStatus - see the header for which versions ask first. */
+    private static void install(Context app, File file) throws IOException {
+        PackageInstaller installer = app.getPackageManager().getPackageInstaller();
+        PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+        params.setAppPackageName(app.getPackageName());
+        params.setSize(file.length());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
+        }
+        int id = installer.createSession(params);
         try {
-            activity.startActivity(intent);
-        } catch (RuntimeException e) {
-            Toast.makeText(activity, "Android could not open its installer.", Toast.LENGTH_LONG).show();
+            try (PackageInstaller.Session session = installer.openSession(id)) {
+                try (InputStream in = new FileInputStream(file); OutputStream out = session.openWrite("Analyser.apk", 0, file.length())) {
+                    byte[] buf = new byte[1 << 16];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                    session.fsync(out);
+                }
+                // Mutable on Android 12 and later: Android writes the status into it.
+                int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? PendingIntent.FLAG_MUTABLE : 0);
+                PendingIntent done = PendingIntent.getBroadcast(app, id, new Intent(app, InstallStatus.class), flags);
+                session.commit(done.getIntentSender());
+            }
+        } catch (IOException | RuntimeException e) {
+            installer.abandonSession(id);
+            throw e;
+        }
+    }
+
+    /**
+     * Where Android reports on the install session. Declared in the manifest
+     * and not exported, so only the PendingIntent above reaches it.
+     *
+     * STATUS_PENDING_USER_ACTION means Android wants a yes first. Its confirm
+     * screen comes in EXTRA_INTENT, and the app is on screen at that moment
+     * (the user just watched the download), so it may start it. On success
+     * Android stops the app to replace it, so there is nothing to do.
+     */
+    public static final class InstallStatus extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
+            if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                Intent confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent.class);
+                if (confirm == null) return;
+                confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    context.startActivity(confirm);
+                } catch (RuntimeException e) {
+                    Toast.makeText(context, "Android could not open its installer.", Toast.LENGTH_LONG).show();
+                }
+            } else if (status != PackageInstaller.STATUS_SUCCESS && status != PackageInstaller.STATUS_FAILURE_ABORTED) {
+                // ABORTED is the user saying no on the confirm screen: no message.
+                Toast.makeText(context, "Android did not install the update. Analyser tries again later.", Toast.LENGTH_LONG).show();
+            }
         }
     }
 

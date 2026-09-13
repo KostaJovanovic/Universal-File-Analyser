@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The notification icon for AnrJobService. Android draws a status bar icon
+     from its alpha alone, so this is the mark in one colour: the two bars, the
+     frame and the dot of web/assets/img/favicon.svg, in its 64-unit space
+     (the numbers are in desktop/tools/make-icon.mjs). Change them together. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <!-- The bars, x 6 and 58, 3.5 wide, with square caps. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4.25,3.36h3.5v57.28h-3.5z M56.25,3.36h3.5v57.28h-3.5z" />
+    <!-- The frame, 12.78..51.23 x 6.11..57.89, stroke 3.5. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M11.03,4.36H52.98V59.64H11.03Z M14.53,7.86V56.14H49.48V7.86Z" />
+    <!-- The dot at the centre, r 7.55. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M24.45,32a7.55,7.55 0,1 0,15.1 0a7.55,7.55 0,1 0,-15.1 0z" />
+</vector>

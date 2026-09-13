@@ -146,7 +146,7 @@ The "Download for offline use" section in the footer caches Analyser as an insta
 
 Analyser also runs as a desktop application for Windows, macOS and Linux. It wraps the same `web/` tree the site serves, so there is no fork of the code and nothing in the analysis pipeline changes - and the privacy promise is identical, since everything still happens on your own machine.
 
-The source is in `desktop/` (Electron, its own `package.json`). Build the Windows installer locally with `cd desktop && npm install && npm run dist`, which writes `Analyser-Windows.exe` into `desktop/dist/`. That one file installs Analyser or unpacks a portable copy. The desktop adds File > Open and Open folder, opens files handed to it from Explorer or the command line, sizes its memory limits from real RAM rather than the browser's clamped figure, and saves the exported report through a native dialog. See [`desktop/README.md`](desktop/README.md) and [the docs page](https://analyser.valjdakosta.com/docs/desktop).
+The source is in `desktop/` (Electron, its own `package.json`). Build the Windows installer locally with `cd desktop && npm install && npm run dist`, which writes `Analyser-Windows-<version>.exe` into `desktop/dist/`. That one file installs Analyser or unpacks a portable copy. The desktop adds File > Open and Open folder, opens files handed to it from Explorer or the command line, sizes its memory limits from real RAM rather than the browser's clamped figure, and saves the exported report through a native dialog. See [`desktop/README.md`](desktop/README.md) and [the docs page](https://analyser.valjdakosta.com/docs/desktop).
 
 ## Android app
 

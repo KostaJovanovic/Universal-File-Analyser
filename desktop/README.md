@@ -67,15 +67,15 @@ The builds people download come from GitHub, not from this machine. See
 | `ffmpeg-accel.mjs` | Pure: the encoder families, the argument rewrite, and the safety checks. Shared with `mobile/` |
 | `tools/check-ffmpeg-args.mjs` | Runs the safety checks against every argument list in `src/`, and against the attacks |
 | `electron-builder.yml` | One target per system, `extraResources`, NSIS options, `publish: null` |
-| `build/installer.nsh` | The Windows installer's first page, "Install Analyser" or "Portable copy", and the portable section |
+| `build/installer.nsh` | The Windows installer's pages (the "Install" or "Portable copy" choice, progress, finish) and the portable section |
 | `tools/stamp-version.mjs` | Writes `major.minor.0` into `package.json` from `COMMIT_COUNT` |
 | `tools/after-pack.cjs` | Gives the macOS app an ad-hoc signature, because there is no Apple certificate |
 | `build/icon.png` | The site mark, used for the window and the installer |
 
 ### Portable mode
 
-Windows ships one file, `Analyser-Windows.exe`. Its first page asks "Install
-Analyser" or "Portable copy" - see "One Windows file" below.
+Windows ships one file, `Analyser-Windows-<version>.exe`. Its first page asks "Install"
+or "Portable copy" - see "One Windows file" below.
 
 By default Electron puts `userData` in `%APPDATA%`, which for this app means the
 offline cache, the analysed history, the theme and the window position get
@@ -110,26 +110,46 @@ Consequences worth keeping in mind:
 
 electron-builder has no installer that offers "install or portable", so
 `build/installer.nsh` adds the choice to its NSIS template through the hooks
-the template offers:
+the template offers. The result is three pages in the site's look: a flat
+white window, `#0a0a0a` ink, the `#e60023` accent, 1 px frames, Segoe UI with
+Consolas for the mono labels, no branding line and no etched rules. It is
+light only, because a themed Windows radio button ignores a text colour. The
+installer is also DPI-aware (`ManifestDPIAware`), so it is sharp on a scaled
+display.
 
-- `customWelcomePage` adds the first page: **Install Analyser** or **Portable
-  copy**. A silent run (`/S --updated`, which is how `updater.mjs` installs an
-  update) never sees it, and `customInit` keeps the portable section off for
-  that case.
-- `customInstallMode` skips the "only for me / for everyone" page for a
-  portable copy, and points the folder beside the installer.
-- `customHeader` declares section 0. It unpacks the app package into the
-  chosen folder and writes `portable.txt`. For a portable copy the template's
-  own install section (section 1) is switched off. That section always runs
-  the uninstaller of an installed copy first, then writes registry keys and
-  shortcuts, and a portable copy must do none of that.
+1. **How do you want Analyser?** (`customWelcomePage`, full window). Two
+   cards: **Install**, or **Portable copy** with its own folder box and
+   Browse button (default: `Analyser` beside the installer, and the path
+   always ends in `\Analyser`). A red bar marks the chosen card, and the Next
+   button reads "Install" or "Set up". A silent run (`/S --updated`, which is
+   how `updater.mjs` installs an update) never sees the page, and neither does
+   the elevated copy UAC starts. `customInit` keeps the portable section off
+   for a silent run.
+2. **Progress** - the template's own page, restyled through
+   `customPageAfterChangeDir` (a flat red bar, a header per mode).
+3. **Analyser is ready** (`customFinishPage`, full window, in place of MUI's
+   finish page), with a "Start Analyser" box. `SetAutoClose true` moves the
+   progress page on to it.
+
+The template's two other pages never show. `customInstallMode` always skips
+"only for me / for everyone": an install goes to this account, unless the
+computer has only an everyone-copy, which is then updated in place (with
+elevation). `allowToChangeInstallationDirectory: false` removes the folder
+page. The portable path never says "install".
+
+`customHeader` declares section 0. It unpacks the app package into the chosen
+folder and writes `portable.txt`. For a portable copy the template's own
+install section (section 1) is switched off. That section always runs the
+uninstaller of an installed copy first, then writes registry keys and
+shortcuts, and a portable copy must do none of that.
 
 The section numbers are literals, so `customInstall` fails the build if the
-install section ever stops being section 1. `customHeader` fails it if either
-hook is not expanded. The portable section uses the same `File` line as the
-template, so NSIS stores the app package only once.
+install section ever stops being section 1. `customHeader` fails it if any
+hook is not expanded, or if the folder page is switched back on. The portable
+section uses the same `File` line as the template, so NSIS stores the app
+package only once.
 
-A portable copy updates the way it installs: run the new installer, pick
+A portable copy updates the way it is set up: run the new file, pick
 **Portable copy** and the same folder. The section refuses to overwrite a
 running copy, clears the old `resources/` and `locales/`, and leaves
 `Analyser-data` alone.
@@ -369,13 +389,18 @@ download lists them.
 
 ## Icons
 
-`build/icon.png` is `web/assets/img/icon-512.png`, copied verbatim.
-electron-builder converts it to a Windows `.ico` at build time, so no `.ico` is
-checked in and no image dependency is needed.
+`build/icon.png` is `web/assets/img/icon-512.png`, copied verbatim. macOS,
+Linux and the development window use it.
 
-To supply a hand-made icon instead, drop a real multi-resolution `build/icon.ico`
-(16, 32, 48, 64, 128 and 256 px) next to it and point `win.icon` in
-`electron-builder.yml` at it. Nothing else changes.
+Windows uses `build/icon.ico`, which `tools/make-icon.mjs` writes. When
+electron-builder made the `.ico` from `icon.png`, it only scaled that one
+picture down, and the thin strokes of the mark came out soft at 16 to 48 px.
+The script draws the mark again at each size from 16 to 256 px, rounds every
+stroke to whole pixels, and mirrors the right side from the left. It borrows
+`sharp` from `mobile/node_modules`, so run `npm install` in `mobile/` first.
+Both files are tracked. Run the script again when the mark changes:
+
+    node desktop/tools/make-icon.mjs [preview-dir]
 
 ## Releases and updates
 
@@ -395,13 +420,15 @@ latest release, and a half-uploaded one would point it at a missing file. A
 second run on the same commit uploads into the same release again.
 
 A release holds ONE file per system and nothing else:
-`Analyser-Windows.exe`, `Analyser-mac-universal.dmg`,
-`Analyser-linux-x64.AppImage` and `Analyser-android.apk`. There is no
+`Analyser-Windows-<version>.exe`, `Analyser-mac-universal-<version>.dmg`,
+`Analyser-linux-x64-<version>.AppImage` and `Analyser-android-<version>.apk`,
+where the version is the tag without its `v` (9.9.0). There is no
 `latest*.yml` and no `.blockmap`: `publish: null`,
 `nsis.differentialPackage: false` and `dmg.writeUpdateInfo: false` keep
-electron-builder from writing them. The names carry no version, because the
-apps find their file by name and `docs/download.md` links to
-`releases/latest/download/<name>`. Keep them stable.
+electron-builder from writing them. The apps find their file by the part of
+the name before the version, so keep that part exactly as it is. The old
+unversioned names of 9.8 and earlier still match, but a 9.8 copy looks only
+for those old names, so it does not find a later release by itself.
 
 `updater.mjs` does the rest, in a packaged app only. It asks the GitHub API
 for the latest release, which gives the tag, every download URL and the

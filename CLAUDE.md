@@ -354,8 +354,9 @@ The five things worth knowing before you touch anything:
   dev (so `sw.js` goes pass-through and the dev-only reset buttons show) and
   `analyser://app/` when packaged. Do not "tidy" them into one host.
 - **Portable copies redirect `userData` beside the executable.** Windows ships
-  ONE file, `Analyser-Windows.exe`, whose first page asks "Install Analyser"
-  or "Portable copy" (`desktop/build/installer.nsh`). The portable choice never
+  ONE file, `Analyser-Windows-<version>.exe`, whose first page asks "Install"
+  or "Portable copy" (`desktop/build/installer.nsh`: three pages in the site's
+  look, no folder page, and never the word "install" on the portable path). The portable choice never
   reaches the NSIS template's install section - that section always runs the
   uninstaller of an installed copy, then writes registry keys and shortcuts.
   Instead it unpacks the app itself and writes `portable.txt` beside the
@@ -375,10 +376,10 @@ The five things worth knowing before you touch anything:
   `desktop/updater.mjs` (no electron-updater) lets the NSIS install and the
   AppImage update themselves. A portable copy and macOS only announce one:
   macOS has no Apple certificate, so `mac.identity: null` plus
-  `tools/after-pack.cjs` give it an ad-hoc signature. **The file names carry no
-  version on purpose** - the apps find their file by name, and
-  `docs/download.md` links `releases/latest/download/<name>` - so do not put
-  `${version}` back in, and keep `publish: null` so no `latest*.yml` returns.
+  `tools/after-pack.cjs` give it an ad-hoc signature. **Each file name ends in the
+  version** (`Analyser-Windows-9.9.0.exe`, the tag without its `v`). The apps
+  find their file by the part before the version, so keep that part exactly as
+  it is, and keep `publish: null` so no `latest*.yml` returns.
 
 ## Mobile app (`mobile/`)
 
@@ -433,7 +434,7 @@ planned but not started (it needs a Mac).
   `AnrFfmpegChecksTest` (`gradlew testDebugUnitTest`) against the same vectors
   as `desktop/tools/check-ffmpeg-args.mjs`. Change one, change all three.
 - **Updates: `AnrUpdate.java`, in a release build only.** It reads the GitHub
-  API answer for the latest release (the tag, the `Analyser-android.apk` asset
+  API answer for the latest release (the tag, the `Analyser-android-<version>.apk` asset
   and its SHA-256 digest - there is no update file), and only when
   `BuildConfig.UPDATE_FEED` holds a URL: the release workflow passes
   `-PanrUpdateFeed`, `mobile.bat` does not. The workflow signs with the
@@ -563,7 +564,7 @@ mobile/             — Android shell (Capacitor 8). Its OWN package.json. It wr
                       FFmpeg cross-build script; out/ and work/ gitignored),
                       android/ (the tracked Gradle project: MainActivity,
                       AnrShell, AnrFfmpeg, AnrFfmpegChecks, AnrRouter,
-                      AnrWebViewClient, AnrBytes, AnrUpdate). See the "Mobile app" section
+                      AnrWebViewClient, AnrBytes, AnrUpdate, AnrJobService). See the "Mobile app" section
                       above, mobile/README.md and docs/mobile.md.
 mobile.bat          — build src/, stage, sync, Gradle, and install the debug APK
                       on a USB-connected phone (`mobile.bat open` opens Android

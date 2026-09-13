@@ -73,8 +73,8 @@
 </section>
 <section class="docs-card">
 <h2 id="getting-the-app-and-updates">Getting the app and updates<a class="h-anchor" href="#getting-the-app-and-updates" aria-label="Link to this section">#</a></h2>
-<p>Download <code>Analyser-android.apk</code> from the <a href="/docs/download">download page</a> and open it. The app needs Android 7 or later. Android asks you once to allow installs from your browser or file manager.</p>
-<p>The app looks for a new version when it starts, at most once every six hours. When one is out, it asks you first. <strong>Update</strong> downloads the new version with a progress bar and makes sure that the file is complete and really is Analyser. Then it opens the Android installer, which asks you to confirm. Android also refuses any update that does not carry the same signature as the app you have.</p>
+<p>Download <code>Analyser-android-&lt;version&gt;.apk</code> from the <a href="/docs/download">download page</a> and open it. The app needs Android 7 or later. Android asks you once to allow installs from your browser or file manager.</p>
+<p>The app looks for a new version when it starts, at most once every six hours. When one is out, it asks you first. <strong>Update</strong> downloads the new version with a progress bar and makes sure that the file is complete and really is Analyser. Then it hands the file to Android. On Android 12 and later the update installs with no further question, and Analyser closes when it is done. Older versions, and any case Android does not allow, show the Android confirm screen first. Android also refuses any update that does not carry the same signature as the app you have. Play Protect may still check the new version.</p>
 <p>A check asks GitHub which release is the latest, and sends nothing else. A build you make yourself with <code>mobile.bat</code> never checks.</p>
 </section>
 <section class="docs-card">
@@ -83,6 +83,7 @@
 <p>On the web, video work runs on FFmpeg compiled to WebAssembly. That build is software-only and uses one processor core, and the processor in a phone is slower than a desktop one anyway. The app runs a real FFmpeg program instead. On top of that, it can reach the video encoder built into the chip of the phone, through Android MediaCodec.</p>
 <p>The app tests the encoders of the phone by encoding a few throwaway frames, and trusts only the ones that succeed. Chips differ a lot, so a list of what the phone claims to support is not good enough. The app keeps the result until the next system update, which can change the drivers.</p>
 <p>If the chip refuses a job, for example because of an unusual frame size, the app repeats it on a software encoder. You get the result either way. With no FFmpeg program in the build at all, the app uses the WebAssembly version, exactly as the website does.</p>
+<p>A long job keeps running when you switch to another app. While it runs, Analyser shows a notification with its progress, and a tap on it brings you back. Without that notification, Android could close a background app at any moment to free memory, and the job would stop with it. On Android 13 and later the app asks once, at the first job, if it may show notifications. A no stops only the notification: the job still runs. A short job ends before the notification appears. If you swipe Analyser away in the list of recent apps, the running jobs stop, because nothing is left to show their results.</p>
 <p>The build of the FFmpeg program leaves out every GPL part. That is why its software H.264 encoder is openh264, from Cisco, rather than x264.</p>
 </section>
 <section class="docs-card">
@@ -119,7 +120,7 @@
 </section>
 <section class="docs-card">
 <h2 id="not-built-yet">Not built yet<a class="h-anchor" href="#not-built-yet" aria-label="Link to this section">#</a></h2>
-<p>The app builds and its safety checks pass their tests. No one tested it on a range of phones yet, and no one built or measured the FFmpeg program yet. Also outstanding: a folder picker, keeping long video jobs running in the background, a store release and the iOS version.</p>
+<p>The app builds and its safety checks pass their tests. No one tested it on a range of phones yet, and no one built or measured the FFmpeg program yet. Also outstanding: a folder picker, a store release and the iOS version.</p>
 </section>
 
     <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/desktop"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Desktop app</span></a><a class="docs-pn-next" href="/docs/design-system"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Design system</span></a></nav>

@@ -38,11 +38,12 @@ const REPO = 'Universal-File-Analyser';
 export const DOWNLOAD_PAGE = `https://github.com/${OWNER}/${REPO}/releases/latest`;
 const API = `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`;
 
-/** The release file each self-updating kind downloads. The names carry no
- *  version, so they stay the same from one release to the next. */
+/** The release file each self-updating kind downloads. A name ends in the
+ *  version (Analyser-Windows-9.9.0.exe), so a file is found by the part before
+ *  it. The unversioned name that 9.8 and earlier shipped still matches. */
 const ASSET = {
-  installer: 'Analyser-Windows.exe',
-  appimage: 'Analyser-linux-x64.AppImage',
+  installer: { name: 'Analyser-Windows-<version>.exe', match: /^Analyser-Windows(-\d+(\.\d+)*)?\.exe$/ },
+  appimage: { name: 'Analyser-linux-x64-<version>.AppImage', match: /^Analyser-linux-x64(-\d+(\.\d+)*)?\.AppImage$/ },
 };
 
 /** The first check waits for start-up to settle, then one runs every six hours. */
@@ -124,7 +125,7 @@ async function latestRelease() {
   const assets = Array.isArray(rel.assets) ? rel.assets : [];
   return {
     version: String(rel.tag_name || '').replace(/^v/, ''),
-    asset: (name) => assets.find((a) => a && a.name === name) || null,
+    asset: (match) => assets.find((a) => a && match.test(String(a.name))) || null,
   };
 }
 
@@ -206,8 +207,8 @@ async function check(manual) {
       return;
     }
     if (kind === 'installer' || kind === 'appimage') {
-      const asset = rel.asset(ASSET[kind]);
-      if (!asset) throw new Error('the release has no ' + ASSET[kind]);
+      const asset = rel.asset(ASSET[kind].match);
+      if (!asset) throw new Error('the release has no ' + ASSET[kind].name);
       if (manual) tell(`Analyser ${label(rel.version)} is downloading`, 'A message offers a restart as soon as the download is done.');
       await fetchUpdate(rel.version, asset);
       offerRestart();
@@ -265,7 +266,7 @@ function offerRestart() {
 function offerDownload(version) {
   let how;
   if (process.platform === 'darwin') how = 'Download it, then drag it into Applications to replace this copy. Your settings stay.';
-  else if (portableCopy) how = 'Run the new installer, choose "Portable copy", and pick this folder. The Analyser-data folder here keeps your settings.';
+  else if (portableCopy) how = 'Download the new Windows file, run it, choose "Portable copy", and pick this folder. The Analyser-data folder here keeps your settings.';
   else how = 'This copy cannot replace itself. Download the new version and use it in place of this one.';
   show({
     message: `Analyser ${label(version)} is out`,
