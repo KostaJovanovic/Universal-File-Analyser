@@ -33,7 +33,7 @@ const SEP = { type: 'separator' };
  * string; the title bar formats it for display.
  *
  * @param {{openFile: Function, openFolder: Function, go: Function, external: Function,
- *          showData: Function, view: Function}} actions
+ *          showData: Function, view: Function, checkUpdates: Function}} actions
  */
 export function menuTree(actions) {
   return [
@@ -84,6 +84,8 @@ export function menuTree(actions) {
         SEP,
         // Portable copies keep everything beside the program. Make that checkable.
         { id: 'help.data', label: 'Where my data is stored', run: () => actions.showData() },
+        // updater.mjs. The app also checks by itself, so this is for the impatient.
+        { id: 'help.updates', label: 'Check for updates', run: () => actions.checkUpdates() },
         SEP,
         { id: 'help.site', label: 'Open the website', run: () => actions.external('https://analyser.valjdakosta.com/') },
         { id: 'help.repo', label: 'Source on GitHub', run: () => actions.external(REPO) },

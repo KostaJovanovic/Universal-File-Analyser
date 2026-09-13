@@ -1,16 +1,16 @@
 # Analyser documentation
 
 Analyser is a zero-backend, browser-only forensic file workbench: drop a
-file and it's classified, parsed and visualised entirely on-device (File
-API + lazy-loaded WebAssembly), with nothing ever uploaded. It's vanilla
+file and it classifies, parses and visualises it entirely on-device (File
+API + lazy-loaded WebAssembly), and uploads nothing. It is vanilla
 HTML/CSS/ES-module JavaScript - no framework, no build step, no tests -
 deployed as static assets to Cloudflare and installable as an offline PWA.
 
 This directory documents the site from two angles - a usage-oriented
 feature reference (what every control does and how to reach it) and an
-architecture reference (how the codebase is put together) - built by
-reading the source in `web/`, `tools/`, and `worker/`, and verified against
-it rather than written from assumption.
+architecture reference (how the codebase fits together). Every page comes
+from reading the source in `web/`, `tools/` and `worker/`, not from
+assumption.
 
 ## Start here
 
@@ -19,15 +19,17 @@ it rather than written from assumption.
   order - each builds on the last.
 - **Using the site, or writing user-facing help content?** Start at
   [`user-guide.md`](user-guide.md), then the [`features/`](features/) doc
-  for whatever you're covering. [`faq.md`](faq.md) has quick answers to the
+  for whatever you cover. [`faq.md`](faq.md) has quick answers to the
   questions people ask most.
 - **Adding a feature to a specific renderer?** Find its domain in
   [`features/`](features/) first to see the existing usage pattern, then its
   module in [`renderers.md`](renderers.md) and the chunk/loader map in
   [`parsers-and-libs.md`](parsers-and-libs.md) (and the repo's
   `add-file-format` skill). [`FEATURE-INVENTORY.md`](FEATURE-INVENTORY.md)
-  is the working checklist the `features/` docs were built against, useful
-  if a control seems undocumented.
+  is the working checklist behind the `features/` docs, useful if a control
+  seems undocumented.
+- **Want the app on your computer or phone?** See
+  [`download.md`](download.md).
 
 ## Doc map
 
@@ -40,8 +42,10 @@ it rather than written from assumption.
 | [`pages.md`](pages.md) | Engineers | Every top-level page (`/`, `/about`, `/compare`, `/stats`, `/patch`, `/privacy`, `/atari`, `/test`) and its special wiring |
 | [`pwa-offline.md`](pwa-offline.md) | Engineers | Service-worker precache, the `VERSION` cache epoch, the three offline download tiers, the PWA manifest/install flow |
 | [`tooling.md`](tooling.md) | Engineers | The dev loop (`server.bat`/`serve.py`), the `save.bat` commit/version-bump/deploy flow, the `tools/*.mjs` generator scripts, version numbering |
-| [`worker.md`](worker.md) | Engineers | The Cloudflare Worker stats API - the only server-side code - and how privacy is preserved in it |
-| [`desktop.md`](desktop.md) | Engineers, end users | The Electron desktop build: the `analyser://` scheme, routing, the `/api/*` proxy, security, opening files by path |
+| [`worker.md`](worker.md) | Engineers | The Cloudflare Worker stats API - the only server-side code - and how it keeps the counts private |
+| [`desktop.md`](desktop.md) | Engineers, end users | The Electron desktop build for Windows, macOS and Linux: the `analyser://` scheme, routing, the `/api/*` proxy, security, opening files by path, updates |
+| [`mobile.md`](mobile.md) | Engineers, end users | The Android build (Capacitor): routing, the byte channel, native FFmpeg, security, updates |
+| [`download.md`](download.md) | End users | Where to get every app, which file to pick, and how each one updates |
 | [`design-system.md`](design-system.md) | Engineers, designers | Theme tokens, the sharp-corners rule, shared component idioms, the `/test` style-guide page |
 | [`FEATURE-INVENTORY.md`](FEATURE-INVENTORY.md) | Maintainers | Working checklist of every user-triggerable control on the site, grouped by which `features/*.md` doc owns it |
 | [`features/images.md`](features/images.md) | Everyone | Photo metadata, histogram, GPS, OCR, QR, HEIC/RAW conversion, broken-image recovery, ICO/MPO/TIFF extraction, sonify |
@@ -55,19 +59,20 @@ it rather than written from assumption.
 | [`features/cross-cutting.md`](features/cross-cutting.md) | Everyone | Hashing, OSINT extraction, exporting the analysis, in-page search, forensic integrity checks, `/compare` |
 | [`user-guide.md`](user-guide.md) | End users | Dropping files, reading the readout, the privacy promise, offline install, a map into `features/` |
 | [`faq.md`](faq.md) | End users | Quick answers: uploads, formats, offline, WASM downloads, recovery, safety, browser support |
-| [`PROGRESS.md`](PROGRESS.md) | Maintainers | The build ledger this doc set was assembled against |
+| [`PROGRESS.md`](PROGRESS.md) | Maintainers | The build ledger behind this doc set |
 
 ## Ground rules this doc set follows
 
-- Every capability claim is verified against source actually read, not
-  assumed; unconfirmable claims are marked as such rather than invented.
+- Every capability claim comes from source actually read, not from
+  assumption. Where no source confirms a claim, the doc says so rather than
+  invent one.
 - Paths are relative to the repo root, so source lives at
-  `web/assets/js/...`; code identifiers are in backticks.
-- Internal `.md` docs are exempt from the site's em-dash-free/British-
-  spelling content convention, but this set follows it anyway for
-  consistency and in case any content is later reused on a page. The
-  authoritative project guide is the repo-root `CLAUDE.md`.
+  `web/assets/js/...`. Code identifiers are in backticks.
+- Internal `.md` docs are exempt from the em-dash-free, British-spelling
+  convention of the site, but this set follows it anyway for consistency, and
+  in case a page reuses any of it later. The authoritative project guide is
+  the repo-root `CLAUDE.md`.
 - Nothing here documents the generated directories (`web/formats/`,
-  `web/samples.html`, `web/formats.html`, `web/sitemap*.xml`) - those are
-  rebuilt by `tools/*.mjs` on every commit; see
+  `web/samples.html`, `web/formats.html`, `web/sitemap*.xml`).
+  `tools/*.mjs` rebuilds those on every commit - see
   [`tooling.md`](tooling.md) instead.

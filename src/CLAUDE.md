@@ -50,6 +50,15 @@ in `core/app.ts` + `renderers/folder.ts`, which leans on `desktopFile()` in
 `core/util.ts`. Add new ones the same way - a guarded branch in the module that
 owns the behaviour, not a new file.
 
+**The Android shell (`mobile/`) publishes the same `window.anrDesktop`**, from a
+script its native side injects at document start, so every guard above also
+runs on a phone - and each one is right there too (research/CAPACITOR-PLAN.md,
+decision 2, walks through them). Two fields differ. `shell` is `'capacitor'`
+there and unset on the desktop: a branch that must NOT run on a phone tests
+`!window.anrDesktop.shell`. `memoryGB` is `0` on purpose, so `limits.ts` keeps
+the phone on `navigator.deviceMemory` and the mobile walls stay up. The native
+FFmpeg shape below serves both shells.
+
 **`video.ts`'s native FFmpeg is the one to be careful with.** WASM has no route
 to a GPU encoder, so the desktop runs a real ffmpeg binary through
 `desktop/ffmpeg-native.mjs`, which rewrites `-c:v libx264` into this machine's

@@ -22,6 +22,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { looksLikeWebRoot, mimeFor, route } from './router.mjs';
 import { buildMenu, menuModel, runMenuItem } from './menu.mjs';
 import * as ffnative from './ffmpeg-native.mjs';
+import { checkForUpdates, startUpdates } from './updater.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -630,6 +631,10 @@ const actions = {
       cancelId: 0,
     }).then((r) => { if (r.response === 1) shell.openPath(dir); }).catch(() => {});
   },
+  /* Help > Check for updates. The automatic checks start in whenReady. */
+  checkUpdates() {
+    checkForUpdates().catch(() => {});
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -1099,6 +1104,10 @@ if (!app.requestSingleInstanceLock()) {
       for (const p of pathsFromArgv(process.argv)) openPath(p);
       while (queuedOpen.length) openPath(queuedOpen.shift());
     });
+
+    // Updates from the GitHub release (updater.mjs). A development copy never
+    // checks, and a portable one only announces a new version.
+    startUpdates({ window: () => mainWindow, portable: !!PORTABLE_DIR });
 
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) mainWindow = createWindow();

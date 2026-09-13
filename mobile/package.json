@@ -1,0 +1,24 @@
+{
+  "private": true,
+  "name": "analyser-mobile",
+  "version": "9.0.0",
+  "type": "module",
+  "description": "Android shell for Analyser (Capacitor). Wraps the same web/ tree the website serves - no fork of the app code.",
+  "author": "Kosta Jovanovic",
+  "license": "UNLICENSED",
+  "scripts": {
+    "stamp": "node tools/stamp-version.mjs",
+    "stage": "node tools/stage-web.mjs",
+    "sync": "node tools/stamp-version.mjs && node tools/stage-web.mjs && cap sync android",
+    "open": "cap open android",
+    "icons": "node tools/make-icons.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.2"
+  }
+}

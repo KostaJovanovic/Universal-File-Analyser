@@ -27,8 +27,13 @@
 import { spawn, execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
+
+// The encoder families, the argument rewrite and the safety checks live in a
+// pure module, so the Android shell runs the same rules. See its header.
+import { FAMILIES, accelerate, checkArgs, checkInputText, inputsOf } from './ffmpeg-accel.mjs';
+export { accelerate };
 
 // ---------------------------------------------------------------------------
 // Locating the binary
@@ -113,41 +118,10 @@ function encoderWorks(bin, encoder, extraArgs = []) {
 // ---------------------------------------------------------------------------
 // Capability probe
 //
-// Families in preference order. NVENC first (fastest and most predictable),
-// then Intel Quick Sync, then AMD AMF, then Apple VideoToolbox.
+// FAMILIES (in ffmpeg-accel.mjs) is in preference order: NVENC first (fastest
+// and most predictable), then Intel Quick Sync, AMD AMF, Apple VideoToolbox,
+// and Android MediaCodec, which no desktop build lists.
 // ---------------------------------------------------------------------------
-
-const FAMILIES = [
-  {
-    vendor: 'nvidia', label: 'NVIDIA NVENC',
-    h264: 'h264_nvenc', hevc: 'hevc_nvenc', av1: 'av1_nvenc',
-    hwaccel: 'cuda',
-    // x264's named presets map onto NVENC's p1..p7 speed/quality ladder.
-    preset: { ultrafast: 'p1', superfast: 'p1', veryfast: 'p2', faster: 'p3', fast: 'p4', medium: 'p4', slow: 'p5', slower: 'p6', veryslow: 'p7' },
-    quality: (crf) => ['-rc', 'vbr', '-cq', String(crf)],
-  },
-  {
-    vendor: 'intel', label: 'Intel Quick Sync',
-    h264: 'h264_qsv', hevc: 'hevc_qsv', av1: 'av1_qsv',
-    hwaccel: 'qsv',
-    preset: { ultrafast: 'veryfast', superfast: 'veryfast', veryfast: 'veryfast', faster: 'faster', fast: 'fast', medium: 'medium', slow: 'slow', slower: 'slower', veryslow: 'veryslow' },
-    quality: (crf) => ['-global_quality', String(crf)],
-  },
-  {
-    vendor: 'amd', label: 'AMD AMF',
-    h264: 'h264_amf', hevc: 'hevc_amf', av1: 'av1_amf',
-    hwaccel: 'd3d11va',
-    preset: { ultrafast: 'speed', superfast: 'speed', veryfast: 'speed', faster: 'speed', fast: 'balanced', medium: 'balanced', slow: 'quality', slower: 'quality', veryslow: 'quality' },
-    quality: (crf) => ['-rc', 'cqp', '-qp_i', String(crf), '-qp_p', String(crf)],
-  },
-  {
-    vendor: 'apple', label: 'Apple VideoToolbox',
-    h264: 'h264_videotoolbox', hevc: 'hevc_videotoolbox', av1: null,
-    hwaccel: 'videotoolbox',
-    preset: null,                                  // VideoToolbox takes no preset
-    quality: (crf) => ['-q:v', String(Math.max(1, Math.min(100, 100 - crf * 2)))],
-  },
-];
 
 /**
  * Work out which hardware encoders this machine can really use.
@@ -287,70 +261,38 @@ export async function closeSession(id) {
 }
 
 // ---------------------------------------------------------------------------
-// Argument rewriting: software encoder -> this machine's hardware encoder
+// The safety check's file half
 //
-// Conservative on purpose. This is forensics software, so a wrong transcode is
-// worse than a slow one. The rewrite only fires on a plain software video
-// encode, never touches a stream copy, and the caller retries the ORIGINAL
-// arguments if the hardware attempt fails (see runJob's fallback).
+// checkArgs() sees only the argument strings. An input can ALSO be a list that
+// names other files - the reverse in video.ts feeds `-f concat -safe 0` a list
+// it wrote itself - so each small text input is read and checked too.
 // ---------------------------------------------------------------------------
 
-const SW_VIDEO = { libx264: 'h264', libopenh264: 'h264', libx265: 'hevc', 'libsvt-hevc': 'hevc', libaom: 'av1', 'libaom-av1': 'av1', 'libsvtav1': 'av1' };
+/** Only this much of an input is read to look for a list. Lists are tiny, and a
+ *  video is binary and fails the text test on its first bytes anyway. */
+const LIST_PEEK = 1024 * 1024;
 
-/** Names of filters that must run on CPU frames, so decode acceleration would
- *  force a download and usually costs more than it saves. */
-const FILTER_FLAGS = new Set(['-vf', '-filter:v', '-filter_complex', '-lavfi']);
-
-/**
- * @param {string[]} args   the arguments the page sent (ffmpeg.wasm flavour)
- * @param {object|null} accel  the chosen family from the probe
- * @returns {{args: string[], changed: boolean, note: string}}
- */
-export function accelerate(args, accel) {
-  if (!accel) return { args, changed: false, note: '' };
-
-  const out = args.slice();
-  const idxC = out.findIndex((a) => a === '-c:v' || a === '-vcodec');
-  if (idxC === -1 || idxC + 1 >= out.length) return { args, changed: false, note: '' };
-
-  const sw = out[idxC + 1];
-  const codec = SW_VIDEO[sw];
-  if (!codec) return { args, changed: false, note: '' };   // 'copy', or already hardware
-
-  const target = codec === 'h264' ? accel.h264 : codec === 'hevc' ? accel.hevc : accel.av1;
-  if (!target) return { args, changed: false, note: '' };  // this family cannot do that codec
-
-  const family = FAMILIES.find((f) => f.vendor === accel.vendor);
-  if (!family) return { args, changed: false, note: '' };
-
-  out[idxC + 1] = target;
-
-  // Preset: x264 names are meaningless to NVENC/QSV/AMF, so translate or drop.
-  const idxP = out.findIndex((a) => a === '-preset');
-  if (idxP !== -1 && idxP + 1 < out.length) {
-    const mapped = family.preset ? family.preset[out[idxP + 1]] : null;
-    if (mapped) out[idxP + 1] = mapped;
-    else out.splice(idxP, 2);                      // unmappable - let the encoder default
+async function checkInputs(dir, args) {
+  for (const { name, format } of inputsOf(args)) {
+    const path = join(dir, safeName(name));
+    let st;
+    try { st = await stat(path); } catch (_) { continue; }   // ffmpeg reports the missing file itself
+    if (!st.isFile()) continue;
+    const fh = await open(path, 'r');
+    let text;
+    try {
+      const buf = Buffer.alloc(Math.min(st.size, LIST_PEEK));
+      const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+      const head = buf.subarray(0, bytesRead);
+      if (head.subarray(0, 4096).includes(0)) continue;       // binary - not a list
+      text = head.toString('utf8');
+    } finally {
+      await fh.close();
+    }
+    const bad = checkInputText(text, format === 'concat');
+    if (bad) return bad;
   }
-
-  // Quality: -crf is an x264/x265 concept. Each family spells it differently.
-  const idxQ = out.findIndex((a) => a === '-crf');
-  if (idxQ !== -1 && idxQ + 1 < out.length) {
-    const crf = parseInt(out[idxQ + 1], 10);
-    out.splice(idxQ, 2, ...(Number.isFinite(crf) ? family.quality(crf) : []));
-  }
-
-  // Decode acceleration, only when no filter graph needs CPU frames. Placed
-  // before the first -i, which is where ffmpeg requires input options.
-  const hasFilter = out.some((a) => FILTER_FLAGS.has(a));
-  let note = family.label + ' ' + target;
-  const idxI = out.indexOf('-i');
-  if (!hasFilter && family.hwaccel && idxI !== -1 && out.indexOf('-hwaccel') === -1) {
-    out.splice(idxI, 0, '-hwaccel', family.hwaccel);
-    note += ' (+' + family.hwaccel + ' decode)';
-  }
-
-  return { args: out, changed: true, note };
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -375,6 +317,17 @@ function parseClock(s) {
 export async function runJob(id, rawArgs, opts) {
   const { bin, accel, timeout = 0, onLog, onProgress } = opts;
   const s = sessionOf(id);
+
+  // The page chose these arguments, and the page is not trusted - see CHECKS
+  // in ffmpeg-accel.mjs. Refuse before anything spawns. The code is 1, not -1:
+  // video.ts reads -1 as "ffmpeg could not start" and throws the instance
+  // away, while a non-zero exit is a clean failure it already handles.
+  const refused = checkArgs(rawArgs) || await checkInputs(s.dir, rawArgs);
+  if (refused) {
+    const log = '[analyser] refused to run ffmpeg: ' + refused + '\n';
+    if (onLog) onLog(log);
+    return { ok: false, code: 1, accelerated: false, note: 'refused', log };
+  }
 
   const attempt = (args, accelerated, note) => new Promise((resolve) => {
     let child;

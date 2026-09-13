@@ -1,0 +1,50 @@
+# Build the FFmpeg executable for the Android app (mobile/ffmpeg/build-android.sh).
+#
+# MANUAL ONLY. It never runs on a push or a pull request: start it from the
+# repository's Actions tab ("Build Android FFmpeg" -> Run workflow). It exists
+# because the build needs Linux, and the main development machine is Windows.
+#
+# Download the artifact, unzip it into mobile/ffmpeg/out/ (so the binary lands
+# at mobile/ffmpeg/out/arm64-v8a/ffmpeg), then run mobile.bat or
+# `node mobile/tools/stage-web.mjs` to copy it into the app.
+#
+# This one is for a LOCAL build. The release workflow (release.yml) builds the
+# same binary by itself and keeps it in the Actions cache.
+name: Build Android FFmpeg
+
+on:
+  workflow_dispatch:
+    inputs:
+      ffmpeg_version:
+        description: FFmpeg release
+        default: "9.0.1"
+      openh264_version:
+        description: openh264 release
+        default: "2.6.0"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config meson ninja-build xz-utils
+
+      - name: Build
+        env:
+          FFMPEG_VERSION: ${{ inputs.ffmpeg_version }}
+          OPENH264_VERSION: ${{ inputs.openh264_version }}
+        # GitHub's Ubuntu image carries the Android NDK; ANDROID_NDK_LATEST_HOME
+        # points at the newest one.
+        run: ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" bash mobile/ffmpeg/build-android.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: analyser-ffmpeg-arm64-v8a
+          path: mobile/ffmpeg/out/
+          if-no-files-found: error

@@ -1,6 +1,7 @@
 # Desktop app (Electron)
 
-Analyser also runs as a Windows desktop application. It wraps **the same
+Analyser also runs as a desktop application for Windows, macOS and Linux. Get
+it from the [download page](download.md). It wraps **the same
 `web/` tree Cloudflare serves** - there is no fork of the app code, and nothing
 in the analysis pipeline changes. The privacy promise is identical: everything
 still happens on your own machine and no file ever leaves it.
@@ -54,13 +55,14 @@ a small model and the processor handles it comfortably, so correctness wins.
 
 ## Portable use
 
-There are three downloads, and two of them leave the computer as they found it.
+There are three Windows downloads, and two of them leave the computer as they
+found it.
 
 | Build | What it is |
 |---|---|
-| `Analyser-Setup-<version>.exe` | The normal installer. Settings go in your user profile |
-| `Analyser-<version>-portable.exe` | One file. Run it from anywhere, including a USB stick |
-| `Analyser-<version>-win.zip` | Unzip and run. Nothing is extracted at start-up, so it opens quicker |
+| `Analyser-Setup-x64.exe` | The normal installer. Settings go in your user profile |
+| `Analyser-Portable-x64.exe` | One file. Run it from anywhere, including a USB stick |
+| `Analyser-win-x64.zip` | Unzip and run. Nothing is extracted at start-up, so it opens quicker |
 
 A portable copy keeps **everything** in a folder called `Analyser-data`, beside
 the program. That covers the offline downloads, the recently-analysed list, the
@@ -82,6 +84,31 @@ the two keep separate settings.
 You can also drop an `ffmpeg.exe` next to the portable program, or in an
 `ffmpeg` folder there. The app prefers that one, so the stick carries its own
 hardware video support rather than relying on the computer it is plugged into.
+
+## Updates
+
+Every build is on one page, the
+[latest release](https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest)
+on GitHub. The [download page](download.md) says which file to pick.
+
+The app looks for a new version 20 seconds after it starts, then every six
+hours. **Help > Check for updates** looks at once. What happens next depends on
+the copy you run:
+
+| Copy | When a new version is out |
+|---|---|
+| Windows installer | It downloads in the background and installs when you quit. A message offers to restart at once |
+| Linux AppImage | The same |
+| Windows portable and zip, Linux `.deb`, macOS | A message offers to open the download page |
+
+The copies in the last row cannot replace themselves. A portable copy has no
+installer, and a `.deb` needs your password to install. macOS installs an
+update by itself only for an app with a paid Apple signature, and this one has
+none yet.
+
+A check asks GitHub for one small file that names the latest version. It sends
+nothing about you or your files. A copy you run from the source code
+(`desktop.bat`) never checks.
 
 ## Why a custom scheme instead of `file://`
 
@@ -149,6 +176,10 @@ renderer gets the surface it has on the website, not your filesystem -
   `about:blank`.
 - The permission handler allows fullscreen and clipboard, and denies everything
   else - notifications, geolocation, camera, microphone, MIDI, USB, serial.
+- The main process checks every FFmpeg job before it runs. The page chooses
+  FFmpeg's arguments, so the app refuses any job that names a file outside the
+  job's own temporary folder, a network address, a camera or the screen, or a
+  filter that loads outside code.
 - There is no Content Security Policy, for the same reason `web/_headers` has
   none: the app lazy-loads WebAssembly, spawns blob and module workers and uses
   `data:` URIs, and a wrong policy would silently break individual viewers.
@@ -250,6 +281,7 @@ The app uses an FFmpeg binary it finds on your machine, and falls back to the
 WebAssembly build when there is none. Shipping one inside the installer is the
 obvious next step, and would make the hardware path work on a fresh machine.
 
-Also outstanding: file associations, a bundled OCCT, automated release builds,
-code signing and auto-update. Builds today are unsigned, so Windows SmartScreen
-warns the first time one runs.
+Also outstanding: file associations, a bundled OCCT and code signing. No build
+carries a paid certificate yet, so Windows SmartScreen warns the first time one
+runs, and macOS asks you to allow it in Privacy & Security. A certificate would
+also let macOS install updates by itself.

@@ -333,7 +333,21 @@ The five things worth knowing before you touch anything:
   ~40 call sites are untouched - keep that shape if you change either side. A
   hardware failure silently retries the ORIGINAL software arguments, so a driver
   quirk can never lose a job; never remove that fallback. No binary found means
-  the WASM path runs exactly as on the website.
+  the WASM path runs exactly as on the website. The encoder families and the
+  rewrite live in **`desktop/ffmpeg-accel.mjs`**, a pure module (no Node imports,
+  like `router.mjs`) that the Android shell inlines too - keep it import-free
+  with plain `export const|function` exports, or `mobile/tools/stage-web.mjs`
+  refuses to build the bridge.
+- **Every ffmpeg job passes a safety check before it spawns.** The page picks
+  the arguments and the page is not trusted (an XSS in a renderer controls it),
+  so `checkArgs()` / `checkInputText()` in `ffmpeg-accel.mjs` refuse absolute
+  and drive paths, `..`, URLs and ffmpeg protocols, capture devices (`-f
+  gdigrab`, `dshow`), library-loading filters (`frei0r`, `ladspa`), option
+  files, and bad entries inside concat lists and playlists. They run in the
+  MAIN process, never the page. A refused job resolves with code 1 - a clean
+  failure - never -1, which `video.ts` reads as a dead instance.
+  `node desktop/tools/check-ffmpeg-args.mjs` runs every argument list in `src/`
+  plus the attacks: when you add an ffmpeg call, add its shape there first.
 - **The dev/prod host difference is load-bearing.** `analyser://localhost/` in
   dev (so `sw.js` goes pass-through and the dev-only reset buttons show) and
   `analyser://app/` when packaged. Do not "tidy" them into one host.
@@ -347,6 +361,74 @@ The five things worth knowing before you touch anything:
   `%APPDATA%`. **That `setPath` must stay above `requestSingleInstanceLock()`** -
   Electron keys the lock on `userData`, and the ordering is also what lets a
   portable and an installed copy run at once.
+- **Releases come from ONE manual workflow, and the apps update from it.**
+  `.github/workflows/release.yml` (Actions > Release apps > Run workflow)
+  builds Windows, macOS and Linux with electron-builder and the signed Android
+  APK, then creates the GitHub release `v<version>` with every file at once.
+  `desktop/updater.mjs` (electron-updater, packaged builds only) reads
+  `latest*.yml` from it. The NSIS install and the AppImage install updates
+  themselves. Portable, zip, `.deb` and macOS only announce one: macOS has no
+  Apple certificate, so `mac.identity: null` plus `tools/after-pack.cjs` give
+  it an ad-hoc signature, and Squirrel.Mac will not install over that. **The
+  file names carry no version on purpose** - `docs/download.md` links
+  `releases/latest/download/<name>` - so do not put `${version}` back in.
+
+## Mobile app (`mobile/`)
+
+A Capacitor 8 shell for **Android** that wraps the same `web/` tree, the way the
+desktop does - no fork of the app code, and the website deploy is untouched.
+Full detail in `mobile/README.md`; the public page is `docs/mobile.md`; the plan,
+its decisions and its open questions are `research/CAPACITOR-PLAN.md`. iOS is
+planned but not started (it needs a Mac).
+
+- **Its OWN `package.json`**, like `desktop/`. `mobile/node_modules/`,
+  `mobile/www/` and `mobile/ffmpeg/{out,work}/` are gitignored; the `android/`
+  project and its Java are tracked. **`mobile.bat`** builds `src/`, stages,
+  syncs, runs Gradle and installs on a USB-connected phone. Gradle needs **JDK
+  21** - mobile.bat looks in `%USERPROFILE%\.jdks` and Android Studio's `jbr`.
+- **`webDir` is a STAGED copy, not `web/`.** `mobile/tools/stage-web.mjs` copies
+  `web/` to `mobile/www/` with the desktop's exclusions, and writes the two
+  assets the native side reads: `anr-bridge.js` (the bridge with
+  `ffmpeg-accel.mjs` inlined) and `anr-files.txt` (the routing table). The APK
+  carries a copy, so an edit shows only after `mobile.bat` runs again.
+- **The bridge implements the desktop's `window.anrDesktop` contract**
+  (`mobile/bridge/anr-bridge.js`, injected natively at document start - the
+  preload equivalent). Every guard in `src/` therefore works on the phone
+  unchanged, and each one is also right there. It adds `shell: 'capacitor'`: a
+  branch that must not run on a phone tests `!window.anrDesktop.shell`.
+  **`memoryGB` is 0 on purpose** - a phone's real RAM would read as the `high`
+  tier and lift every mobile OOM wall in `limits.ts`.
+- **Routing is `AnrRouter.java`, a third port of `serve.py`'s `_route()`.**
+  Capacitor's server serves `index.html` for every extensionless path, and its
+  `RouteProcessor` hook only ever receives `"/index.html"`, so it cannot route.
+  `AnrWebViewClient` routes the page AND the service worker
+  (`resolveServiceWorkerRequests: false` in `capacitor.config.json` stops
+  Capacitor replacing the SW client). `serve.py` stays the spec.
+- **`/__anr/*` is the shell's own namespace** - ffmpeg outputs and files opened
+  from other apps - and `sw.js` skips it, so user bytes never land in a cache.
+  Capacitor's `/_capacitor_file_/` and `/_capacitor_content_/` routes answer 404
+  on purpose: they would hand an XSS a file reader.
+- **Bytes never cross Capacitor's JSON bridge.** Page to native is a
+  WebMessageListener (`window.anrBytes`, `AnrBytes.java`) taking ArrayBuffer
+  chunks; native to page is a GET of `/__anr/ff/<session>/<name>`. `/api/*`
+  goes through `AnrShell.api()` (one host, one path prefix), because
+  `shouldInterceptRequest` never sees a POST body.
+- **Native FFmpeg is a bundled executable run as a CHILD PROCESS**
+  (`AnrFfmpeg.java`), shipped as `jniLibs/arm64-v8a/libanrffmpeg.so` - the
+  native library folder is the only place an app may execute from. Build it
+  with `mobile/ffmpeg/build-android.sh` (Linux, macOS or WSL) or the
+  manual-only `Build Android FFmpeg` workflow. No binary means ffmpeg.wasm, as
+  on the website. The rewrite runs in the bridge; the SAFETY CHECKS run in
+  `AnrFfmpegChecks.java`, a Java port of `ffmpeg-accel.mjs`'s checks, tested by
+  `AnrFfmpegChecksTest` (`gradlew testDebugUnitTest`) against the same vectors
+  as `desktop/tools/check-ffmpeg-args.mjs`. Change one, change all three.
+- **Updates: `AnrUpdate.java`, in a release build only.** It reads
+  `latest-android.json` from the latest GitHub release, and only when
+  `BuildConfig.UPDATE_FEED` holds a URL: the release workflow passes
+  `-PanrUpdateFeed`, `mobile.bat` does not. The workflow signs with the
+  `ANDROID_KEYSTORE_*` secrets - never replace that key once a release is out,
+  or every installed copy stops updating. `versionCode` is `COMMIT_COUNT`. A
+  Play build must drop both the feed and `REQUEST_INSTALL_PACKAGES`.
 
 ## File structure
 
@@ -394,7 +476,7 @@ docs/               — project reference docs (Markdown). SOURCE for the public
                       opt-in: only files listed in the NAV array of
                       tools/build-docs-html.mjs become /docs/<slug> pages, so a
                       new docs/*.md emits nothing until you add it there.
-                      Currently NAV covers all of them - the 14 top-level pages,
+                      Currently NAV covers all of them - the 16 top-level pages,
                       the 9 under features/, plus FEATURE-INVENTORY.md
                       (/docs/feature-inventory) and PROGRESS.md (/docs/progress).
 research/           — gitignored. Working notes, plans and reverse-engineering
@@ -411,7 +493,11 @@ research/           — gitignored. Working notes, plans and reverse-engineering
                       the files were tracked before it was added, so git keeps
                       tracking them. settings.local.json is machine-specific and
                       is now untracked; don't re-add it.
-.github/            — issue/PR templates, CONTRIBUTING, SECURITY, code of conduct
+.github/            — issue/PR templates, CONTRIBUTING, SECURITY, code of conduct,
+                      and workflows/: release.yml (manual - builds Windows,
+                      macOS, Linux and Android and publishes ONE GitHub release,
+                      which the apps update from) and android-ffmpeg.yml (manual
+                      - the Android FFmpeg binary, for a local build)
 tools/              — Node generator scripts (dev-only, never served). They read
                       website files via a WEB = join(ROOT, 'web') constant, while
                       tools/ + worker/ + stats-backup/ paths stay under the root.
@@ -434,20 +520,41 @@ tools/              — Node generator scripts (dev-only, never served). They re
 worker/             — Cloudflare Worker: anonymous analysed-count stats API
                       (index.js + schema.sql + disperse-unsupported.sql). The only
                       server-side code; the analyser itself stays browser-only.
-desktop/            — Electron desktop shell (Windows). Its OWN package.json and
-                      dependencies; the root one keeps its single typescript
-                      devDep. It wraps the same web/ tree - no fork of the app
-                      code. main.mjs (scheme handlers, window, security),
-                      router.mjs (a 1:1 port of serve.py's _route), preload.cjs
-                      (the site's bridge: window.anrDesktop), menu.mjs (one menu
-                      tree, three consumers), chrome/ (the window's OWN contents:
-                      titlebar.html + titlebar.js + preload.cjs, bridged as
-                      window.anrChrome and served from analyser://.../__chrome/),
-                      electron-builder.yml, build/icon.png,
-                      tools/stamp-version.mjs. desktop/node_modules/ and
-                      desktop/dist/ are gitignored; everything else is tracked.
+desktop/            — Electron desktop shell (Windows, macOS, Linux). Its OWN
+                      package.json and dependencies (electron-updater is the one
+                      runtime dependency); the root one keeps its single
+                      typescript devDep. It wraps the same web/ tree - no fork
+                      of the app code. main.mjs (scheme handlers, window,
+                      security), router.mjs (a 1:1 port of serve.py's _route),
+                      preload.cjs (the site's bridge: window.anrDesktop),
+                      menu.mjs (one menu tree, three consumers), updater.mjs
+                      (updates from the GitHub release), chrome/ (the window's
+                      OWN contents: titlebar.html + titlebar.js + preload.cjs,
+                      bridged as window.anrChrome and served from
+                      analyser://.../__chrome/), electron-builder.yml (all three
+                      systems, the update feed), build/icon.png,
+                      tools/stamp-version.mjs, tools/after-pack.cjs (the macOS
+                      ad-hoc signature). desktop/node_modules/ and desktop/dist/
+                      are gitignored; everything else is tracked.
                       See the "Desktop app" section above, desktop/README.md and
-                      docs/desktop.md.
+                      docs/desktop.md. ffmpeg-accel.mjs (pure: encoder rules +
+                      the ffmpeg safety checks, shared with mobile/) and
+                      tools/check-ffmpeg-args.mjs (runs those checks against
+                      every argument list in src/ and the attacks).
+mobile/             — Android shell (Capacitor 8). Its OWN package.json. It wraps
+                      the same web/ tree via a staged copy (www/, gitignored).
+                      bridge/anr-bridge.js (window.anrDesktop for the phone),
+                      tools/stage-web.mjs + stamp-version.mjs + make-icons.mjs
+                      (launcher icons and splash from favicon.svg, via
+                      assets/logo*.png - `npm run icons`), ffmpeg/ (the
+                      FFmpeg cross-build script; out/ and work/ gitignored),
+                      android/ (the tracked Gradle project: MainActivity,
+                      AnrShell, AnrFfmpeg, AnrFfmpegChecks, AnrRouter,
+                      AnrWebViewClient, AnrBytes, AnrUpdate). See the "Mobile app" section
+                      above, mobile/README.md and docs/mobile.md.
+mobile.bat          — build src/, stage, sync, Gradle, and install the debug APK
+                      on a USB-connected phone (`mobile.bat open` opens Android
+                      Studio instead).
 
 web/                — THE WEBSITE, served at "/" by Cloudflare (assets.directory).
                       Everything from here down lives inside web/:

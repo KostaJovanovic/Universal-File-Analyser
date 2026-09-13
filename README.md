@@ -134,11 +134,19 @@ The "Download for offline use" section in the footer caches Analyser as an insta
 <img src="tools/readme-assets/download.jpg" alt="The three-tier offline download section in the footer" width="720">
 </div>
 
+## Download the apps
+
+The Windows, macOS, Linux and Android apps are all on one page: the [latest release](https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest). The installed apps check that page and update from it. [The download page](https://analyser.valjdakosta.com/docs/download) says which file to pick. One manual workflow, `.github/workflows/release.yml`, builds all of them on GitHub and publishes the release.
+
 ## Desktop app
 
-Analyser also runs as a Windows desktop application. It wraps the same `web/` tree the site serves, so there is no fork of the code and nothing in the analysis pipeline changes - and the privacy promise is identical, since everything still happens on your own machine.
+Analyser also runs as a desktop application for Windows, macOS and Linux. It wraps the same `web/` tree the site serves, so there is no fork of the code and nothing in the analysis pipeline changes - and the privacy promise is identical, since everything still happens on your own machine.
 
-The source is in `desktop/` (Electron, its own `package.json`). Build it with `cd desktop && npm install && npm run dist`, which writes an installer and a portable exe into `desktop/dist/`. The desktop adds File > Open and Open folder, opens files handed to it from Explorer or the command line, sizes its memory limits from real RAM rather than the browser's clamped figure, and saves the exported report through a native dialog. See [`desktop/README.md`](desktop/README.md) and [the docs page](https://analyser.valjdakosta.com/docs/desktop).
+The source is in `desktop/` (Electron, its own `package.json`). Build the Windows set locally with `cd desktop && npm install && npm run dist`, which writes an installer, a portable exe and a zip into `desktop/dist/`. The desktop adds File > Open and Open folder, opens files handed to it from Explorer or the command line, sizes its memory limits from real RAM rather than the browser's clamped figure, and saves the exported report through a native dialog. See [`desktop/README.md`](desktop/README.md) and [the docs page](https://analyser.valjdakosta.com/docs/desktop).
+
+## Android app
+
+An Android app is in development, built the same way as the desktop one: a Capacitor shell around the same `web/` tree, with no fork of the code. On top of the website it adds "Open with" and "Share to Analyser", a native save for every download, and a real FFmpeg binary that encodes video on the phone's own hardware (MediaCodec). Early builds are in the [latest release](https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest), and the app updates from there. The source is in `mobile/`; see [`mobile/README.md`](mobile/README.md) and [the docs page](https://analyser.valjdakosta.com/docs/mobile).
 
 ## Running locally
 
@@ -160,6 +168,7 @@ This starts a local instance on localhost:3000 and opens it in a browser. It kee
 - `tools/` - Node scripts (in the repo root) that pre-render the `/formats` SEO pages from the catalog
 - `worker/` - the Cloudflare Worker behind the anonymous analysed-file counter (the only server-side code)
 - `desktop/` - the Electron desktop shell, which wraps the same `web/` tree
+- `mobile/` - the Android shell (Capacitor), which wraps it too
 - `web/sw.js` - the service worker behind the offline support
 
 ## Versioning

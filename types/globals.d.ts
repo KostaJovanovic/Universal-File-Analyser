@@ -35,6 +35,12 @@ declare global {
       below is what makes every desktop-only branch opt-in. The renderer never
       sees Node - each method here is a message to the main process. */
   interface AnrDesktop {
+    /** Which native shell published this object. The Android app
+        (mobile/bridge/anr-bridge.js) implements the SAME contract so every
+        guard below works there unchanged, and says 'capacitor' here; the
+        Electron preload leaves it unset. A branch that really is desktop-only
+        tests `!anrDesktop.shell`. */
+    shell?: 'capacitor';
     /** Desktop package version (major.minor.0, stamped from COMMIT_COUNT). */
     version: string;
     platform: string;
@@ -74,11 +80,14 @@ declare global {
     available: boolean;
     path?: string | null;
     version?: string;
-    families?: { vendor: string; label: string; h264: string; hevc: string | null; av1: string | null; hwaccel: string }[];
-    accel?: { vendor: string; label: string; h264: string; hevc: string | null; av1: string | null; hwaccel: string } | null;
+    families?: { vendor: string; label: string; h264: string; hevc: string | null; av1: string | null; hwaccel: string | null }[];
+    accel?: { vendor: string; label: string; h264: string; hevc: string | null; av1: string | null; hwaccel: string | null } | null;
     vendor?: string | null;
     label?: string;
     error?: string;
+    /** Android only: every encoder the bundled build has. The bridge's
+        software retry reads it, since that build ships without libx264. */
+    encoders?: string[];
   }
 
   interface AnrFfmpegBridge {
