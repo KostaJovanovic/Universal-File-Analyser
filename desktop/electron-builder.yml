@@ -60,9 +60,8 @@ extraResources:
     to: web
     filter:
       - "**/*"
-      # 19 MB of gallery example files. The /samples page still loads; its
-      # downloads do not, which is why the menu has no Samples entry.
-      - "!samples/**"
+      # samples/** (18 MB) ships on purpose: the /samples page opens those
+      # files, and the Everything offline download lists them.
       # 191 source maps - dev-only, and tsc regenerates them on every build.
       - "!**/*.map"
       # Crawler and deploy plumbing with no meaning off the web.

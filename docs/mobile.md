@@ -130,6 +130,7 @@ privacy page.
 | "Open with" and "Share to" | Supported |
 | The back button | Goes up one level inside an archive or folder first, then back a page |
 | Status bar | Takes the background colour of the page, in light and dark themes |
+| Landscape | Fullscreen. The status bar and the gesture bar hide, and a swipe in from the edge shows them for a moment. Only the side with the camera keeps a strip in the page colour, so no text sits under the camera |
 | "Install as app" | Becomes **Check for updates** |
 | "Get App" button | Hidden. You already have the app |
 | "Email me!" and "Suggest this format" | The app skips the human-check, because that widget belongs to the address of the site. The mail app opens directly |

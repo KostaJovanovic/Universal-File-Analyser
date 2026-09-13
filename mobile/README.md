@@ -118,6 +118,12 @@ differences as the desktop. The router serves `/x.html` directly, and `/api/*`
 never reaches the router. `stage-web.mjs` writes the staged file list as
 `anr-files.txt`, so each "does this file exist" check is a set lookup.
 
+**A `.gz` file is stored as `x.gz.anr`.** The Android Gradle plugin unpacks
+every `.gz` asset and drops the extension. `eng.traineddata.gz` reached the APK
+as a 23 MB `eng.traineddata`, so OCR and the Everything download both failed on
+the phone. `stage-web.mjs` adds the suffix, and `AnrRouter` maps a request for
+`x.gz` to `x.gz.anr` and serves it as `application/gzip`.
+
 **The service worker needs the same routing.** `sw.js` fetches pages to
 precache them, and those requests skip the WebView client. `AnrShell` sets a
 service-worker client that runs the same code, and
