@@ -239,16 +239,14 @@ plugin takes only what it needs:
 
 `.github/workflows/release.yml` builds the APK on GitHub, next to the desktop
 builds, and puts it in the same release as `Analyser-android.apk`. The Android
-job does three things:
+job does two things:
 
 1. It restores the FFmpeg binary from the Actions cache. When
    `ffmpeg/build-android.sh` changes, it builds the binary again (about 4
    minutes on GitHub). A failed FFmpeg build does not stop the release: the APK then runs
    ffmpeg.wasm, and the run shows a warning.
 2. It runs `npm run sync`, then `gradlew testReleaseUnitTest assembleRelease`
-   with the release key.
-3. It writes `latest-android.json`: the version, the `versionCode`, the size and
-   the SHA-256 of the APK.
+   with the release key, and names the APK `Analyser-android.apk`.
 
 The key comes from the repository secrets `ANDROID_KEYSTORE_BASE64`,
 `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_ALIAS`, plus
@@ -259,12 +257,16 @@ key, so a new key strands every installed copy.
 build does not change.
 
 `AnrUpdate.java` is the updater. It runs only when `BuildConfig.UPDATE_FEED`
-holds a URL, and only the workflow sets one (`-PanrUpdateFeed`). At start-up, at
-most once every six hours, it reads `latest-android.json`. A higher
-`versionCode` asks the user first. **Update** downloads the APK into the cache
-with a progress bar. Then the updater checks the SHA-256, the package name and
-the `versionCode`, and opens the system installer through the FileProvider.
-That step needs `REQUEST_INSTALL_PACKAGES`. Android checks the signature itself.
+holds a URL, and only the workflow sets one (`-PanrUpdateFeed`): the GitHub API
+address of the latest release. The release holds no update file. At start-up,
+at most once every six hours, the updater reads that API answer. A newer tag
+than the installed `versionName` asks the user first. **Update** downloads the
+asset named `Analyser-android.apk` into the cache, with a progress bar. Then
+the updater checks it against the SHA-256 digest that GitHub gives for the
+asset, checks the package name and that the `versionCode` is higher, and opens
+the system installer through the FileProvider. That step needs
+`REQUEST_INSTALL_PACKAGES`. Android checks the signature itself.
+`AnrUpdateTest` covers the version comparison.
 
 A Google Play build must not pass the feed, and must drop
 `REQUEST_INSTALL_PACKAGES` from the manifest: Play forbids an app that updates

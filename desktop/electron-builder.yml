@@ -3,7 +3,18 @@
 # Windows, macOS and Linux. .github/workflows/release.yml builds all three on
 # GitHub's machines (`electron-builder --win|--mac|--linux --publish never`)
 # and puts every file into one GitHub release. `npm run dist` builds the
-# Windows set on this machine.
+# Windows installer on this machine.
+#
+# ONE file per system, on purpose - a release page is for people, not for
+# tooling:
+#   Analyser-Windows.exe         installs, OR unpacks a portable copy
+#                                (build/installer.nsh)
+#   Analyser-mac-universal.dmg   Apple silicon and Intel in one app
+#   Analyser-linux-x64.AppImage
+# So there is no update file (latest*.yml) and no blockmap: updater.mjs asks
+# GitHub's API for the latest release, which gives each download URL and its
+# SHA-256 digest. `publish: null` keeps electron-builder from inferring a
+# GitHub target from the git remote and writing those files anyway.
 #
 # The website's own files are NOT bundled into the asar. They ship as
 # extraResources, so they land in resources/web/ as ordinary files on disk:
@@ -14,10 +25,10 @@
 # src/core/app.ts, so the installer and the number in the app's own footer
 # always agree. `npm run dist` runs it first.
 #
-# The file names carry NO version, on purpose. docs/download.md links to
-# releases/latest/download/<name>, and that link works only while the name
-# stays the same from one release to the next. The release tag holds the
-# version, and electron-updater finds each file through latest*.yml.
+# The file names carry NO version. The apps find their file in a release by
+# name, and docs/download.md links to releases/latest/download/<name>, so the
+# names must stay the same from one release to the next. The release tag holds
+# the version.
 
 appId: com.valjdakosta.analyser
 productName: Analyser
@@ -27,9 +38,7 @@ directories:
   output: dist
   buildResources: build
 
-# Only the shell itself goes in the asar, plus electron-updater, the one
-# runtime dependency: electron-builder adds the production node_modules on top
-# of this list.
+# Only the shell itself goes in the asar.
 files:
   - main.mjs
   - router.mjs
@@ -40,16 +49,7 @@ files:
   - preload.cjs
   - package.json
 
-# Where the update files point. From this electron-builder writes latest.yml,
-# latest-mac.yml and latest-linux.yml next to the builds, and
-# resources/app-update.yml inside them. updater.mjs reads the same release.
-# Nothing here uploads: every build runs with --publish never, and the release
-# workflow publishes all the files at once.
-publish:
-  provider: github
-  owner: KostaJovanovic
-  repo: Universal-File-Analyser
-  releaseType: release
+publish: null
 
 # macOS only: an ad-hoc signature, because there is no Apple certificate yet.
 # See the file, and `mac.identity` below.
@@ -87,27 +87,15 @@ win:
   target:
     - target: nsis
       arch: [x64]
-    # Self-extracting portable .exe. It sets PORTABLE_EXECUTABLE_DIR at runtime,
-    # which main.mjs uses to move userData to `Analyser-data` beside the .exe -
-    # so the offline cache, the analysed history, the theme and the window
-    # position all travel with the stick instead of being left in the host's
-    # %APPDATA%.
-    - target: portable
-      arch: [x64]
-    # The same thing without the extraction step: unzip anywhere and run
-    # Analyser.exe. Add an empty `portable.txt` next to the .exe and main.mjs
-    # treats it as portable too. Faster to start than the self-extracting build,
-    # since nothing is unpacked to temp.
-    - target: zip
-      arch: [x64]
   icon: build/icon.png
-  # The zip. The installer and the portable build name themselves below.
-  artifactName: Analyser-win-x64.${ext}
   # Unsigned for now. Windows SmartScreen will warn on first run until a
-  # certificate is in place - see the note in README.md. electron-updater does
-  # not need one: it checks a publisher only when publisherName is set.
+  # certificate is in place - see the note in README.md.
 
 nsis:
+  # The first page asks: install, or a portable copy in a folder. The portable
+  # copy writes portable.txt beside Analyser.exe, which main.mjs reads to keep
+  # every setting in Analyser-data there. See build/installer.nsh.
+  include: build/installer.nsh
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
@@ -115,51 +103,38 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Analyser
-  artifactName: Analyser-Setup-x64.exe
+  artifactName: Analyser-Windows.exe
   uninstallDisplayName: Analyser
-
-portable:
-  artifactName: Analyser-Portable-x64.exe
-  # unpackDirName is deliberately left at its default: a uuid regenerated per
-  # BUILD, not per launch. So a given version extracts to temp once and reuses
-  # it, instead of re-extracting 118 MB every time. Setting it to false would
-  # leave no persistent temp folder but would pay that extraction on every run.
-
-# Folder-copy portable build (see the zip target above).
-# The user's data still lands in Analyser-data next to the .exe, but only once
-# `portable.txt` is there - without it a copied folder behaves like an install
-# and writes to %APPDATA%, which is the right default for the NSIS build.
+  # No .blockmap. updater.mjs downloads the whole installer, which is simpler
+  # than a patch and keeps the release to one Windows file.
+  differentialPackage: false
 
 mac:
   target:
     - target: dmg
-      arch: [arm64, x64]
-    # electron-updater reads the zip, never the dmg. On macOS the app only
-    # announces a new version today (updater.mjs), but a signed build later
-    # installs from this zip with no change here.
-    - target: zip
-      arch: [arm64, x64]
+      arch: [universal]
   icon: build/icon.png
   category: public.app-category.utilities
-  artifactName: Analyser-mac-${arch}.${ext}
+  artifactName: Analyser-mac-universal.${ext}
   # No Apple Developer ID yet. null makes electron-builder skip signing, and
   # tools/after-pack.cjs signs ad-hoc instead. Remove both once a certificate
   # exists: notarisation becomes possible then, and so do installed updates.
   identity: null
 
+dmg:
+  # No .dmg.blockmap: nothing reads it.
+  writeUpdateInfo: false
+
 linux:
   target:
-    # The AppImage updates itself (updater.mjs). The .deb only announces.
+    # Runs on nearly every distribution, and updates itself (updater.mjs).
     - target: AppImage
-      arch: [x64]
-    - target: deb
       arch: [x64]
   icon: build/icon.png
   category: Utility
   # Without this the binary takes the npm package name, analyser-desktop.
   executableName: analyser
   synopsis: Drop a file and see what it is. Nothing leaves your computer.
-  maintainer: Kosta Jovanovic <valjdakosta@gmail.com>
   artifactName: Analyser-linux-x64.${ext}
 
 # File associations are deliberately absent. Claiming .pdf or .jpg on install

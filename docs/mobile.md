@@ -22,8 +22,7 @@ progress bar and makes sure that the file is complete and really is Analyser.
 Then it opens the Android installer, which asks you to confirm. Android also
 refuses any update that does not carry the same signature as the app you have.
 
-A check sends one request to GitHub for a small file that names the latest
-version, and nothing else. A build you make yourself with `mobile.bat` never
+A check asks GitHub which release is the latest, and sends nothing else. A build you make yourself with `mobile.bat` never
 checks.
 
 ## Hardware video

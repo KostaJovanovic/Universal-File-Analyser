@@ -55,31 +55,30 @@ a small model and the processor handles it comfortably, so correctness wins.
 
 ## Portable use
 
-There are three Windows downloads, and two of them leave the computer as they
-found it.
+Windows has one download, `Analyser-Windows.exe`. Its first page asks how to
+set Analyser up:
 
-| Build | What it is |
-|---|---|
-| `Analyser-Setup-x64.exe` | The normal installer. Settings go in your user profile |
-| `Analyser-Portable-x64.exe` | One file. Run it from anywhere, including a USB stick |
-| `Analyser-win-x64.zip` | Unzip and run. Nothing is extracted at start-up, so it opens quicker |
+- **Install Analyser** adds it to the Start menu and the desktop, keeps its
+  settings in your user profile, and updates itself.
+- **Portable copy** puts the program in a folder you choose, for example on a
+  USB stick. It writes nothing to the computer: no Start menu entry, no
+  registry key and no uninstaller. To remove it, delete the folder.
 
 A portable copy keeps **everything** in a folder called `Analyser-data`, beside
 the program. That covers the offline downloads, the recently-analysed list, the
 theme and the window size. Delete the folder and no trace of your use remains.
 Files you analyse are never stored by any build.
 
-For the zip, put an empty file named `portable.txt` next to `Analyser.exe`. That
-is the switch that turns portable storage on. Without it a copied folder behaves
-like an installed copy.
+The switch is a file named `portable.txt` next to `Analyser.exe`, which the
+installer writes. Delete it and the copy behaves like an installed one.
 
 To check any of this, open **Help**, then **Where my data is stored**. It names
 the exact folder and offers to open it.
 
-Two details worth knowing. The single-file build unpacks itself to a temporary
-folder the first time each version runs, then reuses it, so only the first
-start-up is slow. And a portable copy runs alongside an installed one, because
-the two keep separate settings.
+A portable copy runs alongside an installed one, because the two keep separate
+settings. To update a portable copy, run the new installer, choose **Portable
+copy** and pick the same folder. The installer replaces the program and keeps
+`Analyser-data`.
 
 You can also drop an `ffmpeg.exe` next to the portable program, or in an
 `ffmpeg` folder there. The app prefers that one, so the stick carries its own
@@ -97,18 +96,20 @@ the copy you run:
 
 | Copy | When a new version is out |
 |---|---|
-| Windows installer | It downloads in the background and installs when you quit. A message offers to restart at once |
+| Windows, installed | It downloads in the background and installs when you quit. A message offers to restart at once |
 | Linux AppImage | The same |
-| Windows portable and zip, Linux `.deb`, macOS | A message offers to open the download page |
+| Windows portable copy, macOS | A message offers to open the download page |
 
-The copies in the last row cannot replace themselves. A portable copy has no
-installer, and a `.deb` needs your password to install. macOS installs an
-update by itself only for an app with a paid Apple signature, and this one has
-none yet.
+The copies in the last row cannot replace themselves. For a portable copy, run
+the new installer, choose **Portable copy** and pick the same folder. macOS
+installs an update by itself only for an app with a paid Apple signature, and
+this one has none yet.
 
-A check asks GitHub for one small file that names the latest version. It sends
-nothing about you or your files. A copy you run from the source code
-(`desktop.bat`) never checks.
+The app checks every download against the checksum that GitHub publishes for
+the file, and throws away a download that does not match.
+
+A check asks GitHub which release is the latest. It sends nothing about you or
+your files. A copy you run from the source code (`desktop.bat`) never checks.
 
 ## Why a custom scheme instead of `file://`
 

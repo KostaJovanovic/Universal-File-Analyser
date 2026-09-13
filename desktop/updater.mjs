@@ -1,36 +1,49 @@
 /* Analyser desktop - updates.
  *
- * .github/workflows/release.yml publishes every build to ONE GitHub release,
- * together with the latest.yml, latest-mac.yml and latest-linux.yml files that
- * electron-builder writes. electron-updater reads those. What happens next
- * depends on how this copy was installed, because only two kinds of copy can
- * replace themselves:
+ * .github/workflows/release.yml publishes each version as ONE GitHub release
+ * with one file per system, and no update file beside them. The app asks
+ * GitHub's API for the latest release instead: the answer gives the tag, the
+ * download URL of every file and the SHA-256 digest GitHub computed for it.
  *
- *   installer  The NSIS install on Windows and the AppImage on Linux. The new
- *              version downloads in the background and installs when the app
- *              quits, or at once when the user picks "Restart now".
- *   manual     Everything else: the portable .exe, the zip, the .deb and macOS.
- *              The app says a new version is out and opens the download page.
- *              macOS is here because Squirrel.Mac installs only an app signed
- *              with an Apple Developer ID, and these builds carry an ad-hoc
- *              signature (tools/after-pack.cjs). The .deb is here because its
- *              install needs a password prompt, which a background update must
- *              never spring on anyone.
+ * Two kinds of copy can replace themselves:
+ *
+ *   installer  The Windows install (its uninstaller sits beside the exe). The
+ *              new installer downloads in the background, and its digest must
+ *              match. It then runs silently (/S --updated) when the app quits,
+ *              or at once on "Restart now". NSIS installs over the old copy in
+ *              the same folder and keeps every setting.
+ *   appimage   Linux. The new AppImage downloads beside the running one, its
+ *              digest must match, and it takes the old file's place. The next
+ *              start runs it, or "Restart now" does.
+ *
+ * Everything else only announces a new version and opens the download page: a
+ * portable copy (portable.txt beside the exe, see main.mjs), and macOS, where
+ * an app without an Apple Developer ID signature cannot install an update.
  *
  * A development copy (desktop.bat, npm start) never checks.
  *
- * What a check sends: one HTTPS request to github.com for the update file of
- * the latest release. No file, no history, nothing about what was analysed.
+ * What a check sends: one HTTPS request to api.github.com. No file, no history,
+ * nothing about what was analysed.
  */
 
-import { app, dialog, shell } from 'electron';
-import { existsSync } from 'node:fs';
+import { app, dialog, net, shell } from 'electron';
+import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { chmodSync, createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 const OWNER = 'KostaJovanovic';
 const REPO = 'Universal-File-Analyser';
 /** The one place every build can be downloaded from. */
 export const DOWNLOAD_PAGE = `https://github.com/${OWNER}/${REPO}/releases/latest`;
+const API = `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`;
+
+/** The release file each self-updating kind downloads. The names carry no
+ *  version, so they stay the same from one release to the next. */
+const ASSET = {
+  installer: 'Analyser-Windows.exe',
+  appimage: 'Analyser-linux-x64.AppImage',
+};
 
 /** The first check waits for start-up to settle, then one runs every six hours. */
 const FIRST_CHECK_MS = 20 * 1000;
@@ -39,10 +52,11 @@ const EVERY_MS = 6 * 60 * 60 * 1000;
 let kind = 'dev';
 let portableCopy = false;
 let getWindow = () => null;
-let updater = null;
 let busy = false;
-/** A downloaded version waiting for a restart, or ''. */
-let ready = '';
+/** A downloaded update waiting to take over: { version, file }, or null. */
+let ready = null;
+/** The installer was started, so quitting must not start it twice. */
+let launched = false;
 /** Versions the user answered "Later" to. The automatic check stays quiet about
  *  them for the rest of the session. The menu entry still reports them. */
 const declined = new Set();
@@ -52,13 +66,13 @@ export function installKind(portable) {
   if (!app.isPackaged) return 'dev';
   if (process.platform === 'win32') {
     if (portable) return 'manual';
-    // The NSIS installer leaves its uninstaller beside the executable. A copy
-    // unzipped by hand has none, and must not be "updated" by an installer that
+    // The NSIS installer leaves its uninstaller beside the executable. A
+    // portable copy has none, and must not be "updated" by an installer that
     // would put a second copy somewhere else.
     const uninstaller = join(dirname(app.getPath('exe')), `Uninstall ${app.getName()}.exe`);
     return existsSync(uninstaller) ? 'installer' : 'manual';
   }
-  if (process.platform === 'linux') return process.env.APPIMAGE ? 'installer' : 'manual';
+  if (process.platform === 'linux' && process.env.APPIMAGE) return 'appimage';
   return 'manual';
 }
 
@@ -68,6 +82,15 @@ export function startUpdates({ window, portable }) {
   kind = installKind(portableCopy);
   getWindow = window;
   if (kind === 'dev') return;
+  if (kind === 'installer') {
+    rmSync(downloadDir(), { recursive: true, force: true });
+    // "Later" still installs: the downloaded installer runs as the app closes,
+    // silently, without starting the app again.
+    app.on('will-quit', () => runInstaller(false));
+  }
+  if (kind === 'appimage') {
+    for (const stale of [process.env.APPIMAGE + '.new', process.env.APPIMAGE + '.new.part']) rmSync(stale, { force: true });
+  }
   setTimeout(() => check(false), FIRST_CHECK_MS);
   setInterval(() => check(false), EVERY_MS);
 }
@@ -80,26 +103,86 @@ export function checkForUpdates() {
 /** '9.1.0' -> '9.1', the label the footer shows. */
 const label = (v) => String(v || '').replace(/\.0$/, '');
 
-async function load() {
-  if (updater) return updater;
-  // Loaded on first use, so a development copy never loads it at all.
-  const mod = await import('electron-updater');
-  const u = (mod.default || mod).autoUpdater;
-  // Set here rather than read from resources/app-update.yml, so a portable or
-  // unzipped copy can check too. An installed copy still has that file, and
-  // electron-updater reads it for the name of its download folder.
-  u.setFeedURL({ provider: 'github', owner: OWNER, repo: REPO });
-  u.autoDownload = kind === 'installer';
-  u.autoInstallOnAppQuit = kind === 'installer';
-  u.allowPrerelease = false;
-  u.allowDowngrade = false;
-  u.logger = null;
-  // check() reports a failure when the user asked. A background failure (offline,
-  // GitHub down) stays silent and the next check tries again.
-  u.on('error', () => {});
-  u.on('update-downloaded', (info) => offerRestart(info.version));
-  updater = u;
-  return u;
+/** True when version `a` is newer than `b`, compared number by number. */
+function newer(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
+    if (x !== y) return x > y;
+  }
+  return false;
+}
+
+const downloadDir = () => join(app.getPath('temp'), 'analyser-update');
+
+async function latestRelease() {
+  const res = await net.fetch(API, { headers: { accept: 'application/vnd.github+json' } });
+  if (!res.ok) throw new Error('GitHub answered ' + res.status);
+  const rel = await res.json();
+  const assets = Array.isArray(rel.assets) ? rel.assets : [];
+  return {
+    version: String(rel.tag_name || '').replace(/^v/, ''),
+    asset: (name) => assets.find((a) => a && a.name === name) || null,
+  };
+}
+
+/** Download a release asset to `dest`, hashing as it streams. Nothing lands at
+ *  `dest` unless the SHA-256 matches the digest GitHub gives for the file. */
+async function download(asset, dest) {
+  const want = /^sha256:([0-9a-f]{64})$/.exec(String(asset.digest || ''));
+  if (!want) throw new Error('the release gives no SHA-256 for ' + asset.name);
+  const res = await net.fetch(String(asset.browser_download_url || ''));
+  if (!res.ok || !res.body) throw new Error('the download failed: ' + res.status);
+  mkdirSync(dirname(dest), { recursive: true });
+  const part = dest + '.part';
+  const hash = createHash('sha256');
+  const out = createWriteStream(part);
+  try {
+    for await (const chunk of res.body) {
+      hash.update(chunk);
+      if (!out.write(chunk)) await new Promise((resolve) => out.once('drain', resolve));
+    }
+    await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())));
+  } catch (err) {
+    out.destroy();
+    rmSync(part, { force: true });
+    throw err;
+  }
+  if (hash.digest('hex') !== want[1]) {
+    rmSync(part, { force: true });
+    throw new Error('the download does not match its SHA-256');
+  }
+  rmSync(dest, { force: true });
+  renameSync(part, dest);
+}
+
+/** Fetch the update for a self-updating copy, and leave it ready to take over. */
+async function fetchUpdate(version, asset) {
+  if (kind === 'installer') {
+    const file = join(downloadDir(), asset.name);
+    await download(asset, file);
+    ready = { version, file };
+  } else {
+    // Beside the running AppImage, so the rename below stays on one disk.
+    // Linux lets a running file be replaced: this copy keeps running from the
+    // old one until it quits.
+    const target = process.env.APPIMAGE;
+    const next = target + '.new';
+    await download(asset, next);
+    chmodSync(next, 0o755);
+    renameSync(next, target);
+    ready = { version, file: target };
+  }
+}
+
+function runInstaller(restart) {
+  if (kind !== 'installer' || !ready || launched) return;
+  launched = true;
+  const args = ['/S', '--updated'];
+  if (restart) args.push('--force-run');
+  spawn(ready.file, args, { detached: true, stdio: 'ignore' }).unref();
 }
 
 async function check(manual) {
@@ -108,7 +191,7 @@ async function check(manual) {
     return;
   }
   if (ready) {
-    if (manual) offerRestart(ready);
+    if (manual) offerRestart();
     return;
   }
   if (busy) {
@@ -117,26 +200,26 @@ async function check(manual) {
   }
   busy = true;
   try {
-    const u = await load();
-    const r = await u.checkForUpdates();
-    // With autoDownload on, the download carries on after the check resolves.
-    // A failure there also reaches the 'error' listener, so the promise only
-    // needs a catch.
-    if (r && r.downloadPromise) r.downloadPromise.catch(() => {});
-    if (!r || !r.isUpdateAvailable) {
+    const rel = await latestRelease();
+    if (!newer(rel.version, app.getVersion())) {
       if (manual) tell('Analyser is up to date', `Version ${label(app.getVersion())} is the latest release.`);
       return;
     }
-    const next = r.updateInfo.version;
-    if (kind === 'installer') {
-      if (manual) tell(`Analyser ${label(next)} is downloading`, 'It installs when you quit. A message offers a restart as soon as the download is done.');
+    if (kind === 'installer' || kind === 'appimage') {
+      const asset = rel.asset(ASSET[kind]);
+      if (!asset) throw new Error('the release has no ' + ASSET[kind]);
+      if (manual) tell(`Analyser ${label(rel.version)} is downloading`, 'A message offers a restart as soon as the download is done.');
+      await fetchUpdate(rel.version, asset);
+      offerRestart();
       return;
     }
-    if (manual || !declined.has(next)) offerDownload(next);
+    if (manual || !declined.has(rel.version)) offerDownload(rel.version);
   } catch (err) {
+    // A background failure (offline, GitHub down, a bad download) stays
+    // silent, and the next check tries again.
     if (manual) {
-      tell('Analyser could not check for updates',
-        'GitHub did not answer. Check the connection, then try again.\n\n' + String((err && err.message) || err).slice(0, 300));
+      tell('Analyser could not update',
+        'Check the connection, then try again.\n\n' + String((err && err.message) || err).slice(0, 300));
     }
   } finally {
     busy = false;
@@ -154,25 +237,35 @@ function tell(message, detail) {
   show({ message, detail, buttons: ['Close'] });
 }
 
-function offerRestart(version) {
-  ready = version;
+function offerRestart() {
+  if (!ready) return;
   show({
-    message: `Analyser ${label(version)} is ready to install`,
-    detail: 'Restart now to finish the update, or keep working and it installs the next time you quit.',
+    message: `Analyser ${label(ready.version)} is ready`,
+    detail: kind === 'installer'
+      ? 'Restart now to finish the update, or keep working and it installs when you quit.'
+      : 'Restart now to start the new version, or keep working and it starts next time.',
     buttons: ['Restart now', 'Later'],
     defaultId: 0,
     cancelId: 1,
   }).then((r) => {
-    // A silent install, then the new version starts.
-    if (r.response === 0) setImmediate(() => updater.quitAndInstall(true, true));
+    if (r.response !== 0) return;
+    if (kind === 'installer') {
+      // The installer waits for this copy to close, installs, then starts
+      // the new version (--force-run).
+      runInstaller(true);
+    } else {
+      // relaunch starts the new file once this process has gone, so the two
+      // never meet at the single-instance lock.
+      app.relaunch({ execPath: process.env.APPIMAGE, args: [] });
+    }
+    app.quit();
   });
 }
 
 function offerDownload(version) {
   let how;
   if (process.platform === 'darwin') how = 'Download it, then drag it into Applications to replace this copy. Your settings stay.';
-  else if (portableCopy) how = 'Download the new version and put it in this folder in place of this one. The Analyser-data folder beside it keeps your settings.';
-  else if (process.platform === 'linux') how = 'Download the new .deb and install it over this one. Your settings stay.';
+  else if (portableCopy) how = 'Run the new installer, choose "Portable copy", and pick this folder. The Analyser-data folder here keeps your settings.';
   else how = 'This copy cannot replace itself. Download the new version and use it in place of this one.';
   show({
     message: `Analyser ${label(version)} is out`,

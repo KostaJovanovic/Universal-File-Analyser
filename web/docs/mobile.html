@@ -75,7 +75,7 @@
 <h2 id="getting-the-app-and-updates">Getting the app and updates<a class="h-anchor" href="#getting-the-app-and-updates" aria-label="Link to this section">#</a></h2>
 <p>Download <code>Analyser-android.apk</code> from the <a href="/docs/download">download page</a> and open it. The app needs Android 7 or later. Android asks you once to allow installs from your browser or file manager.</p>
 <p>The app looks for a new version when it starts, at most once every six hours. When one is out, it asks you first. <strong>Update</strong> downloads the new version with a progress bar and makes sure that the file is complete and really is Analyser. Then it opens the Android installer, which asks you to confirm. Android also refuses any update that does not carry the same signature as the app you have.</p>
-<p>A check sends one request to GitHub for a small file that names the latest version, and nothing else. A build you make yourself with <code>mobile.bat</code> never checks.</p>
+<p>A check asks GitHub which release is the latest, and sends nothing else. A build you make yourself with <code>mobile.bat</code> never checks.</p>
 </section>
 <section class="docs-card">
 <h2 id="hardware-video">Hardware video<a class="h-anchor" href="#hardware-video" aria-label="Link to this section">#</a></h2>

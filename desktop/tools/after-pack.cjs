@@ -24,6 +24,11 @@ const { join } = require('node:path');
 
 exports.default = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return;
+  // The universal build packs x64 and arm64 into `<dir>-x64-temp` and
+  // `<dir>-arm64-temp`, merges them, then calls this hook once more on the
+  // merged app. Only that last one ships. Signing the two halves first would
+  // make their files differ, which @electron/universal refuses to merge.
+  if (/-temp$/.test(context.appOutDir)) return;
   const bundle = join(context.appOutDir, context.packager.appInfo.productFilename + '.app');
   execFileSync('codesign', ['--force', '--deep', '--sign', '-', bundle], { stdio: 'inherit' });
 };

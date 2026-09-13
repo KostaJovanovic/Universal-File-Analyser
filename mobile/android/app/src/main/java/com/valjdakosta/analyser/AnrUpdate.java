@@ -25,6 +25,9 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
@@ -36,24 +39,28 @@ import org.json.JSONObject;
  * REQUEST_INSTALL_PACKAGES from the manifest: Play forbids an app that updates
  * itself.
  *
- * The feed is latest-android.json on the latest release:
- *   { "version": "9.1", "versionCode": 306,
- *     "url": ".../Analyser-android.apk", "size": 123, "sha256": "..." }
+ * The feed is GitHub's API answer for the latest release. There is no update
+ * file in the release: the answer gives the tag (v9.2.0), and for the asset
+ * named Analyser-android.apk its download URL, its size and the SHA-256 digest
+ * GitHub computed for it.
  *
- * At most one check every six hours, at start-up. A higher versionCode asks the
- * user. "Update" downloads the APK into the cache, checks its SHA-256, its
- * package name and its version, and hands it to the system installer, which
- * asks again. Android itself refuses an APK signed with another key, so the
- * signature check is the platform's.
+ * At most one check every six hours, at start-up. A newer tag asks the user.
+ * "Update" downloads the APK into the cache, checks its SHA-256, its package
+ * name and that its versionCode is higher, and hands it to the system
+ * installer, which asks again. Android itself refuses an APK signed with
+ * another key, so the signature check is the platform's.
  *
- * What a check sends: one HTTPS request to github.com. Nothing about any file.
+ * What a check sends: one HTTPS request to api.github.com. Nothing about any file.
  */
 final class AnrUpdate {
 
     private static final String PREFS = "anr-update";
     private static final long EVERY_MS = 6L * 60 * 60 * 1000;
-    private static final int FEED_MAX = 16 * 1024;
+    /** The API answer carries the release notes and every asset. */
+    private static final int FEED_MAX = 512 * 1024;
+    private static final String APK_NAME = "Analyser-android.apk";
     private static final String APK_MIME = "application/vnd.android.package-archive";
+    private static final Pattern DIGEST = Pattern.compile("^sha256:([0-9a-f]{64})$");
     private static final ExecutorService NET = Executors.newSingleThreadExecutor();
     /** True while a check or a download runs, so two can never overlap. */
     private static final AtomicBoolean BUSY = new AtomicBoolean(false);
@@ -75,16 +82,18 @@ final class AnrUpdate {
                 // The installer copied the last update when it ran, so the file is spare now.
                 deleteQuietly(apkFile(app));
                 if (System.currentTimeMillis() - prefs.getLong("checked", 0) < EVERY_MS) return;
-                HttpURLConnection c = open(feed);
-                JSONObject info;
+                HttpURLConnection c = open(feed, "application/vnd.github+json");
+                JSONObject release;
                 try {
-                    info = new JSONObject(AnrShell.readAll(c.getInputStream(), FEED_MAX));
+                    release = new JSONObject(AnrShell.readAll(c.getInputStream(), FEED_MAX));
                 } finally {
                     c.disconnect();
                 }
                 prefs.edit().putLong("checked", System.currentTimeMillis()).apply();
-                if (info.optLong("versionCode", 0) <= installedCode(app)) return;
-                activity.runOnUiThread(() -> offer(activity, info));
+                String version = release.optString("tag_name", "").replaceFirst("^v", "");
+                JSONObject apk = asset(release, APK_NAME);
+                if (apk == null || !newer(version, installedName(app))) return;
+                activity.runOnUiThread(() -> offer(activity, version, apk));
             } catch (Exception e) {
                 // Offline, or GitHub did not answer. The next start tries again.
             } finally {
@@ -93,24 +102,55 @@ final class AnrUpdate {
         });
     }
 
-    private static void offer(Activity activity, JSONObject info) {
+    /** True when version `a` is newer than `b`, compared number by number:
+     *  "9.10.0" is newer than "9.9", and "9.1.0" is the same as "9.1". */
+    static boolean newer(String a, String b) {
+        String[] x = a.split("\\.");
+        String[] y = b.split("\\.");
+        for (int i = 0; i < Math.max(x.length, y.length); i++) {
+            int p = i < x.length ? number(x[i]) : 0;
+            int q = i < y.length ? number(y[i]) : 0;
+            if (p != q) return p > q;
+        }
+        return false;
+    }
+
+    private static int number(String s) {
+        try {
+            return Integer.parseInt(s.trim());
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private static JSONObject asset(JSONObject release, String name) {
+        JSONArray assets = release.optJSONArray("assets");
+        if (assets == null) return null;
+        for (int i = 0; i < assets.length(); i++) {
+            JSONObject a = assets.optJSONObject(i);
+            if (a != null && name.equals(a.optString("name"))) return a;
+        }
+        return null;
+    }
+
+    private static void offer(Activity activity, String version, JSONObject apk) {
         if (activity.isFinishing() || activity.isDestroyed()) return;
-        String version = info.optString("version", "");
-        long size = info.optLong("size", 0);
+        long size = apk.optLong("size", 0);
         String mb = size > 0 ? String.format(Locale.ROOT, " (%d MB)", Math.round(size / 1048576.0)) : "";
         new AlertDialog.Builder(activity)
-            .setTitle("Analyser " + version + " is out")
+            .setTitle("Analyser " + version.replaceFirst("\\.0$", "") + " is out")
             .setMessage("Download the update now" + mb + "? Android asks you to confirm the install. Your settings and offline downloads stay.")
-            .setPositiveButton("Update", (d, w) -> download(activity, info))
+            .setPositiveButton("Update", (d, w) -> download(activity, apk))
             .setNegativeButton("Later", null)
             .show();
     }
 
-    private static void download(Activity activity, JSONObject info) {
-        final String url = info.optString("url", "");
-        final String sha = info.optString("sha256", "").toLowerCase(Locale.ROOT);
-        final long code = info.optLong("versionCode", 0);
-        if (!url.startsWith("https://") || !sha.matches("[0-9a-f]{64}") || !BUSY.compareAndSet(false, true)) return;
+    private static void download(Activity activity, JSONObject apk) {
+        final String url = apk.optString("browser_download_url", "");
+        Matcher digest = DIGEST.matcher(apk.optString("digest", ""));
+        // No digest, no install: the hash is what ties the file to the release.
+        if (!url.startsWith("https://") || !digest.matches() || !BUSY.compareAndSet(false, true)) return;
+        final String sha = digest.group(1);
 
         ProgressBar bar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
         bar.setMax(1000);
@@ -128,14 +168,14 @@ final class AnrUpdate {
 
         Context app = activity.getApplicationContext();
         NET.execute(() -> {
-            File apk = apkFile(app);
+            File file = apkFile(app);
             boolean ok = false;
             try {
-                save(url, apk, sha, cancelled, (permille) -> activity.runOnUiThread(() -> bar.setProgress(permille)));
-                verify(app, apk, code);
+                save(url, file, sha, cancelled, (permille) -> activity.runOnUiThread(() -> bar.setProgress(permille)));
+                verify(app, file);
                 ok = true;
             } catch (Exception e) {
-                deleteQuietly(apk);
+                deleteQuietly(file);
             } finally {
                 BUSY.set(false);
             }
@@ -147,21 +187,21 @@ final class AnrUpdate {
                     /* the activity went away while the download ran */
                 }
                 if (cancelled.get() || activity.isFinishing() || activity.isDestroyed()) return;
-                if (done) install(activity, apk);
+                if (done) install(activity, file);
                 else Toast.makeText(activity, "The update did not download. Analyser tries again later.", Toast.LENGTH_LONG).show();
             });
         });
     }
 
-    /** Stream the APK to `apk`, hashing as it goes. Throws on a cancel or a bad hash. */
-    private static void save(String url, File apk, String sha, AtomicBoolean cancelled, Progress progress) throws Exception {
-        File dir = apk.getParentFile();
+    /** Stream the APK to `file`, hashing as it goes. Throws on a cancel or a bad hash. */
+    private static void save(String url, File file, String sha, AtomicBoolean cancelled, Progress progress) throws Exception {
+        File dir = file.getParentFile();
         if (dir != null && !dir.isDirectory() && !dir.mkdirs()) throw new IOException("no cache folder");
-        HttpURLConnection c = open(url);
+        HttpURLConnection c = open(url, null);
         try {
             long total = c.getContentLengthLong();
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            try (InputStream in = c.getInputStream(); OutputStream out = new FileOutputStream(apk)) {
+            try (InputStream in = c.getInputStream(); OutputStream out = new FileOutputStream(file)) {
                 byte[] buf = new byte[1 << 16];
                 long got = 0;
                 int last = -1;
@@ -184,16 +224,15 @@ final class AnrUpdate {
         }
     }
 
-    /** The file must be Analyser, at exactly the version the feed named, and newer. */
-    private static void verify(Context app, File apk, long code) throws IOException {
-        PackageInfo p = app.getPackageManager().getPackageArchiveInfo(apk.getPath(), 0);
+    /** The file must be Analyser, and newer than the copy that is installed. */
+    private static void verify(Context app, File file) throws IOException {
+        PackageInfo p = app.getPackageManager().getPackageArchiveInfo(file.getPath(), 0);
         if (p == null || !app.getPackageName().equals(p.packageName)) throw new IOException("not an Analyser package");
-        long got = versionCode(p);
-        if (got != code || got <= installedCode(app)) throw new IOException("unexpected version " + got);
+        if (versionCode(p) <= installedCode(app)) throw new IOException("not newer than the installed copy");
     }
 
-    private static void install(Activity activity, File apk) {
-        Uri uri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".fileprovider", apk);
+    private static void install(Activity activity, File file) {
+        Uri uri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".fileprovider", file);
         Intent intent = new Intent(Intent.ACTION_VIEW).setDataAndType(uri, APK_MIME).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         try {
             activity.startActivity(intent);
@@ -202,7 +241,8 @@ final class AnrUpdate {
         }
     }
 
-    private static HttpURLConnection open(String url) throws IOException {
+    /** `accept` is set for the API only: the download URL wants no special type. */
+    private static HttpURLConnection open(String url, String accept) throws IOException {
         URL u = new URL(url);
         if (!"https".equals(u.getProtocol())) throw new IOException("not https");
         HttpURLConnection c = (HttpURLConnection) u.openConnection();
@@ -211,6 +251,8 @@ final class AnrUpdate {
         c.setConnectTimeout(15000);
         c.setReadTimeout(30000);
         c.setRequestProperty("Cache-Control", "no-cache");
+        c.setRequestProperty("User-Agent", "Analyser-Android");
+        if (accept != null) c.setRequestProperty("Accept", accept);
         int status = c.getResponseCode();
         if (status != HttpURLConnection.HTTP_OK) {
             c.disconnect();
@@ -219,11 +261,20 @@ final class AnrUpdate {
         return c;
     }
 
+    private static String installedName(Context app) {
+        try {
+            String v = app.getPackageManager().getPackageInfo(app.getPackageName(), 0).versionName;
+            return v == null ? "" : v;
+        } catch (PackageManager.NameNotFoundException e) {
+            return "";
+        }
+    }
+
     private static long installedCode(Context app) {
         try {
             return versionCode(app.getPackageManager().getPackageInfo(app.getPackageName(), 0));
         } catch (PackageManager.NameNotFoundException e) {
-            return Long.MAX_VALUE; // our own package always exists; never offer on a surprise
+            return Long.MAX_VALUE; // our own package always exists; never install on a surprise
         }
     }
 

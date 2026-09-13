@@ -351,27 +351,32 @@ The five things worth knowing before you touch anything:
 - **The dev/prod host difference is load-bearing.** `analyser://localhost/` in
   dev (so `sw.js` goes pass-through and the dev-only reset buttons show) and
   `analyser://app/` when packaged. Do not "tidy" them into one host.
-- **Portable builds redirect `userData` beside the executable.** `npm run dist`
-  emits three artefacts (NSIS installer, self-extracting portable `.exe`, and a
-  `win.zip`). `portableRoot()` in `main.mjs` detects portability from
-  electron-builder's `PORTABLE_EXECUTABLE_DIR`, or from a `portable.txt` marker
-  next to the `.exe` (which is what makes the zip portable). It then points
-  `userData` at `<exe dir>/Analyser-data`, so the offline cache, history, theme
-  and window state travel with the stick instead of being left in the host's
-  `%APPDATA%`. **That `setPath` must stay above `requestSingleInstanceLock()`** -
-  Electron keys the lock on `userData`, and the ordering is also what lets a
-  portable and an installed copy run at once.
-- **Releases come from ONE manual workflow, and the apps update from it.**
-  `.github/workflows/release.yml` (Actions > Release apps > Run workflow)
-  builds Windows, macOS and Linux with electron-builder and the signed Android
-  APK, then creates the GitHub release `v<version>` with every file at once.
-  `desktop/updater.mjs` (electron-updater, packaged builds only) reads
-  `latest*.yml` from it. The NSIS install and the AppImage install updates
-  themselves. Portable, zip, `.deb` and macOS only announce one: macOS has no
-  Apple certificate, so `mac.identity: null` plus `tools/after-pack.cjs` give
-  it an ad-hoc signature, and Squirrel.Mac will not install over that. **The
-  file names carry no version on purpose** - `docs/download.md` links
-  `releases/latest/download/<name>` - so do not put `${version}` back in.
+- **Portable copies redirect `userData` beside the executable.** Windows ships
+  ONE file, `Analyser-Windows.exe`, whose first page asks "Install Analyser"
+  or "Portable copy" (`desktop/build/installer.nsh`). The portable choice never
+  reaches the NSIS template's install section - that section always runs the
+  uninstaller of an installed copy, then writes registry keys and shortcuts.
+  Instead it unpacks the app itself and writes `portable.txt` beside the
+  `.exe`. `portableRoot()` in `main.mjs` detects that marker (or
+  `PORTABLE_EXECUTABLE_DIR`, from the self-extracting target that 9.1 shipped)
+  and points `userData` at `<exe dir>/Analyser-data`, so the offline cache,
+  history, theme and window state travel with the stick instead of being left
+  in the host's `%APPDATA%`. **That `setPath` must stay above
+  `requestSingleInstanceLock()`** - Electron keys the lock on `userData`, and
+  the ordering is also what lets a portable and an installed copy run at once.
+- **Releases come from ONE manual workflow, with ONE file per system and no
+  update files.** `.github/workflows/release.yml` (Actions > Release apps > Run
+  workflow) builds the Windows installer, a universal macOS `.dmg`, the Linux
+  AppImage and the signed APK, then creates the GitHub release `v<version>`
+  with the four at once. The apps ask the GitHub API for the latest release and
+  check each download against the SHA-256 digest GitHub gives for the asset.
+  `desktop/updater.mjs` (no electron-updater) lets the NSIS install and the
+  AppImage update themselves. A portable copy and macOS only announce one:
+  macOS has no Apple certificate, so `mac.identity: null` plus
+  `tools/after-pack.cjs` give it an ad-hoc signature. **The file names carry no
+  version on purpose** - the apps find their file by name, and
+  `docs/download.md` links `releases/latest/download/<name>` - so do not put
+  `${version}` back in, and keep `publish: null` so no `latest*.yml` returns.
 
 ## Mobile app (`mobile/`)
 
@@ -422,8 +427,9 @@ planned but not started (it needs a Mac).
   `AnrFfmpegChecks.java`, a Java port of `ffmpeg-accel.mjs`'s checks, tested by
   `AnrFfmpegChecksTest` (`gradlew testDebugUnitTest`) against the same vectors
   as `desktop/tools/check-ffmpeg-args.mjs`. Change one, change all three.
-- **Updates: `AnrUpdate.java`, in a release build only.** It reads
-  `latest-android.json` from the latest GitHub release, and only when
+- **Updates: `AnrUpdate.java`, in a release build only.** It reads the GitHub
+  API answer for the latest release (the tag, the `Analyser-android.apk` asset
+  and its SHA-256 digest - there is no update file), and only when
   `BuildConfig.UPDATE_FEED` holds a URL: the release workflow passes
   `-PanrUpdateFeed`, `mobile.bat` does not. The workflow signs with the
   `ANDROID_KEYSTORE_*` secrets - never replace that key once a release is out,
@@ -522,9 +528,10 @@ worker/             — Cloudflare Worker: anonymous analysed-count stats API
                       (index.js + schema.sql + disperse-unsupported.sql). The only
                       server-side code; the analyser itself stays browser-only.
 desktop/            — Electron desktop shell (Windows, macOS, Linux). Its OWN
-                      package.json and dependencies (electron-updater is the one
-                      runtime dependency); the root one keeps its single
-                      typescript devDep. It wraps the same web/ tree - no fork
+                      package.json and dependencies (no runtime dependency at
+                      all); the root one keeps its single typescript devDep.
+                      build/installer.nsh (the Windows installer's "install or
+                      portable" page). It wraps the same web/ tree - no fork
                       of the app code. main.mjs (scheme handlers, window,
                       security), router.mjs (a 1:1 port of serve.py's _route),
                       preload.cjs (the site's bridge: window.anrDesktop),

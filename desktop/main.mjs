@@ -110,13 +110,13 @@ const FOLDER_ENTRY_CAP = 100000;
 // So when we are running portably, userData moves to `Analyser-data` beside the
 // executable and everything travels with it. Two ways to be portable:
 //
-//   1. electron-builder's `portable` target sets PORTABLE_EXECUTABLE_DIR to the
-//      directory the .exe was launched from. (The app itself is unpacked to a
-//      temp folder on each run, so process.resourcesPath is NOT that place -
-//      this variable is the only way to find the real one.)
-//   2. A copied win-unpacked/ folder becomes portable when a marker file named
-//      `portable.txt` sits next to the executable. That covers "unzip it onto
-//      the stick" without needing the self-extracting build at all.
+//   1. A `portable.txt` marker next to the executable. The Windows installer
+//      writes it when the user picks "Portable copy" (build/installer.nsh),
+//      and any copied win-unpacked/ folder with that file is portable too.
+//   2. PORTABLE_EXECUTABLE_DIR, set by electron-builder's self-extracting
+//      `portable` target to the directory the .exe was launched from. No
+//      release builds that target any more, but release 9.1 shipped one, so
+//      the check stays for copies of it.
 //
 // This must run before the single-instance lock and before anything reads a
 // path, which is why it sits up here rather than in whenReady. It also means a
