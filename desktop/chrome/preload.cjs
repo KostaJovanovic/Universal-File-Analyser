@@ -46,6 +46,15 @@ ipcRenderer.on('anr:chrome-subject', (_e, s) => {
   if (subjectHandler) { try { subjectHandler(lastSubject); } catch (_) {} }
 });
 
+/* What the Update button says (desktop/updater.mjs), or null for no button.
+   Kept here so a handler registered late still paints the last answer. */
+let updateHandler = null;
+let lastOffer = null;
+ipcRenderer.on('anr:chrome-update', (_e, offer) => {
+  lastOffer = offer || null;
+  if (updateHandler) { try { updateHandler(lastOffer); } catch (_) {} }
+});
+
 contextBridge.exposeInMainWorld('anrChrome', {
   /** Which glyph set to draw: only Windows ships the Segoe icon fonts. */
   platform: String(process.platform || ''),
@@ -82,6 +91,14 @@ contextBridge.exposeInMainWorld('anrChrome', {
     subjectHandler = typeof cb === 'function' ? cb : null;
     if (subjectHandler) { try { subjectHandler(lastSubject); } catch (_) {} }
   },
+
+  /** Register the Update button's sink, and replay the last offer. */
+  onUpdate(cb) {
+    updateHandler = typeof cb === 'function' ? cb : null;
+    if (updateHandler) { try { updateHandler(lastOffer); } catch (_) {} }
+  },
+  /** The Update button was pressed. Main decides what that does. */
+  update: () => ipcRenderer.send('anr:update-press'),
 
   /** Report the bar's measured height, so --anr-tb-h in analyser.css stays the
    *  one place it is written and main never holds a second copy of the number. */

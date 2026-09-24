@@ -244,6 +244,30 @@ function wireOpen() {
 }
 
 // ---------------------------------------------------------------------------
+// The update offer
+//
+// AnrUpdate.java finds a newer release and AnrShell says so with an "update"
+// event, { version } ('' for none). The page shows it as the green Update chip
+// where the website has Get App (core/popups.ts). The event is retained until a
+// listener exists, and updateOffer() is asked once as well, for the case where
+// it fired before this page existed.
+// ---------------------------------------------------------------------------
+
+let updateHandler = null;
+let updateVersion = '';
+let updateWired = false;
+function setUpdate(p) {
+  updateVersion = String((p && p.version) || '');
+  if (updateHandler) { try { updateHandler(updateVersion); } catch (_) {} }
+}
+function wireUpdate() {
+  if (updateWired) return;
+  updateWired = true;
+  cap().addListener('AnrShell', 'update', setUpdate);
+  call('AnrShell', 'updateOffer').then(setUpdate, () => {});
+}
+
+// ---------------------------------------------------------------------------
 // window.anrDesktop
 // ---------------------------------------------------------------------------
 
@@ -287,6 +311,16 @@ const api = Object.freeze({
   /** The footer's "Check for updates" button (core/offline-tiers.ts).
    *  AnrUpdate.java checks at once and shows the answer natively. */
   checkUpdates: () => call('AnrShell', 'checkUpdates'),
+
+  /** Hear the version on offer ('' for none), replayed at once. Android only:
+   *  the desktop says it on its title bar instead. */
+  onUpdate(cb) {
+    updateHandler = typeof cb === 'function' ? cb : null;
+    try { wireUpdate(); } catch (_) { /* Capacitor not up yet: the next onUpdate wires it */ }
+    if (updateHandler) { try { updateHandler(updateVersion); } catch (_) {} }
+  },
+  /** The Update chip was tapped. AnrUpdate asks, then downloads and installs. */
+  update: () => call('AnrShell', 'installUpdate'),
 
   ffmpeg: Object.freeze(ffmpeg),
 });

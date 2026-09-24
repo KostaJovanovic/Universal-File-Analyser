@@ -337,6 +337,14 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+  { range: '9.09 - 9.14', notes: [
+    'The **home page moves** now: a drop glides the header and dropzones away, the analysis rises in their place and the header returns as a slim bar, with a **Menu button** on narrow screens. The fixed Photo, Sound and Video sections are gone, so what you drop leads the page. Extra analyses - a video’s sound and frames, a cover, an icon - wait as boxes at the end and open on a click.',
+    'The largest **safety sweep** yet: archives that unpack to gigabytes, headers that loop forever and hidden code in emails, e-books and SVG pictures are all stopped, and the **PDF and spreadsheet readers** are updated past their known flaws.',
+    '**Remove metadata** now also clears the location hidden in the second image of a Motion Photo or HDR photo, **Record** and the **live spectrogram** get the microphone again, and **over forty formats** read the right values where fields came out wrong or empty.',
+    '**Sound readings** for brightness, tempo, loudness and true peak are corrected, so the same song may show different numbers than before.',
+    'The **Android app** goes fullscreen in landscape and keeps long video jobs running in the background, and the **Windows installer** is drawn in the site’s own look.',
+    'A new version now appears as a green **Update button** - in the title bar on the computer, in place of Get App on Android - and the desktop **menus** open from their title instead of swelling out of the middle.',
+  ] },
   { range: '9.01 - 9.08', notes: [
     'The app now comes for **Windows, macOS and Linux**, with an early **Android** build beside them, all on one download page. A Mac gets one disk image for Apple silicon and Intel alike, and Linux an AppImage that runs on nearly any distribution.',
     'The apps **update themselves**: an installed Windows copy, the Linux AppImage and the Android app fetch a new version, check that it arrived intact and install it, and Android asks first. The one Windows file asks whether to install Analyser or to make a **portable copy** in a folder.',

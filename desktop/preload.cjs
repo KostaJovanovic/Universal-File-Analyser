@@ -107,7 +107,7 @@ contextBridge.exposeInMainWorld('anrDesktop', {
 
   /** Check for a new version now - the footer's "Check for updates" button
    *  (core/offline-tiers.ts). The page only starts the check: updater.mjs in
-   *  main shows every answer in a native dialog. */
+   *  main shows every answer on the title bar's Update button. */
   checkUpdates() {
     return ipcRenderer.invoke('anr:check-updates');
   },

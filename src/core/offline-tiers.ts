@@ -758,6 +758,12 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
   } else if (installBtn) {
     installBtn.onclick = () => { window.open(RELEASES_URL, '_blank', 'noopener'); };
   }
+  // The footer's tagline says "Everything runs in your browser.", which is not
+  // true of an app, so the apps say what is: nothing needs a connection.
+  if (window.anrDesktop) {
+    const mark = document.querySelector('.footer-mark');
+    if (mark) mark.textContent = 'Everything runs offline.';
+  }
 /** setupOfflineTiers() re-runs on every SPA navigation, so it parks the
  *  "already wired the window listener" flag on itself rather than in module state. */
 type OfflineTiersState = typeof setupOfflineTiers & {

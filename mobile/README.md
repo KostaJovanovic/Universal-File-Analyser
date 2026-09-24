@@ -308,7 +308,16 @@ build does not change.
 holds a URL, and only the workflow sets one (`-PanrUpdateFeed`): the GitHub API
 address of the latest release. The release holds no update file. At start-up,
 at most once every six hours, the updater reads that API answer. A newer tag
-than the installed `versionName` asks the user first. **Update** downloads the
+than the installed `versionName` does not interrupt: AnrShell fires a retained
+`update` event (`{ version }`, `''` for none), the bridge passes it to
+`anrDesktop.onUpdate`, and `core/popups.ts` turns the header's Get App chip into
+an Update chip. The offer is kept in the `anr-update` preferences, so between
+checks every start shows the chip again, until the installed version catches
+up. A page that loads after the event asks `AnrShell.updateOffer()`. A tap calls
+`anrDesktop.update()`, `AnrShell.installUpdate()`, which asks the user once
+(the size, and that the app closes) - only for the release the updater itself
+found, so the page cannot name a file. The footer's **Check for updates** shows
+that question at once as well. **Update** downloads the
 asset named `Analyser-android-<version>.apk` into the cache, with a progress bar
 (from `github.com`, every redirect checked against GitHub's asset hosts, and
 stopped the moment it runs past the size the release gives). Then

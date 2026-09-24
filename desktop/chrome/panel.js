@@ -56,12 +56,42 @@ function report(at) {
   panelApi.size(Math.ceil(b.width), Math.ceil(b.height), at);
 }
 
+/* The drop-in: the box is there at once, and its rows fall a few pixels from
+   the title's edge while they fade up (analyser.css). Only on a menu opened
+   from nothing - one the pointer slides across to replaces its neighbour at
+   once, as a menu bar's always has. Armed first, with the rows at the
+   animation's first frame, so however long the window takes to appear it
+   never shows them already in place; dropped the moment it is asked to show. */
+function arm(fresh) {
+  root.classList.remove('is-dropping');
+  root.classList.toggle('is-armed', !!fresh);
+}
+function drop() {
+  if (!root.classList.contains('is-armed')) return;
+  root.classList.remove('is-armed');
+  void root.offsetWidth;   // restart the animation, not resume it
+  root.classList.add('is-dropping');
+}
+
 if (panelApi) {
-  panelApi.onMenu(({ menu, at }) => {
+  panelApi.onMenu(({ menu, at, fresh, veiled }) => {
     draw(menu);
-    report(at);
+    arm(fresh);
+    if (veiled) {
+      /* The window is on screen behind a veil (see VEIL in main.mjs), still
+         holding the last menu's frame. Asking to be seen before the new one is
+         painted would flash the old menu for a frame, so wait for two - with a
+         timer behind it, so a frame that never comes cannot keep a menu shut. */
+      let sent = false;
+      const once = () => { if (!sent) { sent = true; report(at); drop(); } };
+      requestAnimationFrame(() => requestAnimationFrame(once));
+      setTimeout(once, 50);
+    } else {
+      report(at);
+      drop();
+    }
     /* And again once the fonts are in. A hidden window produces no frames, so
-       requestAnimationFrame cannot be used to wait for layout here - the first
+       requestAnimationFrame cannot be used to wait for layout there - the first
        report is what gets the window on screen, and this one corrects it if the
        mono face landed late and changed the width. */
     if (document.fonts && document.fonts.ready) {

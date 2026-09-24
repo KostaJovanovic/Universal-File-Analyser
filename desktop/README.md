@@ -452,9 +452,20 @@ SHA-256 digest that GitHub computed for each file:
 
 | Copy | What happens |
 | --- | --- |
-| NSIS install (its uninstaller sits beside the exe) | Downloads the new installer and checks the digest. The installer runs with `/S --updated` when the app quits, or at once on "Restart now" |
-| AppImage (`APPIMAGE` is set) | Downloads beside the running file, checks the digest and replaces the file. "Restart now" starts it through `app.relaunch` |
-| Portable copy, macOS | Says a new version is out, and opens the release page |
+| NSIS install (its uninstaller sits beside the exe) | A press on Update downloads the new installer and checks the digest. The app quits, and the installer runs from `will-quit` with `/S --updated --force-run`, re-hashed first, and starts the new version |
+| AppImage (`APPIMAGE` is set) | A press on Update downloads beside the running file, checks the digest, replaces the file and restarts through `app.relaunch` |
+| Portable copy, macOS | The button says a new version is out, and a press opens the release page |
+
+Every answer goes to the **Update button in the title bar**, never a native
+dialog - the design mbrd's desktop uses (`../mbrd/desktop/updates.ts`).
+`updater.mjs` publishes an offer, `{ state, version, progress?, note }`, which
+main sends to the bar as `anr:chrome-update` (and replays on `anr:chrome-ready`,
+since the bar can load after the answer); a press comes back as
+`anr:update-press`, checked against the bar's contents. The states are
+`available`, `downloading` (the button fills with `progress`), `installing`,
+`manual` and `failed`, which stay, and `checking`, `current` and `dev`, which
+answer a manual check and pass after five seconds. `note` is the tooltip. A
+check only finds a version: nothing downloads until the button is pressed.
 
 A download that does not match its digest never takes over, and a release
 without a digest never installs. macOS cannot install an update by itself
@@ -463,8 +474,11 @@ signing, and `tools/after-pack.cjs` applies an ad-hoc signature to the merged
 universal app instead, so macOS offers "Open Anyway" rather than calling the
 app damaged.
 
-The first check runs 20 seconds after start-up, then one every six hours.
-**Help > Check for updates** runs one at once. A check is one HTTPS request to
+The first look runs 20 seconds after start-up, then one every hour, and each
+look checks only when the last answer is a day old (`update-check.json` in
+userData), so a restart does not check again and a laptop that slept for a week
+checks within the hour it wakes. **Help > Check for updates** and the footer's
+button run one at once. A check is one HTTPS request to
 api.github.com, and a development copy never checks.
 
 ## Versioning
@@ -488,7 +502,7 @@ not exist in a browser, so the website is unaffected:
 - `core/offline-tiers.ts` - the footer install button (a link to the latest
   GitHub release on the website) becomes "Check for updates",
   which calls `anrDesktop.checkUpdates()` (IPC `anr:check-updates`, answered by
-  `updater.mjs` in a native dialog). The download tiers
+  `updater.mjs` on the title bar's Update button). The download tiers
   stay: the ffmpeg core, OCCT, Tesseract language data and the ONNX models are
   all still remote.
 - `core/limits.ts` - the device tier reads `anrDesktop.memoryGB`, the real
@@ -561,9 +575,20 @@ The rest:
     then send `anr:menu-closed`, because the bar marked the title open before
     it asked. Without that reply the title stayed lit over no menu, and the
     next click did nothing.
-  - It opens with no animation: `thickFrame: false` (Windows) and
-    `type: 'toolbar'` (Linux). Each open is a `show()`, and the OS animates
-    that for an ordinary window, so the menu scaled up out of nothing.
+  - It never plays the OS open animation. On Windows every `show()` zooms the
+    window out of its middle, and `thickFrame: false` does not stop that. So
+    on Windows and macOS the panel is shown ONCE, at creation, and then only
+    veiled: `setOpacity(0)` plus `setIgnoreMouseEvents(true)` to close,
+    `setOpacity(1)` and `focus()` to open (`VEIL` in `main.mjs`). A veiled
+    window keeps focus, so a close by Escape or a run entry hands it back to
+    the app view by hand. Linux has no `setOpacity`, so there it is still
+    `show()`/`hide()`, and `type: 'toolbar'` keeps the compositors off it.
+  - Its own motion is CSS: the box and border appear at once, anchored to the
+    title, and the rows drop 4px while they fade up (`--dur-snappy`). Only on
+    an open from nothing (`fresh`) - sliding across the bar swaps menus at
+    once. The rows are held at the first frame (`is-armed`) until the panel
+    reports its size, and a veiled panel waits two frames before it reports,
+    so the last menu's frame never flashes. Reduced motion keeps the fade only.
 - **The wordmark reloads the app** (`anr:chrome-nav` with `'reload'`, the same
   channel as the arrows). It is an `.anr-tb-btn`, so it opts out of the drag
   region.

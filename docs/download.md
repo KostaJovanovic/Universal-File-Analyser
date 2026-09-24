@@ -23,14 +23,15 @@ puts it in a folder you choose on the same page, for example on a USB stick. A
 portable copy writes nothing to the computer and keeps its settings in its own
 folder. To remove it, delete the folder.
 
-"Installs itself" means that the app downloads a new version in the background
-and installs it when you quit. It also offers to restart at once. "Tells you"
-means that a message offers to open the release page when a new version is
-out. A portable copy on Windows also tells you: run the new Windows file, choose
+On the computer, a green **Update** button appears in the title bar when a new
+version is out. "Installs itself" means that a press on it downloads the new
+version and restarts the app into it. "Tells you" means that a press opens the
+release page. A portable copy on Windows also tells you: run the new Windows file, choose
 **Portable copy** and pick the same folder. macOS
 installs an update by itself only for an app with a paid Apple signature.
 
-The Android app asks before it downloads anything. On Android 12 and later the
+In the Android app a green **Update** button appears at the top of the page, in
+place of Get App, and it asks before it downloads anything. On Android 12 and later the
 update then installs with no further question. Older versions show the
 Android confirm screen, as they do for any app.
 

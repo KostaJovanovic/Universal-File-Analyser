@@ -753,10 +753,12 @@ button.header-btn { cursor: pointer; line-height: 1; }
 /* The Get App chip (between Samples and Share) has green text, from --go: the
    colour of the Online dot in the meta rail, darkened on the light theme so the
    text stays readable. The outline stays the shared hairline. It links to the
-   latest GitHub release. popups.ts removes it inside the desktop and Android
-   apps. */
+   latest GitHub release. popups.ts hides it inside the desktop and Android
+   apps - and in the Android app, while a newer version is out, turns it into a
+   same-looking Update button (.header-btn-update) that installs it. */
 .header-btn-app { color: var(--go); }
 .header-btn-app:hover { background: var(--go); color: var(--go-fg); }
+.header-btn[hidden] { display: none; }
 
 /* Current-page nav chip: a persistent "you are here" fill (the inverted hover
    state, made permanent) so the button for the page you're on always reads as
@@ -10532,6 +10534,22 @@ html.anr-tb-panel-window .anr-tb-panel {
      hairline border carries the edge alone. */
   box-shadow: none;
 }
+/* Opening from nothing: the box and its border are there at once, anchored to
+   the title, and the rows drop 4px out of it while they fade up. Never a zoom
+   out of the middle - a menu belongs to the title it hangs from. Armed holds
+   the first frame until the window is actually showing (desktop/chrome/panel.js). */
+html.anr-tb-panel-window .anr-tb-panel.is-armed > * { opacity: 0; }
+html.anr-tb-panel-window .anr-tb-panel.is-dropping > * {
+  animation: anr-tb-panel-drop var(--dur-snappy) cubic-bezier(0.2, 0, 0, 1) both;
+}
+@keyframes anr-tb-panel-drop {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.anr-tb-panel-window .anr-tb-panel.is-dropping > * { animation-name: anr-tb-panel-fade; }
+}
+@keyframes anr-tb-panel-fade { from { opacity: 0; } to { opacity: 1; } }
 .anr-tb-panel-item {
   appearance: none;
   border: 0;
@@ -10577,6 +10595,44 @@ html.anr-tb-panel-window .anr-tb-panel {
    takes the accent on hover. */
 .anr-tb-close:hover { background: var(--accent); color: var(--accent-fg); }
 .anr-tb-close:active { background: var(--accent); color: var(--accent-fg); filter: brightness(0.85); }
+
+/* ---- the Update button ----
+   Every answer about updates is said here and never in a dialog
+   (desktop/updater.mjs): shown only while there is something to say. Green from
+   --go, the Get App chip's colour, because it is the same offer - a newer app -
+   and it inverts to that green on hover the way the chip does. flex: none so a
+   narrow window never squeezes the word; it sits just left of the controls. */
+.anr-tb-update {
+  flex: none;
+  gap: 6px;
+  padding: 0 12px;
+  color: var(--go);
+  font-weight: 600;
+}
+.anr-tb-update[hidden] { display: none; }
+.anr-tb-update:hover { background: var(--go); color: var(--go-fg); }
+.anr-tb-update:active { background: var(--go); color: var(--go-fg); filter: brightness(0.85); }
+/* A disabled button on this bar fades out, but these are answers being said
+   (checking, up to date, downloading, restarting), so they stay legible. */
+.anr-tb-update[disabled] { opacity: 1; }
+/* The arrow only on the states a press acts on. */
+.anr-tb-update:not([data-state="available"], [data-state="manual"], [data-state="failed"]) .anr-tb-update-ico { display: none; }
+/* The download fills the button from the left as it comes, in the site's
+   "active" idiom (the 8% tint plus a 2px solid edge, as the selected row has):
+   a faint green wash with a solid green line along the bottom. */
+.anr-tb-update[data-state="downloading"] {
+  background:
+    linear-gradient(var(--go), var(--go)) left bottom / calc(var(--progress, 0) * 100%) 2px no-repeat,
+    linear-gradient(color-mix(in srgb, var(--go) 8%, transparent), color-mix(in srgb, var(--go) 8%, transparent))
+      left top / calc(var(--progress, 0) * 100%) 100% no-repeat;
+}
+/* Answers to Help > Check for updates, and the restart: said, not offered. */
+.anr-tb-update:is([data-state="checking"], [data-state="current"], [data-state="dev"], [data-state="installing"]) {
+  color: var(--muted);
+  font-weight: 400;
+}
+.anr-tb-update[data-state="failed"] { color: var(--accent); }
+.anr-tb-update[data-state="failed"]:hover { background: var(--accent); color: var(--accent-fg); }
 
 /* macOS keeps its native buttons: ours would be a second set. */
 html.anr-desktop--mac .anr-tb-ctl { display: none; }
@@ -10625,7 +10681,8 @@ html.anr-win-full .anr-titlebar { display: none; }
      620  the wordmark - the taskbar entry already says Analyser
      560  back and forward - both are in the Go menu, with accelerators
      460  the file name
-     400  the menu titles and controls tighten up
+     400  the menu titles and controls tighten up, and the Update button
+          drops its word for the arrow alone
    LAST in the file on purpose. These override the component rules above and
    carry the same specificity, so source order is what decides. Adding one of
    these breakpoints anywhere earlier silently does nothing. */
@@ -10647,4 +10704,8 @@ html.anr-win-full .anr-titlebar { display: none; }
 @media (max-width: 400px) {
   .anr-tb-menu-title { padding: 0 8px; }
   .anr-tb-ctl .anr-tb-btn { width: 40px; }
+  /* The Update button keeps its arrow and drops the word; the tooltip still
+     says the whole sentence. */
+  .anr-tb-update { padding: 0 10px; }
+  .anr-tb-update:is([data-state="available"], [data-state="manual"], [data-state="failed"]) .anr-tb-update-word { display: none; }
 }

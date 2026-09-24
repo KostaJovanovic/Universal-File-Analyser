@@ -214,6 +214,31 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">9.09 - 9.14</p>
+          <p class="patch-name">Front Door</p>
+          <p class="patch-date">24 September 2026</p>
+          <ul class="patch-list">
+            <li><strong>A new home page, and the biggest safety sweep the analyser has had: files built to freeze, crash or trick it are now stopped at the door.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Dropping a file moves the page.</strong> The header and the dropzones glide up out of view, the analysis rises in their place, and the header comes back as a slim bar along the top edge. <code>Analyse next file?</code> plays it in reverse.</li>
+            <li><span class="patch-tag">New</span><strong>A Menu button on narrow screens</strong> folds the page links into one panel under the bar. On a touch screen the page also gets a square scrollbar of its own that you can drag.</li>
+            <li><span class="patch-tag">New</span><strong>The analysis comes first.</strong> The fixed Photo, Sound and Video sections are gone, so whatever you drop leads the page, and search sits at the end of the header&rsquo;s links. Extra analyses - a video&rsquo;s sound and frames, an album&rsquo;s cover, a program&rsquo;s icon - wait as boxes at the end and open on a click. The page no longer scrolls by itself after a drop.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A file made to cause harm no longer can.</strong> Archives that unpack to gigabytes, headers that loop forever and hidden code in emails, e-books and SVG pictures are all caught now. The PDF and spreadsheet readers are updated to versions without their known flaws, and a link inside an analysed document no longer replaces the page.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Remove metadata</strong> said &ldquo;Verified&rdquo; while a Motion Photo, a 3D photo or an HDR photo still carried its location in a second image inside the file. It now removes that too, and checks the whole result.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Record and the live spectrogram</strong> were refused the microphone on this site, and work again. Both also stop when you open the next file.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Sound readings are more accurate.</strong> Brightness, tempo, loudness and true peak were measured slightly wrong, so the same song may now show different, correct numbers. MP3s with an extended tag header show their tags and cover again.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Over forty formats read the right values now,</strong> where some fields came out wrong or empty - among them Outlook <a href="/about#ext-msg">.msg</a> dates, <a href="/about#ext-sav">SPSS</a> and <a href="/about#ext-dta">Stata</a> variables, <a href="/about#ext-vox">MagicaVoxel</a> models, Blu-ray <a href="/about#ext-m2ts">M2TS</a>, <a href="/about#ext-dpx">DPX</a>, <a href="/about#ext-tga">TGA</a> and <a href="/about#ext-e57">E57</a> scans.</li>
+            <li><span class="patch-tag is-fix">Fix</span>IFC building models stand upright instead of lying on their side, a reversed GIF downloads intact, a RAR or 7z inside a ZIP opens, ZIP entries with accented names open, Excel dates from Mac workbooks are no longer four years out, and emails, web archives and CSVs in older encodings show proper letters.</li>
+            <li><span class="patch-tag is-fix">Fix</span>A spreadsheet exported as CSV can no longer carry a formula into Excel, the /compare playheads move again during playback, and an update that lands mid-analysis waits for you to finish before it reloads the page.</li>
+            <li><span class="patch-tag">New</span><strong>The Android app</strong> goes fullscreen in landscape, keeps a long video job running in the background with a progress notification, and on Android 12 and later installs an update without another question. Text recognition works on the phone again.</li>
+            <li><span class="patch-tag">New</span><strong>A new version shows up as a green Update button</strong> instead of a pop-up. On the computer it sits in the title bar, looks once a day, and a press downloads the new version with its progress in the button and restarts into it. In the Android app it takes the place of Get App at the top of the page, and asks before it downloads anything.</li>
+            <li><span class="patch-tag">New</span><strong>The Windows installer</strong> is drawn in the site&rsquo;s own look, every download carries its version in the name, the desktop app&rsquo;s menu gains Samples, and a click on its wordmark reloads it.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The desktop app&rsquo;s menus</strong> no longer swell out of their middle when they open. They hang from their title at once and their entries drop into place, and sliding along the menu bar swaps them instantly. In the apps the footer now reads &ldquo;Everything runs offline.&rdquo;, since there is no browser to run in.</li>
+            <li><strong>The privacy page and the footer</strong> now spell out exactly what is counted - an anonymous tally of file types, and the Asteroids high-score table - and the visit counter&rsquo;s anonymous record is deleted after three days instead of kept.</li>
+            <li><strong>Maintenance:</strong> a format page that moves when its format gains full analysis now redirects from its old address, and map tiles no longer fill the offline storage.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">9.01 - 9.08</p>
           <p class="patch-name">All Aboard</p>
           <p class="patch-date">13 September 2026</p>
@@ -247,6 +272,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">8.46</p>
           <p class="patch-name">Who Made This</p>
@@ -262,9 +290,6 @@
             <li><span class="patch-tag is-fix">Fix</span>A <code>.ts</code> was labelled &ldquo;Plain Text&rdquo; and an <code>.mts</code> was taken for camcorder footage. Both share an extension with a video format, and both are now told apart by their contents.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">8.44 - 8.45</p>

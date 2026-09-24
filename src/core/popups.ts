@@ -438,13 +438,48 @@ function showShareModal(ctx?: any) {
   requestAnimationFrame(() => overlay.classList.add('is-open'));
 }
 
+// The newer app version on offer inside the Android app ('' for none), from
+// anrDesktop.onUpdate. Registered once; each new header is painted from it.
+let appUpdateVersion = '';
+let appUpdateWired = false;
+
+/** Inside the apps the reader already has the app, so the green Get App chip
+ *  has nothing to offer - except on Android when a newer version is out, where
+ *  the same chip in the same place becomes Update, and a tap installs it. The
+ *  desktop says the same on its title bar instead. Hidden rather than removed,
+ *  so an offer that arrives after the header was drawn can still show it. */
+function paintAppChips() {
+  const d = window.anrDesktop;
+  if (!d) return;
+  const offer = !!(appUpdateVersion && d.update);
+  document.querySelectorAll<HTMLElement>('.header-btn-app').forEach((chip) => {
+    if (!offer) { chip.hidden = true; return; }
+    const note = 'Analyser ' + appUpdateVersion.replace(/\.0$/, '') + ' is out. Tap to update.';
+    if (chip.tagName === 'BUTTON') {
+      chip.hidden = false;
+      chip.title = note;
+      chip.setAttribute('aria-label', note);
+      return;
+    }
+    // The chip is a link to the release page; the update is a native action.
+    const btn = el('button', { type: 'button', class: chip.className + ' header-btn-update', title: note, 'aria-label': note }, 'Update');
+    btn.addEventListener('click', () => { d.update!().catch(() => {}); });
+    chip.replaceWith(btn);
+  });
+}
+
 // Wire every nav "Share" button to the modal. Re-runs each navigation (the
 // header is swapped on SPA page change); the per-element flag guards double-wiring.
 export function wireShareButtons() {
-  // Inside the desktop and Android apps the reader already has the app, so the
-  // green "Get App" chip beside Share goes. Same per-navigation pass, since the
-  // swapped-in header brings it back.
-  if (window.anrDesktop) document.querySelectorAll('.header-btn-app').forEach((a) => a.remove());
+  // The Get App chip inside the apps - see paintAppChips. Same per-navigation
+  // pass, since the swapped-in header brings the plain chip back.
+  if (window.anrDesktop) {
+    if (!appUpdateWired && window.anrDesktop.onUpdate) {
+      appUpdateWired = true;
+      window.anrDesktop.onUpdate((version) => { appUpdateVersion = String(version || ''); paintAppChips(); });
+    }
+    paintAppChips();
+  }
   document.querySelectorAll('.header-btn-share').forEach((btn) => {
     if (btn._wired) return;
     btn._wired = true;

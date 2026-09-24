@@ -65,10 +65,18 @@ declare global {
         Reaches the title bar and the window title. Text only. */
     setSubject(text: string): void;
     /** Check for a new version now. The shell shows the answer itself:
-        desktop/updater.mjs in a native dialog, AnrUpdate.java on Android. The
+        desktop/updater.mjs on the title bar's Update button, AnrUpdate.java on Android. The
         footer's "Install as app" button becomes "Check for updates" and calls
         this (core/offline-tiers.ts). */
     checkUpdates?(): Promise<unknown>;
+    /** Android only (mobile/bridge/anr-bridge.js): hear the newer version on
+        offer, '' for none, replayed at once. core/popups.ts turns the header's
+        Get App chip into an Update chip while there is one. The desktop has
+        its own Update button on the title bar and does not publish this. */
+    onUpdate?(cb: (version: string) => void): void;
+    /** Android only: the Update chip was tapped. The shell asks, then
+        downloads and installs the release its own check found. */
+    update?(): Promise<unknown>;
     /** Native, hardware-accelerated FFmpeg (desktop/ffmpeg-native.mjs).
         src/renderers/video.ts wraps this into an ffmpeg.wasm-shaped object, so
         the existing call sites are untouched. Absent when no binary is found,
