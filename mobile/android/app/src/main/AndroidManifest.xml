@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- No backup and no device transfer: the WebView's storage holds the
+         "Recently analysed" list (file names, sizes, types), and nothing about
+         the user's files leaves the phone. res/xml/data_extraction_rules.xml
+         (Android 12+) and backup_rules.xml (older) exclude every domain. -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -54,6 +60,10 @@
             android:exported="false"
             android:foregroundServiceType="dataSync|mediaProcessing" />
 
+        <!-- Capacitor's chrome client uses this for one thing: the photo a
+             file input takes with the camera (BridgeWebChromeClient,
+             getExternalFilesDir(Pictures)). res/xml/file_paths.xml shares that
+             folder and nothing else. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

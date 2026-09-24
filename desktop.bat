@@ -72,7 +72,15 @@ rem Written with .Where() rather than a Where-Object pipe on purpose: a bare `|`
 rem would need escaping as ^| inside the for /f below but NOT inside the plain
 rem powershell call further down, so one definition could not serve both. No
 rem pipe, no escaping problem.
-set "TSC_FIND=@(Get-CimInstance Win32_Process).Where({ $_.Name -eq 'node.exe' -and $_.CommandLine -like '*tsc*' -and $_.CommandLine -like '*--watch*' })"
+rem
+rem Only THIS checkout's watchers count: npx runs the repo-local
+rem <repo>\node_modules\typescript\bin\tsc, so the command line carries the repo
+rem path. Without that filter a tsc --watch from any other project on the
+rem machine would be "reused" (so this one never got its own) and then killed on
+rem quit. The path comes in through ANR_ROOT and is compared with .Contains()
+rem rather than -like, so a [ or ] in the folder name is not read as a wildcard.
+set "ANR_ROOT=%~dp0"
+set "TSC_FIND=@(Get-CimInstance Win32_Process).Where({ $_.Name -eq 'node.exe' -and $_.CommandLine -and $_.CommandLine.ToLower().Contains(($env:ANR_ROOT + 'node_modules\typescript').ToLower()) -and $_.CommandLine -like '*--watch*' })"
 set "TSC_MINE="
 set "TSC_COUNT=0"
 for /f %%c in ('powershell -NoProfile -Command "%TSC_FIND%.Count" 2^>nul') do set "TSC_COUNT=%%c"

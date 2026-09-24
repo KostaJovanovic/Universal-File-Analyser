@@ -3,7 +3,7 @@
    reading with navigation. */
 
 import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
-import { sanitizeDoc } from '../core/sanitize.js';
+import { sanitizeDoc, ID_PREFIX } from '../core/sanitize.js';
 import { openZip } from './zip.js';
 
 function parseXml(text: string|null) {
@@ -168,7 +168,7 @@ export async function renderEpub(file: File, resultsEl: HTMLElement) {
         .then(({ renderPhoto, mountPhotoPrompt }) => {
           if (mountPhotoPrompt('Cover',
             'This e-book carries a cover picture. Analyse it with the photo tools - colours, dimensions, EXIF and the rest.',
-            'Analyse cover', (host) => { renderPhoto(coverFile, host, { sourceNote: note }); })) return;
+            'Analyse cover', (host) => renderPhoto(coverFile, host, { sourceNote: note }))) return;
           // No Photo section on this page (the compare view): render into a local
           // slot tagged anr-cmp-sub-photo, which the compare merge files under the
           // Photo section - otherwise the cover analysis vanishes with the section.
@@ -317,20 +317,59 @@ export async function renderEpub(file: File, resultsEl: HTMLElement) {
   resultsEl.insertBefore(readerCard, resultsEl.firstChild);
 
   let current = 0;
-  async function showChapter(i: number) {
+  // Request token: each showChapter() takes a number, and only the latest may
+  // write into the viewport once its zip read resolves. Without it two quick
+  // Next clicks both clear the viewport before awaiting, then both append -
+  // two chapters stacked, in whichever order the reads finished.
+  let chapterReq = 0;
+  // Scroll the viewport (not the page) to a fragment inside the shown chapter.
+  // Ids carry the sanitiser's ID_PREFIX, so the raw fragment is prefixed to match.
+  function scrollToFragment(frag: string) {
+    let id = frag;
+    try { id = decodeURIComponent(frag); } catch (_) {}
+    const target = id ? content.querySelector('[id="' + CSS.escape(ID_PREFIX + id) + '"], [name="' + CSS.escape(ID_PREFIX + id) + '"]') : null;
+    if (target) content.scrollTop += target.getBoundingClientRect().top - content.getBoundingClientRect().top;
+  }
+  async function showChapter(i: number, frag = '') {
     if (i < 0 || i >= spine.length) return;
+    const req = ++chapterReq;
     current = i;
     chapSel.value = String(i);
     prevBtn.disabled = i === 0;
     nextBtn.disabled = i === spine.length - 1;
     content.innerHTML = '';
     const xhtml = await zip.text(spine[i]).catch(() => null);
+    if (req !== chapterReq) return;   // superseded by a later navigation
     if (!xhtml) { content.appendChild(el('p', { class: 'anr-hint' }, '(could not load chapter)')); return; }
     const doc = new DOMParser().parseFromString(xhtml, 'application/xhtml+xml');
     const fallback = doc.querySelector('parsererror') ? new DOMParser().parseFromString(xhtml, 'text/html') : doc;
     content.appendChild(sanitizeBody(fallback));
     content.scrollTop = 0;
+    if (frag) scrollToFragment(frag);
   }
+  // The book's own links (a TOC page, footnotes, "next chapter") point at other
+  // files inside the zip. Left alone they would open a site URL in a new tab, so
+  // resolve them against the current chapter and turn the page here instead.
+  // Links out of the book (http:, mailto:) keep the browser's default.
+  content.addEventListener('click', (e) => {
+    const a = (e.target as Element).closest('a');
+    if (!a || !content.contains(a)) return;
+    const href = (a.getAttribute('href') || '').trim();
+    if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href) || /^[\/\\]{2}/.test(href)) return;
+    e.preventDefault();
+    const hashAt = href.indexOf('#');
+    const path = hashAt >= 0 ? href.slice(0, hashAt) : href;
+    const frag = hashAt >= 0 ? href.slice(hashAt + 1) : '';
+    if (!path) {
+      // Same-chapter fragment: the sanitiser has already prefixed it.
+      scrollToFragment(frag.startsWith(ID_PREFIX) ? frag.slice(ID_PREFIX.length) : frag);
+      return;
+    }
+    let decoded = path;
+    try { decoded = decodeURIComponent(path); } catch (_) {}
+    const idx = spine.indexOf(resolvePath(spine[current], decoded));
+    if (idx >= 0) showChapter(idx, frag);
+  });
   prevBtn.addEventListener('click', () => showChapter(current - 1));
   nextBtn.addEventListener('click', () => showChapter(current + 1));
   chapSel.addEventListener('change', () => showChapter(parseInt(chapSel.value, 10)));

@@ -291,6 +291,24 @@ function fmtStep(ms) {
     }
     return Math.round(ms / 1000) + ' seconds';
 }
+// Decode a CSV's bytes. Excel's "Unicode text" export is UTF-16 with a BOM,
+// and its plain "CSV" export is the Windows ANSI code page, so UTF-8 is only
+// the first guess: a UTF-16 BOM picks UTF-16, and bytes that are not valid
+// UTF-8 fall back to windows-1252 rather than turning every accented letter
+// into U+FFFD. A UTF-8 BOM is kept as U+FEFF, as File.text() always did, so
+// the BOM check below still sees it.
+function decodeCsvBytes(b) {
+    if (b.length >= 2 && b[0] === 0xff && b[1] === 0xfe)
+        return { text: new TextDecoder('utf-16le').decode(b), encoding: 'UTF-16 LE' };
+    if (b.length >= 2 && b[0] === 0xfe && b[1] === 0xff)
+        return { text: new TextDecoder('utf-16be').decode(b), encoding: 'UTF-16 BE' };
+    try {
+        return { text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(b), encoding: 'UTF-8' };
+    }
+    catch (_) {
+        return { text: new TextDecoder('windows-1252').decode(b), encoding: 'Windows-1252 (not valid UTF-8)' };
+    }
+}
 function truncate(s, n = 24) {
     s = String(s);
     return s.length > n ? s.slice(0, n - 1) + '…' : s;
@@ -300,8 +318,11 @@ export async function renderCsv(file, resultsEl) {
     resultsEl.innerHTML = '';
     resultsEl.appendChild(el('div', { class: 'anr-info' }, `Parsing "${file.name}"…`));
     let text;
+    let encoding = 'UTF-8';
     try {
-        text = await file.text();
+        const decoded = decodeCsvBytes(new Uint8Array(await file.arrayBuffer()));
+        encoding = decoded.encoding;
+        text = decoded.text;
     }
     catch (e) {
         resultsEl.innerHTML = '';
@@ -374,6 +395,8 @@ export async function renderCsv(file, resultsEl) {
     tbl.appendChild(row('Application', 'CSV / TSV Spreadsheet'));
     tbl.appendChild(row('Name', file.name));
     tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
+    if (encoding !== 'UTF-8')
+        tbl.appendChild(row('Text encoding', encoding));
     tbl.appendChild(rowHelp('Delimiter', delimiterLabel(delimiter), 'The character that marks where one column ends and the next begins - a comma (.csv files), a tab (.tsv), a semicolon, or a pipe (|).'));
     tbl.appendChild(row('Columns', String(colCount)));
     tbl.appendChild(row('Data rows', String(hasHeader ? totalRows - 1 : totalRows)));

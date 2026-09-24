@@ -14,6 +14,7 @@
    BC6H and BC7 are deliberately absent: both need a much larger mode/partition
    table than the four families here, and the containers that carry them say so
    in their header, so the callers report the format and skip the preview. */
+import { BCN_MAX_PIXELS } from '../core/limits.js';
 // Decode the two RGB565 endpoints of a BC1 colour block into a 4-entry RGB
 // palette and write the 16 texels into `dst` (RGBA) at the block origin.
 // `writeAlpha` controls whether BC1's 1-bit punch-through alpha is honoured
@@ -121,7 +122,7 @@ export function bcnSurfaceBytes(width, height, kind) {
 // Decode a BCn-compressed surface (kind: bc1/bc2/bc3/bc4/bc5) into RGBA.
 export function decodeBcn(b, off, width, height, kind) {
     const px = width * height;
-    if (px <= 0 || px > 64_000_000)
+    if (px <= 0 || px > BCN_MAX_PIXELS)
         return null;
     const dst = new Uint8ClampedArray(px * 4);
     const blocksX = (width + 3) >> 2;

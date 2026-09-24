@@ -412,7 +412,19 @@ async function parseSshKeyDb(file: File, ext: string) {
 
 // ---------- .mobileconfig (Apple config profile) ----------
 async function parseMobileconfig(file: File) {
-  const res = await parsePlist(file);
+  const buf = await readSlice(file, 0, 4_000_000);
+  let res = await parsePlist(buf);
+  let signed = false;
+  if (!res || !res.value) {
+    // A signed profile is a CMS (PKCS#7) SignedData blob with the XML plist
+    // embedded verbatim as its content: pull it out by its delimiters.
+    const txt = latin1(buf);
+    const start = txt.indexOf('<?xml');
+    const end = txt.indexOf('</plist>', start);
+    if (buf[0] !== 0x30 || start < 0 || end < 0) return null;
+    res = await parsePlist(buf.subarray(start, end + 8));
+    signed = true;
+  }
   if (!res || !res.value || typeof res.value !== 'object') return null;
   const v = res.value;
   const out: Row = { 'Format': 'Apple Configuration Profile (.mobileconfig)' };
@@ -424,9 +436,7 @@ async function parseMobileconfig(file: File) {
   out['Payloads'] = payloads.length;
   const types = payloads.map((p: any) => (p && p.PayloadType) || '?');
   if (types.length) out['Payload types'] = Array.from(new Set(types)).join(', ');
-  // A signed .mobileconfig is CMS-wrapped (not raw plist) - parsePlist would have
-  // failed, so reaching here means unsigned XML/binary.
-  out['Signed'] = res.format === 'binary' ? '(binary plist)' : 'no (plain plist)';
+  out['Signed'] = signed ? 'yes (CMS / PKCS#7 wrapper)' : res.format === 'binary' ? 'no (binary plist)' : 'no (plain plist)';
   if (types.length) out._sections = [{ title: 'Payload types', node: preBlock(types.join('\n')) }];
   return out;
 }
@@ -438,8 +448,10 @@ async function parseMobileprovision(file: File) {
   const start = txt.indexOf('<?xml');
   const end = txt.indexOf('</plist>');
   if (start < 0 || end < 0) return null;
-  const xml = txt.slice(start, end + 8);
-  const res = await parsePlist(new TextEncoder().encode(xml));
+  // latin1 maps byte i to char i, so the indices are byte offsets: hand the
+  // original bytes to the plist parser (re-encoding latin1 text as UTF-8 would
+  // mangle every non-ASCII name).
+  const res = await parsePlist(buf.subarray(start, end + 8));
   if (!res || !res.value) return null;
   const v = res.value;
   const out: Row = { 'Format': 'Apple Provisioning Profile (.mobileprovision)' };
@@ -466,7 +478,12 @@ async function parseMobileprovision(file: File) {
 
 // ---------- .reg (Windows registry export) ----------
 async function parseReg(file: File) {
-  const text = await readText(file, 2_000_000);
+  // Regedit v5 ("Windows Registry Editor Version 5.00") exports UTF-16LE with a
+  // BOM; REGEDIT4 is ANSI. Decode by the BOM rather than assuming UTF-8.
+  const raw = await readSlice(file, 0, 2_000_000);
+  const text = raw[0] === 0xff && raw[1] === 0xfe ? new TextDecoder('utf-16le').decode(raw.subarray(2))
+    : raw[0] === 0xfe && raw[1] === 0xff ? new TextDecoder('utf-16be').decode(raw.subarray(2))
+    : new TextDecoder().decode(raw);
   if (!/^\s*(Windows Registry Editor Version|REGEDIT4)/m.test(text)) return null;
   const verLine = (text.match(/^\s*(Windows Registry Editor Version [\d.]+|REGEDIT4)/m) || [])[1];
   const keys = Array.from(text.matchAll(/^\s*\[(-?)(HKEY[^\]]+)\]/gm));
@@ -829,8 +846,8 @@ function parseEvt(head: Uint8Array) {
   const minor = r.u32();
   const firstOff = r.u32();
   const nextOff = r.u32();
-  const oldest = r.u32();
-  const current = r.u32();
+  const current = r.u32();                   // ELF_LOGFILE_HEADER: CurrentRecordNumber @24,
+  const oldest = r.u32();                    // then OldestRecordNumber @28
   const maxSize = r.u32();
   const flags = r.u32();
   const out: Row = {

@@ -21,6 +21,7 @@
 
 import { el, row, rowHelp, h3help, wireInfoToggle } from '../core/util.js';
 import { buildImuTimeline } from './sony-rtmd.js';
+import { MP4_SAMPLE_TABLE_MAX } from '../core/limits.js';
 
 const MAX_MOOV = 32 * 1024 * 1024;
 const MAX_CHUNKS = 6000;          // cap chunks read (bounds time/memory on long clips)
@@ -81,23 +82,29 @@ async function findMoov(file: File) {
 // Read a track's samples grouped by chunk, with per-sample decode time (seconds).
 // Reading per chunk (not per sample) keeps the number of file slices small even
 // for high-rate metadata tracks.
-function readTrackChunks(dv: DataView<ArrayBuffer>, ts: number, te: number) {
+function readTrackChunks(dv: DataView<ArrayBuffer>, ts: number, te: number, fileSize: number) {
   const box = (t: string) => findAllBoxes(dv, ts, te, t)[0];
   const stsz = box('stsz'), stsc = box('stsc'), stco = box('stco'), co64 = box('co64'), stts = box('stts'), mdhd = box('mdhd');
   if (!stsz || !stsc || !(stco || co64)) return null;
   const P = (b: { offset: number; headerSize: number }) => b.offset + b.headerSize;
+  // Entries a table box can really hold, so a u32 count from the file can't
+  // drive a 4-billion-step loop or allocation.
+  const fits = (b: { offset: number; size: number }, at: number, entry: number) => Math.max(0, Math.floor((b.offset + b.size - at) / entry));
 
   let o = P(stsz) + 4;
-  const uniform = dv.getUint32(o), count = dv.getUint32(o + 4); o += 8;
+  const uniform = dv.getUint32(o);
+  // A per-sample table is bounded by its box; a fixed size by the bytes the file has.
+  const count = Math.min(dv.getUint32(o + 4), uniform ? Math.floor(fileSize / uniform) : fits(stsz, o + 8, 4), MP4_SAMPLE_TABLE_MAX);
+  o += 8;
   if (!count) return null;
   const sizes = new Array(count);
   for (let i = 0; i < count; i++) sizes[i] = uniform || dv.getUint32(o + i * 4);
 
   const offsets = [];
-  if (stco) { let q = P(stco) + 4; const n = dv.getUint32(q); q += 4; for (let i = 0; i < n; i++) offsets.push(dv.getUint32(q + i * 4)); }
-  else { let q = P(co64) + 4; const n = dv.getUint32(q); q += 4; for (let i = 0; i < n; i++) offsets.push(dv.getUint32(q + i * 8) * 0x100000000 + dv.getUint32(q + i * 8 + 4)); }
+  if (stco) { let q = P(stco) + 4; const n = Math.min(dv.getUint32(q), fits(stco, q + 4, 4)); q += 4; for (let i = 0; i < n; i++) offsets.push(dv.getUint32(q + i * 4)); }
+  else { let q = P(co64) + 4; const n = Math.min(dv.getUint32(q), fits(co64, q + 4, 8)); q += 4; for (let i = 0; i < n; i++) offsets.push(dv.getUint32(q + i * 8) * 0x100000000 + dv.getUint32(q + i * 8 + 4)); }
 
-  let s = P(stsc) + 4; const sc = dv.getUint32(s); s += 4;
+  let s = P(stsc) + 4; const sc = Math.min(dv.getUint32(s), fits(stsc, s + 4, 12)); s += 4;
   const runs = [];
   for (let i = 0; i < sc; i++) runs.push([dv.getUint32(s + i * 12), dv.getUint32(s + i * 12 + 4)]);
 
@@ -105,7 +112,7 @@ function readTrackChunks(dv: DataView<ArrayBuffer>, ts: number, te: number) {
   if (mdhd) { const d = P(mdhd); const ver = dv.getUint8(d); timescale = ver === 1 ? dv.getUint32(d + 20) : dv.getUint32(d + 12); }
   const durs = new Array(count).fill(0);
   if (stts) {
-    let t = P(stts) + 4; const n = dv.getUint32(t); t += 4; let si = 0;
+    let t = P(stts) + 4; const n = Math.min(dv.getUint32(t), fits(stts, t + 4, 8)); t += 4; let si = 0;
     for (let i = 0; i < n; i++) { const c = dv.getUint32(t + i * 8), del = dv.getUint32(t + i * 8 + 4); for (let k = 0; k < c && si < count; k++) durs[si++] = del; }
   }
 
@@ -279,7 +286,7 @@ export async function extractGpmf(file: File) {
   const dv = new DataView(await file.slice(moov.offset, moov.offset + moov.size).arrayBuffer());
   const trk = findTrackByCodec(dv, moov.size, 'gpmd');
   if (!trk) return null;
-  const table = readTrackChunks(dv, trk.ts, trk.te);
+  const table = readTrackChunks(dv, trk.ts, trk.te, file.size);
   if (!table || !table.chunks.length) return null;
 
   const acc: GpmfAcc = { gps: [], accl: [], gyro: [], temps: [], fix: null, gpsu: null, streams: new Set(), iso: [], shutter: [], wbal: [] };
@@ -310,7 +317,7 @@ export async function extractCamm(file: File) {
   const dv = new DataView(await file.slice(moov.offset, moov.offset + moov.size).arrayBuffer());
   const trk = findTrackByCodec(dv, moov.size, 'camm');
   if (!trk) return null;
-  const table = readTrackChunks(dv, trk.ts, trk.te);
+  const table = readTrackChunks(dv, trk.ts, trk.te, file.size);
   if (!table || !table.chunks.length) return null;
 
   const acc: TelemetryAcc = { gps: [], accl: [], gyro: [], temps: [], fix: null, gpsu: null };

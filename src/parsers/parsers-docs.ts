@@ -16,6 +16,7 @@
 import { el, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, latin1, utf8, utf16, inflate } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
+import { SCAN_SMALL } from '../core/limits.js';
 import type { Row, ParseFn } from '../core/types.js';
 
 // Lazily imported on first OLE/CFBF document; cached at module scope.
@@ -474,14 +475,10 @@ async function parseScriv(file: File, ext: string) {
 async function parseAbw(file: File, ext: string) {
   let text;
   if (ext === 'zabw') {
-    // .zabw is gzip-compressed .abw; try DecompressionStream.
-    try {
-      if (typeof DecompressionStream !== 'undefined') {
-        const ds = new DecompressionStream('gzip');
-        const stream = file.slice(0, Math.min(file.size, 16 * 1024 * 1024)).stream().pipeThrough(ds);
-        text = utf8(new Uint8Array(await new Response(stream).arrayBuffer()));
-      }
-    } catch (_) {}
+    // .zabw is gzip-compressed .abw. Prefix inflate, capped like the plain .abw
+    // read below, so a gzip bomb stops at SCAN_SMALL of output.
+    const inflated = await inflate(file.slice(0, Math.min(file.size, 16 * 1024 * 1024)), 'gzip', SCAN_SMALL, { partial: true });
+    if (inflated) text = utf8(inflated);
   }
   if (!text) text = await fileText(file, 8 * 1024 * 1024);
   if (!/<abiword/i.test(text)) return null;
@@ -935,7 +932,9 @@ async function parseScribus(file: File, ext: string) {
   let bytes = await readSlice(file, 0, 16 * 1024 * 1024);
   let text;
   if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
-    const inflated = await inflate(bytes, 'gzip');
+    // Prefix inflate: the header and DOCUMENT attributes sit at the top, so the
+    // first SCAN_SMALL of XML is enough, and a truncated 16 MB slice still decodes.
+    const inflated = await inflate(bytes, 'gzip', SCAN_SMALL, { partial: true });
     if (inflated) text = utf8(inflated);
   }
   if (!text) text = latin1(bytes.subarray(0, 4 * 1024 * 1024));

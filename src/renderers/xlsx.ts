@@ -4,14 +4,37 @@
 
 import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 import { openZip } from './zip.js';
+import { EXCEL_ROWS_MAX, EXCEL_COLS_MAX, SHEET_CELLS_MAX, SHEET_COLS_MAX } from '../core/limits.js';
 
-// "A1" -> { col: 0, row: 0 }; "BC12" -> { col: 54, row: 11 }
+// "A1" -> { col: 0, row: 0 }; "BC12" -> { col: 54, row: 11 }. Anything outside
+// Excel's own grid (past XFD / row 1,048,576) is not a real cell: null.
 function parseRef(ref: string|null) {
-  const m = /^([A-Z]+)(\d+)$/.exec(ref || '');
+  const m = /^([A-Z]{1,3})(\d{1,7})$/.exec(ref || '');
   if (!m) return null;
   let col = 0;
   for (const ch of m[1]) col = col * 26 + (ch.charCodeAt(0) - 64);
-  return { col: col - 1, row: parseInt(m[2], 10) - 1 };
+  const row = parseInt(m[2], 10);
+  if (col > EXCEL_COLS_MAX || row < 1 || row > EXCEL_ROWS_MAX) return null;
+  return { col: col - 1, row: row - 1 };
+}
+
+// Elements by LOCAL name, whatever prefix the writer chose: most workbooks use
+// the default namespace (<c>), but some tools write <x:c> throughout, which a
+// plain getElementsByTagName('c') never matches.
+function byTag(root: Document|Element, local: string) {
+  return root.getElementsByTagNameNS('*', local);
+}
+
+// The visible text of a string item (<si> or an inline <is>): its own <t>, or
+// the <t> of each rich-text run <r>. <rPh> phonetic runs (furigana) are
+// pronunciation hints, not part of the value, so they are skipped.
+function stringItemText(si: Element) {
+  let s = '';
+  for (const ch of si.children) {
+    if (ch.localName === 't') s += ch.textContent;
+    else if (ch.localName === 'r') { for (const t of ch.children) if (t.localName === 't') s += t.textContent; }
+  }
+  return s;
 }
 
 function colName(n: number) {
@@ -100,11 +123,18 @@ function classifyFmt(code: string) {
   return '';
 }
 
-// Excel date serial -> readable date string (1900 date system, with the
-// well-known Feb-29-1900 leap bug offset baked into the epoch).
-function serialToDate(serial: string) {
-  const n = parseFloat(serial);
-  if (!isFinite(n) || n <= 0) return null;
+// Excel date serial -> readable date string. The 1900 date system counts from
+// 1900-01-01 = 1 and keeps Lotus 1-2-3's fictitious 29 February 1900 as serial
+// 60, so from 61 on the 1899-12-30 epoch is right and below 60 it is a day
+// out. A workbook saved with date1904 (old Mac Excel) counts from 1904-01-01 = 0.
+function serialToDate(serial: string, date1904?: boolean) {
+  let n = parseFloat(serial);
+  if (!isFinite(n) || n < 0 || (n === 0 && !date1904)) return null;
+  if (date1904) n += 1462;   // 1462 = days from 1899-12-30 to 1904-01-01
+  else if (n < 61) {
+    if (Math.floor(n) === 60) return n === 60 ? '1900-02-29' : '1900-02-29 ' + new Date(Math.round((n - 60) * 86400 * 1000)).toISOString().slice(11, 16);
+    n += 1;
+  }
   const ms = (n - 25569) * 86400 * 1000; // 25569 = days from 1899-12-30 to 1970-01-01
   const d = new Date(Math.round(ms));
   if (isNaN(d.getTime())) return null;
@@ -132,26 +162,27 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
   const shared: string[] = [];
   if (zip.has('xl/sharedStrings.xml')) {
     const doc = parseXml(await zip.text('xl/sharedStrings.xml'));
-    for (const si of doc.getElementsByTagName('si')) {
-      // concatenate all <t> runs inside this string item
-      let s = '';
-      for (const t of si.getElementsByTagName('t')) s += t.textContent;
-      shared.push(s);
-    }
+    // concatenate the <t> runs inside each string item (phonetic runs skipped)
+    for (const si of byTag(doc, 'si')) shared.push(stringItemText(si));
   }
 
   // ---- Workbook: sheet names + relationship ids (+ hidden state, names) ----
   const sheets: any[] = [];
   const namedRanges = [];
   let externalLinkCount = 0;
+  let date1904 = false;
   if (zip.has('xl/workbook.xml')) {
     const wb = parseXml(await zip.text('xl/workbook.xml'));
-    for (const s of wb.getElementsByTagName('sheet')) {
+    for (const s of byTag(wb, 'sheet')) {
       const rid = s.getAttribute('r:id') || s.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
       sheets.push({ name: s.getAttribute('name') || 'Sheet', rid, state: s.getAttribute('state') || 'visible' });
     }
+    // <workbookPr date1904="1"/>: every date serial counts from 1904 instead.
+    const pr = byTag(wb, 'workbookPr')[0];
+    const d1904 = pr ? (pr.getAttribute('date1904') || '').toLowerCase() : '';
+    date1904 = d1904 === '1' || d1904 === 'true';
     try {
-      for (const dn of wb.getElementsByTagName('definedName')) {
+      for (const dn of byTag(wb, 'definedName')) {
         const nm = dn.getAttribute('name') || '';
         if (nm && !/^_xlnm\./i.test(nm)) namedRanges.push(nm);
       }
@@ -170,13 +201,13 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
     if (zip.has('xl/styles.xml')) {
       const st = parseXml(await zip.text('xl/styles.xml'));
       const fmtCode: any = {}; // numFmtId -> format code
-      for (const nf of st.getElementsByTagName('numFmt')) {
+      for (const nf of byTag(st, 'numFmt')) {
         const id = parseInt(nf.getAttribute('numFmtId')!, 10);
         if (!isNaN(id)) fmtCode[id] = nf.getAttribute('formatCode') || '';
       }
-      const cellXfs = st.getElementsByTagName('cellXfs')[0];
+      const cellXfs = byTag(st, 'cellXfs')[0];
       if (cellXfs) {
-        for (const xf of cellXfs.getElementsByTagName('xf')) {
+        for (const xf of byTag(cellXfs, 'xf')) {
           const id = parseInt(xf.getAttribute('numFmtId')!, 10);
           let kind = '';
           if (!isNaN(id)) kind = BUILTIN_FMT[id] || classifyFmt(fmtCode[id]);
@@ -189,7 +220,7 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
   const ridToPath: any = {};
   if (zip.has('xl/_rels/workbook.xml.rels')) {
     const rels = parseXml(await zip.text('xl/_rels/workbook.xml.rels'));
-    for (const r of rels.getElementsByTagName('Relationship')) {
+    for (const r of byTag(rels, 'Relationship')) {
       let target = r.getAttribute('Target') || '';
       if (!target.startsWith('xl/') && !target.startsWith('/')) target = 'xl/' + target;
       ridToPath[r.getAttribute('Id')!] = target.replace(/^\//, '');
@@ -279,31 +310,46 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
   } catch (_) { /* ignore */ }
 
   let tkHandle: any = null;
+  let sheetSeq = 0;   // bumped per renderSheet(); a stale call stops at its next await
   async function renderSheet(idx: number) {
+    const seq = ++sheetSeq;
     if (tkHandle) { tkHandle.destroy(); tkHandle = null; }
     [...tabRow.children].forEach((c, i) => c.classList.toggle('is-active', i === idx));
     tableWrap.innerHTML = '';
     sheetExtra.innerHTML = '';
+    try {
+      await renderSheetBody(idx, seq);
+    } catch (e) {
+      if (seq !== sheetSeq) return;
+      tableWrap.innerHTML = '';
+      tableWrap.appendChild(el('p', { class: 'anr-hint' }, 'Could not read this sheet: ' + ((e && e.message) || 'unknown error')));
+    }
+  }
+
+  async function renderSheetBody(idx: number, seq: number) {
     const sheet = sheets[idx];
     const path = ridToPath[sheet.rid] || ('xl/worksheets/sheet' + (idx + 1) + '.xml');
     if (!zip.has(path)) { tableWrap.appendChild(el('p', { class: 'anr-hint' }, 'Could not locate sheet data.')); return; }
-    const doc = parseXml(await zip.text(path));
+    const text = await zip.text(path);
+    if (seq !== sheetSeq) return;   // another tab was clicked while this one loaded
+    const doc = parseXml(text);
 
-    // Collect cells into a sparse grid.
+    // Collect cells into a sparse grid: row -> (col -> value). Only rows that
+    // hold a cell take any memory, however far down the sheet they sit.
     let maxCol = 0, maxRow = 0;
-    const cells: any = {};
+    const cells = new Map<number, Map<number, string>>();
     const formulas = []; // { ref, formula } collected during iteration
     let dateCols = new Set(), currencyCols = new Set();
-    for (const c of doc.getElementsByTagName('c')) {
+    for (const c of byTag(doc, 'c')) {
       const ref = parseRef(c.getAttribute('r'));
       if (!ref) continue;
       const type = c.getAttribute('t');
       let value = '';
       if (type === 'inlineStr') {
-        const is = c.getElementsByTagName('t')[0];
-        value = is ? is.textContent : '';
+        const is = byTag(c, 'is')[0];
+        value = is ? stringItemText(is) : '';
       } else {
-        const v = c.getElementsByTagName('v')[0];
+        const v = byTag(c, 'v')[0];
         const raw = v ? v.textContent : '';
         if (type === 's') value = shared[parseInt(raw, 10)] || '';
         else if (type === 'b') value = raw === '1' ? 'TRUE' : 'FALSE';
@@ -314,7 +360,7 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
             const si = parseInt(c.getAttribute('s')!, 10);
             const kind = !isNaN(si) ? xfKind[si] : '';
             if (kind === 'date' && raw !== '') {
-              const d = serialToDate(raw);
+              const d = serialToDate(raw, date1904);
               if (d) { value = d; dateCols.add(ref.col); }
             } else if (kind === 'currency' && raw !== '') {
               currencyCols.add(ref.col);
@@ -324,26 +370,42 @@ export async function renderXlsx(file: File, resultsEl: HTMLElement) {
       }
       // Collect formula (cached value already captured above as `value`).
       try {
-        const f = c.getElementsByTagName('f')[0];
+        const f = byTag(c, 'f')[0];
         if (f && f.textContent) formulas.push({ ref: c.getAttribute('r'), formula: f.textContent });
       } catch (_) { /* ignore */ }
-      cells[ref.row + ',' + ref.col] = value;
+      let rowMap = cells.get(ref.row);
+      if (!rowMap) { rowMap = new Map(); cells.set(ref.row, rowMap); }
+      rowMap.set(ref.col, value);
       if (ref.col > maxCol) maxCol = ref.col;
       if (ref.row > maxRow) maxRow = ref.row;
     }
 
     // Dense grid (row 0 = headers) for the table-analysis workbench, built from
-    // the sparse cell map above - cheap since it's already parsed into memory.
-    const wbHeaders = Array.from({ length: maxCol + 1 }, (_, c) => cells['0,' + c] || colName(c));
+    // the sparse cell map above. The extent is clamped to SHEET_COLS_MAX columns
+    // and SHEET_CELLS_MAX cells: a single cell at XFD1048576 must not turn into
+    // seventeen billion empty ones.
+    const gridCols = Math.min(maxCol + 1, SHEET_COLS_MAX);
+    const gridRows = Math.min(maxRow, Math.max(1, Math.floor(SHEET_CELLS_MAX / gridCols)));
+    const clipped = gridCols < maxCol + 1 || gridRows < maxRow;
+    const headRow = cells.get(0);
+    const wbHeaders = Array.from({ length: gridCols }, (_, c) => (headRow && headRow.get(c)) || colName(c));
     const wbRows: any[][] = [];
-    for (let r = 1; r <= maxRow; r++) {
-      const rowArr: any[] = [];
-      for (let c = 0; c <= maxCol; c++) rowArr.push(cells[r + ',' + c] || '');
+    for (let r = 1; r <= gridRows; r++) {
+      const src = cells.get(r);
+      const rowArr: any[] = new Array(gridCols).fill('');
+      if (src) for (const [c, v] of src) if (c < gridCols && v) rowArr[c] = v;
       wbRows.push(rowArr);
+    }
+    if (clipped) {
+      tableWrap.appendChild(el('p', { class: 'anr-hint' },
+        'This sheet reaches ' + colName(maxCol) + (maxRow + 1) + '. The table below shows the first ' +
+        gridRows.toLocaleString() + ' rows and ' + gridCols.toLocaleString() + ' columns.'));
     }
     const tkHost = el('div');
     sheetExtra.appendChild(tkHost);
     import('./tablekit.js').then(({ mountTableKit }) => {
+      // A newer tab click already owns the workbench - don't mount a stale sheet.
+      if (seq !== sheetSeq) return;
       tkHandle = mountTableKit(tkHost, { headers: wbHeaders, rows: wbRows, totalRows: wbRows.length }, { sheetName: sheet.name });
     }).catch(() => { /* workbench is additive - ignore load failure */ });
 

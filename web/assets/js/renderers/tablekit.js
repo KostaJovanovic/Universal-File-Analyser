@@ -5,6 +5,7 @@
    pie/area/box/heatmap on one hand-drawn canvas, auto-suggested charts, and
    PNG/JSON/CSV export. No chart library - see drawChart(). */
 import { el, row, showCellPopup, downloadBlob, h3help, wireInfoToggle } from '../core/util.js';
+import { TABLE_GRID_COLS_MAX, TABLE_SCROLL_PX_MAX } from '../core/limits.js';
 import { SAMPLE_CAP, inferColumnTypes, toNumber, columnValues, describe, percentile, pearson, groupBy, parseDateValue, looksMonthFirst } from '../lib/table-stats.js';
 const ROW_H = 28;
 const OVERSCAN = 5;
@@ -24,7 +25,17 @@ function fmtAxisNum(n) {
 function fmtNumFull(n) { return isFinite(n) ? Number(n.toFixed(4)).toString() : '-'; }
 function truncateLbl(s, n = 10) { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
 function fmtRange(a, b) { return fmtAxisNum(a) + '–' + fmtAxisNum(b); }
-function csvQuote(v) { const s = String(v == null ? '' : v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+// A field that starts with = + - @ tab or CR is read as a formula by Excel,
+// LibreOffice and Sheets when the exported CSV is opened - a file's cell text
+// must never become a live formula (e.g. =HYPERLINK / DDE payloads), so it is
+// prefixed with an apostrophe, which spreadsheets treat as "this is text".
+// A plain signed number (-12.5, +3e4) is left alone - it cannot run anything.
+function csvQuote(v) {
+    let s = String(v == null ? '' : v);
+    if (/^[=+\-@\t\r]/.test(s) && !/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(s))
+        s = "'" + s;
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
 // The [?] help panel content: a plain-language tour of every workbench tool.
 // Rendered through h3help()/.anr-info-panel - one entry per line (each an
 // .anr-tk-help-item block), with the inline <strong> term shown as the panel's
@@ -958,8 +969,13 @@ export function mountTableKit(host, model, opts = {}) {
         const tbody = el('tbody');
         const table = el('table', { class: 'anr-tk-table' }, [colgroup, thead, tbody]);
         scrollWrap.appendChild(table);
+        // The grid draws at most TABLE_GRID_COLS_MAX of the visible columns: every
+        // rendered row is one cell per column, so a 16,384-column sheet would put
+        // half a million nodes into each frame. The status line says so, and hiding
+        // columns (Columns list) brings the later ones into the grid.
+        const gridCols = () => { const v = visCols(); return v.length > TABLE_GRID_COLS_MAX ? v.slice(0, TABLE_GRID_COLS_MAX) : v; };
         function renderColgroup() {
-            const n = visCols().length;
+            const n = gridCols().length;
             colgroup.innerHTML = '';
             colgroup.appendChild(el('col', { style: `width:${ROWNUM_W}px` }));
             for (let i = 0; i < n; i++)
@@ -1041,7 +1057,7 @@ export function mountTableKit(host, model, opts = {}) {
             thead.innerHTML = '';
             const htr = el('tr');
             htr.appendChild(el('th', { class: 'anr-tk-corner anr-tk-sticky-col anr-tk-sticky-row' }, '#'));
-            for (const c of visCols()) {
+            for (const c of gridCols()) {
                 const th = el('th', { class: 'anr-tk-th anr-tk-sticky-row' + (view.colFilters[c] ? ' has-filter' : '') });
                 const label = el('span', { class: 'anr-tk-thlabel' }, headers[c] + (view.sort.col === c ? (view.sort.dir === 1 ? ' ▲' : ' ▼') : ''));
                 label.addEventListener('click', () => onHeaderClick(c));
@@ -1169,18 +1185,35 @@ export function mountTableKit(host, model, opts = {}) {
             const scrollTop = scrollWrap.scrollTop;
             const viewH = scrollWrap.clientHeight || 410;
             tbody.innerHTML = '';
-            const first = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
             const count = Math.ceil(viewH / ROW_H) + OVERSCAN * 2;
+            // Past TABLE_SCROLL_PX_MAX the full row height would exceed what a browser
+            // will lay out (~17M px in Firefox), cutting the tail rows off. The spacer
+            // is then capped and the scroll position maps proportionally onto the
+            // rows, so the last row is still at the bottom of the scrollbar.
+            const scaled = total * ROW_H > TABLE_SCROLL_PX_MAX;
+            let first, leadH;
+            if (!scaled) {
+                first = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
+                leadH = first * ROW_H;
+            }
+            else {
+                const visRows = Math.ceil(viewH / ROW_H);
+                const frac = Math.min(1, scrollTop / Math.max(1, TABLE_SCROLL_PX_MAX - viewH));
+                const top = Math.round(frac * Math.max(0, total - visRows));
+                first = Math.max(0, top - OVERSCAN);
+                leadH = Math.max(0, scrollTop - (top - first) * ROW_H);
+            }
             const last = Math.min(total, first + count);
-            const cols = visCols();
+            const trailH = scaled ? Math.max(0, TABLE_SCROLL_PX_MAX - leadH - (last - first) * ROW_H) : (total - last) * ROW_H;
+            const cols = gridCols();
             const colSpan = cols.length + 1;
             const frag = document.createDocumentFragment();
             // Leading/trailing spacer rows reserve the scrolled-past height so the
             // scrollbar reflects the full row count, without moving the table itself
             // (a transform would break the sticky header - see the comment above).
-            if (first > 0) {
+            if (leadH > 0) {
                 frag.appendChild(el('tr', { class: 'anr-tk-spacerrow' }, [
-                    el('td', { colspan: String(colSpan), style: `height:${first * ROW_H}px;` }),
+                    el('td', { colspan: String(colSpan), style: `height:${leadH}px;` }),
                 ]));
             }
             for (let i = first; i < last; i++) {
@@ -1205,13 +1238,15 @@ export function mountTableKit(host, model, opts = {}) {
                 });
                 frag.appendChild(tr);
             }
-            if (last < total) {
+            if (last < total && trailH > 0) {
                 frag.appendChild(el('tr', { class: 'anr-tk-spacerrow' }, [
-                    el('td', { colspan: String(colSpan), style: `height:${(total - last) * ROW_H}px;` }),
+                    el('td', { colspan: String(colSpan), style: `height:${trailH}px;` }),
                 ]));
             }
             tbody.appendChild(frag);
-            statusEl.textContent = `Showing ${total.toLocaleString()} of ${rows.length.toLocaleString()} rows`;
+            const allCols = visCols().length;
+            statusEl.textContent = `Showing ${total.toLocaleString()} of ${rows.length.toLocaleString()} rows` +
+                (allCols > cols.length ? ` · first ${cols.length.toLocaleString()} of ${allCols.toLocaleString()} columns (hide columns to see the rest)` : '');
             applySelectionHighlight();
         }
         return { el: scrollWrap, renderHeader, renderBody };

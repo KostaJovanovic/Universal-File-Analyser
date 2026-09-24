@@ -16,6 +16,7 @@
    - a GOP / keyframe / per-second bitrate map from the sample tables, plus a
      VFR-vs-CFR verdict and true average frame rate - all with zero decoding. */
 import { parseHevcSps, parseAvcSps, stripEpb, COLOUR_PRIMARIES, TRANSFER_CHARS, MATRIX_COEFFS } from './video-bitstream.js';
+import { MP4_SAMPLE_TABLE_MAX, MP4_SECONDS_MAX } from '../core/limits.js';
 // ---------- low-level box reading ----------
 function fourcc(view, p) {
     return String.fromCharCode(view.getUint8(p), view.getUint8(p + 1), view.getUint8(p + 2), view.getUint8(p + 3));
@@ -350,7 +351,7 @@ function framesToTimecode(frame, fps, dropFrame) {
     return `${two(hh)}:${two(mm)}:${two(ss)}${dropFrame ? ';' : ':'}${two(ff)}`;
 }
 // ---------- GOP / bitrate map (first video track) ----------
-function computeGopMap(view, trakStart, trakEnd, timescale) {
+function computeGopMap(view, trakStart, trakEnd, timescale, fileSize) {
     const stszBox = first(view, trakStart, trakEnd, 'stsz');
     const sttsBox = first(view, trakStart, trakEnd, 'stts');
     if (!stszBox || !sttsBox)
@@ -359,7 +360,10 @@ function computeGopMap(view, trakStart, trakEnd, timescale) {
     const stts = readStts(view, sttsBox);
     const stssBox = first(view, trakStart, trakEnd, 'stss');
     const sync = stssBox ? readStss(view, stssBox) : null; // null => all samples are sync
-    const total = stsz.count;
+    // stsz.count is a u32 from the file. A per-sample table is bounded by the
+    // entries its box really held; a fixed sample size claims its count in 20 bytes,
+    // so it is bounded by the bytes the file has - and both by the table ceiling.
+    const total = Math.min(stsz.sizes ? stsz.sizes.length : stsz.count, stsz.sizes ? Infinity : Math.floor(fileSize / Math.max(1, stsz.fixed)), MP4_SAMPLE_TABLE_MAX);
     if (!total || !timescale)
         return null;
     // Per-sample durations, expanded from the run-length stts.
@@ -375,7 +379,9 @@ function computeGopMap(view, trakStart, trakEnd, timescale) {
     // Per-second byte buckets.
     const totalTicks = durations.reduce((a, b) => a + b, 0);
     const durationSec = totalTicks / timescale;
-    const seconds = Math.max(1, Math.ceil(durationSec));
+    // Deltas come from the file too: cap the bucket array (the tail folds into the
+    // last bucket via the Math.min below).
+    const seconds = Math.max(1, Math.min(MP4_SECONDS_MAX, Math.ceil(durationSec) || 1));
     const perSecBytes = new Array(seconds).fill(0);
     let t = 0, iBytes = 0, iCount = 0, pBytes = 0, pCount = 0;
     for (let i = 0; i < total; i++) {
@@ -633,7 +639,7 @@ export async function analyzeMp4Structure(file) {
     }
     if (videoTrakForGop && videoTimescale) {
         try {
-            result.gop = computeGopMap(moovView, videoTrakForGop.start + videoTrakForGop.headerSize, videoTrakForGop.start + videoTrakForGop.size, videoTimescale);
+            result.gop = computeGopMap(moovView, videoTrakForGop.start + videoTrakForGop.headerSize, videoTrakForGop.start + videoTrakForGop.size, videoTimescale, file.size);
         }
         catch (_) { }
     }

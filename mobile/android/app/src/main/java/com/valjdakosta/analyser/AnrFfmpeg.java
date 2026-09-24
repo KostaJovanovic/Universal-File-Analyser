@@ -69,7 +69,8 @@ public class AnrFfmpeg extends Plugin {
 
     private static final String BINARY = "libanrffmpeg.so";
     private static final int LOG_KEEP = 131072;
-    private static final int LIST_PEEK = 1024 * 1024;
+    /** Open sessions at once. /compare runs two; the rest is slack. */
+    private static final int MAX_SESSIONS = 16;
     private static final Pattern DURATION = Pattern.compile("Duration:\\s*(\\d+):(\\d\\d):(\\d\\d(?:\\.\\d+)?)");
     private static final Pattern TIME = Pattern.compile("time=\\s*(\\d+):(\\d\\d):(\\d\\d(?:\\.\\d+)?)");
     private static final Pattern ENCODER_LINE = Pattern.compile("^\\s*[VAS][A-Z.]{5}\\s+(\\S+)");
@@ -104,15 +105,23 @@ public class AnrFfmpeg extends Plugin {
     // ---- the virtual file system --------------------------------------------
 
     /** Names are flattened so nothing the page sends can escape its session -
-     *  the same rule as safeName() in ffmpeg-native.mjs. */
+     *  the same rule as safeName() in ffmpeg-native.mjs. A name with a NUL or
+     *  any other control character is refused outright (null): Java would keep
+     *  the whole string while the file system and ffmpeg stop at the NUL. */
     static String safeName(String name) {
-        String n = String.valueOf(name == null ? "f" : name).replaceAll("[\\\\/]+", "_").replaceFirst("^\\.+", "_");
+        String n = String.valueOf(name == null ? "f" : name);
+        for (int i = 0; i < n.length(); i++) {
+            char c = n.charAt(i);
+            if (c < 0x20 || c == 0x7f) return null;
+        }
+        n = n.replaceAll("[\\\\/]+", "_").replaceFirst("^\\.+", "_");
         return n.isEmpty() ? "f" : n;
     }
 
     static File sessionFile(String id, String name) {
         Session s = id == null ? null : SESSIONS.get(id);
-        return s == null ? null : new File(s.dir, safeName(name));
+        String safe = safeName(name);
+        return s == null || safe == null ? null : new File(s.dir, safe);
     }
 
     /** GET /__anr/ff/<session>/<name> - a finished output, streamed from disk. */
@@ -122,6 +131,7 @@ public class AnrFfmpeg extends Plugin {
         try {
             Map<String, String> headers = AnrWebViewClient.noStore();
             headers.put("Content-Length", String.valueOf(f.length()));
+            headers.put("X-Content-Type-Options", "nosniff");
             return new WebResourceResponse("application/octet-stream", null, 200, "OK", headers, new FileInputStream(f));
         } catch (IOException e) {
             return AnrWebViewClient.status(404);
@@ -130,6 +140,13 @@ public class AnrFfmpeg extends Plugin {
 
     @PluginMethod
     public void open(PluginCall call) {
+        // A page that opens sessions and never closes them would fill the
+        // cache folder. A refused open is harmless: video.ts falls back to
+        // ffmpeg.wasm when native FFmpeg does not open.
+        if (SESSIONS.size() >= MAX_SESSIONS) {
+            call.reject("too many ffmpeg sessions are open");
+            return;
+        }
         String id = UUID.randomUUID().toString();
         File dir = new File(getContext().getCacheDir(), "anr-ffmpeg-" + id);
         if (!dir.mkdirs() && !dir.isDirectory()) {
@@ -330,26 +347,28 @@ public class AnrFfmpeg extends Plugin {
     }
 
     /** A list input (a concat list, a playlist) can name files the arguments
-     *  never did - the reverse in video.ts feeds `-f concat -safe 0` its own. */
+     *  never did - the reverse in video.ts feeds `-f concat -safe 0` its own.
+     *  A list is read whole or refused: one larger than LIST_PEEK could hide a
+     *  line past the part checked, and a NUL makes ffmpeg's C strings end where
+     *  the check's Java strings do not. Media (anything not a list) is skipped. */
     private static String checkInputs(File dir, List<String> args) {
         for (AnrFfmpegChecks.Input in : AnrFfmpegChecks.inputsOf(args)) {
-            File f = new File(dir, safeName(in.name));
+            String safe = safeName(in.name);
+            if (safe == null) return "an input name contains a control character";
+            File f = new File(dir, safe);
             if (!f.isFile()) continue;   // ffmpeg reports the missing file itself
+            boolean concat = "concat".equals(in.format);
             byte[] head;
             try (InputStream s = new FileInputStream(f)) {
-                head = readBytes(s, (int) Math.min(f.length(), LIST_PEEK));
+                head = readBytes(s, (int) Math.min(f.length(), AnrFfmpegChecks.LIST_PEEK));
             } catch (IOException e) {
+                if (concat) return "a concat list could not be read";
                 continue;
             }
-            boolean binary = false;
-            for (int i = 0; i < Math.min(head.length, 4096); i++) {
-                if (head[i] == 0) {
-                    binary = true;
-                    break;
-                }
-            }
-            if (binary) continue;
-            String bad = AnrFfmpegChecks.checkInputText(new String(head, StandardCharsets.UTF_8), "concat".equals(in.format));
+            // The whole peek decision (media vs list, size, NUL, printable ASCII)
+            // lives in AnrFfmpegChecks so it stays rule-for-rule with the desktop's
+            // checkInputBytes in ffmpeg-accel.mjs.
+            String bad = AnrFfmpegChecks.checkInputBytes(head, f.length(), concat);
             if (bad != null) return bad;
         }
         return null;

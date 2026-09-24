@@ -24,6 +24,7 @@
    Effects viewer, then show the project metadata and the clips it references. */
 
 import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, type ElChild } from '../core/util.js';
+import { TIMELINE_TICKS_MAX } from '../core/limits.js';
 
 const TPS = 254016000000;                  // Premiere ticks per second (fixed timebase)
 const MAX_COMPRESSED = 64 * 1024 * 1024;   // don't buffer absurdly large projects whole
@@ -166,6 +167,7 @@ function parsePremiere(xml: string) {
       t.label = (t.kind === 'video' ? 'V' : t.kind === 'audio' ? 'A' : 'C') + (t.idx + 1 || c);
     });
     seq.dur = Math.max(0.01, ...seq.tracks.flatMap((t: any) => t.clips.map((c: any) => c.end)));
+    if (!isFinite(seq.dur)) seq.dur = 0.01;   // a NaN / infinite clip end would poison the zoom maths
     seq.clipCount = seq.tracks.reduce((s: number, t: any) => s + t.clips.length, 0);
     sequences.push(seq);
   }
@@ -208,8 +210,11 @@ function trackLanesSvg(tracks: any[], dur: number, H: number, trackW: number, pp
     stripes += `<rect x="0" y="${TOP + i * LH}" width="${trackW}" height="${LH}" fill="${i % 2 ? 'rgba(128,128,128,.10)' : 'rgba(128,128,128,.04)'}"/>`;
   });
   const STEPS = [0.25, 0.5, 1, 2, 5, 10, 15, 20, 30, 60, 120, 300, 600];
-  const step = STEPS.find((s) => s * pps >= 55) || STEPS[STEPS.length - 1];
-  for (let t = 0; t <= dur + 1e-6; t += step) {
+  // The duration is the file's claim: past TIMELINE_TICKS_MAX ticks the step
+  // widens, so a sequence claiming centuries cannot build billions of grid lines.
+  const gridEnd = isFinite(dur) ? Math.max(0, dur) : 0;
+  const step = Math.max(STEPS.find((s) => s * pps >= 55) || STEPS[STEPS.length - 1], gridEnd / TIMELINE_TICKS_MAX);
+  for (let t = 0; t <= gridEnd + 1e-6; t += step) {
     const gx = x(t);
     grid += `<line x1="${gx}" y1="${TOP}" x2="${gx}" y2="${bottom}" stroke="currentColor" stroke-width="1" opacity=".12"/>`;
     grid += `<text x="${gx + 3}" y="${bottom + 14}" fill="currentColor" font-size="9.5" opacity=".5">${fmtTick(t)}</text>`;

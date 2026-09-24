@@ -30,7 +30,7 @@
    first operand unclipped would quietly show a wall with no window in it. */
 import { el, row, rowHelp, h3help, errorCard, fmtBytes } from '../core/util.js';
 import { buildGeoFromIndexed, buildViewerCard, startViewer } from './stl.js';
-import { IFC_MAX, IFC_ENTITY_MAX, IFC_TRI_MAX } from '../core/limits.js';
+import { IFC_MAX, IFC_ENTITY_MAX, IFC_TRI_MAX, IFC_WALK_MAX } from '../core/limits.js';
 const isRef = (v) => !!v && typeof v === 'object' && typeof v.r === 'number';
 const num = (v, dflt = 0) => (typeof v === 'number' ? v : (v && typeof v.v === 'number' ? v.v : dflt));
 const str = (v) => (typeof v === 'string' ? v : '');
@@ -274,6 +274,13 @@ class Model {
     }
     // The full chain from an IfcLocalPlacement up to the world. Cached: a storey
     // with 5,000 elements would otherwise walk the same three links 5,000 times.
+    // A placement relative to itself (directly or round a loop) is corrupt; the
+    // link that closes the loop is read as the world instead of recursing until
+    // the stack overflows and takes every other element's geometry with it.
+    placing = new Set();
+    // Shared work budget for the recursive walks below (mapped items nest, and a
+    // shared representation can fan out exponentially without ever cycling).
+    steps = 0;
     placement(v) {
         if (!isRef(v))
             return identity();
@@ -283,9 +290,18 @@ class Model {
         const e = this.ents.get(v.r);
         if (!e || e.type !== 'IFCLOCALPLACEMENT')
             return identity();
-        const local = this.axisMatrix(e.args[1]);
-        const parent = e.args[0] ? this.placement(e.args[0]) : identity();
-        const m = matMul(parent, local);
+        if (this.placing.has(v.r))
+            return identity();
+        this.placing.add(v.r);
+        let m;
+        try {
+            const local = this.axisMatrix(e.args[1]);
+            const parent = e.args[0] ? this.placement(e.args[0]) : identity();
+            m = matMul(parent, local);
+        }
+        finally {
+            this.placing.delete(v.r);
+        }
         this.placementCache.set(v.r, m);
         return m;
     }
@@ -407,8 +423,11 @@ function extrude(mesh, outline, depth, dirv, m) {
         pushTri(mesh, bottom[k], top[j], top[k]);
     }
 }
+const mappedStack = new Set();
 function shapeItem(m, item, world, mesh, stats) {
     if (mesh.tris.length / 3 >= IFC_TRI_MAX)
+        return;
+    if (++m.steps > IFC_WALK_MAX)
         return;
     const e = m.get(item);
     if (!e)
@@ -516,9 +535,20 @@ function shapeItem(m, item, world, mesh, stats) {
             const rep = m.get(source.args[1]);
             if (!rep || !Array.isArray(rep.args[3]))
                 return;
+            // A mapped item whose representation maps itself again is a loop, not a
+            // nested type; the repeat is dropped.
+            const selfId = item.r;
+            if (mappedStack.has(selfId))
+                return;
             const inner = matMul(matMul(world, op), origin);
-            for (const it of rep.args[3])
-                shapeItem(m, it, inner, mesh, stats);
+            mappedStack.add(selfId);
+            try {
+                for (const it of rep.args[3])
+                    shapeItem(m, it, inner, mesh, stats);
+            }
+            finally {
+                mappedStack.delete(selfId);
+            }
             return;
         }
         case 'IFCBOOLEANCLIPPINGRESULT':
@@ -675,10 +705,16 @@ export async function renderIfc(file, resultsEl) {
     resultsEl.appendChild(card);
     // ---- spatial tree ----
     const SPATIAL = new Set(['IFCPROJECT', 'IFCSITE', 'IFCBUILDING', 'IFCBUILDINGSTOREY', 'IFCSPACE', 'IFCSPATIALZONE']);
+    // Each spatial object is placed in the tree once: an aggregate listed under
+    // two parents (or under itself) would otherwise multiply the walk by its
+    // fan-out at every level.
+    const seenNode = new Set();
+    let nodeBudget = IFC_WALK_MAX;
     const buildNode = (id, depth) => {
         const e = entities.get(id);
-        if (!e || depth > 12)
+        if (!e || depth > 12 || seenNode.has(id) || --nodeBudget < 0)
             return null;
+        seenNode.add(id);
         const node = { id, type: e.type, name: label(e), children: [], elements: [] };
         for (const cid of aggregates[id] || []) {
             const ce = entities.get(cid);
@@ -796,7 +832,7 @@ export async function renderIfc(file, resultsEl) {
     catch (_) { /* draw whatever was built */ }
     if (mesh.tris.length >= 3) {
         const geo = buildGeoFromIndexed(mesh.verts, mesh.tris, 'IFC');
-        const { viewCard, viewer } = buildViewerCard(geo, 'Model', { upZ: true });
+        const { viewCard, viewer } = buildViewerCard(geo, 'Model', { zUp: true });
         const note = el('p', { class: 'anr-hint' }, stats.drawn.toLocaleString() + ' shapes drawn from ' + products.toLocaleString() + ' elements.' +
             (Object.keys(stats.skipped).length
                 ? ' Not drawn: ' + Object.entries(stats.skipped).sort((a, b) => b[1] - a[1]).slice(0, 5)

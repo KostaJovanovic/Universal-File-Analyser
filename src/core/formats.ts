@@ -535,7 +535,9 @@ export const EXT_VARIANTS: Record<string, { summary: string; variants: { name: s
 // or nothing matched without a default. The FIRST variant whose `detect` rule
 // matches wins; a { default: true } variant is the fallback.
 export function detectVariant(ext: string, bytes: Uint8Array, text: string|null, opts?: any) {
-  const entry = EXT_VARIANTS[(ext || '').toLowerCase()];
+  const key = (ext || '').toLowerCase();
+  // hasOwn: a file-controlled extension like `constructor` must not hit the prototype.
+  const entry = Object.hasOwn(EXT_VARIANTS, key) ? EXT_VARIANTS[key] : null;
   if (!entry) return null;
   // specificOnly: return a name only when a real rule matched, not the bare
   // default - so a confident in-app label is shown only when the bytes prove it.

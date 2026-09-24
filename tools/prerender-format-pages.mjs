@@ -444,13 +444,13 @@ function page(key, e, depth) {
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  ${JSON.stringify(faq)}
+  ${JSON.stringify(faq).replace(/</g, '\\u003c')}
   </script>
   <script type="application/ld+json">
-  ${JSON.stringify(howto)}
+  ${JSON.stringify(howto).replace(/</g, '\\u003c')}
   </script>
   <script type="application/ld+json">
-  ${JSON.stringify(crumbs)}
+  ${JSON.stringify(crumbs).replace(/</g, '\\u003c')}
   </script>
   <link rel="stylesheet" href="/assets/css/fonts.css">
   <link rel="stylesheet" href="/assets/css/analyser.css">
@@ -528,7 +528,7 @@ ${siteNav(key)}
 <footer id="about" class="site-footer site-footer--about">
   <div class="footer-about-heading">
     <p class="footer-mark">Everything runs in your browser.</p>
-    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+    <p class="footer-meta">No upload, no trackers, no servers in the loop.</p>
   </div>
   <div class="footer-row footer-bottom">
     <div class="footer-lead">
@@ -565,10 +565,26 @@ ${siteNav(key)}
   if ('serviceWorker' in navigator) {
     if (navigator.serviceWorker.controller) {
       var anrRefreshing = false;
-      navigator.serviceWorker.addEventListener('controllerchange', function () {
-        if (anrRefreshing) return;
+      // Never over a live analysis, though (an ffmpeg or AI job runs inside
+      // one): the reload then waits until the page is idle again.
+      var anrBusy = function () {
+        var c = document.body.classList;
+        return c.contains('anr-has-file') || c.contains('anr-loading')
+          || !!document.querySelector('.anr-results:not([hidden]), .anr-cmp-split');
+      };
+      var anrReload = function () {
+        if (anrRefreshing || anrBusy()) return false;
         anrRefreshing = true;
         window.location.reload();
+        return true;
+      };
+      var anrReloadPending = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (anrRefreshing || anrReloadPending || anrReload()) return;
+        anrReloadPending = true;
+        new MutationObserver(function (m, obs) { if (anrReload()) obs.disconnect(); })
+          .observe(document.body, { attributes: true, attributeFilter: ['class'] });
+        window.addEventListener('anr:navigate', anrReload);
       });
     }
     window.addEventListener('load', function () {

@@ -75,7 +75,10 @@ const SIG_EXPECT = {
 // signature checks out. Reads the first 16 bytes for the hex readout.
 export async function signatureCheck(file, sniff) {
     const ext = (fileExt(file.name) || '').toLowerCase();
-    const expect = SIG_EXPECT[ext];
+    // hasOwn: the extension is file-controlled, and `evil.constructor` must not
+    // resolve to Object.prototype.constructor (which would throw below and drop
+    // every forensic card after this one).
+    const expect = Object.hasOwn(SIG_EXPECT, ext) ? SIG_EXPECT[ext] : null;
     if (!expect)
         return null; // no expectation - stay quiet
     if (sniff && expect.sniff.includes(sniff.ext))

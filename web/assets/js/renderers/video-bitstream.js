@@ -890,6 +890,14 @@ export async function parseMatroskaTracks(file) {
         if (!size || size.unknown)
             break;
         const dataStart = pos + id.len + size.len;
+        // An empty element (a zero-size Void is common) is legal: step over its
+        // header and keep walking - stopping here left the Tracks after it unread.
+        if (size.val === 0) {
+            if (dataStart >= segEnd)
+                break;
+            pos = dataStart;
+            continue;
+        }
         const dataEnd = Math.min(segEnd, dataStart + size.val);
         if (dataEnd <= dataStart)
             break;

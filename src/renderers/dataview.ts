@@ -13,17 +13,18 @@
    ============================================================================ */
 
 import { el, row, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '../core/util.js';
-import { HASH_FILE_MAX } from '../core/limits.js';
+import { HASH_FILE_MAX, DATAVIEW_CHILD_BATCH } from '../core/limits.js';
 import { cp437 } from '../core/binutil.js';
 
 // ---------- JSON value tree (objects/arrays collapsible) ----------
 function jsonTree(value: any, key?: any) {
   const t = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
   if (t === 'object' || t === 'array') {
-    const entries = t === 'array' ? value.map((v: any, i: number) => [i, v]) : Object.entries(value);
+    const isArr = t === 'array';
+    const keys: string[]|null = isArr ? null : Object.keys(value);
     const det = el('details', { class: 'anr-json-node' });
-    const count = entries.length;
-    const brace = t === 'array' ? '[' + count + ']' : '{' + count + '}';
+    const count: number = isArr ? value.length : keys!.length;
+    const brace = isArr ? '[' + count + ']' : '{' + count + '}';
     const sum = el('summary', { class: 'anr-json-sum' }, [
       key != null ? el('span', { class: 'anr-json-key' }, String(key) + ': ') : '',
       el('span', { class: 'anr-json-brace' }, brace),
@@ -33,8 +34,25 @@ function jsonTree(value: any, key?: any) {
     det.addEventListener('toggle', () => {
       if (det.open && !filled) {
         filled = true;
+        // Children are rendered DATAVIEW_CHILD_BATCH at a time: expanding a
+        // million-entry array must not build a million rows in one go.
         const kids = el('div', { class: 'anr-json-children' });
-        for (const [k, v] of entries) kids.appendChild(jsonTree(v, k));
+        const moreBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', style: 'margin:4px 0;' }, 'Show more');
+        let next = 0;
+        const addBatch = () => {
+          const end = Math.min(count, next + DATAVIEW_CHILD_BATCH);
+          const frag = document.createDocumentFragment();
+          for (; next < end; next++) {
+            const k = isArr ? next : keys![next];
+            frag.appendChild(jsonTree(value[k], k));
+          }
+          kids.insertBefore(frag, moreBtn);
+          if (next >= count) moreBtn.remove();
+          else moreBtn.textContent = 'Show more (' + next.toLocaleString() + ' of ' + count.toLocaleString() + ')';
+        };
+        moreBtn.addEventListener('click', (e) => { e.preventDefault(); addBatch(); });
+        kids.appendChild(moreBtn);
+        addBatch();
         det.appendChild(kids);
       }
     });

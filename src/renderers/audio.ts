@@ -22,6 +22,7 @@ import { reverseAudioBufferToWav } from './media-reverse.js';
 // download prompt read tier sizes from here. The heavy client is still lazy.
 import { MDX_MODELS } from '../lib/mdx-model.js';
 import { DFN_MODEL } from '../lib/dfn-model.js';
+import { FFMPEG_MEMFS_MAX } from '../core/limits.js';
 
 // Re-exported so existing importers (e.g. video.js) can keep importing the
 // transport from this module.
@@ -1767,15 +1768,19 @@ export function makeSpectrogramPanel(samples: Float32Array<ArrayBuffer>, sampleR
     async function renderIsolated() {
       const buffer = sourceBuffer();
       const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-      const karaoke = isoActive && isoMode === 'karaoke' && buffer.numberOfChannels >= 2;
-      const off = new OAC(karaoke ? 1 : buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+      // Mirror the live graph (rebuildGraph): the Channel picker's solo first, so
+      // the download is the soloed channel as heard, not the full mix.
+      const solo = soloChannel != null && buffer === opts.audioBuffer && buffer.numberOfChannels > 1;
+      const karaoke = isoActive && isoMode === 'karaoke' && (solo || buffer.numberOfChannels >= 2);
+      const off = new OAC(karaoke ? 1 : solo ? 2 : buffer.numberOfChannels, buffer.length, buffer.sampleRate);
       const srcNode = off.createBufferSource();
       srcNode.buffer = buffer;
-      let out: AudioNode = srcNode;
-      if (karaoke) out = buildKaraoke(off, srcNode);
+      const stage: AudioNode = solo ? buildChannelSolo(off, srcNode, soloChannel!, []) : srcNode;
+      let out: AudioNode = stage;
+      if (karaoke) out = buildKaraoke(off, stage);
       else if (isoActive && isoMode === 'bands') {
         const merged = computeMerged();
-        if (merged.length) out = buildStops(off, srcNode, merged);
+        if (merged.length) out = buildStops(off, stage, merged);
       }
       out.connect(off.destination);
       srcNode.start();
@@ -2723,12 +2728,14 @@ interface PendingRow extends HTMLTableRowElement {
 // close that pass is. A row waiting on the last pass fills gradually across the
 // whole run; one waiting on the second pass is full almost immediately. Call fill()
 // with the value once it lands, or drop() if there turned out to be nothing to
-// report.
+// report. Until the first pass lands (the queue waits for the decode and the
+// spectrogram) the bar sweeps, so the row reads as working rather than empty.
 function pendingRow(label: string, help: string, atStep: number): PendingRow {
   const tr = rowHelp(label, '', help) as PendingRow;
   const td = tr.querySelector('td')!;
   td.textContent = '';
   const bar = asciiBar();
+  bar.indeterminate();
   td.appendChild(bar);
   tr.progress = (step: number) => { if (!tr.done) bar.set(Math.min(1, step / atStep)); };
   tr.fill = (value: string, extra?: Node|null) => {
@@ -2782,7 +2789,7 @@ function buildCoverArtCard(art: any, file: File, resultsEl?: HTMLElement) {
     // analysis rather than running a second full analysis unasked.
     mountPhotoPrompt('Cover art',
       'This file carries an embedded cover picture. Analyse it with the photo tools - colours, dimensions, EXIF and the rest.',
-      'Analyse cover art', (host) => { renderPhoto(artFile, host, { sourceNote: note }); });
+      'Analyse cover art', (host) => renderPhoto(artFile, host, { sourceNote: note }));
   }).catch(() => {});
 
   const labelCard = el('div', { class: 'anr-card' });
@@ -3246,7 +3253,7 @@ async function decodeAudioStrategy(file: File, header: any, { onProgress, noteMo
 // it at once, offer immediate native playback, and put the heavy decode behind a
 // button. The decode runs in place (the pulled cards stay on screen, a fill-up bar
 // tracks it) and, when done, hands the decoded buffer to renderAudio for the full view.
-async function renderDeferredAudio(file: File, header: any, resultsEl: HTMLElement, opts: any) {
+async function renderDeferredAudio(file: File, header: any, resultsEl: HTMLElement, opts: any, renderSignal: AbortSignal) {
   const estBytes = estimateDecodedBytes(file, header);
 
   // ---- Full analysis (the decode button) - FIRST, at the top of the section ----
@@ -3273,6 +3280,9 @@ async function renderDeferredAudio(file: File, header: any, resultsEl: HTMLEleme
   resultsEl.appendChild(decodeCard);
 
   btn.addEventListener('click', async () => {
+    // A newer file has replaced this view: starting a render now would abort THAT
+    // file's controller (and revoke its playback URL).
+    if (renderSignal.aborted) return;
     btn.disabled = true;
     btnRow.hidden = true;
     errBox.innerHTML = '';
@@ -3299,6 +3309,9 @@ async function renderDeferredAudio(file: File, header: any, resultsEl: HTMLEleme
     } catch (_) { dec = null; }
 
     decoding = false;
+    // Superseded while it decoded: drop the result rather than rendering over the
+    // newer file (renderAudio below would also abort its controller).
+    if (renderSignal.aborted) { cancelAnimationFrame(raf); return; }
     if (!dec || !dec.audioBuffer) {
       cancelAnimationFrame(raf);
       barWrap.style.display = 'none';
@@ -3363,6 +3376,7 @@ async function renderDeferredAudio(file: File, header: any, resultsEl: HTMLEleme
   // ---- Cheap header reads: tags, lyrics, cover art, integrity (as the undecodable view) ----
   try {
     const meta = await readAudioTags(file);
+    if (renderSignal.aborted) return;
     if (meta && meta.tags && meta.tags.length) {
       const card = el('div', { class: 'anr-card' });
       card.appendChild(el('h3', {}, 'Tags'));
@@ -3377,11 +3391,18 @@ async function renderDeferredAudio(file: File, header: any, resultsEl: HTMLEleme
       resultsEl.appendChild(card);
     }
   } catch (_) {}
-  try { const art = await extractCoverArt(file); if (art && art.bytes && art.bytes.length) resultsEl.appendChild(buildCoverArtCard(art, file)); } catch (_) {}
+  try {
+    const art = await extractCoverArt(file);
+    if (renderSignal.aborted) return;
+    if (art && art.bytes && art.bytes.length) resultsEl.appendChild(buildCoverArtCard(art, file));
+  } catch (_) {}
+  if (renderSignal.aborted) return;
   resultsEl.appendChild(integrityCard(file));
 }
 
-async function renderUndecodableAudio(file: File, header: any, resultsEl: HTMLElement, playable: File) {
+// extras=false leaves out the tags, lyrics, cover art and integrity cards, for
+// renderAudio's failed-decode path, which already has those on screen.
+async function renderUndecodableAudio(file: File, header: any, resultsEl: HTMLElement, playable: File, extras = true) {
   const infoCard = el('div', { class: 'anr-card' });
   const [infoH, infoHelp] = h3help('Audio file', 'The container details, tags, lyrics, and cover art below were still read straight from the file.');
   infoCard.appendChild(infoH);
@@ -3431,6 +3452,7 @@ async function renderUndecodableAudio(file: File, header: any, resultsEl: HTMLEl
   } catch (_) {}
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
+  if (!extras) return;
 
   try {
     const meta = await readAudioTags(file);
@@ -3462,19 +3484,38 @@ async function ffmpegDecodeAudio(file: File, resultsEl: HTMLElement) {
   const note = el('div', { class: 'anr-info' },
     "Your browser can't decode this audio directly - decoding with FFmpeg to build the waveform and spectrogram...");
   resultsEl.appendChild(note);
-  try {
-    const { loadFFmpeg } = await import('./video.js');
-    const ff = await loadFFmpeg();
-    await ff.writeFile('adin', new Uint8Array(await file.arrayBuffer()));
-    // -vn drops any cover-art video stream; keep source rate/channels.
-    await ff.exec(['-i', 'adin', '-vn', '-c:a', 'pcm_s16le', '-f', 'wav', 'adout.wav']);
-    const data = await ff.readFile('adout.wav');
-    try { await ff.deleteFile('adin'); await ff.deleteFile('adout.wav'); } catch (_) {}
-    const wav = new Blob([data.buffer || data], { type: 'audio/wav' });
-    return await ctx().decodeAudioData(await wav.arrayBuffer());
-  } finally {
+  // The whole file is copied into ffmpeg's in-memory filesystem, so hold it to
+  // the same ceiling video.ts uses for its MEMFS jobs.
+  if (file.size > FFMPEG_MEMFS_MAX) {
     note.remove();
+    throw new Error('Too large to decode with FFmpeg in the browser');
   }
+  const { loadFFmpeg, queueFFmpeg } = await import('./video.js');
+  // One shared instance: join video's job queue so this never runs on top of a
+  // remux/convert (and never collides with its files).
+  return queueFFmpeg(async () => {
+    let ff: any = null;
+    try {
+      ff = await loadFFmpeg();
+      await ff.writeFile('adin', new Uint8Array(await file.arrayBuffer()));
+      // -vn drops any cover-art video stream; keep source rate/channels.
+      const code = await ff.exec(['-i', 'adin', '-vn', '-c:a', 'pcm_s16le', '-f', 'wav', 'adout.wav']);
+      // exec RESOLVES on a failed transcode, so a non-zero exit must be caught here
+      // or a stale/partial adout.wav would be read as this file's audio.
+      if (typeof code === 'number' && code !== 0) throw new Error('FFmpeg could not decode this audio (exit ' + code + ')');
+      const data = await ff.readFile('adout.wav');
+      const wav = new Blob([data.buffer || data], { type: 'audio/wav' });
+      return await ctx().decodeAudioData(await wav.arrayBuffer());
+    } finally {
+      note.remove();
+      // Always clear the MEMFS copies - on failure too, where they used to be left
+      // holding the whole input inside the shared ffmpeg instance.
+      if (ff) {
+        try { await ff.deleteFile('adin'); } catch (_) {}
+        try { await ff.deleteFile('adout.wav'); } catch (_) {}
+      }
+    }
+  });
 }
 
 // Loudness-over-time plot for the EBU R128 meter (momentary LUFS series). Clamped
@@ -3661,6 +3702,8 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
     usedFfmpeg = opts.usedFfmpeg || false;
   } else {
     try { header = await peekContainer(file); } catch (e) { /* ignore */ }
+    // A newer file replaced this one during the header read; resultsEl is theirs.
+    if (renderSignal.aborted) return;
 
     // Large compressed audio: show everything the header gives immediately and put
     // the heavy whole-file decode behind a button, instead of freezing the page
@@ -3669,29 +3712,191 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
     // "Decode and analyse" the decoded buffer arrives via opts.audioBuffer, so this
     // branch isn't reached on that pass.
     if (!opts.inline && shouldDeferDecode(file, header)) {
-      await renderDeferredAudio(file, header, resultsEl, opts);
-      try { window._anrLoader.hide(); } catch (_) {}
-      return;
-    }
-
-    resultsEl.appendChild(el('div', { class: 'anr-info' }, `Decoding "${file.name}"...`));
-    // Let that note actually paint before the main-thread ADTS->M4A rebuild below
-    // blocks the thread on a large file.
-    await afterPaint();
-    try {
-      const dec = await decodeAudioStrategy(file, header, { noteMount: resultsEl });
-      audioBuffer = dec.audioBuffer; playbackFile = dec.playbackFile; usedFfmpeg = dec.usedFfmpeg;
-    } catch (e) {
-      // Nothing could decode it - genuinely undecodable here. Log the reason (helps
-      // diagnose a platform-specific codec gap) and fall back to the metadata view.
-      try { console.error('[audio] decode failed:', e); } catch (_) {}
-      resultsEl.innerHTML = '';
-      await renderUndecodableAudio(file, header, resultsEl, playbackFile);
+      await renderDeferredAudio(file, header, resultsEl, opts, renderSignal);
+      if (!renderSignal.aborted) { try { window._anrLoader.hide(); } catch (_) {} }
       return;
     }
   }
 
-  resultsEl.innerHTML = '';
+  // ---- The result's shape, BEFORE the decode ----
+  // Decoding the whole file (decodeAudioData, or ffmpeg.wasm for a codec the
+  // browser lacks) takes seconds on a long MP3, and nothing used to render until it
+  // had finished. Everything the header gives goes on screen first instead: the
+  // spectrogram slot holds a loading bar, File info shows every header-read row with
+  // the decoded ones as placeholders in their final positions, and tags and cover
+  // art (plain header reads) land as soon as they resolve. The decode and the stats
+  // pass then swap the placeholders for real rows.
+  const specLoader = inlineLoader(audioBuffer ? 'Building spectrogram…' : 'Decoding audio…');
+  const specSlot = el('div', {}, [specLoader]);
+
+  const HELP_RATE = 'How many times per second the sound was measured when it was recorded, in hertz. Higher numbers capture higher-pitched sound - CD audio is 44,100 Hz, video audio is often 48,000 Hz.';
+  const HELP_PEAK = 'The loudest single sample in the file. dBFS means decibels relative to full scale, where 0 dBFS is the digital maximum and lower (more negative) numbers are quieter.';
+  const HELP_RMS = 'Root Mean Square - the average energy of the signal, which tracks how loud it actually feels better than the single loudest peak does. Typical mastered music sits around −10 dBFS.';
+  const HELP_CLIP = 'Samples pushed to or past the digital ceiling (0 dBFS), which sounds like harsh distortion. The more samples clip, the rougher it sounds.';
+  const HELP_TOTAL = 'The total count of individual sound measurements in the merged mono signal - roughly the sample rate multiplied by the duration in seconds.';
+  // A File info row whose value needs the decoded audio. Shows the header's figure
+  // when there is one, otherwise a sweeping bar, and is replaced by the real row
+  // (same label, same help) once the value lands.
+  const waitRow = (label: string, help: string|null, provisional?: string|null) => {
+    const tr = help ? rowHelp(label, provisional || '', help) : row(label, provisional || '');
+    if (!provisional) {
+      const td = tr.querySelector('td')!;
+      td.textContent = '';
+      const bar = asciiBar();
+      bar.indeterminate();
+      td.appendChild(bar);
+    }
+    return tr;
+  };
+
+  // ---- File info card ----
+  const infoCard = el('div', { class: 'anr-card' });
+  infoCard.appendChild(el('h3', {}, 'File info'));
+  const tbl = el('table', { class: 'anr-readout' });
+  tbl.appendChild(row('Name',           file.name));
+  tbl.appendChild(row('Size',           fmtBytes(file.size)));
+  tbl.appendChild(rowHelp('MIME',       file.type || header.container || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
+  if (header.container) tbl.appendChild(row('Container',     header.container));
+  if (header.codec)     tbl.appendChild(row('Codec',         header.codec));
+  const wDur = waitRow('Duration', null, header.durationEst ? '~ ' + formatTime(header.durationEst) : null);
+  const wRate = waitRow('Sample rate', HELP_RATE, header.sampleRate ? header.sampleRate.toLocaleString() + ' Hz' : null);
+  const wChans = waitRow('Channels', null, header.channels ? header.channels + describeChannels(header.channels) : null);
+  tbl.appendChild(wDur); tbl.appendChild(wRate); tbl.appendChild(wChans);
+  if (header.bitDepth)  tbl.appendChild(rowHelp('Bit depth',     header.bitDepth + ' bit',
+    'How many bits are used to store each measurement of the sound. More bits capture a wider range from quiet to loud with less background grain (quantization noise) - CD audio uses 16 bits.'));
+  if (header.bitrateText || header.bitrate) tbl.appendChild(rowHelp('Bitrate',
+    header.bitrateText || ((header.bitrate / 1000).toFixed(0) + ' kbps'),
+    'How much data is spent on each second of audio, in kilobits per second. More data usually means better quality and a bigger file. VBR (variable bitrate) shows the average across the file.'));
+  try {
+    if (header.encoder) tbl.appendChild(rowHelp('Encoder', header.encoder,
+      'The software that created (encoded) this file, read from its Xing/LAME/VBRI header.'));
+    if (header.compressionRatio) tbl.appendChild(rowHelp('Compression',
+      header.compressionRatio.toFixed(2) + ':1',
+      'How much smaller lossless compression made the file compared with the same audio stored raw and uncompressed (PCM). A higher ratio means a smaller file for identical sound.'));
+    if (header.flacMd5) tbl.appendChild(rowHelp('Audio MD5', header.flacMd5,
+      "A fingerprint (MD5 checksum) of the raw decoded audio that FLAC stores inside the file (in its STREAMINFO block). A decoder can recompute it to confirm the audio survived re-encoding intact."));
+  } catch (_) {}
+  const wPeak = waitRow('Peak', HELP_PEAK);
+  const wRms = waitRow('RMS', HELP_RMS);
+  tbl.appendChild(wPeak); tbl.appendChild(wRms);
+  // Reuse the gated integrated figure the R128 pass already produced above rather
+  // than running a second, independent K-weighting sweep over the whole file for
+  // the same row. This is also the more correct number for the claim the help text
+  // makes: the streaming targets it cites are all defined against the GATED value
+  // (BS.1770 two-stage gate), which is what the Advanced card shows.
+  const rLoud = pendingRow('Loudness',
+    'How loud the audio feels to human ears, measured the broadcast-standard way (ITU-R BS.1770) that follows our hearing rather than raw signal level. Streaming targets: Spotify −14, YouTube −14, Apple −16 LUFS.', 4);
+  tbl.appendChild(rLoud);
+  const wClip = waitRow('Clipping', HELP_CLIP);
+  tbl.appendChild(wClip);
+  // Every row from here to Total samples needs a slow pass. They go in now as
+  // pending placeholders, in their normal positions, and fill in below - so the
+  // table's shape and order are the same as they always were, it just arrives in
+  // stages instead of after a multi-second stall.
+  const rCrest = pendingRow('Crest factor',
+    'The gap between the loudest peak and the average (RMS) level - the peak-to-RMS ratio, a single number for how punchy or squashed the sound is. Loud, heavily compressed masters sit low (under about 8 dB); open, dynamic recordings sit higher (15 dB or more).', 2);
+  const rDc = pendingRow('DC offset',
+    'The average of all the samples, which should sit at about 0. A value away from 0 points to a recording or hardware fault, wastes loudness headroom, and can cause clicks where the audio is cut.', 2);
+  const rBits = pendingRow('Effective bit depth',
+    'The deepest bit that actually carries real sound, worked out from activity in the smallest bits. Sitting well below the stated bit depth means the file was padded or upscaled rather than genuinely high-resolution.', 2);
+  const rCentroid = pendingRow('Spectral centroid',
+    'Where the "centre of gravity" of the sound sits on the pitch scale - roughly whether it leans low or high overall. Below 1500 Hz sounds warm or dark, above 4000 Hz sounds bright or sharp. Handy for comparing the tonal character of two files.', 7);
+  const rPitch = pendingRow('Pitch',
+    'The main musical note the sound settles on, found with the YIN pitch-detection method. Cents measure how far it drifts from the nearest exact note (±50 cents is half a semitone, the gap between two adjacent piano keys).', 8);
+  const rBpm = pendingRow('BPM',
+    'Beats per minute - the tempo - read from the file’s saved metadata when it carries one, otherwise estimated by tracking where the beats land in the sound.', 9);
+  const rKey = pendingRow('Musical key',
+    'The song’s likely musical key, estimated by matching its blend of notes against reference patterns for each key (the Krumhansl-Schmuckler templates). Most reliable on tonal music; the runner-up is often the relative major or minor. Pairs with the detected tempo.', 3);
+  for (const r of [rCrest, rDc, rBits, rCentroid, rPitch, rBpm, rKey]) tbl.appendChild(r);
+  const wTotal = waitRow('Total samples', HELP_TOTAL);
+  tbl.appendChild(wTotal);
+  infoCard.appendChild(tbl);
+  // Mount for the spectrogram's "Analysis" sub-block (Peak / detected range /
+  // cutoff / dynamic range / resolution). It belongs to the spectrogram panel
+  // below - which fills this element and refreshes it as its FFT/window settings
+  // change - but is shown here inside File info at the user's request.
+  const specStatsMount = el('div');
+  infoCard.appendChild(specStatsMount);
+
+  const coverSlot = el('div');
+  const tagSlot = el('div');
+  resultsEl.appendChild(specSlot);
+  resultsEl.appendChild(infoCard);
+  resultsEl.appendChild(coverSlot);
+  resultsEl.appendChild(tagSlot);
+
+  // ---- Embedded tags + lyrics ----
+  // Read now, alongside the decode. The encoder tags are skipped here - they are
+  // shown in Advanced - so a file whose only tag was its encoder doesn't get a
+  // Tags card holding a single row. The Advanced card awaits the same promise.
+  const ENCODER_TAGS = new Set(['Encoder', 'Encoder library']);
+  const tagsPromise = readAudioTags(file).catch(() => null);
+  const showTags = (meta: any, skip: Set<string>) => {
+    tagSlot.innerHTML = '';
+    if (!meta) return;
+    const tags = (meta.tags || []).filter(([name]: [string, string]) => !skip.has(name));
+    if (tags.length) {
+      const card = el('div', { class: 'anr-card' });
+      card.appendChild(el('h3', {}, 'Tags'));
+      const t = el('table', { class: 'anr-readout' });
+      for (const [name, value] of tags) t.appendChild(tagRow(name, value));
+      card.appendChild(t);
+      tagSlot.appendChild(card);
+    }
+    if (meta.lyrics) {
+      const card = el('div', { class: 'anr-card' });
+      card.appendChild(el('h3', {}, 'Lyrics'));
+      card.appendChild(el('pre', { class: 'anr-lyrics' }, meta.lyrics));
+      tagSlot.appendChild(card);
+    }
+  };
+  tagsPromise.then((meta) => { if (!renderSignal.aborted) showTags(meta, ENCODER_TAGS); }).catch(() => {});
+
+  // ---- Embedded cover art ----
+  extractCoverArt(file).then((art) => {
+    if (renderSignal.aborted) return;
+    if (art && art.bytes && art.bytes.length) coverSlot.appendChild(buildCoverArtCard(art, file, resultsEl));
+  }).catch(() => {});
+
+  // Let all of that paint before the decode - the main-thread ADTS->M4A rebuild in
+  // it blocks the thread on a large file.
+  await afterPaint();
+  if (renderSignal.aborted) return;
+  // A first drop on the home page is built out of sight until the renderer
+  // settles (anr-staging, handleFile), which for audio is after the whole DSP
+  // queue - so the cards above would sit hidden. Ask for the reveal now.
+  if (!opts.inline) resultsEl.dispatchEvent(new CustomEvent('anr:reveal', { bubbles: true }));
+
+  if (!audioBuffer) {
+    try {
+      const dec = await decodeAudioStrategy(file, header, { noteMount: specSlot });
+      audioBuffer = dec.audioBuffer; playbackFile = dec.playbackFile; usedFfmpeg = dec.usedFfmpeg;
+    } catch (e) {
+      if (renderSignal.aborted) return;
+      // Nothing could decode it - genuinely undecodable here. Log the reason (helps
+      // diagnose a platform-specific codec gap) and swap the pending views for the
+      // metadata-only one, keeping the tags and cover art already on screen.
+      try { console.error('[audio] decode failed:', e); } catch (_) {}
+      specSlot.remove(); infoCard.remove();
+      const undec = el('div');
+      await renderUndecodableAudio(file, header, undec, playbackFile, false);
+      if (renderSignal.aborted) return;
+      coverSlot.before(...Array.from(undec.childNodes));
+      // The encoder tags were held back for Advanced, which is never built now.
+      const lateMeta = await tagsPromise;
+      if (renderSignal.aborted) return;
+      showTags(lateMeta, new Set());
+      resultsEl.appendChild(integrityCard(file));
+      return;
+    }
+    // A newer file replaced this one while it decoded; resultsEl is theirs now.
+    if (renderSignal.aborted) return;
+    (specLoader.querySelector('.anr-inline-loader-label') as HTMLElement).textContent = 'Building spectrogram…';
+  }
+
+  wDur.replaceWith(row('Duration', formatTime(audioBuffer.duration)));
+  wRate.replaceWith(rowHelp('Sample rate', audioBuffer.sampleRate.toLocaleString() + ' Hz', HELP_RATE));
+  wChans.replaceWith(row('Channels', audioBuffer.numberOfChannels + describeChannels(audioBuffer.numberOfChannels)));
 
   // Through the serial queue, one at a time: merge to mono, then stats. Each yields
   // while it runs and bails if this analysis is superseded (renderSignal aborts), so a
@@ -3701,6 +3906,17 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
     mono = await runAudioTask(() => getMonoCoop(audioBuffer, renderSignal), renderSignal);
     stats = await runAudioTask(() => computeStatsCoop(mono, renderSignal), renderSignal);
   } catch (e) { if (renderSignal.aborted) return; throw e; }
+
+  wPeak.replaceWith(rowHelp('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)', HELP_PEAK));
+  wRms.replaceWith(rowHelp('RMS', stats.rms.toFixed(3)  + '  (' + stats.rmsDb.toFixed(1)  + ' dBFS)', HELP_RMS));
+  if (stats.clipped > 0) {
+    const pct = ((stats.clipped / mono.length) * 100).toFixed(3);
+    wClip.replaceWith(rowHelp('Clipping', stats.clipped.toLocaleString() + ' samples  (' + pct + '%)', HELP_CLIP));
+  } else {
+    wClip.replaceWith(rowHelp('Clipping', 'None',
+      'Samples pushed to or past the digital ceiling (0 dBFS), which would cause distortion. None were found in this file.'));
+  }
+  wTotal.replaceWith(rowHelp('Total samples', mono.length.toLocaleString(), HELP_TOTAL));
 
   // ---- Forensic DSP (all pure, computed once and reused across cards) ----
   const sampleRate = audioBuffer.sampleRate;
@@ -3722,9 +3938,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
   // placeholders and fill in as each pass lands.
   let spec: any = null, health: any = null, keyResult: any = null, r128: any = null, tpDb: any = null, dtmf: any = null;
 
-  // ---- File info card ----
-  const infoCard = el('div', { class: 'anr-card' });
-  infoCard.appendChild(el('h3', {}, 'File info'));
+  // ---- Playback (File info card) ----
   // Pick the playback source. When the native decoder couldn't read the file
   // (usedFfmpeg), the <audio> element can't play it reliably either, so serve a
   // lossless WAV built from the PCM we already decoded - it plays in every browser
@@ -3752,7 +3966,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
     audioStopper();
     try { window._anrMediaStoppers.delete(audioStopper); } catch (_) {}
   }, { once: true });
-  infoCard.appendChild(audioEl);
+  tbl.before(audioEl);
 
   // Download button for in-browser captures (recording / live spectrogram), where
   // the analysed sound exists only as a blob and would otherwise be unsaveable. A
@@ -3763,96 +3977,15 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
       href: audioUrl, download: dlName, class: 'anr-btn',
       style: 'margin-top:10px;display:inline-block;text-decoration:none;'
     }, opts.downloadLabel || 'Download recording');
-    infoCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [dlLink]));
+    tbl.before(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [dlLink]));
   }
 
-  const tbl = el('table', { class: 'anr-readout' });
-  tbl.appendChild(row('Name',           file.name));
-  tbl.appendChild(row('Size',           fmtBytes(file.size)));
-  tbl.appendChild(rowHelp('MIME',       file.type || header.container || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
-  if (header.container) tbl.appendChild(row('Container',     header.container));
-  if (header.codec)     tbl.appendChild(row('Codec',         header.codec));
-  tbl.appendChild(row('Duration',       formatTime(audioBuffer.duration)));
-  tbl.appendChild(rowHelp('Sample rate',    audioBuffer.sampleRate.toLocaleString() + ' Hz',
-    'How many times per second the sound was measured when it was recorded, in hertz. Higher numbers capture higher-pitched sound - CD audio is 44,100 Hz, video audio is often 48,000 Hz.'));
-  tbl.appendChild(row('Channels',       audioBuffer.numberOfChannels + describeChannels(audioBuffer.numberOfChannels)));
-  if (header.bitDepth)  tbl.appendChild(rowHelp('Bit depth',     header.bitDepth + ' bit',
-    'How many bits are used to store each measurement of the sound. More bits capture a wider range from quiet to loud with less background grain (quantization noise) - CD audio uses 16 bits.'));
-  if (header.bitrateText || header.bitrate) tbl.appendChild(rowHelp('Bitrate',
-    header.bitrateText || ((header.bitrate / 1000).toFixed(0) + ' kbps'),
-    'How much data is spent on each second of audio, in kilobits per second. More data usually means better quality and a bigger file. VBR (variable bitrate) shows the average across the file.'));
-  try {
-    if (header.encoder) tbl.appendChild(rowHelp('Encoder', header.encoder,
-      'The software that created (encoded) this file, read from its Xing/LAME/VBRI header.'));
-    if (header.compressionRatio) tbl.appendChild(rowHelp('Compression',
-      header.compressionRatio.toFixed(2) + ':1',
-      'How much smaller lossless compression made the file compared with the same audio stored raw and uncompressed (PCM). A higher ratio means a smaller file for identical sound.'));
-    if (header.flacMd5) tbl.appendChild(rowHelp('Audio MD5', header.flacMd5,
-      "A fingerprint (MD5 checksum) of the raw decoded audio that FLAC stores inside the file (in its STREAMINFO block). A decoder can recompute it to confirm the audio survived re-encoding intact."));
-  } catch (_) {}
-  tbl.appendChild(rowHelp('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)',
-    'The loudest single sample in the file. dBFS means decibels relative to full scale, where 0 dBFS is the digital maximum and lower (more negative) numbers are quieter.'));
-  tbl.appendChild(rowHelp('RMS', stats.rms.toFixed(3)  + '  (' + stats.rmsDb.toFixed(1)  + ' dBFS)',
-    'Root Mean Square - the average energy of the signal, which tracks how loud it actually feels better than the single loudest peak does. Typical mastered music sits around −10 dBFS.'));
-  // Reuse the gated integrated figure the R128 pass already produced above rather
-  // than running a second, independent K-weighting sweep over the whole file for
-  // the same row. This is also the more correct number for the claim the help text
-  // makes: the streaming targets it cites are all defined against the GATED value
-  // (BS.1770 two-stage gate), which is what the Advanced card shows.
-  const rLoud = pendingRow('Loudness',
-    'How loud the audio feels to human ears, measured the broadcast-standard way (ITU-R BS.1770) that follows our hearing rather than raw signal level. Streaming targets: Spotify −14, YouTube −14, Apple −16 LUFS.', 4);
-  tbl.appendChild(rLoud);
-  if (stats.clipped > 0) {
-    const pct = ((stats.clipped / mono.length) * 100).toFixed(3);
-    tbl.appendChild(rowHelp('Clipping', stats.clipped.toLocaleString() + ' samples  (' + pct + '%)',
-      'Samples pushed to or past the digital ceiling (0 dBFS), which sounds like harsh distortion. The more samples clip, the rougher it sounds.'));
-  } else {
-    tbl.appendChild(rowHelp('Clipping', 'None',
-      'Samples pushed to or past the digital ceiling (0 dBFS), which would cause distortion. None were found in this file.'));
-  }
-  // Every row from here to Total samples needs a slow pass. They go in now as
-  // pending placeholders, in their normal positions, and fill in below - so the
-  // table's shape and order are the same as they always were, it just arrives in
-  // two stages instead of after a multi-second stall.
-  const rCrest = pendingRow('Crest factor',
-    'The gap between the loudest peak and the average (RMS) level - the peak-to-RMS ratio, a single number for how punchy or squashed the sound is. Loud, heavily compressed masters sit low (under about 8 dB); open, dynamic recordings sit higher (15 dB or more).', 2);
-  const rDc = pendingRow('DC offset',
-    'The average of all the samples, which should sit at about 0. A value away from 0 points to a recording or hardware fault, wastes loudness headroom, and can cause clicks where the audio is cut.', 2);
-  const rBits = pendingRow('Effective bit depth',
-    'The deepest bit that actually carries real sound, worked out from activity in the smallest bits. Sitting well below the stated bit depth means the file was padded or upscaled rather than genuinely high-resolution.', 2);
-  const rCentroid = pendingRow('Spectral centroid',
-    'Where the "centre of gravity" of the sound sits on the pitch scale - roughly whether it leans low or high overall. Below 1500 Hz sounds warm or dark, above 4000 Hz sounds bright or sharp. Handy for comparing the tonal character of two files.', 7);
-  const rPitch = pendingRow('Pitch',
-    'The main musical note the sound settles on, found with the YIN pitch-detection method. Cents measure how far it drifts from the nearest exact note (±50 cents is half a semitone, the gap between two adjacent piano keys).', 8);
-  const rBpm = pendingRow('BPM',
-    'Beats per minute - the tempo - read from the file’s saved metadata when it carries one, otherwise estimated by tracking where the beats land in the sound.', 9);
-  const rKey = pendingRow('Musical key',
-    'The song’s likely musical key, estimated by matching its blend of notes against reference patterns for each key (the Krumhansl-Schmuckler templates). Most reliable on tonal music; the runner-up is often the relative major or minor. Pairs with the detected tempo.', 3);
-  for (const r of [rCrest, rDc, rBits, rCentroid, rPitch, rBpm, rKey]) tbl.appendChild(r);
-  tbl.appendChild(rowHelp('Total samples',  mono.length.toLocaleString(),
-    'The total count of individual sound measurements in the merged mono signal - roughly the sample rate multiplied by the duration in seconds.'));
-  infoCard.appendChild(tbl);
-  // Mount for the spectrogram's "Analysis" sub-block (Peak / detected range /
-  // cutoff / dynamic range / resolution). It belongs to the spectrogram panel
-  // below - which fills this element and refreshes it as its FFT/window settings
-  // change - but is shown here inside File info at the user's request.
-  const specStatsMount = el('div');
-  infoCard.appendChild(specStatsMount);
-
-  // Show the result's shape immediately: the spectrogram's slot goes in above File
-  // info holding a loading bar (the panel itself needs the channel options built
-  // further down), and File info itself goes in fully formed, with the rows that
-  // depend on the slow passes sitting as pending placeholders.
-  const specSlot = el('div');
-  const specBooting = inlineLoader('Building spectrogram…');
-  specSlot.appendChild(specBooting);
-  resultsEl.appendChild(specSlot);
-  resultsEl.appendChild(infoCard);
   // Wait for a REAL paint, not just a rAF tick. Everything below - building the
   // panel, then its FFT - runs synchronously and would block the paint, so without
   // this the spectrogram's loading bar is inserted and then never shown: the reader
   // just gets a blank gap where the spectrogram will be.
   await afterPaint();
+  if (renderSignal.aborted) return;
 
   // ---- Channel picker (multi-channel files) ----
   // For stereo / surround, let the user drive the spectrogram + waveform below off
@@ -3949,9 +4082,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
 
   // Place the remaining slots now, in their final order, so the result has its
   // full shape before any slow work starts and nothing jumps around as the cards
-  // land in it.
-  const coverSlot = el('div');
-  const tagSlot = el('div');
+  // land in it. (Cover art and tags already have their slots, above.)
   // Every card from here down waits on the forensic DSP queue, which runs for as
   // long as it runs. Each slot holds a loading bar meanwhile - the same inline bar
   // the spectrogram slot uses - so the result shows its full shape and says what is
@@ -3970,8 +4101,6 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
     chanCard.append(chanHead, chanHelpPanel, chanSeg, chanStat);
     chanSlot.appendChild(chanCard);
   }
-  resultsEl.appendChild(coverSlot);
-  resultsEl.appendChild(tagSlot);
   resultsEl.appendChild(lossySlot);
   resultsEl.appendChild(waveSlot);
   resultsEl.appendChild(chanSlot);
@@ -3992,6 +4121,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
   // DSP queue runs - one whole-file pass at a time, never two at once.
   if (curSpecPanel && curSpecPanel.firstPaint) { try { await curSpecPanel.firstPaint; } catch (_) {} }
   try { await curWaveReady; } catch (_) {}
+  if (renderSignal.aborted) return;
 
   // The headline visual is up and File info is complete bar a few pending rows,
   // so the drop popup has nothing left to report - everything below either fills
@@ -4027,13 +4157,8 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
   // read the tag up front (a 64 KB header read) and let the queue skip a whole
   // extra STFT when there is one, rather than computing it and throwing it away.
   const tagBpm = await readTagBPM(file).catch(() => null);
+  if (renderSignal.aborted) return;
   const needBpm = tagBpm == null;
-
-  // Embedded tags. Started here and awaited just before the Advanced card is
-  // built, because the encoder tags belong in Advanced rather than in a Tags card
-  // they were usually the only occupant of. The DSP queue below takes far longer
-  // than this read, so by the time it is awaited it has long since resolved.
-  const tagsPromise = readAudioTags(file).catch(() => null);
 
   // One handler for every pass, called in order by whichever driver runs below,
   // so the worker path and the inline fallback fill the readout identically.
@@ -4171,7 +4296,7 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
   // for the explicit tag and 'Encoder library' for the stream vendor string when a
   // file carries both.
   const tagsMeta = await tagsPromise;
-  const ENCODER_TAGS = new Set(['Encoder', 'Encoder library']);
+  if (renderSignal.aborted) return;
   const encoderTags = (tagsMeta && tagsMeta.tags)
     ? tagsMeta.tags.filter(([name]) => ENCODER_TAGS.has(name)) : [];
 
@@ -4341,34 +4466,6 @@ export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any 
   // loading bar) before the forensic passes ran; renderSignalViews below fills it.
   // (opts.spectrogramFirst predates this being the default and is kept for the
   // image-sonify caller; the placement is now the same either way.)
-
-  // ---- Embedded cover art (filled in asynchronously so it doesn't block) ----
-  extractCoverArt(file).then((art) => {
-    if (art && art.bytes && art.bytes.length) coverSlot.appendChild(buildCoverArtCard(art, file, resultsEl));
-  }).catch(() => {});
-
-  // ---- Embedded tags + lyrics ----
-  // Already resolved (started before the DSP queue). The encoder tags are skipped
-  // here - they are shown in Advanced - so a file whose only tag was its encoder
-  // no longer gets a Tags card holding a single row.
-  tagsPromise.then((meta) => {
-    if (!meta) return;
-    const tags = (meta.tags || []).filter(([name]) => !ENCODER_TAGS.has(name));
-    if (tags.length) {
-      const card = el('div', { class: 'anr-card' });
-      card.appendChild(el('h3', {}, 'Tags'));
-      const tbl = el('table', { class: 'anr-readout' });
-      for (const [name, value] of tags) tbl.appendChild(tagRow(name, value));
-      card.appendChild(tbl);
-      tagSlot.appendChild(card);
-    }
-    if (meta.lyrics) {
-      const card = el('div', { class: 'anr-card' });
-      card.appendChild(el('h3', {}, 'Lyrics'));
-      card.appendChild(el('pre', { class: 'anr-lyrics' }, meta.lyrics));
-      tagSlot.appendChild(card);
-    }
-  }).catch(() => {});
 
 
   // ---- Stereo Width / Vectorscope (stereo files only) ----
@@ -4570,8 +4667,24 @@ async function startRecording(resultsEl: HTMLElement, recordBtn: HTMLButtonEleme
   // not just the in-card Stop button. Cleared in finish().
   recordBtn._stopRec = () => { try { rec.stop(); } catch (_) {} };
 
+  // A new file or an SPA navigation tears the view down: stop the recorder, the
+  // mic tracks, the timer and the live spectrogram's nodes and rAF with it, and
+  // discard the take rather than rendering it over whatever replaced this view.
+  let discarded = false;
+  const recStopper = () => {
+    discarded = true;
+    try { if (rec.state !== 'inactive') rec.stop(); } catch (_) {}
+    clearInterval(tick);
+    if (stopSpec) { try { stopSpec(); } catch (_) {} stopSpec = null; }
+    recordBtn.classList.remove('is-recording');
+    recordBtn._stopRec = null;
+    stream.getTracks().forEach((t) => t.stop());
+  };
+  (window._anrMediaStoppers = window._anrMediaStoppers || new Set()).add(recStopper);
+
   return new Promise((resolve) => {
     function finish() {
+      try { window._anrMediaStoppers.delete(recStopper); } catch (_) {}
       clearInterval(tick);
       if (stopSpec) stopSpec();
       recordBtn.classList.remove('is-recording');
@@ -4580,6 +4693,7 @@ async function startRecording(resultsEl: HTMLElement, recordBtn: HTMLButtonEleme
     }
     rec.onstop = async () => {
       finish();
+      if (discarded) { resolve(null); return; }
       const blob = new Blob(chunks, { type: mime || 'audio/webm' });
       const ext = (mime.match(/audio\/(\w+)/) || [, 'webm'])[1];
       const file = new File([blob], 'recording.' + ext, { type: blob.type });
@@ -4867,6 +4981,9 @@ async function startLive(resultsEl: HTMLElement, liveBtn: HTMLButtonElement) {
     const chunks: BlobPart[]|undefined = [];
     liveRec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     liveRec.onstop = async () => {
+      // Torn down by a new file / navigation: the take is dropped, not rendered.
+      if (liveDiscard) { liveRec = null; return; }
+      try { window._anrMediaStoppers.delete(liveStopper); } catch (_) {}
       recBtn.classList.remove('is-recording');
       recBtn.innerHTML = '<span style="display:inline-flex;align-items:center;vertical-align:middle;margin-right:6px;"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" fill="currentColor"/></svg></span>Record';
       const blob = new Blob(chunks, { type: mime || 'audio/webm' });
@@ -4894,6 +5011,7 @@ async function startLive(resultsEl: HTMLElement, liveBtn: HTMLButtonElement) {
   }
 
   function closeLive() {
+    try { window._anrMediaStoppers.delete(liveStopper); } catch (_) {}
     if (stopped) return;
     stopped = true;
     liveBtn.classList.remove('is-active');
@@ -4910,6 +5028,15 @@ async function startLive(resultsEl: HTMLElement, liveBtn: HTMLButtonElement) {
     if (!resultsEl.children.length) resultsEl.hidden = true;
   }
   liveBtn.addEventListener('click', closeLive);
+  // A new file or an SPA navigation must shut the mic, the capture
+  // ScriptProcessor, the analyser and the draw loop down with the view - clearing
+  // the results alone left them all running (and the mic indicator on).
+  let liveDiscard = false;
+  function liveStopper() {
+    if (liveRec) { liveDiscard = true; try { liveRec.stop(); } catch (_) {} }
+    closeLive();
+  }
+  (window._anrMediaStoppers = window._anrMediaStoppers || new Set()).add(liveStopper);
   // Disabling the in-card Live toggle pauses the stream rather than closing it.
   liveToggleBtn.addEventListener('click', () => { paused = !paused; applyPause(); });
   // Grab the buffered audio, stop live, and open it as a full static analysis so

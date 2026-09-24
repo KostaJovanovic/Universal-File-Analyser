@@ -15,18 +15,37 @@ import { fmtBytes, preBlock, fmtDate, loadScript, readSlice } from '../core/util
 import { Reader, ascii, matchMagic, latin1, utf8, gunzip, inflate, hexBytes } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 import { xzDecompress } from '../lib/xz-loader.js';
+import { SCAN_SMALL, SCAN_MED, DECOMP_OUTPUT_MAX, LIST_ENTRIES_MAX } from '../core/limits.js';
 // ---------- zstd decompression (lazy fzstd) ----------
 // Decompress a zstd byte buffer using the vendored fzstd UMD library, loaded on
 // demand the first time a .zst/.conda member is opened. Returns the decompressed
 // Uint8Array, or null on any failure (so callers fall back to header-only).
-async function zstdDecompress(bytes) {
+// Runs fzstd's STREAMING decoder so the output can be counted block by block:
+// past `maxOut` the decode is abandoned (null), so a zstd bomb never allocates
+// more than the ceiling - the one-shot decompress() would build it all first.
+async function zstdDecompress(bytes, maxOut = DECOMP_OUTPUT_MAX) {
     try {
-        if (!(window.fzstd && window.fzstd.decompress))
+        if (!(window.fzstd && window.fzstd.Decompress))
             await loadScript('assets/vendor/fzstd.js');
-        if (!(window.fzstd && window.fzstd.decompress))
+        if (!(window.fzstd && window.fzstd.Decompress))
             return null;
-        const out = window.fzstd.decompress(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
-        return out instanceof Uint8Array ? out : (out ? new Uint8Array(out) : null);
+        const chunks = [];
+        let total = 0;
+        const OVER = {};
+        const ds = new window.fzstd.Decompress((chunk) => {
+            total += chunk.length;
+            if (total > maxOut)
+                throw OVER;
+            chunks.push(chunk.slice());
+        });
+        ds.push(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), true);
+        const out = new Uint8Array(total);
+        let o = 0;
+        for (const c of chunks) {
+            out.set(c, o);
+            o += c.length;
+        }
+        return out;
     }
     catch (_) {
         return null;
@@ -273,7 +292,7 @@ async function parseXz(head, file, ext) {
             return out;
         out['Decompressed size'] = fmtBytes(decoded.length);
         // Detect an inner tar (ustar magic at 257, or a plausible octal size field).
-        const looksTar = ascii(decoded, 257, 5) === 'ustar' || /^[0-7 ]+$/.test(tarStr(decoded, 148, 8) || ' ');
+        const looksTar = ascii(decoded, 257, 5) === 'ustar' || /^[0-7]+$/.test(tarStr(decoded, 148, 8)); // an empty checksum is not a tar
         const nameIsTar = ext === 'txz' || /\.tar\.xz$/i.test((file.name || '')) || /\.tar$/i.test((file.name || '').replace(/\.xz$/i, ''));
         if (looksTar || nameIsTar) {
             const { items, members, total } = listTarMembers(decoded);
@@ -318,7 +337,7 @@ async function parseZstd(head, file, ext) {
             return out;
         out['Decompressed size'] = fmtBytes(decoded.length);
         // Detect an inner tar (ustar magic at 257, or a plausible octal size field).
-        const looksTar = ascii(decoded, 257, 5) === 'ustar' || /^[0-7 ]+$/.test(tarStr(decoded, 148, 8) || ' ');
+        const looksTar = ascii(decoded, 257, 5) === 'ustar' || /^[0-7]+$/.test(tarStr(decoded, 148, 8)); // an empty checksum is not a tar
         const nameIsTar = ext === 'tzst' || /\.tar\.zst$/i.test((file.name || '')) || /\.tar$/i.test((file.name || '').replace(/\.zst$/i, ''));
         if (looksTar || nameIsTar) {
             const { items, members, total } = listTarMembers(decoded);
@@ -357,7 +376,7 @@ function parseZstdHeader(head) {
     if (!singleSeg) {
         const wd = head[p++];
         const exponent = wd >> 3, mantissa = wd & 0x07;
-        const windowBase = 1 << (10 + exponent);
+        const windowBase = 2 ** (10 + exponent); // not 1 << : exponent reaches 31, which overflows a 32-bit shift
         windowLog = windowBase + (windowBase / 8) * mantissa;
     }
     // Dictionary ID
@@ -565,6 +584,10 @@ async function parseArMembers(file, maxBytes = 16 * 1024 * 1024) {
         const size = parseInt(ascii(b, pos + 48, 10).trim(), 10) || 0;
         if (b[pos + 58] !== 0x60 || b[pos + 59] !== 0x0a)
             break; // member header ends with "`\n"
+        // A negative size would walk back onto the same header forever; one larger
+        // than the buffer is corrupt. Either ends the walk, as does the entry cap.
+        if (!(size >= 0 && size <= b.length) || members.length >= LIST_ENTRIES_MAX)
+            break;
         const dataStart = pos + 60;
         members.push({ name: name.replace(/\/$/, ''), size, mtime: parseInt(mtime, 10) || 0, dataStart });
         pos = dataStart + size + (size % 2); // members are 2-byte aligned
@@ -623,8 +646,11 @@ async function parseLib(file) {
             if (machine)
                 machines.add(machine);
             let p = m.dataStart + 20;
-            const end = m.dataStart + m.size;
-            const readStr = () => { let s = ''; while (p < end && b[p] !== 0)
+            // Bounded by the BUFFER as well as the declared member end (which a corrupt
+            // header can put far past it), and each name capped - a symbol or DLL name
+            // is never kilobytes long.
+            const end = Math.min(b.length, m.dataStart + m.size);
+            const readStr = () => { let s = ''; const stop = Math.min(end, p + 4096); while (p < stop && b[p] !== 0)
                 s += String.fromCharCode(b[p++]); p++; return s; };
             readStr(); // imported symbol name (skipped)
             const dll = readStr(); // DLL the symbol is imported from
@@ -692,8 +718,10 @@ async function parseDeb(file) {
         out['Control archive'] = ctrl.name;
         try {
             let tarBytes = ar.buf.subarray(ctrl.dataStart, ctrl.dataStart + ctrl.size);
+            // control.tar is a few KB; SCAN_SMALL is the ceiling, and partial so a
+            // member cut by the 16 MB ar read still yields its leading files.
             if (/\.gz$/.test(ctrl.name))
-                tarBytes = await gunzip(tarBytes);
+                tarBytes = await gunzip(tarBytes, SCAN_SMALL, { partial: true });
             else if (/\.xz$/.test(ctrl.name))
                 tarBytes = await xzDecompress(tarBytes); // lazy LZMA2 (null on failure)
             else if (/\.zst$/.test(ctrl.name))
@@ -881,7 +909,7 @@ async function parseGem(file) {
     const metaGz = findTarMember(b, 'metadata.gz');
     if (metaGz) {
         try {
-            const yaml = utf8(await gunzip(metaGz) || new Uint8Array());
+            const yaml = utf8(await gunzip(metaGz, SCAN_SMALL, { partial: true }) || new Uint8Array());
             const pick = (k) => { const m = yaml.match(new RegExp('^' + k + ':\\s*(.+)$', 'm')); return m ? m[1].trim() : null; };
             if (pick('name'))
                 out['Name'] = pick('name');
@@ -1229,7 +1257,9 @@ async function parseAsar(file) {
         const info = json.files['package.json'];
         if (info.offset != null && info.size) {
             try {
-                const baseOff = 16 + jsonLen + (8 - (jsonLen % 8)) % 8;
+                // File data starts after the header pickle, whose size the first pickle
+                // states (Pickle pads the JSON string to 4 bytes, i.e. 16 + align4(jsonLen)).
+                const baseOff = 8 + headerObjSize;
                 const pj = jsonTry(utf8(await readRange(file, baseOff + Number(info.offset), baseOff + Number(info.offset) + info.size)));
                 if (pj) {
                     if (pj.name)
@@ -1448,7 +1478,7 @@ async function parseXar(file, ext) {
     try {
         if (tocComp > 0 && tocComp <= 32 * 1024 * 1024) {
             const tocBytes = await readRange(file, headerSize, headerSize + tocComp);
-            const xmlBytes = await inflate(tocBytes, 'deflate');
+            const xmlBytes = await inflate(tocBytes, 'deflate', SCAN_MED); // TOC XML is KBs-MBs; a bomb stops here
             if (xmlBytes && xmlBytes.length) {
                 const xml = utf8(xmlBytes);
                 // Member count: each <file> with a <name> child.
@@ -1561,7 +1591,7 @@ async function parseLzo(file) {
     if (version >= 0x0940)
         verNeeded = r.u16();
     const method = r.u8();
-    const level = r.u8();
+    const level = version >= 0x0940 ? r.u8() : 0; // the level byte only exists from lzop 0.9.4
     const flags = r.u32();
     const out = {
         'Format': 'lzop compressed (LZO)',
@@ -1689,10 +1719,11 @@ async function parseBr(file) {
     };
     try {
         if (typeof DecompressionStream !== 'undefined' && file.size <= 64 * 1024 * 1024) {
-            const comp = await readBytes(file, file.size);
             // 'br' is only a CompressionFormat where the browser ships Brotli; inflate()
-            // returns null on the ones that don't.
-            const decoded = await inflate(comp, 'br');
+            // returns null on the ones that don't - and past DECOMP_OUTPUT_MAX, so a
+            // Brotli bomb (ratios run to thousands) stops at the ceiling. The file is
+            // streamed in rather than read whole first.
+            const decoded = await inflate(file, 'br', DECOMP_OUTPUT_MAX);
             if (decoded && decoded.length) {
                 out['Decompressed size'] = fmtBytes(decoded.length);
                 if (file.size > 0)

@@ -9460,6 +9460,16 @@ a.stats-ext-link:hover { color: var(--accent); text-decoration: none; }
   cursor: default;
   user-select: none;
 }
+/* pdf.js 4.10's TextLayer measures glyphs on a canvas it appends to <body>;
+   pdf_viewer.css keeps it out of layout the same way. */
+.hiddenCanvasElement {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  display: none;
+}
 
 /* Per-page selectable text card (pagedTextCard), shared by the doc viewers. */
 .anr-pagetext-wrap { max-height: 460px; overflow: auto; margin-top: 4px; }
@@ -10002,6 +10012,10 @@ html[data-page="home"] .anr-stack {
   align-items: start;
 }
 html[data-page="home"] .anr-stack > * { grid-column: 1 / -1; }
+/* .section's `margin: 0 auto` stops a grid item stretching, so without a width
+   a section shrinks to its content - a Sound result showing File info before
+   its spectrogram exists came out a narrow column until the canvas landed. */
+html[data-page="home"] .anr-stack > .section { width: 100%; }
 html[data-page="home"] .anr-stack > .section:has(.anr-results > .anr-prompt-card:only-child) {
   grid-column: span 1;
   padding: 32px 0 0;

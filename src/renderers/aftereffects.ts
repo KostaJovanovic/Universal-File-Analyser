@@ -25,6 +25,7 @@
    from. We show the project metadata, then each composition's layer timeline. */
 
 import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, type ElChild } from '../core/util.js';
+import { TIMELINE_TICKS_MAX } from '../core/limits.js';
 
 const SCALE = 30720;                       // default ticks-per-second; the real value is per-comp (cdta u32@8)
 const MAX_READ = 256 * 1024 * 1024;        // guard: don't buffer absurdly large projects whole
@@ -136,8 +137,9 @@ function parseAep(buf: Uint8Array) {
     // layer out-points are unreliable - an unset layer carries a huge sentinel
     // and a time-remapped layer can run far past the comp end. Only if the header
     // value is missing do we fall back to the longest sane layer.
+    // A zero time scale would make it Infinity; that reads as "missing" too.
     const headerDur = comp.durTicks > 0 ? comp.durTicks / comp.scale : 0;
-    comp.dur = headerDur > 0.01 ? headerDur
+    comp.dur = headerDur > 0.01 && isFinite(headerDur) ? headerDur
       : Math.max(0.01, ...comp.real.map((l: any) => l.tOut).filter((x: number) => x > 0.01 && x < 1e5));
     // Name priority: renamed layer (Utf8) -> legacy ldta name -> source file /
     // comp name -> numbered fallback. The source resolves footage to its filename
@@ -203,8 +205,11 @@ function aepTrackSvg(real: any[], dur: number, H: number, trackW: number, pps: n
     stripes += `<rect x="0" y="${TOP + i * LH}" width="${trackW}" height="${LH}" fill="${i % 2 ? 'rgba(128,128,128,.10)' : 'rgba(128,128,128,.04)'}"/>`;
   });
   const STEPS = [0.25, 0.5, 1, 2, 5, 10, 15, 20, 30, 60, 120, 300, 600];
-  const step = STEPS.find((s) => s * pps >= 55) || STEPS[STEPS.length - 1];
-  for (let t = 0; t <= dur + 1e-6; t += step) {
+  // The duration is the file's claim: past TIMELINE_TICKS_MAX ticks the step
+  // widens, so a comp claiming centuries cannot build billions of grid lines.
+  const gridEnd = isFinite(dur) ? Math.max(0, dur) : 0;
+  const step = Math.max(STEPS.find((s) => s * pps >= 55) || STEPS[STEPS.length - 1], gridEnd / TIMELINE_TICKS_MAX);
+  for (let t = 0; t <= gridEnd + 1e-6; t += step) {
     const gx = x(t);
     grid += `<line x1="${gx}" y1="${TOP}" x2="${gx}" y2="${bottom}" stroke="currentColor" stroke-width="1" opacity=".12"/>`;
     grid += `<text x="${gx + 3}" y="${bottom + 14}" fill="currentColor" font-size="9.5" opacity=".5">${fmtTick(t)}</text>`;

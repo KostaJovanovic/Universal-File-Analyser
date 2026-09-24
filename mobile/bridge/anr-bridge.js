@@ -258,7 +258,6 @@ const api = Object.freeze({
   chrome: chromeVersion,
   packaged: !!BOOT.packaged,
   portable: false,
-  dataDir: '',
   memoryGB: 0,                        // on purpose - see the header
 
   onOpen(cb) {
@@ -274,8 +273,15 @@ const api = Object.freeze({
   /** A phone has no title bar to name the file in. */
   setSubject() {},
 
+  /** Never rejects. Resolves { ok: true }, { ok: false, canceled: true } or
+   *  { ok: false, error } - a failed save must not send export-data.ts to its
+   *  window.open('') fallback, which a single-WebView shell cannot show. */
   saveReport(name, html) {
-    return saveBlob(String(name || 'analysis') + '.html', new Blob([String(html || '')], { type: 'text/html' }), 'text/html');
+    return saveBlob(String(name || 'analysis') + '.html', new Blob([String(html || '')], { type: 'text/html' }), 'text/html')
+      .then(
+        (r) => (r && typeof r === 'object' ? r : { ok: false, error: 'the save did not answer' }),
+        (e) => ({ ok: false, error: String((e && e.message) || e || 'the save failed') }),
+      );
   },
 
   /** The footer's "Check for updates" button (core/offline-tiers.ts).

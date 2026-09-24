@@ -16,13 +16,13 @@ import { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, net, protoc
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { totalmem } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { looksLikeWebRoot, mimeFor, route } from './router.mjs';
 import { buildMenu, menuModel, runMenuItem } from './menu.mjs';
 import * as ffnative from './ffmpeg-native.mjs';
-import { checkForUpdates, startUpdates } from './updater.mjs';
+import { checkForUpdates, checkForUpdatesFromPage, startUpdates } from './updater.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -96,6 +96,9 @@ const CHROME_FILES = new Set(['titlebar.html', 'titlebar.js', 'panel.html', 'pan
 /* Cap the "open a folder" walk at the same number the in-page folder walk uses
    (FOLDER_ENTRY_CAP in src/renderers/folder.ts). Keep the two in step. */
 const FOLDER_ENTRY_CAP = 100000;
+
+/* The largest request body the /api/* proxy forwards. */
+const API_BODY_MAX = 64 * 1024;
 
 // ---------------------------------------------------------------------------
 // Portable mode
@@ -287,7 +290,8 @@ function createWindow() {
     // than in the host's %APPDATA%. Worth surfacing: the point of the portable
     // build is that it leaves the machine as it found it.
     portable: !!PORTABLE_DATA,
-    dataDir: app.getPath('userData'),
+    // No dataDir: the page has no use for the profile path, which names the
+    // Windows user. The About dialog below shows it from here instead.
   };
 
   const win = new BrowserWindow({
@@ -473,7 +477,10 @@ function hardenWebContents(wc) {
         action: 'allow',
         overrideBrowserWindowOptions: {
           width: 900, height: 900, backgroundColor: '#ffffff',
-          webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+          // preload spelled out as undefined: a child window's preferences start
+          // from its opener's, and the report window must not get the
+          // app's bridge (window.anrDesktop) along with them.
+          webPreferences: { preload: undefined, contextIsolation: true, sandbox: true, nodeIntegration: false },
         },
       };
     }
@@ -689,6 +696,12 @@ ipcMain.handle('anr:menu-run', (e, id) => (fromChrome(e) ? runMenuItem(actions, 
  * ------------------------------------------------------------------------- */
 let panelWin = null;
 let panelMenuId = '';
+/** Where the open menu's title sits, in the bar's CSS pixels (anr:menu-open). */
+let panelAt = { x: 0, y: 0 };
+/** The largest panel a menu can ask for, in CSS pixels. A menu is a column of
+ *  short rows; anything bigger is a panel trying to cover the window. */
+const PANEL_MAX_W = 560;
+const PANEL_MAX_H = 800;
 /* Clicking an open menu's own title must CLOSE it. The click blurs the panel
    window first, which closes it, and the title's click handler then arrives at
    an already-closed menu and would open it straight back up. So a re-open of
@@ -765,7 +778,14 @@ ipcMain.on('anr:menu-open', (e, req) => {
   }
   panelMenuId = id;
   const win = ensurePanelWindow();
-  const at = { x: Math.round(Number(req.x) || 0), y: Math.round(Number(req.y) || 0) };
+  // Clamped to the bar's own width and height, and kept here: anr:panel-size
+  // positions the panel from THIS, never from coordinates the panel sends.
+  const c = mainWindow.getContentBounds();
+  const at = {
+    x: Math.round(Math.min(Math.max(Number(req.x) || 0, 0), c.width)),
+    y: Math.round(Math.min(Math.max(Number(req.y) || 0, 0), c.height)),
+  };
+  panelAt = at;
   const send = () => win.webContents.send('anr:panel-menu', { menu, at });
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send); else send();
 });
@@ -779,11 +799,14 @@ ipcMain.on('anr:panel-size', (e, size) => {
   /* Both of these arrive as CSS pixels - the panel's own for the size, the
      bar's for the position - and window bounds are window pixels. One origin,
      so one factor covers both. See the note above zoomFactor. */
-  const w = Math.max(80, Math.ceil((Number(size && size.w) || 0) * zoomFactor));
-  const h = Math.max(24, Math.ceil((Number(size && size.h) || 0) * zoomFactor));
-  const at = size && size.at ? size.at : { x: 0, y: 0 };
   const c = mainWindow.getContentBounds();
   const area = screen.getDisplayMatching(c).workArea;
+  const cssW = Math.min(Math.max(Number(size && size.w) || 0, 0), PANEL_MAX_W);
+  const cssH = Math.min(Math.max(Number(size && size.h) || 0, 0), PANEL_MAX_H);
+  const w = Math.min(area.width, Math.max(80, Math.ceil(cssW * zoomFactor)));
+  const h = Math.min(area.height, Math.max(24, Math.ceil(cssH * zoomFactor)));
+  // The anchor main stored when the bar asked; the panel's own `at` is ignored.
+  const at = panelAt;
   // Clamped to the display, so a menu near the right or bottom edge stays whole
   // rather than being cut off - a panel window is not bounded by its parent.
   const x = Math.min(Math.max(area.x, c.x + at.x * zoomFactor), area.x + area.width - w);
@@ -873,7 +896,12 @@ ipcMain.on('anr:chrome-nav', (e, dir) => {
    title, so the taskbar entry says the same. */
 ipcMain.on('anr:subject', (e, text) => {
   if (e.sender !== appContents() || !mainWindow || mainWindow.isDestroyed()) return;
-  const subject = String(text || '').slice(0, 200);
+  // A file name and nothing more: no control or bidi-override characters (which
+  // could reorder what the bar shows), none of the characters a Windows file
+  // name cannot hold, and runs of spaces folded to one.
+  const subject = String(text || '')
+    .replace(/[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩/\\:*?"<>|]/g, '')
+    .replace(/\s+/g, ' ').trim().slice(0, 200);
   mainWindow.setTitle(subject ? subject + ' - Analyser' : 'Analyser');
   mainWindow.webContents.send('anr:chrome-subject', subject);
 });
@@ -881,12 +909,26 @@ ipcMain.on('anr:subject', (e, text) => {
 // ---------------------------------------------------------------------------
 // Save the exported report through a native dialog (IPC from preload).
 // ---------------------------------------------------------------------------
-ipcMain.handle('anr:save-report', async (e, { name, html }) => {
+/* A report is one HTML file with its images inlined. This is far above any real
+   one and still keeps a page from handing main an arbitrary amount to write. */
+const REPORT_MAX = 256 * 1024 * 1024;
+
+ipcMain.handle('anr:save-report', async (e, req) => {
   // Only the app's own view may ask.
   if (e.sender !== appContents()) return { ok: false, error: 'denied' };
+  const html = req && req.html;
+  if (typeof html !== 'string' || html.length > REPORT_MAX) return { ok: false, error: 'not a report' };
+  // The page names the file, never the folder: basename() drops any path it
+  // sent (an absolute path would otherwise preselect, say, the Startup
+  // folder), the filter drops what Windows reads as a stream or a device, and
+  // the dialog opens in Documents.
+  const base = basename(String((req && req.name) || 'analysis'))
+    .replace(/[^A-Za-z0-9 ._()-]/g, '_').replace(/^[ .]+/, '').slice(0, 120) || 'analysis';
+  let folder = '';
+  try { folder = app.getPath('documents'); } catch (_) { /* the dialog's own default */ }
   const res = await dialog.showSaveDialog(mainWindow, {
     title: 'Save the analysis report',
-    defaultPath: (name || 'analysis') + '.html',
+    defaultPath: folder ? join(folder, base + '.html') : base + '.html',
     filters: [{ name: 'HTML report', extensions: ['html'] }],
   });
   if (res.canceled || !res.filePath) return { ok: false, canceled: true };
@@ -986,10 +1028,11 @@ ipcMain.handle('anr:ffmpeg-close', async (e, { id }) => {
 
 /* The footer's "Check for updates" button (core/offline-tiers.ts via the
    preload). The same check as Help > Check for updates: updater.mjs answers
-   in a native dialog, so nothing comes back to the page. */
+   in a native dialog, so nothing comes back to the page. Page-initiated, so
+   it is debounced there: a page calling this in a loop gets one dialog. */
 ipcMain.handle('anr:check-updates', (e) => {
   if (!fromMainWindow(e)) return false;
-  checkForUpdates().catch(() => {});
+  checkForUpdatesFromPage().catch(() => {});
   return true;
 });
 
@@ -1048,19 +1091,35 @@ if (!app.requestSingleInstanceLock()) {
 
       const r = route(url.pathname, WEB_DIR);
 
+      // /index, /dir/index and /about/ (see router.mjs). The target is always
+      // a path on this origin.
+      if (r.redirect) {
+        return new Response(null, { status: 308, headers: { location: ORIGIN + r.redirect + url.search } });
+      }
+
       if (r.proxy) {
         // API_ORIGIN in src/core/util.ts is '' (same origin), and the Worker
         // sets no CORS headers - so a renderer fetch straight to the site would
         // fail. Forwarding from here sidesteps CORS entirely and leaves
         // util.ts, history.ts, stats-page.ts, leaderboard.ts and the Worker
         // untouched.
+        // Only what the stats API reads is forwarded: the content type (the
+        // Worker requires JSON) and a fixed user agent. Cookies, the page's
+        // origin and anything else a page could set stay here, and the body is
+        // capped - every real call is a few hundred bytes of JSON.
         try {
-          return await net.fetch(SITE + url.pathname + url.search, {
-            method: req.method,
-            headers: req.headers,
-            body: req.body,
-            duplex: 'half',
-          });
+          const headers = { 'user-agent': 'Analyser-Desktop/' + app.getVersion() };
+          const ct = req.headers.get('content-type');
+          if (ct) headers['content-type'] = ct.slice(0, 200);
+          let body;
+          if (req.method !== 'GET' && req.method !== 'HEAD') {
+            const buf = await req.arrayBuffer();
+            if (buf.byteLength > API_BODY_MAX) {
+              return new Response('{"error":"too large"}', { status: 413, headers: { 'content-type': 'application/json' } });
+            }
+            body = buf;
+          }
+          return await net.fetch(SITE + url.pathname + url.search, { method: req.method, headers, body });
         } catch (_) {
           // Offline: the app already treats a failed /api/* call as "not
           // counted" and queues the ping, so a clean error is enough.
@@ -1119,12 +1178,15 @@ if (!app.requestSingleInstanceLock()) {
     // Only allow what the app actually uses. Everything else - notifications,
     // geolocation, media capture, MIDI, USB, HID, serial - is denied outright.
     // Both views share the default session, so one handler covers the pair.
+    // The check handler answers the synchronous questions (permissions.query,
+    // and Chromium's own checks before a request) with the same list, so the
+    // two can never disagree.
     const sess = appContents().session;
+    const ALLOWED_PERMISSIONS = new Set(['fullscreen', 'clipboard-read', 'clipboard-sanitized-write']);
     sess.setPermissionRequestHandler((_wc, permission, callback) => {
-      callback(permission === 'fullscreen'
-        || permission === 'clipboard-read'
-        || permission === 'clipboard-sanitized-write');
+      callback(ALLOWED_PERMISSIONS.has(permission));
     });
+    sess.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission));
 
     appContents().once('did-finish-load', () => {
       for (const p of pathsFromArgv(process.argv)) openPath(p);

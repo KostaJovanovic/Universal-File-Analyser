@@ -20,27 +20,44 @@
    Analyse / Download actions overlaid on hover (see /test for the demo). */
 import { el, downloadBlob } from '../core/util.js';
 import { decodeJpegPartial, detectCorruptCut } from './jpeg-salvage.js';
-// Longest edge of a gallery thumbnail, in CSS pixels. Matches the 200px cap in
-// .anr-carve-thumb so a decoded carve is never scaled down again by the browser.
-const THUMB_MAX = 200;
+import { CARVE_THUMB_EDGE } from '../core/limits.js';
+// Longest edge of a gallery thumbnail - see CARVE_THUMB_EDGE in limits.js.
+const THUMB_MAX = CARVE_THUMB_EDGE;
 // Only one lightbox image is open at a time, so only one URL is kept alive.
 let lbUrl = null;
 // Open a carve full-size in the shared photo lightbox. photo.js is imported at
 // click time, not up front: unknown.js is the fallback for files we can't
 // identify and must not pull in the (large) photo module just to list carves.
-function openCarve(file, salvageUrl) {
+function openCarve(file, salvaged) {
     const prev = lbUrl;
+    const open = (url) => {
+        lbUrl = url;
+        import('./photo.js').then(({ openLightbox }) => {
+            openLightbox(url, 'Carved image', file.name, null, false, false, { checker: true });
+            if (prev)
+                URL.revokeObjectURL(prev);
+        }).catch(() => { if (prev)
+            URL.revokeObjectURL(prev); });
+    };
+    if (!salvaged) {
+        open(URL.createObjectURL(file));
+        return;
+    }
     // A carve the browser couldn't decode was shown from the salvage decoder; the
-    // lightbox opens that recovered raster (a data URL, no revoke) rather than the
-    // raw File, which would render blank.
-    const url = salvageUrl || URL.createObjectURL(file);
-    lbUrl = salvageUrl ? null : url;
-    import('./photo.js').then(({ openLightbox }) => {
-        openLightbox(url, 'Carved image', file.name, null, false, false, { checker: true });
-        if (prev)
-            URL.revokeObjectURL(prev);
-    }).catch(() => { if (prev)
-        URL.revokeObjectURL(prev); });
+    // lightbox needs that recovered raster rather than the raw File, which would
+    // render blank. It is rebuilt here, on the click, rather than kept per cell: a
+    // full-resolution PNG held for every salvaged thumbnail in a 48-carve gallery
+    // is hundreds of MB the user never asked to see.
+    file.arrayBuffer().then((ab) => {
+        const full = salvageFullCanvas(new Uint8Array(ab));
+        if (!full)
+            return;
+        full.toBlob((blob) => {
+            full.width = full.height = 0; // release the full-res backing store
+            if (blob)
+                open(URL.createObjectURL(blob));
+        }, 'image/png');
+    }).catch(() => { });
 }
 // Save a carve. The URL is built on click and released afterwards, so a gallery
 // of 48 carves doesn't hold 48 object URLs open for the life of the page.
@@ -96,7 +113,7 @@ function decodeThumb(thumb) {
             thumb.prepend(cv);
         thumb.classList.remove('is-plain');
         thumb.title = partial ? 'Click to view full size (recovered data is incomplete)' : 'Click to view full size';
-        thumb.addEventListener('click', () => openCarve(file, salvaged ? thumb._salvageUrl : null));
+        thumb.addEventListener('click', () => openCarve(file, salvaged));
     };
     const fail = () => { if (placeholder)
         placeholder.textContent = (thumb._carveFmt || 'DATA') + ' · no preview'; };
@@ -114,8 +131,11 @@ function decodeThumb(thumb) {
                     done();
                     return;
                 }
-                thumb._salvageUrl = full.toDataURL('image/png'); // full-res for the lightbox
-                show(downscaleTo(full, THUMB_MAX), true, full._thumb || full._realFrac <= 0.95);
+                // Only the downscaled thumbnail is kept; the lightbox re-decodes on click.
+                const small = downscaleTo(full, THUMB_MAX);
+                const partial = full._thumb || full._realFrac <= 0.95;
+                full.width = full.height = 0; // release the full-res backing store
+                show(small, true, partial);
             }
             catch (_) {
                 fail();

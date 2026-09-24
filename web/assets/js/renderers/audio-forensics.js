@@ -321,8 +321,23 @@ async function kWeight(samples, sampleRate, tick) {
 }
 // (kWeight returns the promise from its final applyBiquad; loudnessR128 awaits it.)
 const msToLufs = (ms) => -0.691 + 10 * Math.log10(ms + 1e-30);
-export async function loudnessR128(mono, sampleRate, tick) {
-    const f = await kWeight(mono, sampleRate, tick);
+// BS.1770: each channel is K-weighted on its own and the channel POWERS are
+// summed (weighted 1.41 for the surrounds, 0 for the LFE of a 5.1 layout). The
+// old pass K-weighted a (L+R)/2 downmix instead, which reads 3-6 LU low on a
+// normal stereo mix and -inf on anti-phase material.
+export async function loudnessR128(channels, sampleRate, tick) {
+    const len = channels[0].length;
+    const gains = channels.length === 6 ? [1, 1, 1, 0, 1.41, 1.41] : channels.map(() => 1);
+    // Per-sample summed weighted power: sum_c G_c * y_c^2.
+    const f = new Float32Array(len);
+    for (let c = 0; c < channels.length; c++) {
+        const g = gains[c];
+        if (!g)
+            continue;
+        const y = await kWeight(channels[c], sampleRate, tick);
+        for (let i = 0; i < len; i++)
+            f[i] += g * y[i] * y[i];
+    }
     // Blocks of a given length with a hop; return per-block mean square.
     const blockMs = async (blockSec, hopSec) => {
         const bl = Math.round(blockSec * sampleRate), hop = Math.round(hopSec * sampleRate);
@@ -335,7 +350,7 @@ export async function loudnessR128(mono, sampleRate, tick) {
                 await tick();
             let s = 0;
             for (let i = start; i < start + bl; i++)
-                s += f[i] * f[i];
+                s += f[i];
             out.push({ t: start / sampleRate, ms: s / bl });
         }
         return out;
@@ -391,39 +406,45 @@ export async function loudnessR128(mono, sampleRate, tick) {
             lra = pct(0.95) - pct(0.10);
         }
     }
-    return { integrated, momentaryMax, shortTermMax, lra, series, duration: mono.length / sampleRate };
+    return { integrated, momentaryMax, shortTermMax, lra, series, duration: len / sampleRate };
 }
 // ---------- true peak (4x oversampled inter-sample peak, dBTP) ----------
 export async function truePeakDb(channels, sampleRate, tick) {
-    const OS = 4, half = 8, L = OS * half * 2; // 64-tap windowed-sinc interpolator
-    // Build the interpolation kernel (cutoff at the original Nyquist, i.e. 1/OS).
-    const kernel = new Float64Array(L);
-    const fc = 1 / OS;
-    for (let i = 0; i < L; i++) {
-        const x = i - (L - 1) / 2;
-        const sinc = x === 0 ? 1 : Math.sin(Math.PI * fc * x) / (Math.PI * fc * x);
-        const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (L - 1)); // Hann
-        kernel[i] = fc * sinc * w;
-    }
-    // Split into OS polyphase sub-filters.
+    const OS = 4, half = 8; // 4x oversampling, 16 taps per phase
+    // Polyphase sub-filters of a Hann-windowed sinc whose centre sits ON a sample
+    // (the odd-length, integer-centred kernel), so phase p evaluates the signal at
+    // exactly n + p/OS. The old even 64-tap kernel was centred between samples,
+    // which shifted every phase by half a tap and never landed on the intended
+    // inter-sample points. Phase 0 is the sample itself, covered by the raw peak.
+    // Each phase is normalised to unity DC gain.
     const taps = half * 2;
     const phase = [];
     for (let p = 0; p < OS; p++) {
         const sub = new Float64Array(taps);
-        for (let k = 0; k < taps; k++)
-            sub[k] = kernel[p + OS * k] * OS;
+        const frac = p / OS;
+        let sum = 0;
+        for (let k = 0; k < taps; k++) {
+            const d = (k - (half - 1)) - frac; // tap position relative to n + frac
+            const sinc = d === 0 ? 1 : Math.sin(Math.PI * d) / (Math.PI * d);
+            const w = Math.abs(d) >= half ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * d / half); // Hann
+            sub[k] = sinc * w;
+            sum += sub[k];
+        }
+        if (sum)
+            for (let k = 0; k < taps; k++)
+                sub[k] /= sum;
         phase.push(sub);
     }
     let peak = 0;
     for (const ch of channels) {
-        // Raw sample peak (phase 0 passes samples through unchanged in effect).
+        // Raw sample peak (phase 0).
         for (let i = 0; i < ch.length; i++) {
             const a = Math.abs(ch[i]);
             if (a > peak)
                 peak = a;
         }
-        // Interpolated inter-sample values.
-        for (let n = half; n < ch.length - half; n++) {
+        // Interpolated inter-sample values: phase p at n + p/OS uses ch[n-half+1 .. n+half].
+        for (let n = half - 1; n + half < ch.length; n++) {
             if (tick && (n & 0x3FFF) === 0)
                 await tick();
             for (let p = 1; p < OS; p++) {

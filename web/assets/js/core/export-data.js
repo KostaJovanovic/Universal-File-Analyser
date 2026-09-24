@@ -285,8 +285,14 @@ async function verificationData() {
 }
 const VERIFY_INSTRUCTIONS = 'To confirm this report describes the original file unchanged, recompute the file\'s SHA-256 and compare it to the value above. macOS / Linux: "shasum -a 256 <file>". Windows: "certutil -hashfile <file> SHA256". A matching hash proves the file has not been altered since this report was generated.';
 // ---------- CSV ----------
+// A cell opening with = + - @ (or a tab / CR, which some importers strip first)
+// is read by Excel, Sheets and LibreOffice as a FORMULA - and the values here come
+// straight from the analysed file. A leading apostrophe makes it plain text.
 function csvField(v) {
-    return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    let s = String(v == null ? '' : v);
+    if (/^[=+\-@\t\r]/.test(s))
+        s = "'" + s;
+    return '"' + s.replace(/"/g, '""') + '"';
 }
 function buildCsv(sections) {
     const lines = [['Section', 'Group', 'Field', 'Value'].map(csvField).join(',')];
@@ -616,6 +622,13 @@ function showChooser() {
                         close();
                         return;
                     }
+                    // The Android shell runs one WebView, so the child-window fallback
+                    // below does nothing there: say what went wrong instead.
+                    if (window.anrDesktop.shell && res && res.error) {
+                        slot.innerHTML = '';
+                        slot.appendChild(el('p', { class: 'anr-share-lead' }, 'The report could not be saved: ' + res.error));
+                        return;
+                    }
                 }
                 catch (_) { /* fall through to the child window */ }
             }
@@ -631,6 +644,12 @@ function showChooser() {
                         w.print();
                     }
                     catch (_) { } }, 400);
+                }
+                else {
+                    // No new window: pop-up blocked, the user activation spent by an await
+                    // above, or a single-WebView shell (the Android app, whose saveReport
+                    // can reject). Hand over the same report as a file instead of nothing.
+                    downloadBlob(baseName() + '-analysis.html', new Blob([html], { type: 'text/html;charset=utf-8' }));
                 }
             }
             catch (_) {

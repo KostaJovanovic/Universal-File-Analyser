@@ -18,11 +18,13 @@
    for those we rely on path 1's embedded thumbnail rather than failing. */
 import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, blobImg, downloadBlob } from '../core/util.js';
 import { loadScript } from '../core/util.js';
+import { DECODE_FULL_MAX, PSD_DECODE_MAX_PX } from '../core/limits.js';
 const AGPSD_URL = 'assets/vendor/ag-psd/bundle.js';
-// Above this size, or for colour modes ag-psd can't handle, we skip the heavy
-// full-decode and show the embedded thumbnail instead (decoding every layer of a
-// huge PSD would exhaust the tab's memory).
-const AGPSD_SIZE_LIMIT = 120 * 1024 * 1024;
+// Above this size (or PSD_DECODE_MAX_PX canvas pixels - the declared canvas, not
+// the byte count, is what ag-psd allocates), or for colour modes ag-psd can't
+// handle, we skip the heavy full-decode and show the embedded thumbnail instead
+// (decoding every layer of a huge PSD would exhaust the tab's memory).
+const AGPSD_SIZE_LIMIT = DECODE_FULL_MAX;
 // Read enough of the start to cover the header + image-resources (the thumbnail
 // lives there, well before the giant layer/image-data sections).
 const HEADER_SLICE = 12 * 1024 * 1024;
@@ -267,7 +269,8 @@ export async function renderPsd(file, resultsEl) {
     const base = file.name.replace(/\.[^.]+$/, '');
     // ag-psd only handles RGB(3)/Grayscale(1), 8-bit, PSD (not PSB), under the size limit.
     const agPsdViable = !!header && header.version === 1 && header.depth === 8 &&
-        (header.mode === 3 || header.mode === 1) && file.size <= AGPSD_SIZE_LIMIT;
+        (header.mode === 3 || header.mode === 1) && file.size <= AGPSD_SIZE_LIMIT &&
+        header.width * header.height <= PSD_DECODE_MAX_PX;
     // ---- Path 2: full composite + layer tree via ag-psd (only when viable). ----
     if (agPsdViable) {
         try {
@@ -316,13 +319,16 @@ export async function renderPsd(file, resultsEl) {
             why.push('PSB');
         if (file.size > AGPSD_SIZE_LIMIT)
             why.push('very large file');
+        else if (header.width * header.height > PSD_DECODE_MAX_PX)
+            why.push('very large canvas');
         resultsEl.appendChild(el('div', { class: 'anr-info' }, 'Showing the preview image Photoshop saved inside the file. Its layers are not being unpacked here' +
             (why.length ? ' (' + why.join(', ') + ')' : '') + ' - the built-in PSD reader can only unpack standard RGB or Grayscale 8-bit documents.'));
     }
     else {
         resultsEl.appendChild(el('div', { class: 'anr-info' }, 'This file has no built-in preview image (it was saved with Photoshop’s "Maximize Compatibility" option turned off)' +
             ((header.mode !== 3 && header.mode !== 1) || header.depth !== 8 || header.version === 2
-                ? ', and its colour mode or bit depth is not one the built-in layer reader supports' : '') +
+                ? ', and its colour mode or bit depth is not one the built-in layer reader supports'
+                : header.width * header.height > PSD_DECODE_MAX_PX ? ', and its canvas is too large to unpack safely in the browser' : '') +
             ', so only its metadata can be shown.'));
     }
 }

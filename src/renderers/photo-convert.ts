@@ -6,6 +6,7 @@
    them. Used by photo.js (renderPhoto). */
 
 import { el, loadScript } from '../core/util.js';
+import { RAW_SUBIFD_MAX, RAW_DEMOSAIC_MAX_PX, CANVAS_EDGE_MAX } from '../core/limits.js';
 
 const HEIC2ANY_URL    = 'assets/vendor/heic2any.min.js';
 const MAGICK_WASM_URL = new URL('../../vendor/imagemagick/index.mjs', import.meta.url).href;
@@ -95,13 +96,18 @@ export async function extractRawPreview(file: File) {
   const jpegs = [];
   for (let i = 0; i < buf.length - 1; i++) {
     if (buf[i] === 0xFF && buf[i + 1] === 0xD8 && buf[i + 2] === 0xFF) {
+      let found = false;
       for (let j = i + 2; j < buf.length - 1; j++) {
         if (buf[j] === 0xFF && buf[j + 1] === 0xD9) {
           jpegs.push({ offset: i, length: j + 2 - i });
           i = j + 1;
+          found = true;
           break;
         }
       }
+      // No EOI anywhere after this SOI means none after any later SOI either -
+      // stop here instead of rescanning to EOF once per remaining FFD8FF.
+      if (!found) break;
     }
   }
   if (jpegs.length === 0) throw new Error('No embedded JPEG found');
@@ -181,10 +187,18 @@ export async function extractRawJpegs(file: File, { max = 12 } : any = {}) {
         res.push({ offset: s, length: l, orientation: ori || ifd0Ori || 1 });
       }
     }
+    // SubIFD offsets. The count is attacker-controlled (up to 0xFFFFFFFF) and u32()
+    // answers -1 past EOF, so cap the count and queue only in-range offsets.
     const sub = tags[0x014A];
-    if (sub) for (let i = 0; i < sub.count; i++) { const o = u32(sub.size <= 4 ? sub.valOff : sub.valOff + i * 4); if (o) queue.push(base + o); }
+    if (sub && sub.count > 0) {
+      const subN = Math.min(sub.count, RAW_SUBIFD_MAX);
+      for (let i = 0; i < subN; i++) {
+        const o = u32(sub.size <= 4 ? sub.valOff : sub.valOff + i * 4);
+        if (o > 0 && base + o < len) queue.push(base + o);
+      }
+    }
     const nx = u32(ifd + 2 + n * 12);
-    if (nx) queue.push(base + nx);
+    if (nx > 0) queue.push(base + nx);
   }
   const seen = new Set();
   return res
@@ -330,17 +344,28 @@ export async function demosaicRaw(file: File, container: HTMLElement|null) {
     const colors = img.colors || 3;
     const shift = (img.bits || 8) > 8 ? (img.bits - 8) : 0;   // 16-bit -> 8-bit
 
+    // A full-sensor canvas (60+ MP on current bodies) plus its ImageData is several
+    // hundred MB on top of libraw's own buffer, and past the canvas-area limit on
+    // phones. Beyond RAW_DEMOSAIC_MAX_PX (or CANVAS_EDGE_MAX on a side) sample every
+    // step-th pixel into a smaller canvas instead of allocating the full frame.
+    let step = 1;
+    while ((Math.floor(width / step) * Math.floor(height / step) > RAW_DEMOSAIC_MAX_PX) ||
+           Math.floor(width / step) > CANVAS_EDGE_MAX || Math.floor(height / step) > CANVAS_EDGE_MAX) step++;
+    const ow = Math.max(1, Math.floor(width / step)), oh = Math.max(1, Math.floor(height / step));
+
     const cv = document.createElement('canvas');
-    cv.width = width; cv.height = height;
+    cv.width = ow; cv.height = oh;
     const ctx = cv.getContext('2d')!;
-    const out = ctx.createImageData(width, height);
+    const out = ctx.createImageData(ow, oh);
     const o = out.data;
-    const px = width * height;
-    for (let p = 0, q = 0, s = 0; p < px; p++, q += 4, s += colors) {
-      const r = shift ? (data[s] >> shift) : data[s];
-      const g = colors > 1 ? (shift ? (data[s + 1] >> shift) : data[s + 1]) : r;
-      const b = colors > 2 ? (shift ? (data[s + 2] >> shift) : data[s + 2]) : r;
-      o[q] = r; o[q + 1] = g; o[q + 2] = b; o[q + 3] = 255;
+    for (let y = 0, q = 0; y < oh; y++) {
+      for (let x = 0; x < ow; x++, q += 4) {
+        const s = ((y * step) * width + x * step) * colors;
+        const r = shift ? (data[s] >> shift) : data[s];
+        const g = colors > 1 ? (shift ? (data[s + 1] >> shift) : data[s + 1]) : r;
+        const b = colors > 2 ? (shift ? (data[s + 2] >> shift) : data[s + 2]) : r;
+        o[q] = r; o[q + 1] = g; o[q + 2] = b; o[q + 3] = 255;
+      }
     }
     ctx.putImageData(out, 0, 0);
     try { if (raw.close) await raw.close(); } catch (_) {}

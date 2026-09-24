@@ -18,6 +18,9 @@
        wild, so the file is described instead of drawn.
      - Indexed and grayscale images are converted through the palette / channel
        replication; CMYK is not an XCF base type so does not arise.
+     - A file whose canvas, layers and masks add up past XCF_PIXEL_BUDGET
+       (limits.ts) is described rather than drawn, decided from the layer
+       headers before any pixels are allocated.
      - The four non-separable blend modes (hue, saturation, colour, value) are
        named on the layer row and composited as Normal, the same honest fallback
        aseprite.js makes.
@@ -26,8 +29,11 @@
    single easiest thing to get wrong when reading one of these. */
 import { el, row, fmtBytes, h3help, downloadBlob, inlineLoader } from '../core/util.js';
 import { Reader, inflate } from '../core/binutil.js';
-import { PREVIEW_EDGE } from '../core/limits.js';
+import { PREVIEW_EDGE, CANVAS_EDGE_MAX, XCF_EDGE_MAX, XCF_LAYERS_MAX, XCF_PIXEL_BUDGET } from '../core/limits.js';
 const TILE = 64;
+// GIMP's XCF_TILE_MAX_DATA_LENGTH_FACTOR: its reader rejects any stored tile longer
+// than 1.5x the tile's raw size, so no genuine file has one. A format constant.
+const TILE_DATA_FACTOR = 1.5;
 // PROP ids used here (the full list is much longer; the rest are skipped).
 const PROP_END = 0, PROP_COLORMAP = 1, PROP_OPACITY = 6, PROP_MODE = 7, PROP_VISIBLE = 8, PROP_OFFSETS = 15, PROP_COMPRESSION = 17, PROP_APPLY_MASK = 11, PROP_FLOAT_OPACITY = 33;
 const BASE_TYPE = ['RGB', 'Grayscale', 'Indexed'];
@@ -168,11 +174,15 @@ class XcfReader {
     }
 }
 // Read one hierarchy (level 0 only - the full-resolution image) into `bpp`
-// interleaved bytes per pixel.
-async function readHierarchy(xr, bytes, at, compression) {
+// interleaved bytes per pixel. `ew` x `eh` is the size the owning layer/mask
+// header declared - the size the pixel budget was checked against - so a
+// hierarchy claiming anything else is refused before it allocates.
+async function readHierarchy(xr, bytes, at, compression, ew, eh) {
     xr.r.seek(at);
     const w = xr.r.u32(), h = xr.r.u32(), bpp = xr.r.u32();
-    if (!w || !h || !bpp || bpp > 4 || w > 30000 || h > 30000)
+    if (!w || !h || !bpp || bpp > 4 || w > XCF_EDGE_MAX || h > XCF_EDGE_MAX)
+        return null;
+    if (w !== ew || h !== eh)
         return null;
     const levelPtr = xr.ptr(); // level 0 = full size
     if (!levelPtr || levelPtr >= bytes.length)
@@ -199,8 +209,10 @@ async function readHierarchy(xr, bytes, at, compression) {
         const tile = new Uint8Array(n * bpp);
         const start = tilePtrs[t];
         // Tiles are contiguous, so the next pointer bounds this one; the last runs
-        // to the end of the file.
-        const end = t + 1 < tilePtrs.length ? tilePtrs[t + 1] : bytes.length;
+        // to the end of the file. GIMP never writes a compressed tile longer than
+        // TILE_DATA_FACTOR x its raw size, so that bounds it too - otherwise a file
+        // whose pointers all alias one spot would hand each tile the rest of the file.
+        const end = Math.min(t + 1 < tilePtrs.length ? tilePtrs[t + 1] : bytes.length, start + Math.ceil(tile.length * TILE_DATA_FACTOR));
         if (start >= bytes.length)
             continue;
         const raw = bytes.subarray(start, Math.min(end, bytes.length));
@@ -208,13 +220,16 @@ async function readHierarchy(xr, bytes, at, compression) {
             tile.set(raw.subarray(0, Math.min(tile.length, raw.length)));
         }
         else if (compression === 1) { // RLE, one plane per channel
+            // rleDecode writes at most `n` values per plane, so a run length can never
+            // push output past this tile, however many tiles alias the same bytes.
             let p = 0;
             for (let c = 0; c < bpp; c++)
                 p = rleDecode(raw, p, tile.subarray(c), bpp, n);
         }
         else if (compression === 2) { // zlib, interleaved
             try {
-                const inf = await inflate(raw, 'deflate');
+                // Capped at this tile's own size (edge tiles are smaller than 64x64).
+                const inf = await inflate(raw, 'deflate', tile.length, { partial: true });
                 if (inf)
                     tile.set(inf.subarray(0, Math.min(tile.length, inf.length)));
             }
@@ -244,7 +259,7 @@ export async function parseXcf(bytes) {
     xr.r.seek(14);
     const width = xr.r.u32(), height = xr.r.u32(), baseType = xr.r.u32();
     const precision = version >= 4 ? xr.r.u32() : 0;
-    if (!width || !height || width > 30000 || height > 30000)
+    if (!width || !height || width > XCF_EDGE_MAX || height > XCF_EDGE_MAX)
         return null;
     const doc = {
         version, width, height, baseType, precision,
@@ -282,10 +297,13 @@ export async function parseXcf(bytes) {
         const p = xr.ptr();
         if (!p)
             break;
-        if (p >= bytes.length || layerPtrs.length > 2000)
+        if (p >= bytes.length || layerPtrs.length >= XCF_LAYERS_MAX)
             break;
         layerPtrs.push(p);
     }
+    // Pass 1 reads every layer header (cheap); pass 2 decodes pixels, but only once
+    // the total those headers declare is known to fit XCF_PIXEL_BUDGET.
+    const pending = [];
     // XCF stores layers TOP first; compositing runs bottom-up, so reverse.
     for (const ptr of layerPtrs.slice().reverse()) {
         xr.r.seek(ptr);
@@ -322,8 +340,33 @@ export async function parseXcf(bytes) {
         }
         const hierarchyPtr = xr.ptr();
         const maskPtr = xr.ptr();
+        pending.push({ layer, hierarchyPtr, maskPtr });
+        doc.layers.push(layer);
+    }
+    // ---- pixel budget, checked before any layer is allocated ----
+    if (!doc.undecodable) {
+        if (width > CANVAS_EDGE_MAX || height > CANVAS_EDGE_MAX) {
+            doc.undecodable = 'the ' + width + ' × ' + height + ' px canvas is wider than a browser canvas can hold (' +
+                CANVAS_EDGE_MAX + ' px a side)';
+        }
+        else {
+            let total = width * height;
+            for (const { layer: l, maskPtr } of pending) {
+                if (!l.width || !l.height)
+                    continue;
+                total += l.width * l.height * (maskPtr && l.applyMask ? 2 : 1);
+            }
+            if (total > XCF_PIXEL_BUDGET) {
+                doc.undecodable = 'the canvas, layers and masks add up to ' + Math.round(total / 1e6) +
+                    ' megapixels, more than the ' + Math.round(XCF_PIXEL_BUDGET / 1e6) +
+                    ' megapixels decoded here on this device';
+            }
+        }
+    }
+    for (const { layer, hierarchyPtr, maskPtr } of pending) {
+        const lw = layer.width, lh = layer.height, ltype = layer.type;
         if (!doc.undecodable && hierarchyPtr && hierarchyPtr < bytes.length && lw && lh) {
-            const hier = await readHierarchy(xr, bytes, hierarchyPtr, doc.compression);
+            const hier = await readHierarchy(xr, bytes, hierarchyPtr, doc.compression, lw, lh);
             if (hier)
                 layer.rgba = hierarchyToRgba(hier, ltype, doc);
             // A layer mask is its own single-channel hierarchy, stored after the
@@ -345,7 +388,7 @@ export async function parseXcf(bytes) {
                 }
                 const mh = xr.ptr();
                 if (mh && mh < bytes.length) {
-                    const mask = await readHierarchy(xr, bytes, mh, doc.compression);
+                    const mask = await readHierarchy(xr, bytes, mh, doc.compression, lw, lh);
                     if (mask && mask.bpp >= 1 && mask.w === lw && mask.h === lh) {
                         const m = new Uint8Array(lw * lh);
                         for (let i = 0; i < m.length; i++)
@@ -355,7 +398,6 @@ export async function parseXcf(bytes) {
                 }
             }
         }
-        doc.layers.push(layer);
     }
     return doc;
 }

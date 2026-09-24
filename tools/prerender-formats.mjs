@@ -82,18 +82,27 @@ if (!region.test(html)) {
   console.error(`prerender-formats: markers ${START} … ${END} not found in formats.html`);
   process.exit(1);
 }
-html = html.replace(region, `${START}\n${block}\n      ${END}`);
+// Function replacers throughout: the replacement text is built from catalog
+// content, and a string replacement would re-parse any "$&" / "$'" / "$1" in it.
+html = html.replace(region, () => `${START}\n${block}\n      ${END}`);
 
 // Stamp the exact format count wherever it is fenced for repeatable replacement.
 html = html.replace(
   /<!--FMTCOUNT-->[\s\S]*?<!--\/FMTCOUNT-->/g,
-  `<!--FMTCOUNT-->${count}<!--/FMTCOUNT-->`
+  () => `<!--FMTCOUNT-->${count}<!--/FMTCOUNT-->`
 );
 
 // CollectionPage + ItemList structured data: marks /formats as a catalogue of
 // file-type guides and enumerates the categories. Kept to one ListItem per
 // category (not per format) so the JSON-LD stays light. Stamped between the
 // ITEMLIST markers in the hand-authored <head>.
+//
+// The markers wrap the WHOLE <script> element, not its contents: an HTML comment
+// inside application/ld+json is part of the JSON text, which made the block
+// invalid JSON that crawlers ignored. The regex also accepts the old layout
+// (markers inside the script) so a page still in that shape is migrated on the
+// next run. `<` is escaped as < so no string in the data can close the
+// script element early.
 const itemList = {
   '@context': 'https://schema.org', '@type': 'CollectionPage',
   name: 'Supported file types - Analyser',
@@ -107,9 +116,15 @@ const itemList = {
     })),
   },
 };
+const ITEMLIST = /(?:<script type="application\/ld\+json">\s*)?<!--ITEMLIST:START-->[\s\S]*?<!--\/ITEMLIST-->(?:\s*<\/script>)?/;
+if (!ITEMLIST.test(html)) {
+  console.error('prerender-formats: ITEMLIST markers not found in formats.html');
+  process.exit(1);
+}
+const itemJson = JSON.stringify(itemList).replace(/</g, '\\u003c');
 html = html.replace(
-  /<!--ITEMLIST:START-->[\s\S]*?<!--\/ITEMLIST-->/,
-  `<!--ITEMLIST:START-->${JSON.stringify(itemList)}<!--/ITEMLIST-->`
+  ITEMLIST,
+  () => `<!--ITEMLIST:START--><script type="application/ld+json">${itemJson}</script><!--/ITEMLIST-->`
 );
 
 writeFileSync(PAGE, html);

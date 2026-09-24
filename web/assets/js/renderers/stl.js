@@ -3,6 +3,7 @@
    spin), and reports geometry statistics (triangles, bounding box, surface area,
    volume). Self-contained - no external 3D library. */
 import { el, row, rowHelp, fmtBytes, errorCard, attachViewCube } from '../core/util.js';
+import { WALL_PARSE } from '../core/limits.js';
 // ---------- STL parsing ----------
 // Returns { format, positions:Float32Array, normals:Float32Array, count,
 //           bbox:{min,max}, area, volume } or null.
@@ -26,6 +27,26 @@ function parseStlGeometry(buf) {
         ? new TextDecoder('latin1').decode(bytes) : headStr)
         : parseBinaryStl(buf);
 }
+/** Drop the entries of a per-triangle attribute buffer (colours, UVs) that
+ *  belong to triangles buildGeoFromIndexed skipped, so it lines up with the
+ *  geometry again. A no-op when nothing was dropped. */
+export function alignToKept(geo, arr) {
+    const kept = geo.triKept;
+    if (!kept || !kept.length)
+        return arr;
+    const stride = arr.length / kept.length;
+    if (!Number.isInteger(stride) || stride <= 0)
+        return arr;
+    const out = new Float32Array(geo.count * stride);
+    let o = 0;
+    for (let t = 0; t < kept.length; t++) {
+        if (!kept[t])
+            continue;
+        out.set(arr.subarray(t * stride, t * stride + stride), o);
+        o += stride;
+    }
+    return out;
+}
 export function makeResult(format, posArr, normArr) {
     const count = posArr.length / 9;
     const positions = new Float32Array(posArr);
@@ -37,6 +58,12 @@ export function makeResult(format, posArr, normArr) {
         const ax = positions[i], ay = positions[i + 1], az = positions[i + 2];
         const bx = positions[i + 3], by = positions[i + 4], bz = positions[i + 5];
         const cx = positions[i + 6], cy = positions[i + 7], cz = positions[i + 8];
+        // One NaN or +-Infinity corner (a corrupt float) would make the box - and
+        // with it the viewer's framing - infinite, so such a triangle is left out of
+        // the box, the area and the volume. WebGL drops it from the drawing anyway.
+        if (!(isFinite(ax) && isFinite(ay) && isFinite(az) && isFinite(bx) && isFinite(by) && isFinite(bz)
+            && isFinite(cx) && isFinite(cy) && isFinite(cz)))
+            continue;
         for (const [x, y, z] of [[ax, ay, az], [bx, by, bz], [cx, cy, cz]]) {
             if (x < minx)
                 minx = x;
@@ -181,9 +208,13 @@ function buildViewer(geo, opts = {}) {
         return { wrap, ok: false };
     }
     // Normalise geometry: centre on origin and scale longest edge to 1.
+    // A box with no finite corner at all (every triangle corrupt) falls back to
+    // the unit cube round the origin rather than an Infinity span.
     const { min, max } = geo.bbox;
-    const cx = (min[0] + max[0]) / 2, cy = (min[1] + max[1]) / 2, cz = (min[2] + max[2]) / 2;
-    const span = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) || 1;
+    const fin = (v) => (isFinite(v) ? v : 0);
+    const cx = fin((min[0] + max[0]) / 2), cy = fin((min[1] + max[1]) / 2), cz = fin((min[2] + max[2]) / 2);
+    const rawSpan = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
+    const span = isFinite(rawSpan) && rawSpan > 0 ? rawSpan : 1;
     const np = new Float32Array(geo.positions.length);
     let boundR2 = 0;
     for (let i = 0; i < geo.positions.length; i += 3) {
@@ -659,8 +690,18 @@ export function buildViewerCard(geo, title = '3D model', opts = {}) {
         aaBtn('Hardware MSAA', () => viewer.state.msaa, (v) => applyMSAA(v));
         aaBtn('Supersampling', () => viewer.state.ssaa, (v) => { viewer.state.ssaa = v; viewer.resize(); viewer.markDirty(); });
         qBtn.addEventListener('click', (e) => { e.stopPropagation(); qPanel.classList.toggle('is-hidden'); });
-        document.addEventListener('click', (e) => { if (!qWrap.contains(e.target))
-            qPanel.classList.add('is-hidden'); });
+        // Outside-click closes the panel. It lives on document, so it detaches itself
+        // once the card has left the page - otherwise the closure pins this card, its
+        // geometry and the viewer for the rest of the session.
+        const onDocClick = (e) => {
+            if (!viewCard.isConnected) {
+                document.removeEventListener('click', onDocClick);
+                return;
+            }
+            if (!qWrap.contains(e.target))
+                qPanel.classList.add('is-hidden');
+        };
+        document.addEventListener('click', onDocClick);
         qWrap.appendChild(qBtn);
         qWrap.appendChild(qPanel);
         const resetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Reset view');
@@ -756,11 +797,35 @@ export function buildGeoFromIndexed(verts, tris, format) {
     const positions = new Float32Array(triCount * 9);
     const normals = new Float32Array(triCount * 9);
     let o = 0;
-    for (let i = 0; i < tris.length; i += 3) {
+    const vLen = verts.length;
+    let kept = null;
+    const drop = (t) => {
+        if (!kept) {
+            kept = new Uint8Array(Math.floor(tris.length / 3));
+            kept.fill(1, 0, t);
+        }
+    };
+    for (let i = 0; i + 2 < tris.length; i += 3) {
+        const t = i / 3;
         const i0 = tris[i] * 3, i1 = tris[i + 1] * 3, i2 = tris[i + 2] * 3;
+        // Indices come straight from the file (OBJ/PLY/OFF/3MF/glTF/IFC): one that
+        // points past the vertex list, or at a NaN/Infinity vertex, would read as
+        // NaN and poison the area, the volume and the manifold counts. Such a
+        // triangle is dropped rather than drawn from garbage.
+        if (!(i0 >= 0 && i0 + 2 < vLen && i1 >= 0 && i1 + 2 < vLen && i2 >= 0 && i2 + 2 < vLen)) {
+            drop(t);
+            continue;
+        }
         const ax = verts[i0], ay = verts[i0 + 1], az = verts[i0 + 2];
         const bx = verts[i1], by = verts[i1 + 1], bz = verts[i1 + 2];
         const cx = verts[i2], cy = verts[i2 + 1], cz = verts[i2 + 2];
+        if (!(isFinite(ax) && isFinite(ay) && isFinite(az) && isFinite(bx) && isFinite(by) && isFinite(bz)
+            && isFinite(cx) && isFinite(cy) && isFinite(cz))) {
+            drop(t);
+            continue;
+        }
+        if (kept)
+            kept[t] = 1;
         const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
         const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
         let nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
@@ -784,7 +849,11 @@ export function buildGeoFromIndexed(verts, tris, format) {
         }
         o += 9;
     }
-    return makeResult(format || '3D', positions, normals);
+    const geo = makeResult(format || '3D', positions.subarray(0, o), normals.subarray(0, o));
+    const keptArr = kept; // assigned inside drop(), which flow analysis cannot see
+    if (keptArr)
+        geo.triKept = keptArr;
+    return geo;
 }
 // A geometry-stats card (triangles, bounding box, area, volume, hash).
 export function geoStatsCard(geo, file, format, unit) {
@@ -1094,7 +1163,9 @@ export function geoFromTriSubset(positions, normals, triIndices, format) {
 }
 // The bbox span of a geometry, used to scale the weld tolerance to the model.
 export function geoSpan(geo) {
-    return Math.max(geo.bbox.max[0] - geo.bbox.min[0], geo.bbox.max[1] - geo.bbox.min[1], geo.bbox.max[2] - geo.bbox.min[2]) || 1;
+    const span = Math.max(geo.bbox.max[0] - geo.bbox.min[0], geo.bbox.max[1] - geo.bbox.min[1], geo.bbox.max[2] - geo.bbox.min[2]);
+    // An empty box (no finite triangle) spans -Infinity; the weld step must stay finite.
+    return isFinite(span) && span > 0 ? span : 1;
 }
 // ---------- multi-part viewer (3MF/AMF parts, or detected bodies) ----------
 // Shared UI for models that hold several pieces: a parts picker, then the viewer,
@@ -1190,6 +1261,10 @@ export function bodyParts(whole, bodies, makeBodyGeo) {
 export async function renderStl(file, resultsEl) {
     resultsEl.hidden = false;
     resultsEl.innerHTML = '';
+    if (file.size > WALL_PARSE) {
+        resultsEl.appendChild(errorCard('This STL is larger than ' + fmtBytes(WALL_PARSE) + ' and was not opened - the whole mesh has to be held in memory to draw it.'));
+        return;
+    }
     resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));
     let geo;
     try {

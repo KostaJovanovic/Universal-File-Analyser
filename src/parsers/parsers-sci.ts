@@ -9,6 +9,7 @@
 
 import { el, row, fmtBytes, preBlock, readSlice } from '../core/util.js';
 import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, gunzip } from '../core/binutil.js';
+import { SCI_FRAME_MAX, NIFTI_READ_MAX, NIFTI_SLICE_MAX, PARSE_TEXT_MAX } from '../core/limits.js';
 import type { Row, ParseFn } from '../core/types.js';
 
 // ---------- small helpers ----------
@@ -142,6 +143,40 @@ const TRANSFER_SYNTAX: Record<string, string> = {
   '1.2.840.10008.1.2.5': 'RLE Lossless',
 };
 
+// Walk past an undefined-length element whose value starts at `p`: items
+// (FFFE,E000), item delimiters (FFFE,E00D) and the sequence delimiter
+// (FFFE,E0DD) carry no VR in any transfer syntax. Every undefined-length
+// container opens a level and every delimiter closes one. Returns the offset
+// just past the closing sequence delimiter, or -1 if the buffer runs out.
+function skipDicomUndefined(buf: Uint8Array, dv: DataView, p: number, explicit: boolean, little: boolean) {
+  let depth = 1;
+  let guard = 0;
+  while (p + 8 <= buf.length && guard++ < 1_000_000) {
+    const g = dv.getUint16(p, little), e = dv.getUint16(p + 2, little);
+    if (g === 0xfffe) {
+      const l = dv.getUint32(p + 4, little);
+      p += 8;
+      if (e === 0xe000) { if (l === 0xffffffff) depth++; else p += l; }
+      else if (e === 0xe00d || e === 0xe0dd) depth--;
+      if (depth === 0) return p;
+      continue;
+    }
+    p += 4;
+    let l;
+    if (explicit) {
+      const vr = String.fromCharCode(buf[p], buf[p + 1]);
+      p += 2;
+      if (DICOM_VR_LONG.has(vr)) { p += 2; l = dv.getUint32(p, little); p += 4; }
+      else { l = dv.getUint16(p, little); p += 2; }
+    } else {
+      l = dv.getUint32(p, little); p += 4;
+    }
+    if (l === 0xffffffff) depth++;
+    else p += l;
+  }
+  return -1;
+}
+
 async function parseDicom(file: File) {
   const buf = await readSlice(file, 0, Math.min(file.size, 1_000_000));
   if (buf.length < 132) return null;
@@ -194,7 +229,17 @@ async function parseDicom(file: File) {
         const groupLen = dv.getUint32(pos, useLittle);
         metaEnd = pos + 4 + groupLen;
       }
-      if (len === 0xffffffff) break; // undefined-length SQ/pixel: stop walking
+      if (len === 0xffffffff) {
+        // Undefined-length pixel data is encapsulated (compressed): stop there.
+        if (group === 0x7fe0 && elem === 0x0010) break;
+        // An undefined-length SQ (or UN) is closed by delimiters, not a length:
+        // step over its items so the elements after it are still read. Nested
+        // content (icon images carry their own Rows/Columns) is skipped, not read.
+        const after = skipDicomUndefined(buf, dv, pos, vr === 'UN' ? false : useExplicit, useLittle);
+        if (after < 0) break;
+        pos = after;
+        continue;
+      }
       if (len < 0 || pos + len > buf.length + 4) break;
       const want = DICOM_TAGS[tag];
       if (want) {
@@ -271,13 +316,17 @@ async function renderDicomPreview(file: File, found: any, px: { offset: number; 
   const spp = found.SamplesPerPixel || 1;
   const photo = (found.PhotometricInterpretation || '').toUpperCase();
   const rgb = spp === 3 || photo.startsWith('RGB') || photo.startsWith('YBR');
+  // YBR_FULL is full-range YCbCr, converted below. The other YBR_* forms are
+  // chroma-subsampled (a different frame layout) or only valid compressed.
+  const ybrFull = photo === 'YBR_FULL';
+  if (photo.startsWith('YBR') && !ybrFull) return null;
   const signed = found.PixelRepresentation === 1;
   const invert = photo === 'MONOCHROME1';
   const bytesPerSample = bits >> 3;
   const frameSamples = cols * rows * (rgb ? 3 : 1);
   const frameBytes = frameSamples * bytesPerSample;
   // Cap memory: only ever read/decode one frame, and bail on absurd sizes.
-  if (frameBytes <= 0 || frameBytes > 96 * 1024 * 1024) return null;
+  if (frameBytes <= 0 || frameBytes > SCI_FRAME_MAX) return null;
 
   const buf = await readSlice(file, px.offset, frameBytes);
   if (buf.length < frameBytes) return null;
@@ -299,9 +348,13 @@ async function renderDicomPreview(file: File, found: any, px: { offset: number; 
         else { r = dv.getUint16(i * 6, little) >> 8; g = dv.getUint16(i * 6 + 2, little) >> 8; b = dv.getUint16(i * 6 + 4, little) >> 8; }
       }
       const d = i * 4;
+      if (ybrFull) {                      // r/g/b hold Y/Cb/Cr here
+        const y = r, cb = g - 128, cr = b - 128;
+        r = y + 1.402 * cr; g = y - 0.344136 * cb - 0.714136 * cr; b = y + 1.772 * cb;
+      }
       rgba[d] = r; rgba[d + 1] = g; rgba[d + 2] = b; rgba[d + 3] = 255;
     }
-    return canvasFromRGBA(rgba, cols, rows, cols + ' × ' + rows + ' RGB, first frame');
+    return canvasFromRGBA(rgba, cols, rows, cols + ' × ' + rows + (ybrFull ? ' RGB (from YBR_FULL)' : ' RGB') + ', first frame');
   }
 
   // Grayscale: read samples into a typed array, apply rescale slope/intercept.
@@ -369,15 +422,18 @@ function fitsCards(buf: Uint8Array) {
   // Cards are 80-byte fixed records of "KEYWORD = value / comment".
   const cards: any = {};
   const order = [];
-  const limit = Math.min(buf.length, 2880 * 4);
+  const limit = Math.min(buf.length, 2880 * 36);
   for (let off = 0; off + 80 <= limit; off += 80) {
     const card = ascii(buf, off, 80);
     const key = card.slice(0, 8).trim();
     if (key === 'END') break;
     if (!key) continue;
     if (card[8] === '=') {
-      let val = card.slice(10).split('/')[0].trim();
-      val = val.replace(/^'(.*)'$/, '$1').trim();
+      const rest = card.slice(10);
+      let val;
+      const q = rest.match(/^\s*'((?:[^']|'')*)'/);
+      if (q) val = q[1].replace(/''/g, "'").trim();   // quoted string: '/' inside is not a comment
+      else val = rest.split('/')[0].trim();
       if (!(key in cards)) { cards[key] = val; order.push(key); }
     }
   }
@@ -396,6 +452,9 @@ function fitsHeaderBytes(head: Uint8Array) {
 
 async function parseFits(head: Uint8Array, file: File) {
   if (!startsWithAscii(head, 'SIMPLE')) return null;
+  // A header can run to many 2880-byte blocks; when END is not in the head we
+  // were handed, read up to 36 blocks so the cards and the data offset are found.
+  if (file && fitsHeaderBytes(head) < 0 && file.size > head.length) head = await readSlice(file, 0, 2880 * 36);
   const c = fitsCards(head);
   if (!('SIMPLE' in c)) return null;
   const out: Row = { 'Format': 'FITS (Flexible Image Transport System)' };
@@ -444,7 +503,7 @@ async function parseFits(head: Uint8Array, file: File) {
 async function renderFitsImage(file: File, h: any) {
   const px = h.nx * h.ny;
   const dataBytes = px * h.bpv;
-  if (dataBytes <= 0 || dataBytes > 96 * 1024 * 1024) return null;
+  if (dataBytes <= 0 || dataBytes > SCI_FRAME_MAX) return null;
   if (h.dataOffset + dataBytes > file.size) return null;
   const buf = await readSlice(file, h.dataOffset, dataBytes);
   if (buf.length < dataBytes) return null;
@@ -480,7 +539,7 @@ async function renderFitsImage(file: File, h: any) {
 // TCX (.tcx) - Training Center XML
 // ============================================================================
 async function parseTcx(file: File) {
-  const text = await readText(file, 8_000_000);
+  const text = await readText(file, PARSE_TEXT_MAX);
   if (!text || !/<TrainingCenterDatabase|<Activities|<Activity\b/.test(text)) return null;
   const sport = (text.match(/<Activity[^>]*\bSport="([^"]+)"/i) || [])[1];
   const laps = (text.match(/<Lap\b/gi) || []).length;
@@ -939,7 +998,8 @@ async function parseSav(file: File) {
   if (fileLabel) out['File label'] = fileLabel;
   // Variable names: records of type 2 begin with int32 rec_type == 2.
   const names = [];
-  let pos = r.tell();
+  // The 176-byte header ends after the 64-byte label (@109) and 3 padding bytes.
+  let pos = 176;
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   let guard = 0;
   while (pos + 4 <= buf.length && guard++ < 5000) {
@@ -1002,8 +1062,9 @@ async function parseDta(file: File) {
   const relMap: Record<number, string> = { 0x69: '105', 0x6e: '110', 0x71: '113', 0x72: '114', 0x73: '115' };
   const little = buf[1] === 0x02;
   const dv = new DataView(buf.buffer, buf.byteOffset);
-  const nvar = dv.getUint16(2, little);
-  const nobs = dv.getUint32(4, little);
+  // ds_format, byteorder, filetype, unused, then nvar u16 @4, nobs u32 @6, label @10.
+  const nvar = dv.getUint16(4, little);
+  const nobs = dv.getUint32(6, little);
   const out: Row = {
     'Format': 'Stata dataset (.dta, legacy)',
     'Release': relMap[release] || release,
@@ -1011,7 +1072,7 @@ async function parseDta(file: File) {
     'Variables': nvar,
     'Observations': nobs.toLocaleString(),
   };
-  const label = ascii(buf, 8, 81).trim();
+  const label = ascii(buf, 10, release === 0x69 ? 32 : 81).replace(/\0.*$/, '').trim();
   if (label) out['Dataset label'] = label;
   return out;
 }
@@ -1028,15 +1089,15 @@ async function parseSas(file: File) {
   const a2 = buf[35] === 0x33 ? 4 : 0;
   const little = buf[37] === 0x01;
   const out: Row = { 'Format': 'SAS dataset (.sas7bdat)' };
-  // Dataset name at offset 92 (32 bytes), filetype at 124.
-  const dsName = ascii(buf, 92, 32).trim();
+  // Dataset name at offset 92 (64 bytes), file type at 156 (8 bytes).
+  const dsName = ascii(buf, 92, 64).replace(/\0.*$/, '').trim();
   if (dsName) out['Dataset name'] = dsName;
-  const fileType = ascii(buf, 124, 8).trim();
+  const fileType = ascii(buf, 156, 8).replace(/\0.*$/, '').trim();
   if (fileType) out['File type'] = fileType;
-  // OS info and SAS release live near the header tail (offsets vary with align).
-  const release = ascii(buf, 216 + a1, 8).trim();
+  // SAS release and host follow the page count, shifted by BOTH alignment pads.
+  const release = ascii(buf, 216 + a1 + a2, 8).replace(/\0.*$/, '').trim();
   if (release) out['SAS release'] = release;
-  const host = ascii(buf, 224 + a1, 16).trim();
+  const host = ascii(buf, 224 + a1 + a2, 16).replace(/\0.*$/, '').trim();
   if (host) out['Host/OS'] = host;
   out['Note'] = 'Column/row counts need full page-table parse (future)';
   return out;
@@ -1089,8 +1150,10 @@ async function parseNifti(file: File) {
   if (buf.length < 4) return null;
   // gzip-wrapped (.nii.gz) -> inflate at least the header.
   if (buf[0] === 0x1f && buf[1] === 0x8b) {
+    // A 64 KB slice of a gzip is truncated input: inflate it as a prefix and
+    // keep only the first KB, which holds the whole 348-byte header.
     const slice = await readSlice(file, 0, Math.min(file.size, 65536));
-    const inflated = await gunzip(slice);
+    const inflated = await gunzip(slice, 1024, { partial: true });
     if (!inflated || inflated.length < 348) return null;
     buf = inflated.subarray(0, 1024);
   }
@@ -1169,16 +1232,17 @@ async function renderNiftiSlice(file: File, h: any) {
   const sliceVox = h.nx * h.ny;
   const z = h.nz >> 1;                       // middle axial slice
   const sliceBytes = sliceVox * dt.bpv;
-  if (sliceBytes <= 0 || sliceBytes > 64 * 1024 * 1024) return null;
+  if (sliceBytes <= 0 || sliceBytes > NIFTI_SLICE_MAX) return null;
   const sliceStart = h.voxOffset + z * sliceBytes;
 
   let dv;
   const sig = await readSlice(file, 0, 2);
   if (sig.length >= 2 && sig[0] === 0x1f && sig[1] === 0x8b) {
-    // .nii.gz - gunzip up to where the slice ends (cap to keep memory sane).
+    // .nii.gz - stream-inflate only up to where the slice ends, and never past
+    // NIFTI_READ_MAX of output (a deep volume's middle slice may be out of reach).
     const need = Math.ceil(sliceStart + sliceBytes);
-    const cap = Math.min(file.size, 256 * 1024 * 1024);
-    const inflated = await gunzip(await readSlice(file, 0, cap));
+    if (need > NIFTI_READ_MAX) return null;
+    const inflated = await gunzip(file, need, { partial: true });
     if (!inflated || inflated.length < sliceStart + sliceBytes) return null;
     const sub = inflated.subarray(sliceStart, sliceStart + sliceBytes);
     dv = new DataView(sub.buffer, sub.byteOffset, sub.byteLength);
@@ -1285,7 +1349,8 @@ async function parseRds(file: File, ext: string) {
   let compression = 'none';
   if (buf[0] === 0x1f && buf[1] === 0x8b) {
     compression = 'gzip';
-    const inflated = await gunzip(await readSlice(file, 0, Math.min(file.size, 65536)));
+    // Prefix-inflate the truncated 64 KB slice; only the first 4 KB is read.
+    const inflated = await gunzip(await readSlice(file, 0, Math.min(file.size, 65536)), 4096, { partial: true });
     if (inflated && inflated.length >= 6) buf = inflated.subarray(0, 4096);
     else { buf = null; }
   } else if (buf[0] === 0x42 && buf[1] === 0x5a && buf[2] === 0x68) {
@@ -1535,18 +1600,22 @@ async function parseTdms(file: File) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const out: Row = { 'Format': 'NI TDMS (LabVIEW measurement)' };
   // ToC bitmask @4, version @8, next-segment offset @12 (u64), raw-data offset @20.
+  // kTocMetaData 1<<1, kTocNewObjList 1<<2, kTocRawData 1<<3,
+  // kTocInterleavedData 1<<5, kTocBigEndian 1<<6, kTocDAQmxRawData 1<<7.
+  // The ToC itself is always little-endian; the rest of the lead-in follows it.
   const toc = dv.getUint32(4, true);
-  const version = dv.getUint32(8, true);
+  const le = !(toc & 0x40);
+  const version = dv.getUint32(8, le);
   out['Version'] = version === 4713 ? '2.0 (4713)' : version === 4712 ? '1.0 (4712)' : String(version);
   const flags = [];
   if (toc & 0x2) flags.push('meta data');
   if (toc & 0x8) flags.push('raw data');
-  if (toc & 0x20) flags.push('DAQmx raw data');
-  if (toc & 0x40) flags.push('interleaved');
-  if (toc & 0x80) flags.push('big-endian');
+  if (toc & 0x80) flags.push('DAQmx raw data');
+  if (toc & 0x20) flags.push('interleaved');
+  if (toc & 0x40) flags.push('big-endian');
   if (toc & 0x4) flags.push('new object list');
   if (flags.length) out['Segment contains'] = flags.join(', ');
-  const nextSeg = Number(dv.getBigUint64(12, true));
+  const nextSeg = Number(dv.getBigUint64(12, le));
   if (Number.isFinite(nextSeg) && nextSeg > 0) out['First segment'] = fmtBytes(nextSeg + 28);
   out['Note'] = 'Group/channel + property decode is a future TDMS dep';
   return out;

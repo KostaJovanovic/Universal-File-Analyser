@@ -11,7 +11,10 @@ CREATE TABLE IF NOT EXISTS totals (
 INSERT OR IGNORE INTO totals (key, val) VALUES ('files_total', 0), ('visitors_total', 0);
 
 -- One row per extension ever dropped. `supported` = Analyser recognises the type
--- (0 = landed in the "unknown" bucket). Increment is atomic per row.
+-- (0 = pooled as "(unsupported)"), decided by the worker from the catalog
+-- allow-list in worker/supported-exts.js, never by the client. Unsupported rows
+-- are capped (UNSUPPORTED_ROWS_MAX); past that, new ones count under '(other)'.
+-- Increment is atomic per row.
 CREATE TABLE IF NOT EXISTS ext_stats (
   ext       TEXT PRIMARY KEY,
   supported INTEGER NOT NULL DEFAULT 0,
@@ -20,10 +23,13 @@ CREATE TABLE IF NOT EXISTS ext_stats (
 CREATE INDEX IF NOT EXISTS idx_ext_count ON ext_stats(count DESC);
 
 -- Visit dedup only: salted IP hash -> last counted (unix seconds). No raw IPs.
+-- Rows older than the 3-day visit window are deleted by the worker
+-- (pruneVisitors), so a hash is only ever held while it can still dedup a visit.
 CREATE TABLE IF NOT EXISTS visitor_seen (
   ip_hash TEXT PRIMARY KEY,
   last    INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_visitor_last ON visitor_seen(last);
 
 -- Per-day buckets for the /stats trend graph: one row per UTC day with that day's
 -- counted visitors and analysed files. The worker self-migrates this table

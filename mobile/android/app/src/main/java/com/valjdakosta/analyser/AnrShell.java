@@ -5,6 +5,7 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.ProviderInfo;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.net.Uri;
@@ -106,8 +107,12 @@ public class AnrShell extends Plugin {
         origins.add(bridge.getScheme() + "://" + bridge.getHost());
         String serverUrl = bridge.getServerUrl();
         if (serverUrl != null) {
+            // An origin rule is scheme://host[:port] exactly - no user info, no
+            // path - so the live-reload server is matched as one origin.
             Uri u = Uri.parse(serverUrl);
-            origins.add(u.getScheme() + "://" + u.getAuthority());
+            if (u.getScheme() != null && u.getHost() != null) {
+                origins.add(u.getScheme().toLowerCase(Locale.ROOT) + "://" + u.getHost().toLowerCase(Locale.ROOT) + (u.getPort() >= 0 ? ":" + u.getPort() : ""));
+            }
         }
         try {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
@@ -153,27 +158,21 @@ public class AnrShell extends Plugin {
 
     // ---- "Open with" and "Share to Analyser" ---------------------------------
 
-    private static final class Opened {
-
-        final Uri uri;
-        final String mime;
-
-        Opened(Uri uri, String mime) {
-            this.uri = uri;
-            this.mime = mime;
-        }
-    }
-
     /** Token -> content URI. The page learns a token only from an open event,
      *  and only the last 32 stay valid. */
-    private static final Map<String, Opened> OPENED = Collections.synchronizedMap(
-        new LinkedHashMap<String, Opened>(16, 0.75f, false) {
+    private static final Map<String, Uri> OPENED = Collections.synchronizedMap(
+        new LinkedHashMap<String, Uri>(16, 0.75f, false) {
             @Override
-            protected boolean removeEldestEntry(Map.Entry<String, Opened> eldest) {
+            protected boolean removeEldestEntry(Map.Entry<String, Uri> eldest) {
                 return size() > 32;
             }
         }
     );
+
+    /** Describing an opened file asks ANOTHER app's provider, which may be slow
+     *  or hang - never on the main thread, where it would freeze the launch.
+     *  One thread, so two opens reach the page in the order they arrived. */
+    private static final ExecutorService OPEN = Executors.newSingleThreadExecutor();
 
     /**
      * Turn a VIEW / SEND intent into the desktop's open payload and hand it to
@@ -195,46 +194,87 @@ public class AnrShell extends Plugin {
         // content:// only. A file:// URI names another app's private path, and
         // the platform itself stopped allowing those to cross apps in Android 7.
         if (uri == null || !ContentResolver.SCHEME_CONTENT.equals(uri.getScheme())) return false;
-
-        ContentResolver cr = getContext().getContentResolver();
-        String name = "file";
-        long size = 0;
-        try (Cursor c = cr.query(uri, new String[] { OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE }, null, null, null)) {
-            if (c != null && c.moveToFirst()) {
-                int ni = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                int si = c.getColumnIndex(OpenableColumns.SIZE);
-                if (ni >= 0 && !c.isNull(ni)) name = c.getString(ni);
-                if (si >= 0 && !c.isNull(si)) size = c.getLong(si);
-            }
-        } catch (Exception ignored) {
-            /* a provider that will not describe the file still streams it */
+        // Never our OWN provider. A VIEW or SEND intent is something any app can
+        // send us, and a content URI naming this app's FileProvider would make
+        // us read our own files for it and hand them to the page.
+        if (ownProvider(getContext(), uri)) {
+            Logger.warn(getLogTag(), "Refused to open a content URI from this app's own provider");
+            return false;
         }
-        String mime = cr.getType(uri);
-        if (mime == null) mime = intent.getType();
-        if (mime == null) mime = "";
 
-        String token = UUID.randomUUID().toString();
-        OPENED.put(token, new Opened(uri, mime.isEmpty() ? "application/octet-stream" : mime));
+        final Uri opened = uri;
+        final String intentType = intent.getType();
+        final Context ctx = getContext();
+        OPEN.execute(() -> {
+            ContentResolver cr = ctx.getContentResolver();
+            String name = "file";
+            long size = 0;
+            try (Cursor c = cr.query(opened, new String[] { OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE }, null, null, null)) {
+                if (c != null && c.moveToFirst()) {
+                    int ni = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                    int si = c.getColumnIndex(OpenableColumns.SIZE);
+                    if (ni >= 0 && !c.isNull(ni)) name = c.getString(ni);
+                    if (si >= 0 && !c.isNull(si)) size = c.getLong(si);
+                }
+            } catch (Exception ignored) {
+                /* a provider that will not describe the file still streams it */
+            }
+            String mime = null;
+            try {
+                mime = cr.getType(opened);
+            } catch (Exception ignored) {
+                /* the intent's own type below */
+            }
+            if (mime == null) mime = intentType;
+            if (mime == null) mime = "";
 
-        JSObject payload = new JSObject();
-        payload.put("kind", "file");
-        payload.put("name", name);
-        payload.put("size", size);
-        payload.put("mime", mime);
-        payload.put("lastModified", System.currentTimeMillis());
-        payload.put("url", "/__anr/open/" + token);
-        notifyListeners("open", payload, true);
+            String token = UUID.randomUUID().toString();
+            OPENED.put(token, opened);
+
+            // The real type travels here; /__anr/open/ itself always answers
+            // application/octet-stream (see serveOpened).
+            JSObject payload = new JSObject();
+            payload.put("kind", "file");
+            payload.put("name", name);
+            payload.put("size", size);
+            payload.put("mime", mime);
+            payload.put("lastModified", System.currentTimeMillis());
+            payload.put("url", "/__anr/open/" + token);
+            notifyListeners("open", payload, true);
+        });
         return true;
     }
 
-    /** GET /__anr/open/<token> - streams the content URI, no copy. */
-    static WebResourceResponse serveOpened(Context ctx, String token) {
-        Opened o = OPENED.get(token);
-        if (o == null) return AnrWebViewClient.status(404);
+    /** True when the URI's authority is a provider this app itself declares. */
+    private static boolean ownProvider(Context ctx, Uri uri) {
+        String authority = uri.getAuthority();
+        if (authority == null || authority.isEmpty()) return true;   // nothing to open
         try {
-            InputStream in = ctx.getContentResolver().openInputStream(o.uri);
+            ProviderInfo p = ctx.getPackageManager().resolveContentProvider(authority, 0);
+            return p != null && ctx.getPackageName().equals(p.packageName);
+        } catch (RuntimeException e) {
+            return true;
+        }
+    }
+
+    /**
+     * GET /__anr/open/<token> - streams the content URI, no copy.
+     *
+     * Always as application/octet-stream with nosniff and attachment, whatever
+     * the sending app called it: the page reads it with fetch() and takes the
+     * type from the open payload, and a file another app labelled text/html
+     * must never render as a page at the app origin.
+     */
+    static WebResourceResponse serveOpened(Context ctx, String token) {
+        Uri uri = OPENED.get(token);
+        if (uri == null) return AnrWebViewClient.status(404);
+        try {
+            InputStream in = ctx.getContentResolver().openInputStream(uri);
             if (in == null) return AnrWebViewClient.status(404);
-            return new WebResourceResponse(o.mime, null, 200, "OK", AnrWebViewClient.noStore(), in);
+            Map<String, String> headers = AnrWebViewClient.noStore();
+            headers.put("X-Content-Type-Options", "nosniff");
+            headers.put("Content-Disposition", "attachment");
+            return new WebResourceResponse("application/octet-stream", null, 200, "OK", headers, in);
         } catch (Exception e) {
             return AnrWebViewClient.status(404);
         }

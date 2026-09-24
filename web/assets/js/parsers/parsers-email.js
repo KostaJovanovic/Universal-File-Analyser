@@ -97,7 +97,16 @@ function decodeRfc2047(s) {
                 }
                 bytes = new Uint8Array(arr);
             }
-            return new TextDecoder(/utf-?8/i.test(charset) ? 'utf-8' : 'latin1', { fatal: false }).decode(bytes);
+            // The declared charset (minus an RFC 2231 "*lang" suffix) when the browser
+            // knows it - Shift_JIS, KOI8-R, GB2312, windows-1251 and the rest - else latin1.
+            let dec;
+            try {
+                dec = new TextDecoder(charset.split('*')[0].trim(), { fatal: false });
+            }
+            catch (_) {
+                dec = new TextDecoder('latin1', { fatal: false });
+            }
+            return dec.decode(bytes);
         }
         catch (_) {
             return full;
@@ -521,8 +530,12 @@ function imageMime(b, declared) {
         return 'image/webp';
     if (b.length > 2 && b[0] === 0x42 && b[1] === 0x4D)
         return 'image/bmp';
-    const t = (declared || '').toLowerCase().replace(/^image\//, '');
-    return t ? 'image/' + t : 'image/jpeg';
+    // Raster types only: the MIME becomes a same-origin blob: URL, and a declared
+    // svg+xml (or html) would hand a crafted card a document that runs script when
+    // the download link is opened in a tab.
+    const t = (declared || '').toLowerCase().replace(/^image\//, '').trim();
+    const RASTER = { jpeg: 'jpeg', jpg: 'jpeg', pjpeg: 'jpeg', png: 'png', gif: 'gif', webp: 'webp', bmp: 'bmp', tiff: 'tiff', tif: 'tiff', heic: 'heic', heif: 'heif', avif: 'avif' };
+    return RASTER[t] ? 'image/' + RASTER[t] : 'image/jpeg';
 }
 const MIME_EXT = {
     'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif',
@@ -803,14 +816,23 @@ function decodeMapiString(bytes, type) {
         return '';
     }
 }
+// Only the message's OWN properties: streams directly under the root storage.
+// Recipients, attachments and embedded messages carry __substg streams with the
+// same names (an attached .msg has its own Subject), and a whole-tree search
+// could return theirs.
+function mapiRootFilter(cfbf) {
+    const rootPath = (cfbf.rawEntries[0] && cfbf.rawEntries[0].path) || 'Root Entry';
+    return (x) => !!x.path && x.path === rootPath + '/' + x.name;
+}
 // Find a MAPI property string by PROPID (4 hex chars), trying Unicode then ASCII,
 // scanning the directory entries of a given CFBF (or a name-prefix subset).
+// With no filter, only root-level entries (the message itself) are considered.
 function getMapiProp(cfbf, propid, entryFilter) {
     const want = ('__substg1.0_' + propid).toLowerCase();
+    const filter = entryFilter || mapiRootFilter(cfbf);
     for (const type of ['001f', '001e']) {
         const target = want + type;
-        const e = cfbf.rawEntries.find((x) => x.type === 2 && x.name && x.name.toLowerCase() === target &&
-            (!entryFilter || entryFilter(x)));
+        const e = cfbf.rawEntries.find((x) => x.type === 2 && x.name && x.name.toLowerCase() === target && filter(x));
         if (e) {
             const bytes = cfbf.readStream((c) => c.path === e.path) || cfbf.readStream(e.name);
             const s = decodeMapiString(bytes, type);
@@ -820,17 +842,28 @@ function getMapiProp(cfbf, propid, entryFilter) {
     }
     return '';
 }
-// FILETIME property (0040) -> Date. Stored as 8 bytes (lo dword, hi dword) LE.
+// FILETIME property (PtypTime, 0040) -> Date. Fixed-length properties never get a
+// __substg stream: per MS-OXMSG they live in the root `__properties_version1.0`
+// stream - a 32-byte header (top-level message), then 16-byte records of
+// { u32 tag (id << 16 | type), u32 flags, 8-byte value }, the value here being a
+// FILETIME stored lo dword, hi dword, little-endian.
 function getMapiTime(cfbf, propid) {
-    const target = ('__substg1.0_' + propid + '0040').toLowerCase();
-    const e = cfbf.rawEntries.find((x) => x.type === 2 && x.name && x.name.toLowerCase() === target);
+    const isRoot = mapiRootFilter(cfbf);
+    const e = cfbf.rawEntries.find((x) => x.type === 2 && x.name && x.name.toLowerCase() === '__properties_version1.0' && isRoot(x));
     if (!e)
         return null;
-    const bytes = cfbf.readStream((c) => c.path === e.path) || cfbf.readStream(e.name);
-    if (!bytes || bytes.length < 8)
+    const bytes = cfbf.readStream((c) => c.path === e.path);
+    if (!bytes || bytes.length < 48)
         return null;
     const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    return filetimeToDate(dv.getUint32(0, true), dv.getUint32(4, true));
+    const wantTag = ((parseInt(propid, 16) << 16) | 0x0040) >>> 0;
+    for (let p = 32; p + 16 <= bytes.length; p += 16) {
+        if (dv.getUint32(p, true) === wantTag) {
+            const lo = dv.getUint32(p + 8, true), hi = dv.getUint32(p + 12, true);
+            return (lo || hi) ? filetimeToDate(lo, hi) : null;
+        }
+    }
+    return null;
 }
 async function parseMsg(file) {
     let cfbf;

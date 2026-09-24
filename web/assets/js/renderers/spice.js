@@ -14,6 +14,7 @@
    The .raw extension is shared with camera RAW photos, so app.js content-sniffs
    the header (sniffSpiceRaw) before routing a file here. */
 import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { SPICE_VARS_MAX } from '../core/limits.js';
 // --- header signature: "Title:" then "Plotname:" / "Flags:", in ASCII or UTF-16LE.
 export async function sniffSpiceRaw(file) {
     try {
@@ -73,11 +74,19 @@ function parseRaw(buf) {
         title: get('Title'), date: get('Date'), plotname: get('Plotname'),
         flags: get('Flags'), command: get('Command'), offset: get('Offset'),
     };
-    const nVars = parseInt(get('No\\. Variables'), 10) || 0;
+    const nVarsClaimed = parseInt(get('No\\. Variables'), 10) || 0;
     let nPoints = parseInt(get('No\\. Points'), 10) || 0;
     const complex = /complex/i.test(meta.flags);
-    if (!nVars || !nPoints)
+    if (!(nVarsClaimed > 0) || !(nPoints > 0))
         throw new Error('missing variable/point count');
+    // The variable count sizes one array per variable, and it is also the record
+    // stride, so it cannot be clamped without misreading every sample. A count past
+    // what the file could physically hold (a value is at least 4 bytes), or past a
+    // ceiling no real simulation reaches, is refused instead - "1000000000
+    // variables" in a 1 KB header is not a circuit.
+    if (nVarsClaimed > SPICE_VARS_MAX || nVarsClaimed > Math.floor(buf.length / 4))
+        throw new Error('the header claims ' + nVarsClaimed.toLocaleString() + ' variables, more than this file could hold');
+    const nVars = nVarsClaimed;
     // Both counts come from the header text, and they size the allocation below.
     // A corrupt (or hostile) header can claim far more than the file holds - a
     // 1 KB file declaring "5000 variables x 1000000 points" would ask for a 40 GB
@@ -89,7 +98,6 @@ function parseRaw(buf) {
     const pointsClaimed = nPoints;
     if (nVars * nPoints > maxValues)
         nPoints = Math.max(1, Math.floor(maxValues / nVars));
-    const truncated = nPoints < pointsClaimed;
     // Variable table: between "Variables:" and the data marker, one per line as
     // "<index>\t<name>\t<type>".
     const varsStart = text.search(/^Variables:/im);
@@ -114,9 +122,9 @@ function parseRaw(buf) {
     const isBinary = /^Binary:/i.test(mm[0]);
     // Char index just past the marker line's newline -> byte offset of the data.
     const dataCharStart = text.indexOf('\n', mm.index) + 1;
-    const data = Array.from({ length: nVars }, () => new Float64Array(nPoints));
+    let data;
     if (isBinary) {
-        const dataByteStart = utf16 ? dataCharStart * 2 : dataCharStart;
+        const dataByteStart = Math.min(buf.length, utf16 ? dataCharStart * 2 : dataCharStart);
         const dv = new DataView(buf.buffer, buf.byteOffset + dataByteStart);
         const avail = buf.length - dataByteStart;
         const bpp = Math.floor(avail / nPoints); // bytes per point
@@ -133,6 +141,16 @@ function parseRaw(buf) {
         else {
             scheme = 'real-float'; // all single floats
         }
+        // The 4-byte ceiling above is only right for all-float data. Now the real
+        // record size is known, hold the point count to the whole records present,
+        // so a truncated complex or double capture plots what it has instead of
+        // reading past the end and throwing.
+        const rec = scheme === 'cplx-double' ? nVars * 16 : scheme === 'lt-real' ? 8 + (nVars - 1) * 4
+            : scheme === 'real-double' ? nVars * 8 : nVars * 4;
+        nPoints = Math.min(nPoints, Math.floor(avail / rec));
+        if (nPoints < 1)
+            throw new Error('no sample data after the header');
+        data = Array.from({ length: nVars }, () => new Float64Array(nPoints));
         for (let p = 0; p < nPoints; p++) {
             let o;
             if (scheme === 'cplx-double') {
@@ -164,6 +182,7 @@ function parseRaw(buf) {
     else {
         // ASCII "Values:" block - points as "<idx>\t<v0>" then nVars-1 indented
         // "<vN>" lines (complex values written as "re,im").
+        data = Array.from({ length: nVars }, () => new Float64Array(nPoints));
         const body = text.slice(dataCharStart);
         const toks = body.split('\n');
         let li = 0, p = 0;
@@ -191,7 +210,14 @@ function parseRaw(buf) {
             }
             p++;
         }
+        // A cut-off Values: block: plot the points that are there, not a flat run of
+        // zeros standing in for the rest.
+        if (p < nPoints && p > 0) {
+            nPoints = p;
+            data = data.map((d) => d.subarray(0, p));
+        }
     }
+    const truncated = nPoints < pointsClaimed;
     return { meta, vars, nVars, nPoints, complex, data, x: data[0], truncated, pointsClaimed };
 }
 // ---------------------------------------------------------------------------

@@ -28,6 +28,8 @@ function debounce(fn: (...a: any[]) => any, ms?: number) {
 // below are added a single time, matching the old boot._hashWired / _fmtKeyWired guards.
 let hashWired = false;
 let fmtKeyWired = false;
+// The current boot's overlay handlers (see the trampolines in setupFormatOverlay).
+let fmtCur: { open: () => void; close: () => void; apply: () => void; toggle: () => void } | null = null;
 
 export function setupFormatOverlay() {
   // ----- Supported-formats catalog (generated from formats.js) -----
@@ -217,29 +219,39 @@ export function setupFormatOverlay() {
 
     buildChips();
 
+    // The triggers and controls can outlive this boot (a restored home page puts
+    // the same nodes back), so each is wired ONCE to a trampoline into `fmtCur` -
+    // the LATEST boot's handlers - never a closure over an earlier boot's items.
+    fmtCur = {
+      open: openFmt,
+      close: closeFmt,
+      apply: applyFilter,
+      toggle: () => {
+        const vis = visibleItems();
+        const expand = vis.some((it) => !it.open);
+        vis.forEach((it) => { it.open = expand; });
+        syncToggleAll();
+      },
+    };
+
     document.querySelectorAll('[data-fmt-open]').forEach((trigger) => {
       if (trigger._fmtWired) return;
       trigger._fmtWired = true;
       trigger.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        openFmt();
+        if (fmtCur) fmtCur.open();
       });
     });
 
-    if (fmtClose && !fmtClose._wired) { fmtClose._wired = true; fmtClose.addEventListener('click', closeFmt); }
+    if (fmtClose && !fmtClose._wired) { fmtClose._wired = true; fmtClose.addEventListener('click', () => { if (fmtCur) fmtCur.close(); }); }
     if (fmtToggleAll && !fmtToggleAll._wired) {
       fmtToggleAll._wired = true;
-      fmtToggleAll.addEventListener('click', () => {
-        const vis = visibleItems();
-        const expand = vis.some((it) => !it.open);
-        vis.forEach((it) => { it.open = expand; });
-        syncToggleAll();
-      });
+      fmtToggleAll.addEventListener('click', () => { if (fmtCur) fmtCur.toggle(); });
     }
     if (!fmtOverlay._wired) {
       fmtOverlay._wired = true;
-      fmtOverlay.addEventListener('click', (e) => { if (e.target === fmtOverlay) closeFmt(); });
+      fmtOverlay.addEventListener('click', (e) => { if (e.target === fmtOverlay && fmtCur) fmtCur.close(); });
     }
     // Each extension token is a link to its /formats page. The overlay lives
     // outside the SPA-swapped regions, so letting navigate.js do an in-place hop
@@ -268,7 +280,7 @@ export function setupFormatOverlay() {
         }
       });
     }
-    if (fmtSearch && !fmtSearch._wired) { fmtSearch._wired = true; fmtSearch.addEventListener('input', debounce(applyFilter, 120)); }
+    if (fmtSearch && !fmtSearch._wired) { fmtSearch._wired = true; fmtSearch.addEventListener('input', debounce(() => { if (fmtCur) fmtCur.apply(); }, 120)); }
 
     // Sitelinks searchbox / deep-link: /?q=foo (the WebSite schema's SearchAction
     // target) and /formats?q=foo open the formats overlay pre-filtered, so a query

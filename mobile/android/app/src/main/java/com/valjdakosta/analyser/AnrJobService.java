@@ -67,6 +67,8 @@ public final class AnrJobService extends Service {
     private static AnrJobService running;
     private static boolean starting;
     private static long lastUpdate;
+    /** stopIfIdle() stopped this instance (see onDestroy). */
+    private boolean idleStop;
 
     // ---- called by AnrFfmpeg ---------------------------------------------------
 
@@ -130,9 +132,15 @@ public final class AnrJobService extends Service {
         }
     }
 
+    /** `running` is cleared BEFORE stopSelf(): the service is only destroyed
+     *  later, and a begin() in that gap must start a new one rather than
+     *  update a service that is on its way out. onDestroy() covers a job that
+     *  still slips through. */
     private static void stopIfIdle() {
         AnrJobService s = running;
         if (!JOBS.isEmpty() || s == null) return;
+        running = null;
+        s.idleStop = true;
         ServiceCompat.stopForeground(s, ServiceCompat.STOP_FOREGROUND_REMOVE);
         s.stopSelf();
     }
@@ -180,6 +188,7 @@ public final class AnrJobService extends Service {
      *  once, or Android treats the app as not responding. */
     @Override
     public void onTimeout(int startId, int fgsType) {
+        if (running == this) running = null;
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
@@ -195,8 +204,20 @@ public final class AnrJobService extends Service {
 
     @Override
     public void onDestroy() {
-        MAIN.removeCallbacks(STOP);
-        if (running == this) running = null;
+        if (running == this) {
+            running = null;
+            MAIN.removeCallbacks(STOP);
+        }
+        // stopIfIdle() stopped this one, yet a job is running and nothing is
+        // starting a service for it: start a fresh one so the job keeps its
+        // protection. Only for that stop - never after onTimeout (Android
+        // refuses the type until tomorrow) or a failed startForeground, which
+        // would loop.
+        if (idleStop && running == null && !starting && !JOBS.isEmpty()) {
+            starting = true;
+            Context app = getApplicationContext();
+            MAIN.post(() -> start(app));
+        }
         super.onDestroy();
     }
 

@@ -124,9 +124,10 @@ export async function renderTrackerModule(file: File, resultsEl: HTMLElement) {
 
   let audioBuffer: AudioBuffer | null = null;
   try {
-    const AC = window.AudioContext || window.webkitAudioContext!;
-    const ctx = new AC();
-    audioBuffer = ctx.createBuffer(2, left.length, sampleRate);
+    // A bare AudioBuffer, not ctx.createBuffer(): an AudioContext made here was
+    // never closed, and iOS allows only a handful per page before later audio
+    // reads as undecodable.
+    audioBuffer = new AudioBuffer({ numberOfChannels: 2, length: left.length, sampleRate });
     audioBuffer.getChannelData(0).set(left);
     audioBuffer.getChannelData(1).set(right);
   } catch (_) {

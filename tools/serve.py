@@ -6,6 +6,8 @@
 (default html_handling = "auto-trailing-slash"). This tiny server replicates it:
 
   /about.html  -> 308 redirect to /about        (and /index.html -> /)
+  /about/      -> 308 redirect to /about        (a page file, no dir index)
+  /index       -> 308 redirect to /
   /about       -> serves about.html (200)
   /            -> serves index.html (200)
   /assets/...  -> served literally (real files with an extension)
@@ -116,18 +118,32 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
             clean = path[:-5]
             if clean.endswith('/index'):
                 clean = clean[:-5]  # ".../index" -> ".../"
-            if clean == '':
-                clean = '/'
-            self.send_response(308)
-            self.send_header('Location', urllib.parse.quote(clean))
-            self.end_headers()
-            return None
+            return self._redirect(clean)
+
+        # /index -> /  and  /dir/index -> /dir/  (Cloudflare redirects these too;
+        # serving them would give the page a second URL).
+        if path == '/index' or path.endswith('/index'):
+            return self._redirect(path[:-5])
 
         if path == '/':
             return '/index.html'
 
         rel = path.lstrip('/')
-        full = os.path.join(ROOT, rel)
+        # Resolve the path FIRST and refuse anything that lands outside the web
+        # root: os.path.isfile() on an un-normalised "../../x" would otherwise
+        # answer "does this file exist?" for any path on the disk (the response
+        # differs - asset vs 404 page), and the server is reachable on the LAN.
+        full = os.path.normpath(os.path.join(ROOT, rel))
+        if full != ROOT and not full.startswith(ROOT + os.sep):
+            self._not_found = True
+            return '/404.html'
+
+        # /about/ -> /about when the page is a file (about.html) and there is no
+        # directory index to serve instead - Cloudflare's auto-trailing-slash.
+        if path.endswith('/') and len(path) > 1:
+            if not os.path.isfile(os.path.join(full, 'index.html')) and os.path.isfile(full + '.html'):
+                return self._redirect(path.rstrip('/'))
+
         if os.path.isfile(full):
             return raw                        # real asset (css/js/img/txt/...): hand
                                               # back the still-encoded path so the base
@@ -136,6 +152,17 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
             return '/' + rel + '.html'        # clean page route: /about -> about.html
         self._not_found = True                # no match: serve the custom 404 page
         return '/404.html'
+
+    def _redirect(self, clean):
+        """Send a 308 to a same-origin path and return None (the _route "redirected"
+        signal). Leading slashes are collapsed to one: "//evil.com/x" in a Location
+        header is a protocol-relative URL, i.e. an open redirect off-site - which
+        "/%2F%2Fevil.com/x.html" used to produce."""
+        clean = '/' + clean.lstrip('/')
+        self.send_response(308)
+        self.send_header('Location', urllib.parse.quote(clean))
+        self.end_headers()
+        return None
 
     def _serve_api(self, path):
         """Mock /api/* locally; return True if handled."""
@@ -214,6 +241,16 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
         self.send_error(404)
 
     def do_HEAD(self):
+        # /api/* never reaches the page router. The Worker only answers GET/POST
+        # there, so a HEAD gets its JSON 404 (headers only) - not the 404 page.
+        path = self.path.split('?', 1)[0].split('#', 1)[0]
+        if path.startswith('/api/'):
+            self.send_response(404)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store')
+            self._cc_set = True
+            self.end_headers()
+            return
         target = self._route()
         if target is None:
             return

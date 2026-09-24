@@ -172,9 +172,13 @@ ManifestDPIAware true
         ${endif}
         FileClose $1
         ; Clear the old app files, so no page or script from the last version
-        ; stays behind. Analyser-data, which holds the settings, stays.
-        RMDir /r "$INSTDIR\resources"
-        RMDir /r "$INSTDIR\locales"
+        ; stays behind. Analyser-data, which holds the settings, stays. Only in
+        ; a folder that is already a portable copy: page 1 refuses any other
+        ; folder holding an Analyser.exe, and this is the second lock on it.
+        ${if} ${FileExists} "$INSTDIR\portable.txt"
+          RMDir /r "$INSTDIR\resources"
+          RMDir /r "$INSTDIR\locales"
+        ${endif}
       ${endif}
       CreateDirectory "$INSTDIR"
       InitPluginsDir
@@ -459,6 +463,41 @@ ManifestDPIAware true
       Exch $R0
     FunctionEnd
 
+    ; "1" when the folder is where an install lives: the per-user and the
+    ; per-machine default, or the InstallLocation the installed copy recorded.
+    ; NSIS compares strings without regard to case. In and out: the stack.
+    Function anrIsInstalledDir
+      Exch $R0
+      Push $R1
+      Push $R2
+      StrCpy $R1 "0"
+      ; The environment, not $LOCALAPPDATA, which follows the shell context.
+      ReadEnvStr $R2 LOCALAPPDATA
+      ${if} $R2 != ""
+      ${andIf} $R0 == "$R2\Programs\${APP_FILENAME}"
+        StrCpy $R1 "1"
+      ${endif}
+      ${if} $R0 == "$PROGRAMFILES64\${APP_FILENAME}"
+        StrCpy $R1 "1"
+      ${endif}
+      !ifdef INSTALL_REGISTRY_KEY
+        ReadRegStr $R2 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
+        ${if} $R2 != ""
+        ${andIf} $R0 == $R2
+          StrCpy $R1 "1"
+        ${endif}
+        ReadRegStr $R2 HKLM "${INSTALL_REGISTRY_KEY}" InstallLocation
+        ${if} $R2 != ""
+        ${andIf} $R0 == $R2
+          StrCpy $R1 "1"
+        ${endif}
+      !endif
+      StrCpy $R0 $R1
+      Pop $R2
+      Pop $R1
+      Exch $R0
+    FunctionEnd
+
     Function anrModeLeave
       ${NSD_GetState} $anrRadioPortable $0
       ${if} $0 == ${BST_CHECKED}
@@ -474,6 +513,21 @@ ManifestDPIAware true
         Push $1
         Call anrFolder
         Pop $anrPortableDir
+        ; Never over the installed copy: a portable setup there would mark it
+        ; portable and replace its files behind Windows' back.
+        Push $anrPortableDir
+        Call anrIsInstalledDir
+        Pop $2
+        ${if} $2 == "1"
+          MessageBox MB_OK|MB_ICONEXCLAMATION "That folder holds the installed Analyser. Choose another folder for the portable copy."
+          Abort
+        ${endif}
+        ; Nor over any other Analyser that is not already a portable copy.
+        ${if} ${FileExists} "$anrPortableDir\${APP_EXECUTABLE_FILENAME}"
+        ${andIfNot} ${FileExists} "$anrPortableDir\portable.txt"
+          MessageBox MB_OK|MB_ICONEXCLAMATION "That folder already holds an Analyser that is not a portable copy. Choose another folder for the portable copy."
+          Abort
+        ${endif}
         StrCpy $anrPortable "1"
         SectionSetFlags 0 1 ; 1 = SF_SELECTED
         SectionSetFlags 1 0

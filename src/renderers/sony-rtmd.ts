@@ -25,6 +25,7 @@
 import { el, row, rowHelp, h3help, downloadBlob, setPlayerFill } from '../core/util.js';
 import { registerSyncedVideo, getAudioOwner, getAudioCompanion } from '../core/video-sync.js';
 import { makePlayer } from './audio-player.js';
+import { MP4_SAMPLE_TABLE_MAX } from '../core/limits.js';
 
 const ACCEL_LSB_PER_G = 8192;       // Sony accelerometer scale (z ~ 1 g at rest)
 const MAX_FRAMES = 600;             // cap rtmd samples read for the trace (decimated when exceeded)
@@ -84,22 +85,27 @@ async function findMoov(file: File) {
 }
 
 // Read the sample table for a track (stbl) into absolute file offsets + sizes.
-function sampleTable(dv: DataView<ArrayBuffer>, trakStart: number, trakEnd: number) {
+function sampleTable(dv: DataView<ArrayBuffer>, trakStart: number, trakEnd: number, fileSize: number) {
   const box = (t: string) => findAllBoxes(dv, trakStart, trakEnd, t)[0];
   const stsz = box('stsz'), stsc = box('stsc'), stco = box('stco'), co64 = box('co64'), stts = box('stts');
   if (!stsz || !stsc || !(stco || co64)) return null;
   const p = (b: any) => b.offset + b.headerSize;
+  // Entries a table box can really hold, so a u32 count from the file can't
+  // drive a 4-billion-step loop or allocation.
+  const fits = (b: any, at: number, entry: number) => Math.max(0, Math.floor((b.offset + b.size - at) / entry));
   // stsz: ver/flags(4) sample_size(4) count(4) [sizes]
   let o = p(stsz) + 4;
-  const uniform = dv.getUint32(o); const count = dv.getUint32(o + 4); o += 8;
+  const uniform = dv.getUint32(o); let count = dv.getUint32(o + 4); o += 8;
+  // A per-sample table is bounded by its box; a fixed size by the bytes the file has.
+  count = Math.min(count, uniform ? Math.floor(fileSize / uniform) : fits(stsz, o, 4), MP4_SAMPLE_TABLE_MAX);
   const sizes = new Array(count);
   for (let i = 0; i < count; i++) sizes[i] = uniform || dv.getUint32(o + i * 4);
   // chunk offsets
   const offsets = [];
-  if (stco) { let q = p(stco) + 4; const n = dv.getUint32(q); q += 4; for (let i = 0; i < n; i++) offsets.push(dv.getUint32(q + i * 4)); }
-  else { let q = p(co64) + 4; const n = dv.getUint32(q); q += 4; for (let i = 0; i < n; i++) offsets.push(dv.getUint32(q + i * 8) * 0x100000000 + dv.getUint32(q + i * 8 + 4)); }
+  if (stco) { let q = p(stco) + 4; const n = Math.min(dv.getUint32(q), fits(stco, q + 4, 4)); q += 4; for (let i = 0; i < n; i++) offsets.push(dv.getUint32(q + i * 4)); }
+  else { let q = p(co64) + 4; const n = Math.min(dv.getUint32(q), fits(co64, q + 4, 8)); q += 4; for (let i = 0; i < n; i++) offsets.push(dv.getUint32(q + i * 8) * 0x100000000 + dv.getUint32(q + i * 8 + 4)); }
   // stsc: ver/flags(4) count(4) [first_chunk, samples_per_chunk, desc]
-  let s = p(stsc) + 4; const sc = dv.getUint32(s); s += 4;
+  let s = p(stsc) + 4; const sc = Math.min(dv.getUint32(s), fits(stsc, s + 4, 12)); s += 4;
   const runs = [];
   for (let i = 0; i < sc; i++) runs.push([dv.getUint32(s + i * 12), dv.getUint32(s + i * 12 + 4)]);
   // map samples to chunk offsets
@@ -116,7 +122,7 @@ function sampleTable(dv: DataView<ArrayBuffer>, trakStart: number, trakEnd: numb
   const mdhd = box('mdhd');
   if (mdhd) { const d = p(mdhd); const ver = dv.getUint8(d); timescale = ver === 1 ? dv.getUint32(d + 20) : dv.getUint32(d + 12); }
   let totalDelta = 0, totalSamp = 0;
-  if (stts) { let t = p(stts) + 4; const n = dv.getUint32(t); t += 4; for (let i = 0; i < n; i++) { const c = dv.getUint32(t + i * 8), del = dv.getUint32(t + i * 8 + 4); totalSamp += c; totalDelta += c * del; } }
+  if (stts) { let t = p(stts) + 4; const n = Math.min(dv.getUint32(t), fits(stts, t + 4, 8)); t += 4; for (let i = 0; i < n; i++) { const c = dv.getUint32(t + i * 8), del = dv.getUint32(t + i * 8 + 4); totalSamp += c; totalDelta += c * del; } }
   const fps = (timescale && totalDelta) ? timescale * totalSamp / totalDelta : 0;
   return { samples, fps };
 }
@@ -180,7 +186,7 @@ async function openRtmd(file: File) {
     const entry = stsd.offset + stsd.headerSize + 8;     // ver/flags(4)+count(4)
     if (entry + 8 > moov.size) continue;
     if (fcc(dv, entry + 4) !== 'rtmd') continue;
-    const table = sampleTable(dv, ts, te);
+    const table = sampleTable(dv, ts, te, file.size);
     if (table && table.samples.length) return table;
   }
   return null;

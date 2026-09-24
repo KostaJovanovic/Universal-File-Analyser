@@ -187,7 +187,13 @@ function renderMap(r: Reader, w: TerrariaWorld, step: number) {
     let flags2 = 0, flags3 = 0;
     if (flags1 & 1) {
       flags2 = r.u8();
-      if (flags2 & 1) flags3 = r.u8();
+      if (flags2 & 1) {
+        flags3 = r.u8();
+        // 1.4.4+: a fourth flag byte (echo / illuminant coatings on the block and
+        // wall). Its bits add no data of their own, but the byte itself must be
+        // consumed or every tile after the first coated one is misread.
+        if (flags3 & 1) r.u8();
+      }
     }
     let colour = sky;
     let hasTile = false;

@@ -15,7 +15,7 @@
 
 import { roundFps } from '../core/util.js';
 import { AVI_EXTRACT_MAX, AVI_AUDIO_PCM_MAX, AVI_STREAM_WINDOW, AVI_INDEX_MAX,
-  AVI_FRAME_CACHE } from '../core/limits.js';
+  AVI_FRAME_CACHE, AVI_FRAME_MAX } from '../core/limits.js';
 
 /** The `strf` WAVEFORMATEX fields the audio path needs. */
 export interface AviAudioFormat {
@@ -137,7 +137,7 @@ export async function extractAviData(file: File, aviInfo: AviHeaderInfo | null |
     const ckSize = view.getUint32(pos + 4, true);
     const dataStart = pos + 8;
     if (dataStart + ckSize > buf.byteLength || ckSize === 0) break;
-    if ((ckId === '00dc' || ckId === '00db') && ckSize > 2)
+    if ((ckId === '00dc' || ckId === '00db') && ckSize > 2 && ckSize <= AVI_FRAME_MAX)
       videoFrames.push(buf.slice(dataStart, dataStart + ckSize));
     if (ckId === '01wb' && ckSize > 0)
       audioChunks.push(new Uint8Array(buf, dataStart, ckSize));
@@ -153,8 +153,11 @@ export async function extractAviData(file: File, aviInfo: AviHeaderInfo | null |
     const pcm = new Uint8Array(totalSize);
     let off = 0;
     for (const c of audioChunks) { pcm.set(c, off); off += c.length; }
-    const audioBuf = pcmToAudioBuffer(pcm, fmt);
-    if (audioBuf) result.audioBuffer = audioBuf;
+    // Its own try: a sound track Web Audio rejects must not throw away the frames.
+    try {
+      const audioBuf = pcmToAudioBuffer(pcm, fmt);
+      if (audioBuf) result.audioBuffer = audioBuf;
+    } catch (_) { /* no sound; the video still shows */ }
   }
   return result;
 }
@@ -165,6 +168,11 @@ export async function extractAviData(file: File, aviInfo: AviHeaderInfo | null |
 function pcmToAudioBuffer(pcm: Uint8Array, fmt: AviAudioFormat): AudioBuffer | null {
   const totalSize = pcm.length;
   const bytesPerSample = fmt.bitsPerSample / 8;
+  // Only whole-byte 8/16/24/32-bit integer PCM decodes below; anything else (12-bit,
+  // or a channel count Web Audio refuses - createBuffer throws past 32) is reported
+  // as no sound rather than silence or an exception.
+  if (bytesPerSample !== 1 && bytesPerSample !== 2 && bytesPerSample !== 3 && bytesPerSample !== 4) return null;
+  if (!(fmt.channels >= 1 && fmt.channels <= 32)) return null;
   const frameSize = bytesPerSample * fmt.channels;
   if (!frameSize) return null;
   const totalFrames = Math.floor(totalSize / frameSize);
@@ -179,6 +187,12 @@ function pcmToAudioBuffer(pcm: Uint8Array, fmt: AviAudioFormat): AudioBuffer | n
       if (bytePos + bytesPerSample > totalSize) break;
       if (bytesPerSample === 2) chData[i] = pcmView.getInt16(bytePos, true) / 0x8000;
       else if (bytesPerSample === 1) chData[i] = (pcmView.getUint8(bytePos) - 128) / 128;
+      else if (bytesPerSample === 3) {
+        // 24-bit signed little-endian: shift into the top of an int32 to sign-extend.
+        const v = (pcmView.getUint8(bytePos + 2) << 24 | pcmView.getUint8(bytePos + 1) << 16 | pcmView.getUint8(bytePos) << 8) >> 8;
+        chData[i] = v / 0x800000;
+      }
+      else chData[i] = pcmView.getInt32(bytePos, true) / 0x80000000;
     }
   }
   return audioBuf;
@@ -353,7 +367,9 @@ async function indexFromIdx1(file: File, idx1: Idx1Range, movi: MoviList,
       if (!size) continue;
       const off = base + dv.getUint32(o + 8, true) + skipHeader;
       if (off + size > file.size) continue;
-      if (id === '00dc' || id === '00db') video.push(off, size);
+      // A frame is a single JPEG: a multi-GB "frame" is a hostile index entry,
+      // and get(0) would read all of it the moment the viewer opens.
+      if ((id === '00dc' || id === '00db') && size <= AVI_FRAME_MAX) video.push(off, size);
       else if (id === '01wb') audio.push(off, size);
     }
     pos += usable;
@@ -383,7 +399,7 @@ async function indexByScan(file: File, movi: MoviList, video: ChunkList, audio: 
     const size = viewOf(w).getUint32(o + 4, true);
     if (id === 'LIST') { pos += 12; continue; }        // 'rec ' grouping list
     if (!size || pos + 8 + size > movi.end + 8) break; // corrupt / truncated tail
-    if (id === '00dc' || id === '00db') video.push(pos + 8, size);
+    if (id === '00dc' || id === '00db') { if (size <= AVI_FRAME_MAX) video.push(pos + 8, size); }
     else if (id === '01wb') audio.push(pos + 8, size);
     pos += 8 + size + (size & 1);
     if (onProgress && pos - lastPing > 64 * 1024 * 1024) {

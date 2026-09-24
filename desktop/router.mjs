@@ -13,7 +13,12 @@
  *    served directly. Every in-app link uses the clean form anyway.
  *  - `/api/*` is not mocked here. It is proxied to the live site from the main
  *    process (see main.mjs), because `API_ORIGIN` in src/core/util.ts is ''
- *    (same origin) and the Worker sets no CORS headers.
+ *    (same origin) and the Worker sets no CORS headers. Any method, HEAD
+ *    included, so no /api request ever falls through to the 404 page.
+ *
+ * The other redirects serve.py makes ARE made here, as `{ redirect }` for
+ * main.mjs to answer with a 308: `/index` -> `/`, `/dir/index` -> `/dir/`, and
+ * `/about/` -> `/about` when about.html exists and about/index.html does not.
  *
  * Pure module: no Electron imports, so it can be reasoned about (and unit
  * tested) on its own.
@@ -87,7 +92,7 @@ function isFile(p) {
  *
  * @param {string} rawPath  the URL pathname, still percent-encoded
  * @param {string} webDir   absolute path of the web/ document root
- * @returns {{proxy: true} | {file: string, notFound?: boolean}}
+ * @returns {{proxy: true} | {redirect: string} | {file: string, notFound?: boolean}}
  */
 export function route(rawPath, webDir) {
   // /api/* never touches disk - main.mjs forwards it to the live Worker.
@@ -100,6 +105,13 @@ export function route(rawPath, webDir) {
   try { path = decodeURIComponent(rawPath); } catch (_) { path = rawPath; }
 
   const notFound = () => ({ file: join(webDir, '404.html'), notFound: true });
+  // Same-origin only: leading slashes collapse to one, as in serve.py's
+  // _redirect(), so "//evil.com/x" can never become a Location.
+  const redirect = (to) => ({ redirect: encodeURI('/' + to.replace(/^\/+/, '')) });
+
+  // /index -> /  and  /dir/index -> /dir/  (Cloudflare and serve.py redirect
+  // these, so a page never has a second URL).
+  if (path === '/index' || path.endsWith('/index')) return redirect(path.slice(0, -5));
 
   if (path === '' || path === '/') return { file: join(webDir, 'index.html') };
 
@@ -108,6 +120,15 @@ export function route(rawPath, webDir) {
   // both slash flavours; anything that escapes web/ is a 404, not a read.
   const full = normalize(join(webDir, rel));
   if (full !== webDir && !full.startsWith(webDir + sep)) return notFound();
+
+  // /about/ -> /about when the page is a file (about.html) and there is no
+  // directory index to serve instead - Cloudflare's auto-trailing-slash. A
+  // redirect, not a direct serve: the page's relative URLs would otherwise
+  // resolve against /about/.
+  if (path.endsWith('/') && path.length > 1) {
+    const dir = full.replace(/[\\/]+$/, '');
+    if (!isFile(join(dir, 'index.html')) && isFile(dir + '.html')) return redirect(path.replace(/\/+$/, ''));
+  }
 
   if (isFile(full)) return { file: full };              // real asset, served as-is
   if (isFile(full + '.html')) return { file: full + '.html' };  // /about -> about.html

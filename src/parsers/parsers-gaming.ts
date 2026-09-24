@@ -12,6 +12,7 @@ import { Reader, ascii, cleanAscii, findBytes, matchMagic, startsWithAscii, lati
 import { openZip } from '../renderers/zip.js';
 import { decodeBcn, bcnSurfaceBytes, type BcKind } from '../lib/bcn.js';
 import { canvasFromRGBA } from './parser-util.js';
+import { SCAN_SMALL, SCAN_MED, DECOMP_OUTPUT_MAX } from '../core/limits.js';
 
 // ---------- small helpers ----------
 
@@ -199,7 +200,7 @@ function parseNds(head: Uint8Array) {
   const unit = head[0x12];
   out['Unit code'] = unit === 0 ? 'NDS' : unit === 2 ? 'NDS+DSi' : unit === 3 ? 'DSi only' : '0x' + unit.toString(16);
   const cap = head[0x14];
-  out['Capacity'] = cap <= 0x10 ? fmtBytes(131072 << cap) : '0x' + cap.toString(16);
+  out['Capacity'] = cap <= 0x10 ? fmtBytes(131072 * 2 ** cap) : '0x' + cap.toString(16);
   const region = head[0x1D];
   out['Region'] = region === 0 ? 'Normal (worldwide)' : region === 0x40 ? 'Korea' : region === 0x80 ? 'China' : '0x' + region.toString(16);
   out['ROM version'] = head[0x1E];
@@ -275,7 +276,9 @@ async function parseGenesis(file: File) {
 
 // ---------- IPS patch ----------
 async function parseIps(file: File) {
-  const buf = new Uint8Array(await file.arrayBuffer());
+  // The record walk needs the bytes, but only up to a scan budget: an IPS patch
+  // addresses 16 MB, so anything past SCAN_MED is not a patch worth walking.
+  const buf = await readSlice(file, 0, SCAN_MED);
   if (!startsWithAscii(buf, 'PATCH')) return null;
   let i = 5, records = 0, rle = 0, changed = 0, maxOff = 0, ok = true;
   while (i + 3 <= buf.length) {
@@ -304,19 +307,31 @@ async function parseIps(file: File) {
 }
 
 // ---------- BPS patch ----------
+// BPS/UPS varint. Throws past the end of the buffer or after 8 bytes (56 bits,
+// already past Number's exact range) - a truncated or hostile header must not
+// spin: `undefined & 0x80` is 0, so an unbounded loop never terminates.
 function readVarint(b: Uint8Array, cur: { i: number }) {
   let data = 0, shift = 1;
-  for (;;) {
+  for (let n = 0; ; n++) {
+    if (cur.i >= b.length || n >= 8) throw new Error('bad varint');
     const x = b[cur.i++];
     data += (x & 0x7f) * shift;
     if (x & 0x80) break;
-    shift <<= 7;
+    shift *= 128;
     data += shift;
   }
   return data;
 }
+// BPS/UPS need only the header varints (+ BPS metadata) at the front and the
+// three CRC32s in the last 12 bytes, so read those two windows rather than the
+// whole patch.
+async function patchHeadTail(file: File) {
+  const buf = await readSlice(file, 0, SCAN_SMALL);
+  const tail = file.size >= 12 ? await readSlice(file, file.size - 12, 12) : new Uint8Array(0);
+  return { buf, tail };
+}
 async function parseBps(file: File) {
-  const buf = new Uint8Array(await file.arrayBuffer());
+  const { buf, tail } = await patchHeadTail(file);
   if (!startsWithAscii(buf, 'BPS1')) return null;
   const cur = { i: 4 };
   let srcSize, tgtSize, metaSize;
@@ -334,11 +349,11 @@ async function parseBps(file: File) {
     'Source size': fmtBytes(srcSize),
     'Target size': fmtBytes(tgtSize),
   };
-  if (buf.length >= 12) {
-    const dv = new DataView(buf.buffer, buf.byteOffset);
-    out['Source CRC32'] = hex8(dv.getUint32(buf.length - 12, true));
-    out['Target CRC32'] = hex8(dv.getUint32(buf.length - 8, true));
-    out['Patch CRC32'] = hex8(dv.getUint32(buf.length - 4, true));
+  if (tail.length === 12) {
+    const dv = new DataView(tail.buffer, tail.byteOffset);
+    out['Source CRC32'] = hex8(dv.getUint32(0, true));
+    out['Target CRC32'] = hex8(dv.getUint32(4, true));
+    out['Patch CRC32'] = hex8(dv.getUint32(8, true));
   }
   if (meta) out._sections = [{ title: 'Metadata', node: preBlock(meta.slice(0, 4000)) }];
   return out;
@@ -346,7 +361,7 @@ async function parseBps(file: File) {
 
 // ---------- UPS patch ----------
 async function parseUps(file: File) {
-  const buf = new Uint8Array(await file.arrayBuffer());
+  const { buf, tail } = await patchHeadTail(file);
   if (!startsWithAscii(buf, 'UPS1')) return null;
   const cur = { i: 4 };
   let inSize, outSize;
@@ -356,11 +371,11 @@ async function parseUps(file: File) {
     'Input file size': fmtBytes(inSize),
     'Output file size': fmtBytes(outSize),
   };
-  if (buf.length >= 12) {
-    const dv = new DataView(buf.buffer, buf.byteOffset);
-    out['Input CRC32'] = hex8(dv.getUint32(buf.length - 12, true));
-    out['Output CRC32'] = hex8(dv.getUint32(buf.length - 8, true));
-    out['Patch CRC32'] = hex8(dv.getUint32(buf.length - 4, true));
+  if (tail.length === 12) {
+    const dv = new DataView(tail.buffer, tail.byteOffset);
+    out['Input CRC32'] = hex8(dv.getUint32(0, true));
+    out['Output CRC32'] = hex8(dv.getUint32(4, true));
+    out['Patch CRC32'] = hex8(dv.getUint32(8, true));
   }
   return out;
 }
@@ -474,28 +489,34 @@ function walkNbt(b: Uint8Array) {
   if (rootType !== 10 && rootType !== 9) throw new Error('root');
   readName(); // root name
   if (rootType === 10) {
-    for (;;) {
-      const t = r.u8();
-      if (t === 0) break;
-      const nm = readName();
-      readPayload(t, nm);
+    // Past the tag budget, or at the end of a capped/truncated read, keep what
+    // was collected so far - throwing here would discard every tag found.
+    try {
+      for (;;) {
+        const t = r.u8();
+        if (t === 0) break;
+        const nm = readName();
+        readPayload(t, nm);
+      }
+    } catch (e) {
+      if (!Object.keys(found).length) throw e;
     }
   }
   return found;
 }
 async function parseNbt(file: File, ext: string) {
-  let bytes = new Uint8Array(await file.arrayBuffer());
-  // gzip-compressed (most .nbt level files) or raw.
-  if (bytes[0] === 0x1F && bytes[1] === 0x8B) {
-    const inflated = await gunzip(bytes);
-    if (inflated) bytes = inflated;
-  } else if (bytes[0] === 0x78) {
-    // zlib (schematics often). Try deflate via DecompressionStream wrapper.
-    try {
-      const ds = new DecompressionStream('deflate');
-      const stream = new Blob([bytes]).stream().pipeThrough(ds);
-      bytes = new Uint8Array(await new Response(stream).arrayBuffer());
-    } catch (_) { /* keep raw */ }
+  // Only the first SCAN_MED bytes are walked (the tag budget runs out long
+  // before that); compressed input is inflated as a prefix, so a bomb or a
+  // multi-GB level file stops at the same ceiling.
+  const head = await readSlice(file, 0, 2);
+  let bytes: Uint8Array;
+  // gzip-compressed (most .nbt level files), zlib (schematics often) or raw.
+  if (head[0] === 0x1F && head[1] === 0x8B) {
+    bytes = (await gunzip(file, SCAN_MED, { partial: true })) || await readSlice(file, 0, SCAN_MED);
+  } else if (head[0] === 0x78) {
+    bytes = (await inflate(file, 'deflate', SCAN_MED, { partial: true })) || await readSlice(file, 0, SCAN_MED);
+  } else {
+    bytes = await readSlice(file, 0, SCAN_MED);
   }
   let tags;
   try { tags = walkNbt(bytes); } catch (_) { return null; }
@@ -608,7 +629,7 @@ async function parseGodotPck(file: File) {
   try {
     const buf = await readSlice(file, 0, 200);
     const rr = new Reader(buf, true);
-    rr.seek(16);
+    rr.seek(20); // past magic + pack format + major/minor/patch
     if (fmtVer >= 2) { const flags = rr.u32(); const fileBase = rr.u64(); rr.skip(16 * 4); }
     else rr.skip(16 * 4);
     const fileCount = rr.u32();
@@ -663,8 +684,14 @@ async function parseBsp(file: File) {
     out['Engine'] = 'Valve Source (VBSP)';
     out['Map version'] = version;
     lumpBase = 8;
+  } else if (id === 'IBSP') {    // id Tech 2/3: magic, then version (38 Quake II, 46/47 Quake III)
+    r.seek(4);
+    const version = r.i32();
+    out['Engine'] = version === 38 ? 'Quake II (IBSP)' : version === 46 || version === 47 ? 'Quake III (IBSP)' : 'id Tech (IBSP)';
+    out['BSP version'] = version;
+    lumpBase = 8;
   } else {
-    // GoldSrc/Quake: first int is BSP version (29/30/38/...)
+    // GoldSrc/Quake: first int is BSP version (29/30)
     r.seek(0);
     const version = r.i32();
     if (version < 0 || version > 100) return null;
@@ -929,12 +956,13 @@ async function parseKtx(file: File) {
       why = 'implausible dimensions';
     } else {
       try {
-        const idx = await readSlice(file, 80, 80 + Math.max(1, levels) * 24);
+        const idx = await readSlice(file, 80, 24); // readSlice takes (offset, LENGTH); level 0 is the first entry
         const iv = new DataView(idx.buffer, idx.byteOffset, idx.byteLength);
         const off = Number(iv.getBigUint64(0, true));
         const len = Number(iv.getBigUint64(8, true));
         if (!len || off + len > file.size) throw new Error('level 0 out of range');
-        const payload = await ktxDecompress(await readSlice(file, off, off + len), sc);
+        if (sc !== 0 && Number(iv.getBigUint64(16, true)) > DECOMP_OUTPUT_MAX) throw new Error('level 0 too large');
+        const payload = await ktxDecompress(await readSlice(file, off, len), sc);
         if (!payload) throw new Error('supercompression not undone');
         const rgba = bc ? decodeBcn(payload, 0, w, h, bc) : decodeRawSurface(payload, 0, w, h, raw);
         const preview = rgba && canvasFromRGBA(rgba, w, h);
@@ -979,11 +1007,11 @@ async function parseKtx(file: File) {
     } else {
       try {
         const dataOff = 64 + kvBytes;          // 64-byte header + key/value block
-        const sizeBuf = await readSlice(file, dataOff, dataOff + 4);
+        const sizeBuf = await readSlice(file, dataOff, 4);
         const imageSize = new DataView(sizeBuf.buffer, sizeBuf.byteOffset, 4).getUint32(0, true);
         const px = dataOff + 4;
         if (!imageSize || px + imageSize > file.size) throw new Error('level 0 out of range');
-        const payload = await readSlice(file, px, px + imageSize);
+        const payload = await readSlice(file, px, imageSize);
         const rgba = bc ? decodeBcn(payload, 0, w, h, bc) : decodeRawSurface(payload, 0, w, h, raw);
         const preview = rgba && canvasFromRGBA(rgba, w, h);
         if (preview) out._previewNode = preview;
@@ -1181,7 +1209,7 @@ async function parseUnity(file: File) {
   let p = 0;
   while (p < head.length && head[p] !== 0) p++;
   p++; // skip the NUL
-  const r = new Reader(head, true); // big-endian
+  const r = new Reader(head, false); // big-endian
   r.seek(p);
   const formatVer = r.u32();
   // Two NUL-terminated strings follow: Unity generation and engine version.
@@ -1215,7 +1243,7 @@ const CHD_COMPRESSORS: Record<number, string> = {
 async function parseChd(file: File) {
   const head = await readSlice(file, 0, 124);
   if (ascii(head, 0, 8) !== 'MComprHD') return null;
-  const r = new Reader(head, true); r.seek(8);
+  const r = new Reader(head, false); r.seek(8); // every CHD header field is big-endian
   const headerLen = r.u32();
   const version = r.u32();
   const out: Row = { 'Format': 'MAME CHD compressed image', 'CHD version': version };

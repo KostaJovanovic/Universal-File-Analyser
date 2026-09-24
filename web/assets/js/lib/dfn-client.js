@@ -8,6 +8,7 @@
    The worker is created lazily and kept alive between runs so the model stays
    resident (a second denoise skips the download + init). */
 import { DFN_SR } from './dfn-enhance.js';
+import { DFN_DURATION_MAX } from '../core/limits.js';
 const STALL_MS = 5 * 60 * 1000;
 const RUNTIME_STALL_MS = 2 * 60 * 1000;
 let worker = null;
@@ -149,6 +150,12 @@ function runWorker(channels, sampleRate, { onProgress, signal }) {
 export function enhanceAudio(audioBuffer, { onProgress, signal } = {}) {
     return enqueue(async () => {
         throwIfAborted(signal);
+        // Checked before resampling: the denoise holds the whole recording several
+        // times over at 48 kHz, so a long one would exhaust the tab.
+        if (audioBuffer.duration > DFN_DURATION_MAX) {
+            throw new Error('this recording is longer than the ' + Math.round(DFN_DURATION_MAX / 60)
+                + ' minutes this device can denoise at once');
+        }
         const { channels, sampleRate } = await toModelChannels(audioBuffer, signal);
         throwIfAborted(signal);
         return runWorker(channels, sampleRate, { onProgress, signal });

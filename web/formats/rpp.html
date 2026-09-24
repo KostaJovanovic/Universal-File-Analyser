@@ -28,7 +28,7 @@
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .RPP file?","acceptedAnswer":{"@type":"Answer","text":"RPP is a REAPER project, and unusually for a DAW it is plain text: a nested block format where a line beginning with < opens a block and a lone > closes it. Tracks hold items, items hold a position, a length and the media file they play. Because an RPP is text, it diffs and merges in version control like source code - which is why some studios keep their sessions in git. A REAPER project is a human-readable text file using a custom nested block syntax, and it stores only path references to media rather than the audio itself. Starting a project also spawns companion RPP-BAK backup and RPP-UNDO history files beside the main RPP."}},{"@type":"Question","name":"How do I open a .RPP file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .RPP file onto Analyser at https://analyser.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. Open Ableton Live sets (.als/.alp) and Reaper projects (.rpp) and see the arrangement drawn out: one row per track, every clip positioned exactly where the project puts it, on a real clock with a zoom for busy sections. A project file contains no audio at all - it is an edit list - so what is shown is read from the same numbers the DAW lays the session out with. Reads the tempo, time signature, track list with each track's type, clip count and plugins, and the media files the project points at but does not contain, which is what tells you whether a session that has been moved will still open complete. An Ableton set is gzipped XML and times everything in beats, so the tempo is what makes a real timeline possible; a Reaper project is plain text and already stores seconds."}},{"@type":"Question","name":"Can I open a .RPP file online for free?","acceptedAnswer":{"@type":"Answer","text":"Yes. Analyser is a free online .RPP opener and viewer that runs entirely in your browser - your .RPP file never leaves your device, so there is nothing to upload and no software to install. It even works offline once installed."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .RPP file?","acceptedAnswer":{"@type":"Answer","text":"RPP is a REAPER project, and unusually for a DAW it is plain text: a nested block format where a line beginning with \u003c opens a block and a lone > closes it. Tracks hold items, items hold a position, a length and the media file they play. Because an RPP is text, it diffs and merges in version control like source code - which is why some studios keep their sessions in git. A REAPER project is a human-readable text file using a custom nested block syntax, and it stores only path references to media rather than the audio itself. Starting a project also spawns companion RPP-BAK backup and RPP-UNDO history files beside the main RPP."}},{"@type":"Question","name":"How do I open a .RPP file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .RPP file onto Analyser at https://analyser.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. Open Ableton Live sets (.als/.alp) and Reaper projects (.rpp) and see the arrangement drawn out: one row per track, every clip positioned exactly where the project puts it, on a real clock with a zoom for busy sections. A project file contains no audio at all - it is an edit list - so what is shown is read from the same numbers the DAW lays the session out with. Reads the tempo, time signature, track list with each track's type, clip count and plugins, and the media files the project points at but does not contain, which is what tells you whether a session that has been moved will still open complete. An Ableton set is gzipped XML and times everything in beats, so the tempo is what makes a real timeline possible; a Reaper project is plain text and already stores seconds."}},{"@type":"Question","name":"Can I open a .RPP file online for free?","acceptedAnswer":{"@type":"Answer","text":"Yes. Analyser is a free online .RPP opener and viewer that runs entirely in your browser - your .RPP file never leaves your device, so there is nothing to upload and no software to install. It even works offline once installed."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"HowTo","name":"How to open a .RPP file","description":"Open a .RPP file online in your browser with Analyser - no upload and no install.","totalTime":"PT1M","tool":[{"@type":"HowToTool","name":"Analyser (any modern web browser)"}],"step":[{"@type":"HowToStep","position":1,"name":"Open Analyser","text":"Go to https://analyser.valjdakosta.com/ in any web browser. There is nothing to install.","url":"https://analyser.valjdakosta.com/"},{"@type":"HowToStep","position":2,"name":"Add your file","text":"Drag your .RPP file onto the page, or tap to choose one. The file stays on your device - nothing is uploaded."},{"@type":"HowToStep","position":3,"name":"View it","text":"Analyser opens the .RPP file and shows its contents and metadata instantly, on your device."}]}
@@ -117,7 +117,7 @@
 <footer id="about" class="site-footer site-footer--about">
   <div class="footer-about-heading">
     <p class="footer-mark">Everything runs in your browser.</p>
-    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+    <p class="footer-meta">No upload, no trackers, no servers in the loop.</p>
   </div>
   <div class="footer-row footer-bottom">
     <div class="footer-lead">
@@ -154,10 +154,26 @@
   if ('serviceWorker' in navigator) {
     if (navigator.serviceWorker.controller) {
       var anrRefreshing = false;
-      navigator.serviceWorker.addEventListener('controllerchange', function () {
-        if (anrRefreshing) return;
+      // Never over a live analysis, though (an ffmpeg or AI job runs inside
+      // one): the reload then waits until the page is idle again.
+      var anrBusy = function () {
+        var c = document.body.classList;
+        return c.contains('anr-has-file') || c.contains('anr-loading')
+          || !!document.querySelector('.anr-results:not([hidden]), .anr-cmp-split');
+      };
+      var anrReload = function () {
+        if (anrRefreshing || anrBusy()) return false;
         anrRefreshing = true;
         window.location.reload();
+        return true;
+      };
+      var anrReloadPending = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (anrRefreshing || anrReloadPending || anrReload()) return;
+        anrReloadPending = true;
+        new MutationObserver(function (m, obs) { if (anrReload()) obs.disconnect(); })
+          .observe(document.body, { attributes: true, attributeFilter: ['class'] });
+        window.addEventListener('anr:navigate', anrReload);
       });
     }
     window.addEventListener('load', function () {

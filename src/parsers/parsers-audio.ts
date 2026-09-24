@@ -11,6 +11,7 @@
 import { row, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, cleanAscii, findBytes, startsWithAscii, latin1, utf8, gunzip, hexByte } from '../core/binutil.js';
 import { sqliteSummary } from '../lib/sqlite.js';
+import { SCAN_MED } from '../core/limits.js';
 
 // ---------- small helpers ----------
 
@@ -278,7 +279,7 @@ async function parseDsf(file: File) {
     out['Channels'] = channels;
     out['Bits per sample'] = bits;
     if (rate) out['Duration'] = fmtDuration(Number(sampleCount) / rate);
-    out['Channel layout'] = ['', 'mono', 'stereo', '3ch', 'quad', '', '5.1', ''][chanType] || ('type ' + chanType);
+    out['Channel layout'] = ['', 'mono', 'stereo', '3ch', 'quad', '4ch (with LFE)', '5ch', '5.1'][chanType] || ('type ' + chanType);
   }
   if (metaPtr && metaPtr > 0n) out['ID3v2 metadata'] = 'present (offset 0x' + metaPtr.toString(16) + ')';
   return out;
@@ -296,7 +297,7 @@ async function parseDff(file: File) {
     let dst = false, rate = 0, channels = 0;
     for (let g = 0; g < 64 && p + 12 <= head.length; g++) {
       const id = ascii(head, p, 4);
-      const r = new Reader(head, true); r.seek(p + 4);
+      const r = new Reader(head, false); r.seek(p + 4); // DSDIFF is big-endian throughout
       const sz = Number(r.u64());
       const body = p + 12;
       if (id === 'PROP') {
@@ -304,11 +305,11 @@ async function parseDff(file: File) {
         let q = body + 4; // skip prop type "SND "
         for (let g2 = 0; g2 < 32 && q + 12 <= head.length; g2++) {
           const sid = ascii(head, q, 4);
-          const sr = new Reader(head, true); sr.seek(q + 4);
+          const sr = new Reader(head, false); sr.seek(q + 4);
           const ssz = Number(sr.u64());
           const sbody = q + 12;
-          if (sid === 'FS  ' && sbody + 4 <= head.length) { rate = new Reader(head, true).seek(sbody).u32(); }
-          else if (sid === 'CHNL' && sbody + 2 <= head.length) { channels = new Reader(head, true).seek(sbody).u16(); }
+          if (sid === 'FS  ' && sbody + 4 <= head.length) { rate = new Reader(head, false).seek(sbody).u32(); }
+          else if (sid === 'CHNL' && sbody + 2 <= head.length) { channels = new Reader(head, false).seek(sbody).u16(); }
           else if (sid === 'CMPR' && sbody + 4 <= head.length) { dst = ascii(head, sbody, 4) === 'DST '; }
           q = sbody + ssz + (ssz & 1);
         }
@@ -408,7 +409,8 @@ async function parseCaf(file: File) {
     }
     if (type === 'pakt' && body + 16 <= head.length) {
       const pr = new Reader(head, false); pr.seek(body);
-      frames = Number(pr.u64()); // number of packets... approximate
+      pr.u64(); // mNumberPackets
+      frames = Number(pr.u64()); // mNumberValidFrames (priming/remainder already excluded)
     }
     if (size < 0) break;
     p = body + size;
@@ -599,15 +601,16 @@ function parseAwb(head: Uint8Array) {
 
 // ---------- QCP (Qualcomm PureVoice) ----------
 async function parseQcp(file: File) {
-  const head = await readSlice(file, 0, 80);
+  const head = await readSlice(file, 0, 128);
   if (ascii(head, 0, 4) !== 'RIFF' || ascii(head, 8, 4) !== 'QLCM') return null;
   const out: Row = { 'Format': 'QCP (Qualcomm PureVoice)' };
   // fmt chunk at 12: "fmt "(4) + size(4) + major(1)+minor(1) + codec GUID(16) + version(2) + codecName(80)...
+  // so the body starts at 20, the GUID at 22 and the codec name at 40.
   if (ascii(head, 12, 4) === 'fmt ') {
-    const codecName = cleanAscii(head, 36, 32);
+    const codecName = cleanAscii(head, 40, 80);
     out['Codec'] = codecName || 'QCELP/EVRC';
     // GUID first 4 bytes distinguish QCELP vs EVRC
-    const guid0 = head[20];
+    const guid0 = head[22];
     if (/qcelp/i.test(codecName)) out['Codec family'] = 'QCELP';
     else if (/evrc/i.test(codecName)) out['Codec family'] = 'EVRC';
   }
@@ -734,15 +737,33 @@ async function parseSf2(file: File, ext: string) {
     }
   });
   // pdta LIST has phdr/inst/shdr - each record is fixed size; count = bytes/recsize - 1.
-  walkRiff(head, 12, (cid, off, sz) => {
-    if (cid === 'LIST' && ascii(head, off, 4) === 'pdta') {
-      walkRiff(head, off + 4, (sid, soff, ssz) => {
-        if (sid === 'phdr') presets = Math.max(0, Math.floor(ssz / 38) - 1);
-        else if (sid === 'inst') instruments = Math.max(0, Math.floor(ssz / 22) - 1);
-        else if (sid === 'shdr') samples = Math.max(0, Math.floor(ssz / 46) - 1);
-      });
+  // pdta comes AFTER the sample data (sdta), which is usually megabytes, so the
+  // top-level chunks are walked from the file by their 8-byte headers rather
+  // than from the 64 KB head - only the chunk headers are ever read.
+  try {
+    const riffEnd = Math.min(file.size, 8 + new Reader(head, true).seek(4).u32());
+    let p = 12;
+    for (let g = 0; g < 16 && p + 12 <= riffEnd; g++) {
+      const ch = await readSlice(file, p, 12);
+      if (ch.length < 12) break;
+      const sz = new Reader(ch, true).seek(4).u32();
+      if (ascii(ch, 0, 4) === 'LIST' && ascii(ch, 8, 4) === 'pdta') {
+        const end = Math.min(riffEnd, p + 8 + sz);
+        let q = p + 12;
+        for (let g2 = 0; g2 < 16 && q + 8 <= end; g2++) {
+          const sh = await readSlice(file, q, 8);
+          if (sh.length < 8) break;
+          const sid = ascii(sh, 0, 4), ssz = new Reader(sh, true).seek(4).u32();
+          if (sid === 'phdr') presets = Math.max(0, Math.floor(ssz / 38) - 1);
+          else if (sid === 'inst') instruments = Math.max(0, Math.floor(ssz / 22) - 1);
+          else if (sid === 'shdr') samples = Math.max(0, Math.floor(ssz / 46) - 1);
+          q += 8 + ssz + (ssz & 1);
+        }
+        break;
+      }
+      p += 8 + sz + (sz & 1);
     }
-  });
+  } catch (_) { /* best effort */ }
   Object.assign(out, info);
   if (presets) out['Presets'] = presets;
   if (instruments) out['Instruments'] = instruments;
@@ -1157,10 +1178,11 @@ const VGM_CHIPS: [number, string][] = [
 ];
 async function parseVgm(file: File, ext: string) {
   let head = await readSlice(file, 0, 256);
-  let gd3Buf = null, gd3Off = 0;
+  let gd3Buf: Uint8Array | null = null, gd3Off = 0;
   if (ext === 'vgz' || (head[0] === 0x1F && head[1] === 0x8B)) {
-    const full = new Uint8Array(await file.arrayBuffer());
-    const inflated = await gunzip(full);
+    // Streamed prefix inflate: a VGM log is a few MB, so SCAN_MED covers the
+    // GD3 tag at its end, and a gzip bomb stops at the same ceiling.
+    const inflated = await gunzip(file, SCAN_MED, { partial: true });
     if (!inflated) return null;
     head = inflated.subarray(0, Math.min(inflated.length, 256));
     gd3Buf = inflated;
@@ -1186,8 +1208,16 @@ async function parseVgm(file: File, ext: string) {
   // GD3 tag.
   if (gd3Rel && (gd3Buf || file.size)) {
     try {
-      const gd3Abs = 0x14 + gd3Rel;
-      const buf = gd3Buf || new Uint8Array(await file.arrayBuffer());
+      let gd3Abs = 0x14 + gd3Rel;
+      let buf: Uint8Array;
+      if (gd3Buf) buf = gd3Buf;
+      else {
+        // Uncompressed: read just the tag (header + a bounded body) from its offset.
+        const gh = await readSlice(file, gd3Abs, 12);
+        const glen = gh.length === 12 ? new Reader(gh, true).seek(8).u32() : 0;
+        buf = await readSlice(file, gd3Abs, 12 + Math.min(glen, 1 << 20));
+        gd3Abs = 0;
+      }
       if (ascii(buf, gd3Abs, 4) === 'Gd3 ') {
         const gr = new Reader(buf, true); gr.seek(gd3Abs + 8);
         const len = gr.u32();
@@ -1225,13 +1255,14 @@ async function parseAy(file: File) {
   const head = await readSlice(file, 0, 256);
   if (ascii(head, 0, 8) !== 'ZXAYEMUL') return null;
   const out: Row = { 'Format': 'AY chiptune (.ay)' };
-  // Pointers at 0x12 (author) and 0x14 (misc) are relative big-endian offsets.
+  // Pointers at 0x0C (author) and 0x0E (misc) are relative big-endian offsets
+  // (0x0A is the special-player pointer, 0x12 the song-structure pointer).
   const r = new Reader(head, false);
   out['Songs'] = head[0x10] + 1;
   try {
-    r.seek(0x12); const authorRel = r.i16(); const authorOff = 0x12 + authorRel;
+    r.seek(0x0C); const authorRel = r.i16(); const authorOff = 0x0C + authorRel;
     if (authorOff > 0 && authorOff < head.length) out['Author'] = cleanAscii(head, authorOff, 64);
-    r.seek(0x14); const miscRel = r.i16(); const miscOff = 0x14 + miscRel;
+    r.seek(0x0E); const miscRel = r.i16(); const miscOff = 0x0E + miscRel;
     if (miscOff > 0 && miscOff < head.length) out['Misc'] = cleanAscii(head, miscOff, 64);
   } catch (_) {}
   return out;

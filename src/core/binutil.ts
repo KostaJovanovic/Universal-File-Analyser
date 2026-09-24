@@ -3,7 +3,10 @@
    Building blocks reused by the lazy parser chunks (parsers-<domain>.js) and the
    deepened renderers: a cursor-based DataView reader, byte/magic helpers, text
    decoders (UTF-16, CP437, latin1), and DecompressionStream wrappers. Keep this
-   dependency-free and side-effect-free so it stays cheap to import. */
+   side-effect-free so it stays cheap to import; its one dependency is
+   limits.js, for the decompression ceiling. */
+
+import { DECOMP_OUTPUT_MAX } from './limits.js';
 
 /** A sequence of bytes. Both forms are passed throughout: a Uint8Array slice of a
     file, or a plain array literal for a magic/signature (`[0x89, 0x50, ...]`,
@@ -181,18 +184,48 @@ export function cp437(bytes: Uint8Array) {
 // Inflate a stream via the browser's DecompressionStream. `format` is
 // 'gzip' | 'deflate' | 'deflate-raw'. Returns a Uint8Array, or null if the
 // platform lacks DecompressionStream or the data is corrupt.
-export async function inflate(bytes: Uint8Array, format: CompressionFormat = 'gzip') {
+//
+// The output is read chunk by chunk and capped at `maxOut` (default
+// DECOMP_OUTPUT_MAX), so a small deflate bomb can never balloon the tab: past
+// the cap the stream is cancelled and the call returns null. With
+// `partial: true` it instead returns the first `maxOut` bytes, and also returns
+// whatever decoded before an error - which is what a caller reading a header
+// out of a TRUNCATED gzip slice needs (DecompressionStream rejects a stream
+// that ends early, even after producing good output).
+export async function inflate(bytes: Uint8Array | Blob, format: CompressionFormat = 'gzip',
+  maxOut: number = DECOMP_OUTPUT_MAX, opts: { partial?: boolean } = {}): Promise<Uint8Array<ArrayBuffer> | null> {
   if (typeof DecompressionStream === 'undefined') return null;
+  const partial = !!opts.partial;
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  let total = 0;
+  let reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>> | null = null;
   try {
-    const ds = new DecompressionStream(format);
-    const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(ds);
-    const out = new Uint8Array(await new Response(stream).arrayBuffer());
-    return out;
+    const src = bytes instanceof Blob ? bytes : new Blob([bytes as BlobPart]);
+    reader = src.stream().pipeThrough(new DecompressionStream(format)).getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (total + value.length > maxOut) {
+        try { reader.cancel(); } catch (_) {}
+        if (!partial) return null;
+        chunks.push(value.subarray(0, maxOut - total));
+        total = maxOut;
+        break;
+      }
+      chunks.push(value);
+      total += value.length;
+    }
   } catch (_) {
-    return null;
+    if (!partial || !total) return null;
   }
+  if (chunks.length === 1) return chunks[0];
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.length; }
+  return out;
 }
-export const gunzip = (bytes: Uint8Array) => inflate(bytes, 'gzip');
+export const gunzip = (bytes: Uint8Array | Blob, maxOut: number = DECOMP_OUTPUT_MAX, opts: { partial?: boolean } = {}) =>
+  inflate(bytes, 'gzip', maxOut, opts);
 
 // ---------- entropy ----------
 

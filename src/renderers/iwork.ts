@@ -103,7 +103,9 @@ export async function renderIwork(file: File, resultsEl: HTMLElement) {
     try {
       const bytes = await zip.bytes(pdfEntry.name);
       if (!bytes) throw new Error('preview unreadable');
-      const previewFile = new File([bytes], file.name.replace(/\.[^.]+$/, '') + ' (preview).pdf', { type: 'application/pdf' });
+      // renderPdf opens it with isEvalSupported: false like any other PDF, so a
+      // crafted Preview.pdf gets the same CVE-2024-4367 protection.
+      const previewFile = new File([bytes as BlobPart], file.name.replace(/\.[^.]+$/, '') + ' (preview).pdf', { type: 'application/pdf' });
       await renderPdf(previewFile, host);
       return;
     } catch (_) { host.remove(); subhead.remove(); /* fall through to image / no-preview */ }
@@ -115,13 +117,13 @@ export async function renderIwork(file: File, resultsEl: HTMLElement) {
     if (bytes) {
       const e = (imgEntry.name.match(/\.(\w+)$/) || [, 'jpg'])[1].toLowerCase();
       const mime = 'image/' + (e === 'jpg' ? 'jpeg' : e);
-      const blob = new Blob([bytes], { type: mime });
+      const blob = new Blob([bytes as BlobPart], { type: mime });
       const pcard = el('div', { class: 'anr-card' });
       pcard.appendChild(el('h3', {}, 'Preview'));
       pcard.appendChild(blobImg(blob, { alt: 'Document preview', class: 'anr-iwork-preview' }));
       const analyse = el('button', { type: 'button', class: 'anr-btn' }, 'Analyse this image');
       analyse.addEventListener('click', () => {
-        if (window._anrHandleFile) window._anrHandleFile(new File([bytes], 'iwork-preview.' + e, { type: mime }), { nested: true });
+        if (window._anrHandleFile) window._anrHandleFile(new File([bytes as BlobPart], 'iwork-preview.' + e, { type: mime }), { nested: true });
       });
       pcard.appendChild(analyse);
       resultsEl.insertBefore(pcard, resultsEl.firstChild);

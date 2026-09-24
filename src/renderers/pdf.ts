@@ -20,6 +20,40 @@ async function loadPdfJs() {
   return pdfjsLib;
 }
 
+// One pdf.js worker shared by every document: getDocument() would otherwise
+// spawn a fresh worker (and keep a copy of the file in it) per PDF rendered.
+// A document opened on a caller-supplied worker leaves it running on destroy().
+let sharedWorker: any = null;
+function pdfWorker(lib: any) {
+  if (!sharedWorker || sharedWorker.destroyed) {
+    try { sharedWorker = new lib.PDFWorker(); } catch (_) { sharedWorker = null; }
+  }
+  return sharedWorker;
+}
+
+// Documents still open, with the results element each was drawn into. A new
+// render destroys the ones whose output is gone (or that drew into the same
+// element), so pdf.js frees their parsed data; /compare's two live columns are
+// both still in the page, so neither tears the other down.
+const openDocs: { el: HTMLElement; marker: HTMLElement|null; task: any }[] = [];
+function releaseStaleDocs(resultsEl: HTMLElement) {
+  for (let i = openDocs.length - 1; i >= 0; i--) {
+    const d = openDocs[i];
+    const gone = d.el === resultsEl || !d.el.isConnected || (d.marker && !d.marker.isConnected);
+    if (!gone) continue;
+    openDocs.splice(i, 1);
+    try { d.task.destroy(); } catch (_) { /* already gone */ }
+  }
+}
+
+// The page viewer overlay is a single element reused by every document, so its
+// in-flight work lives here: each showPage() takes a new sequence number and
+// cancels the canvas render and text layer the previous call started, so a fast
+// Next-Next never draws two pages into one canvas or interleaves text layers.
+let viewerSeq = 0;
+let viewerRenderTask: any = null;
+let viewerTextTask: any = null;
+
 // Resolve a PDF image XObject by name from a page's object store. pdf.js stores
 // these asynchronously; race against a timeout so a never-resolving name can't
 // hang the whole extraction.
@@ -141,11 +175,22 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));
 
+  releaseStaleDocs(resultsEl);
   let pdf: any;
+  const docEntry: { el: HTMLElement; marker: HTMLElement|null; task: any } = { el: resultsEl, marker: null, task: null };
   try {
     const buf = await file.arrayBuffer();
-    pdf = await lib.getDocument({ data: buf }).promise;
+    // isEvalSupported: false - pdf.js would otherwise compile font glyph paths
+    // into a Function; with it on, a crafted FontMatrix runs script in this page
+    // (CVE-2024-4367). Every getDocument() call must pass it.
+    docEntry.task = lib.getDocument({ data: buf, isEvalSupported: false, worker: pdfWorker(lib) || undefined });
+    openDocs.push(docEntry);
+    pdf = await docEntry.task.promise;
   } catch (e) {
+    const idx = openDocs.indexOf(docEntry);
+    // Destroyed by a newer render into the same place - that one owns the output.
+    if (docEntry.task && idx === -1) return;
+    if (idx !== -1) { openDocs.splice(idx, 1); try { docEntry.task.destroy(); } catch (_) { /* ignore */ } }
     resultsEl.innerHTML = '';
     resultsEl.appendChild(errorCard('Could not parse PDF: ' + (e && e.message)));
     return;
@@ -204,6 +249,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
   } catch (_) {}
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
+  docEntry.marker = infoCard;
   resultsEl.appendChild(integrityCard(file));
 
   // Timestamp anomaly check: PDF creation/modification dates against each other and
@@ -739,20 +785,40 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
     let hiRes = true;             // on by default; toggled by the High-res button below
 
     // Overlay a selectable, position-aligned text layer on top of the canvas.
-    async function buildTextLayer(pg: any, cssScale: number, cssW: number, cssH: number) {
+    async function buildTextLayer(pg: any, cssScale: number, cssW: number, cssH: number, seq: number) {
       textLayer.innerHTML = '';
       textLayer.style.width = cssW + 'px';
       textLayer.style.height = cssH + 'px';
       textLayer.style.setProperty('--scale-factor', String(cssScale));
       try {
         const tc = await pg.getTextContent();
+        if (seq !== viewerSeq) return;
         const vp = pg.getViewport({ scale: cssScale });
-        const task = lib.renderTextLayer({ textContentSource: tc, container: textLayer, viewport: vp });
-        await (task && task.promise ? task.promise : task);
+        // pdf.js 4.1+ replaced renderTextLayer() with the TextLayer class.
+        if (lib.TextLayer) {
+          const layer = new lib.TextLayer({ textContentSource: tc, container: textLayer, viewport: vp });
+          viewerTextTask = layer;
+          try { await layer.render(); }
+          finally {
+            // TextLayer measures glyphs on a canvas it appends to <body>; pdf.js's
+            // own stylesheet hides it, ours does not, so hide and release it here.
+            document.querySelectorAll<HTMLElement>('body > canvas.hiddenCanvasElement').forEach((c) => { c.style.display = 'none'; });
+            try { lib.TextLayer.cleanup && lib.TextLayer.cleanup(); } catch (_) { /* ignore */ }
+          }
+        } else {
+          const task = lib.renderTextLayer({ textContentSource: tc, container: textLayer, viewport: vp });
+          viewerTextTask = task;
+          await (task && task.promise ? task.promise : task);
+        }
       } catch (_) { /* page just won't be selectable */ }
     }
 
     async function showPage(num: number, keepZoom?: boolean|undefined) {
+      // Cancel whatever the previous call still has in flight, so only the page
+      // asked for last is drawn and only its text layer is built.
+      const seq = ++viewerSeq;
+      if (viewerRenderTask) { try { viewerRenderTask.cancel(); } catch (_) { /* ignore */ } viewerRenderTask = null; }
+      if (viewerTextTask) { try { viewerTextTask.cancel(); } catch (_) { /* ignore */ } viewerTextTask = null; }
       current = num;
       if (!keepZoom) { overlay._resetZoom(); stage.scrollTop = 0; stage.scrollLeft = 0; }
       meta.textContent = 'Page ' + num + ' / ' + pdf.numPages + (hiRes ? '  (hi-res)' : '') +
@@ -761,6 +827,7 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
       nextBtn.style.visibility = num < pdf.numPages ? 'visible' : 'hidden';
       try {
         const pg = await pdf.getPage(num);
+        if (seq !== viewerSeq) return;
         const vp = pg.getViewport({ scale: 1 });
         const maxW = window.innerWidth * 0.9;
         const maxH = window.innerHeight * 0.82;
@@ -784,10 +851,18 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
         cv.style.height = cssH + 'px';
         pagebox.style.width = cssW + 'px';
         pagebox.style.height = cssH + 'px';
-        await pg.render({ canvasContext: cv.getContext('2d'), viewport: sv }).promise;
-        await buildTextLayer(pg, cssScale, cssW, cssH);
+        const task = pg.render({ canvasContext: cv.getContext('2d'), viewport: sv });
+        viewerRenderTask = task;
+        await task.promise;
+        if (seq !== viewerSeq) return;
+        viewerRenderTask = null;
+        await buildTextLayer(pg, cssScale, cssW, cssH, seq);
+        if (seq !== viewerSeq) return;
+        viewerTextTask = null;
         requestAnimationFrame(() => { overlay._trimHScroll && overlay._trimHScroll(); overlay._updatePanCursor && overlay._updatePanCursor(); });
       } catch (_) {
+        // A newer showPage() cancelled this one - not a failure.
+        if (seq !== viewerSeq) return;
         meta.textContent = 'Page ' + num + ' - could not render';
       }
     }

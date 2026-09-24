@@ -21,6 +21,7 @@
 */
 
 import { loadScript } from '../core/util.js';
+import { J2K_MAX_PX } from '../core/limits.js';
 
 // Paths to the vendored assets, relative to the document (works from / and
 // /about.html - both live at the site root).
@@ -49,11 +50,18 @@ async function getModule() {
   return _modulePromise;
 }
 
-// Scale a single sample from `bitDepth` bits down to 8-bit (0..255).
+// Scale a single (unsigned) sample from `bitDepth` bits to 8-bit (0..255). Below
+// 8 bits the value is stretched up (a 1-bit image is 0/1, which would otherwise
+// paint as black); above it the low bits are dropped.
 function scaleTo8(v: number, bitDepth: number) {
-  if (bitDepth <= 8) return v & 0xff;
+  if (v < 0) return 0;
+  if (bitDepth < 8 && bitDepth > 0) {
+    const max = (1 << bitDepth) - 1;
+    return v >= max ? 255 : Math.round(v * 255 / max);
+  }
+  if (bitDepth <= 8) return v & 0xff;       // 8-bit, or an unknown (0) depth
   const shift = bitDepth - 8;
-  return (v >> shift) & 0xff;
+  return Math.min(255, v >> shift);
 }
 
 /* Decode a JPEG 2000 codestream/JP2 to RGBA. Returns null on any failure. */
@@ -70,6 +78,23 @@ export async function decodeJ2K(bytes: Uint8Array) {
     const encoded = decoder.getEncodedBuffer(bytes.length);
     encoded.set(bytes);
 
+    // Guard total pixels, not just each dimension: a huge JP2 (e.g. 20000x20000)
+    // would allocate a multi-GB RGBA buffer below and exceeds the browser's
+    // canvas-area limit anyway (blank on Chromium above 2^28 px), so bail to the
+    // identification-only path instead of OOM-crashing the tab.
+    const tooBig = (fi: any) => {
+      const w = fi.width | 0, h = fi.height | 0;
+      return !w || !h || w > 65535 || h > 65535 || w * h > J2K_MAX_PX;
+    };
+    // The build exports readHeader(), which fills getFrameInfo() from the
+    // codestream header alone - so the size check runs BEFORE the decoder
+    // allocates the full image. If it throws, fall through to the post-decode check.
+    if (typeof decoder.readHeader === 'function') {
+      let hdr: any = null;
+      try { decoder.readHeader(); hdr = decoder.getFrameInfo(); } catch (_) { hdr = null; }
+      if (hdr && tooBig(hdr)) return null;
+    }
+
     decoder.decode();
 
     const info = decoder.getFrameInfo();
@@ -77,12 +102,8 @@ export async function decodeJ2K(bytes: Uint8Array) {
     const height = info.height | 0;
     const components = info.componentCount | 0;
     const bitDepth = info.bitsPerSample | 0;
-    if (!width || !height || width > 65535 || height > 65535) return null;
-    // Guard total pixels, not just each dimension: a huge JP2 (e.g. 20000x20000)
-    // would allocate a multi-GB RGBA buffer below and exceeds the browser's
-    // canvas-area limit anyway (blank on Chromium above 2^28 px), so bail to the
-    // identification-only path instead of OOM-crashing the tab.
-    if (width * height > 0x10000000) return null;   // 2^28 px (~268 Mpx)
+    const isSigned = !!info.isSigned;
+    if (tooBig(info)) return null;
     if (components < 1 || components > 4) return null;
 
     const decoded = decoder.getDecodedBuffer();
@@ -95,7 +116,20 @@ export async function decodeJ2K(bytes: Uint8Array) {
 
     // Read a sample (interleaved layout, little-endian) at sample index `i`.
     let read;
-    if (bytesPerSample === 1) {
+    if (isSigned) {
+      // Signed components come out two's-complement in their storage width;
+      // sign-extend, then shift by 2^(prec-1) into the unsigned range scaleTo8
+      // expects (so mid-grey is 0, not a wrap to white).
+      const storeBits = bytesPerSample * 8;
+      const offset = bitDepth > 0 ? 2 ** (bitDepth - 1) : 0;
+      read = (i: number) => {
+        const o = i * bytesPerSample;
+        let v = 0;
+        for (let k = 0; k < bytesPerSample; k++) v += decoded[o + k] * 2 ** (8 * k);
+        if (v >= 2 ** (storeBits - 1)) v -= 2 ** storeBits;
+        return v + offset;
+      };
+    } else if (bytesPerSample === 1) {
       read = (i: string|number) => decoded[i];
     } else {
       read = (i: number) => {

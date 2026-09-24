@@ -86,15 +86,18 @@ function squarify(children, rect) {
     return results;
 }
 // ---------- hierarchy ----------
+// Folder names come from the file (an archive entry path), so the `children`
+// maps are prototype-free: a folder called `constructor`, `toString` or
+// `__proto__` must be an ordinary key, not a hit on Object.prototype.
 function buildHierarchy(items) {
-    const root = { name: '', children: {}, files: [], totalSize: 0, fileCount: 0, catBytes: {} };
+    const root = { name: '', children: Object.create(null), files: [], totalSize: 0, fileCount: 0, catBytes: {} };
     for (const item of items) {
         const parts = item.path.replace(/\\/g, '/').split('/').filter(Boolean);
         let node = root;
         const chain = [root];
         for (let i = 0; i < parts.length - 1; i++) {
             if (!node.children[parts[i]]) {
-                node.children[parts[i]] = { name: parts[i], parent: node, children: {}, files: [], totalSize: 0, fileCount: 0, catBytes: {} };
+                node.children[parts[i]] = { name: parts[i], parent: node, children: Object.create(null), files: [], totalSize: 0, fileCount: 0, catBytes: {} };
             }
             node = node.children[parts[i]];
             chain.push(node);

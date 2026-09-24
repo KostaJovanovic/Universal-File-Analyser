@@ -33,7 +33,8 @@ The drop-and-analyse app - the whole point of the site. Structure:
 - `<script src="assets/js/core/navigate.js">` (classic script, runs before
   the module graph) then `<script type="module" src="assets/js/core/app.js">`,
   plus inline service-worker registration with auto-reload-once on
-  `controllerchange`.
+  `controllerchange` - deferred while an analysis is on screen, so a deploy
+  never wipes a result mid-job.
 - Rich SEO: Open Graph/Twitter meta, two JSON-LD blocks (`WebApplication` +
   `WebSite` with a `SearchAction`), and `modulepreload` hints for the
   hot-path core modules (deliberately excluding the long-tail renderers,

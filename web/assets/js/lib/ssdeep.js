@@ -52,63 +52,155 @@ class Roll {
 // FNV-1 over one byte, 32-bit. Math.imul because a plain * overflows to a double
 // and silently stops being the 32-bit multiply the algorithm specifies.
 function fnv(h, c) { return ((Math.imul(h, HASH_PRIME) >>> 0) ^ c) >>> 0; }
-/** Compute the ssdeep signature of a byte array: "blocksize:hash:doubleHash". */
+// Block sizes 3 * 2^0 .. 3 * 2^30 - the last is past any file this reads.
+const NUM_BLOCKHASHES = 31;
+/** Compute the ssdeep signature of a byte array: "blocksize:hash:doubleHash".
+
+    The classic spamsum loop picks a block size, hashes the whole file, and
+    halves the size and starts over when the signature came out too short. On
+    ordinary data the first size is right, so that one pass is tried first (it
+    is the cheapest pass there is). When it is not - data with few or no
+    trigger points, such as a zero-filled image, would take ~22 full passes -
+    the rest is settled in ONE more pass by ssdeepMultiPass(). */
 export function ssdeepHash(buf) {
     const n = buf.length;
     if (!n)
         return '3::';
-    // Start with a block size that would give roughly SPAMSUM_LENGTH blocks, then
-    // halve it and start over if the signature came out too short - a small file
-    // with few trigger points needs finer cuts to say anything useful.
+    // Start with a block size that would give roughly SPAMSUM_LENGTH blocks.
     let bs = MIN_BLOCKSIZE;
     while (bs * SPAMSUM_LENGTH < n)
         bs *= 2;
     const roll = new Roll();
-    let sig = [], sig2 = [];
+    const sig = [], sig2 = [];
     let h = HASH_INIT, h2 = HASH_INIT, h3 = 0;
-    for (;;) {
-        sig = [];
-        sig2 = [];
-        h = HASH_INIT;
-        h2 = HASH_INIT;
-        h3 = 0;
-        roll.reset();
-        let j = 0, k = 0;
-        const bs2 = bs * 2;
-        for (let i = 0; i < n; i++) {
-            const c = buf[i];
-            h3 = roll.update(c);
-            h = fnv(h, c);
-            h2 = fnv(h2, c);
-            if (h3 % bs === bs - 1) {
-                // The last slot is overwritten rather than appended once the signature is
-                // full, which is what keeps it to SPAMSUM_LENGTH characters exactly.
-                sig[j] = B64[h % 64];
-                if (j < SPAMSUM_LENGTH - 1) {
-                    h = HASH_INIT;
-                    j++;
-                }
-            }
-            if (h3 % bs2 === bs2 - 1) {
-                sig2[k] = B64[h2 % 64];
-                if (k < SPAMSUM_LENGTH / 2 - 1) {
-                    h2 = HASH_INIT;
-                    k++;
-                }
-            }
-        }
-        if (bs > MIN_BLOCKSIZE && j < SPAMSUM_LENGTH / 2) {
-            bs = Math.floor(bs / 2);
-            continue;
-        }
-        // Whatever is left in the accumulators is a final partial block.
-        if (h3 !== 0) {
+    let j = 0, k = 0;
+    const bs2 = bs * 2;
+    for (let i = 0; i < n; i++) {
+        const c = buf[i];
+        h3 = roll.update(c);
+        h = fnv(h, c);
+        h2 = fnv(h2, c);
+        if (h3 % bs === bs - 1) {
+            // The last slot is overwritten rather than appended once the signature is
+            // full, which is what keeps it to SPAMSUM_LENGTH characters exactly.
             sig[j] = B64[h % 64];
-            sig2[k] = B64[h2 % 64];
+            if (j < SPAMSUM_LENGTH - 1) {
+                h = HASH_INIT;
+                j++;
+            }
         }
-        break;
+        if (h3 % bs2 === bs2 - 1) {
+            sig2[k] = B64[h2 % 64];
+            if (k < SPAMSUM_LENGTH / 2 - 1) {
+                h2 = HASH_INIT;
+                k++;
+            }
+        }
+    }
+    // Too short a signature: a smaller block size is needed.
+    if (bs > MIN_BLOCKSIZE && j < SPAMSUM_LENGTH / 2)
+        return ssdeepMultiPass(buf);
+    // Whatever is left in the accumulators is a final partial block.
+    if (h3 !== 0) {
+        sig[j] = B64[h % 64];
+        sig2[k] = B64[h2 % 64];
     }
     return bs + ':' + sig.join('') + ':' + sig2.join('');
+}
+/* Every block size at once, in one pass - the way ssdeep 2.13+ does it. A
+   context is kept for each block size 3 * 2^i still in play: a context is only
+   opened when the one below it first triggers (so a size no data ever reached
+   costs nothing), and the smallest is dropped once the size above it already
+   has a long enough signature and is at or above the size the file's length
+   points at, since the final choice can then never fall back to it. The chosen
+   size and both signature halves come out the same as the halve-and-restart
+   loop's. */
+function ssdeepMultiPass(buf) {
+    const n = buf.length;
+    const bsOf = (i) => MIN_BLOCKSIZE * Math.pow(2, i);
+    // Per block size: the FNV accumulator for the full (64-char) signature and
+    // for the half (32-char) one, the digest so far, and the half signature's
+    // last, overwritten character.
+    const h = new Uint32Array(NUM_BLOCKHASHES);
+    const halfh = new Uint32Array(NUM_BLOCKHASHES);
+    const dlen = new Int32Array(NUM_BLOCKHASHES);
+    const digest = [];
+    const halfLast = [];
+    h[0] = HASH_INIT;
+    halfh[0] = HASH_INIT;
+    digest[0] = [];
+    halfLast[0] = '';
+    let start = 0, end = 1;
+    const roll = new Roll();
+    let r = 0;
+    for (let p = 0; p < n; p++) {
+        const c = buf[p];
+        r = roll.update(c);
+        for (let i = start; i < end; i++) {
+            h[i] = fnv(h[i], c);
+            halfh[i] = fnv(halfh[i], c);
+        }
+        // A trigger at a block size implies one at every smaller size (each size
+        // is double the last), so the first size that does not trigger ends it.
+        for (let i = start; i < end; i++) {
+            const bs = bsOf(i);
+            if (r % bs !== bs - 1)
+                break;
+            // First trigger of the largest open size: open the next one up, seeded
+            // with this one's accumulators (neither has been reset yet).
+            if (dlen[i] === 0 && end < NUM_BLOCKHASHES) {
+                h[end] = h[end - 1];
+                halfh[end] = halfh[end - 1];
+                digest[end] = [];
+                halfLast[end] = '';
+                end++;
+            }
+            // The last slot is overwritten rather than appended once the signature is
+            // full, which is what keeps it to SPAMSUM_LENGTH characters exactly.
+            digest[i][dlen[i]] = B64[h[i] % 64];
+            halfLast[i] = B64[halfh[i] % 64];
+            if (dlen[i] < SPAMSUM_LENGTH - 1) {
+                dlen[i]++;
+                h[i] = HASH_INIT;
+                if (dlen[i] < SPAMSUM_LENGTH / 2) {
+                    halfh[i] = HASH_INIT;
+                    halfLast[i] = '';
+                }
+            }
+            else if (end - start >= 2 && bsOf(start) * SPAMSUM_LENGTH < n && dlen[start + 1] >= SPAMSUM_LENGTH / 2) {
+                start++;
+            }
+        }
+    }
+    // Start with the block size that would give roughly SPAMSUM_LENGTH blocks,
+    // then step down while the signature is too short - a small file with few
+    // trigger points needs finer cuts to say anything useful.
+    let bi = start;
+    while (bsOf(bi) * SPAMSUM_LENGTH < n && bi < NUM_BLOCKHASHES - 1)
+        bi++;
+    if (bi >= end)
+        bi = end - 1;
+    while (bi > start && dlen[bi] < SPAMSUM_LENGTH / 2)
+        bi--;
+    // Whatever is left in the accumulators is a final partial block.
+    let s1 = digest[bi].slice(0, dlen[bi]).join('');
+    if (r !== 0)
+        s1 += B64[h[bi] % 64];
+    else if (digest[bi][dlen[bi]] !== undefined)
+        s1 += digest[bi][dlen[bi]];
+    let s2 = '';
+    if (bi < end - 1) {
+        const b2 = bi + 1;
+        s2 = digest[b2].slice(0, Math.min(dlen[b2], SPAMSUM_LENGTH / 2 - 1)).join('');
+        if (r !== 0)
+            s2 += B64[halfh[b2] % 64];
+        else if (halfLast[b2])
+            s2 += halfLast[b2];
+    }
+    else if (r !== 0) {
+        s2 = B64[h[bi] % 64];
+    }
+    return bsOf(bi) + ':' + s1 + ':' + s2;
 }
 /** Hash a File. Returns null if it is too large to read in one piece. */
 export async function ssdeepFile(file, maxBytes) {

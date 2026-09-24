@@ -379,7 +379,9 @@ export function computeReassignedSpectrogram(samples, sampleRate, options = {}) 
             const fHat = (b * sampleRate / N) - (imDH * invP) / twoPi;
             if (fHat < 0 || fHat > nyq)
                 continue;
-            let col = Math.round(tHat * sampleRate / hopSize);
+            // Column f is the frame that STARTS at f*hop, while tHat is measured from the
+            // window centre, so take the centre back off before mapping to a column.
+            let col = Math.round((tHat * sampleRate - center) / hopSize);
             if (col < 0)
                 col = 0;
             else if (col >= frames)
@@ -674,8 +676,13 @@ function niceStep(rough) {
     return nice * base;
 }
 export function timeTicks(durationSec) {
-    const step = niceStep(durationSec / 6);
     const ticks = [];
+    // niceStep(0) is 0 and a non-finite duration never ends: either loops forever.
+    if (!(durationSec > 0) || !isFinite(durationSec))
+        return [0];
+    const step = niceStep(durationSec / 6);
+    if (!(step > 0) || !isFinite(step))
+        return [0];
     for (let t = 0; t <= durationSec + 1e-6; t += step)
         ticks.push(t);
     return ticks;

@@ -349,6 +349,11 @@ The five things worth knowing before you touch anything:
   files, and bad entries inside concat lists and playlists. They run in the
   MAIN process, never the page. A refused job resolves with code 1 - a clean
   failure - never -1, which `video.ts` reads as a dead instance.
+  On top of that deny-list sits an ALLOW-LIST: only the options, `-f` formats,
+  filters, codecs and file-name shapes the app actually emits are accepted, so
+  anything unknown is refused. A new ffmpeg call therefore has to be added to
+  the allow-list in `ffmpeg-accel.mjs` AND `AnrFfmpegChecks.java` (and to both
+  test suites), or it is refused at run time on the desktop and the phone.
   `node desktop/tools/check-ffmpeg-args.mjs` runs every argument list in `src/`
   plus the attacks: when you add an ffmpeg call, add its shape there first.
 - **The dev/prod host difference is load-bearing.** `analyser://localhost/` in

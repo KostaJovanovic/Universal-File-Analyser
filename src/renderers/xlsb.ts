@@ -7,6 +7,7 @@
 
 import { el, row, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 import { loadScript } from '../core/util.js';
+import { EXCEL_ROWS_MAX, EXCEL_COLS_MAX, SHEET_CELLS_MAX, SHEET_COLS_MAX } from '../core/limits.js';
 
 const SHEETJS_URL = 'assets/vendor/sheetjs/xlsx.full.min.js';
 
@@ -60,25 +61,50 @@ export async function renderXlsb(file: File, resultsEl: HTMLElement) {
     resultsEl.appendChild(sheetCard);
 
     let tkHandle: any = null;
+    let sheetSeq = 0;   // bumped per renderSheet(), so a late tablekit import can't mount a stale sheet
     const renderSheet = (idx: number) => {
+      const seq = ++sheetSeq;
       if (tkHandle) { tkHandle.destroy(); tkHandle = null; }
       [...tabRow.children].forEach((c, i) => c.classList.toggle('is-active', i === idx));
       tableWrap.innerHTML = '';
       const ws = wb.Sheets[names[idx]];
       if (!ws || !ws['!ref']) { tableWrap.appendChild(el('p', { class: 'anr-hint' }, 'This sheet is empty.')); return; }
-      const range = XLSX.utils.decode_range(ws['!ref']);
-      const maxCol = range.e.c;
-      const sheetRows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', blankrows: true });
-      const wbHeaders = Array.from({ length: maxCol + 1 }, (_, c) => {
-        const v = (sheetRows[0] || [])[c];
-        return v == null || v === '' ? colName(c) : String(v);
-      });
-      const wbRows = sheetRows.slice(1).map((r: any[]) => Array.from({ length: maxCol + 1 }, (_, c) => (r[c] == null ? '' : String(r[c]))));
-      const tkHost = el('div');
-      tableWrap.appendChild(tkHost);
-      import('./tablekit.js').then(({ mountTableKit }) => {
-        tkHandle = mountTableKit(tkHost, { headers: wbHeaders, rows: wbRows, totalRows: wbRows.length }, { sheetName: names[idx] });
-      }).catch(() => { /* workbench is additive - ignore load failure */ });
+      try {
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        if (![range.s.r, range.s.c, range.e.r, range.e.c].every((n) => Number.isFinite(n) && n >= 0)) {
+          tableWrap.appendChild(el('p', { class: 'anr-hint' }, 'This sheet states a range that is not a real one.'));
+          return;
+        }
+        // Clamp the stated extent to Excel's own grid and to the workbench's
+        // cell budget: the dimension record is the file's claim, and one crafted
+        // XFD1048576 would otherwise ask sheet_to_json for billions of cells.
+        const fullEnd = { r: range.e.r, c: range.e.c };
+        range.e.c = Math.min(range.e.c, EXCEL_COLS_MAX - 1, range.s.c + SHEET_COLS_MAX - 1);
+        const cols = Math.max(1, range.e.c - range.s.c + 1);
+        range.e.r = Math.min(range.e.r, EXCEL_ROWS_MAX - 1, range.s.r + Math.max(1, Math.floor(SHEET_CELLS_MAX / cols)));
+        const clipped = range.e.r < fullEnd.r || range.e.c < fullEnd.c;
+        const maxCol = range.e.c;
+        const sheetRows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', blankrows: true, range });
+        const wbHeaders = Array.from({ length: maxCol + 1 }, (_, c) => {
+          const v = (sheetRows[0] || [])[c];
+          return v == null || v === '' ? colName(c) : String(v);
+        });
+        const wbRows = sheetRows.slice(1).map((r: any[]) => Array.from({ length: maxCol + 1 }, (_, c) => (r[c] == null ? '' : String(r[c]))));
+        if (clipped) {
+          tableWrap.appendChild(el('p', { class: 'anr-hint' },
+            'This sheet reaches ' + colName(Math.min(fullEnd.c, EXCEL_COLS_MAX - 1)) + (Math.min(fullEnd.r, EXCEL_ROWS_MAX - 1) + 1) +
+            '. The table below shows the first ' + Math.max(0, wbRows.length).toLocaleString() + ' rows and ' + cols.toLocaleString() + ' columns.'));
+        }
+        const tkHost = el('div');
+        tableWrap.appendChild(tkHost);
+        import('./tablekit.js').then(({ mountTableKit }) => {
+          if (seq !== sheetSeq) return;
+          tkHandle = mountTableKit(tkHost, { headers: wbHeaders, rows: wbRows, totalRows: wbRows.length }, { sheetName: names[idx] });
+        }).catch(() => { /* workbench is additive - ignore load failure */ });
+      } catch (e) {
+        tableWrap.innerHTML = '';
+        tableWrap.appendChild(el('p', { class: 'anr-hint' }, 'Could not read this sheet: ' + ((e && e.message) || 'unknown error')));
+      }
     };
 
     names.forEach((name, i) => {

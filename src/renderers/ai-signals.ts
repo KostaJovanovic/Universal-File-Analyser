@@ -21,7 +21,7 @@
 import { el, row, rowHelp, wireInfoToggle } from '../core/util.js';
 import { ascii, utf8, findBytes, inflate } from '../core/binutil.js';
 import { readC2pa, DIGITAL_SOURCE_AI, AI_WORDING } from './c2pa.js';
-import { C2PA_SCAN_EDGE } from '../core/limits.js';
+import { C2PA_SCAN_EDGE, PNG_TEXT_INFLATE_MAX } from '../core/limits.js';
 
 // Generator tool names. Word-ish boundaries keep "dalle" out of unrelated words.
 // The newer hosted models (Gemini/"Nano Banana", Sora, Grok, ...) live in
@@ -78,7 +78,7 @@ async function pngTextChunks(b: Uint8Array) {
       } else if (type === 'zTXt') {
         const z = s.indexOf(0);
         let data = s.subarray(z + 2);            // skip keyword\0 + 1 compression-method byte
-        data = (await inflate(data, 'deflate')) || new Uint8Array();
+        data = (await inflate(data, 'deflate', PNG_TEXT_INFLATE_MAX)) || new Uint8Array();
         out.push({ keyword: utf8(s.subarray(0, z)), text: utf8(data) });
       } else if (type === 'iTXt') {
         const z = s.indexOf(0);
@@ -86,7 +86,7 @@ async function pngTextChunks(b: Uint8Array) {
         const langEnd = s.indexOf(0, z + 3);
         const transEnd = s.indexOf(0, langEnd + 1);
         let data = s.subarray(transEnd + 1);
-        if (compFlag === 1) data = (await inflate(data, 'deflate')) || new Uint8Array();
+        if (compFlag === 1) data = (await inflate(data, 'deflate', PNG_TEXT_INFLATE_MAX)) || new Uint8Array();
         out.push({ keyword: utf8(s.subarray(0, z)), text: utf8(data) });
       }
     } catch (_) { /* skip a malformed chunk */ }

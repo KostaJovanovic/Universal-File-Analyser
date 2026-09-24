@@ -49,13 +49,16 @@ export async function enhanceAudio({ channels, runModel, onProgress }) {
     const noiseChannels = [];
     for (let cc = 0; cc < nCh; cc++) {
         const src = channels[cc];
-        // Padded copy of this channel so frame windows tile it cleanly.
-        const padded = new Float64Array(paddedLen);
+        // Padded copy of this channel so frame windows tile it cleanly. Float32 is
+        // lossless here (the source is Float32) and the overlap-add sums only two
+        // frames per sample, so the whole-song buffers need no Float64 - which halves
+        // what a long recording costs.
+        const padded = new Float32Array(paddedLen);
         for (let i = 0; i < nSample; i++)
             padded[padFront + i] = src[i];
         // Windowed overlap-add accumulators for the reconstructed clean signal.
-        const outAcc = new Float64Array(paddedLen);
-        const wsum = new Float64Array(paddedLen);
+        const outAcc = new Float32Array(paddedLen);
+        const wsum = new Float32Array(paddedLen);
         const win = stft.win;
         // Reusable per-frame scratch.
         const frame = new Float64Array(fftSize);

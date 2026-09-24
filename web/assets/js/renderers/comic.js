@@ -86,22 +86,34 @@ function parseComicInfo(xml) {
     }
     return out;
 }
-// Page object URLs from the previous comic. They persist in a per-render cache for
-// the reader's lifetime, so free the last comic's set when a new one is opened.
-const _comicPageUrls = new Set();
-function revokeComicPageUrls() {
-    for (const u of _comicPageUrls) {
-        try {
-            URL.revokeObjectURL(u);
+// Page object URLs, per results element. They persist in a per-render cache for
+// the reader's lifetime, so a comic's set is freed when a new one renders into
+// the same element or its element has left the page. Per element, not module-
+// wide: /compare shows two comics at once, and B must not revoke A's pages.
+const _comicRenders = [];
+function revokeComicPageUrls(resultsEl) {
+    for (let i = _comicRenders.length - 1; i >= 0; i--) {
+        const r = _comicRenders[i];
+        if (r.el !== resultsEl && r.el.isConnected)
+            continue;
+        _comicRenders.splice(i, 1);
+        for (const u of r.urls) {
+            try {
+                URL.revokeObjectURL(u);
+            }
+            catch (_) { }
         }
-        catch (_) { }
     }
-    _comicPageUrls.clear();
 }
+// The reader overlay is shared by every comic; each show() takes a number so a
+// slow page that finishes decoding after a later one can't replace it.
+let comicShowSeq = 0;
 export async function renderComic(file, resultsEl, extOverride) {
     resultsEl.hidden = false;
     resultsEl.innerHTML = '';
-    revokeComicPageUrls(); // free the previous comic's page object URLs
+    revokeComicPageUrls(resultsEl); // free earlier comics' page object URLs
+    const pageUrls = new Set();
+    _comicRenders.push({ el: resultsEl, urls: pageUrls });
     resultsEl.appendChild(el('div', { class: 'anr-info' }, `Opening "${file.name}"…`));
     const ext = extOverride || (file.name.split('.').pop() || '').toLowerCase();
     // A comic archive is read whole into memory (or a WASM heap for cbr/cb7), and
@@ -138,9 +150,12 @@ export async function renderComic(file, resultsEl, extOverride) {
         if (urlCache.has(i))
             return urlCache.get(i);
         const bytes = await pages[i].getBytes();
+        // null: the page could not be read (or inflated past the decompression cap).
+        if (!bytes)
+            throw new Error('page unreadable');
         const url = URL.createObjectURL(new Blob([bytes]));
         urlCache.set(i, url);
-        _comicPageUrls.add(url);
+        pageUrls.add(url);
         return url;
     }
     // --- Metadata card ---
@@ -207,6 +222,7 @@ export async function renderComic(file, resultsEl, extOverride) {
         toolbar.innerHTML = '';
         let current = start;
         async function show(i) {
+            const seq = ++comicShowSeq;
             current = i;
             if (overlay._zoom)
                 overlay._zoom.reset();
@@ -214,10 +230,13 @@ export async function renderComic(file, resultsEl, extOverride) {
             prevBtn.style.visibility = i > 0 ? 'visible' : 'hidden';
             nextBtn.style.visibility = i < pages.length - 1 ? 'visible' : 'hidden';
             try {
-                img.src = await pageUrl(i);
+                const url = await pageUrl(i);
+                if (seq === comicShowSeq)
+                    img.src = url;
             }
             catch (_) {
-                meta.textContent = 'Page ' + (i + 1) + ' - could not render';
+                if (seq === comicShowSeq)
+                    meta.textContent = 'Page ' + (i + 1) + ' - could not render';
             }
         }
         const prevBtn = el('button', { type: 'button', class: 'lightbox-tool-btn' }, '← Prev');

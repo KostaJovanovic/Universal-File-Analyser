@@ -32,11 +32,32 @@ export function computeStats(samples: FloatBuf) {
 // whole-file passes in this file (and they run over every sample of the track).
 // The values only depend on the FFT size, so they are built once and reused.
 // Results are bit-identical: same angles, same order, just looked up.
-const _fftCache = new Map<number, { cosT: Float64Array; sinT: Float64Array; win: Float64Array; half: number }>();
+//
+// The butterflies are an iterative decimation-in-time FFT, which needs its input
+// in bit-reversed order; `rev` is that permutation, applied by bitReverse()
+// before each transform. (Without it the bins came out scrambled, so the
+// centroid and the onset flux were computed over the wrong frequencies.)
+const _fftCache = new Map<number, { cosT: Float64Array; sinT: Float64Array; win: Float64Array; half: number; rev: Uint32Array }>();
+function bitReverse(re: Float32Array, im: Float32Array, rev: Uint32Array) {
+  for (let i = 0; i < rev.length; i++) {
+    const j = rev[i];
+    if (i < j) {
+      const tr = re[i]; re[i] = re[j]; re[j] = tr;
+      const ti = im[i]; im[i] = im[j]; im[j] = ti;
+    }
+  }
+}
 function fftTables(N: number) {
   let t = _fftCache.get(N);
   if (t) return t;
   const half = N >> 1;
+  const rev = new Uint32Array(N);
+  const bits = Math.round(Math.log2(N));
+  for (let i = 0; i < N; i++) {
+    let r = 0;
+    for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b);
+    rev[i] = r;
+  }
   const cosT = new Float64Array(half), sinT = new Float64Array(half);
   for (let k = 0; k < half; k++) {
     const a = -Math.PI * k / half;
@@ -45,7 +66,7 @@ function fftTables(N: number) {
   }
   const win = new Float64Array(N);
   for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N);
-  t = { cosT, sinT, win, half };
+  t = { cosT, sinT, win, half, rev };
   _fftCache.set(N, t);
   return t;
 }
@@ -54,7 +75,7 @@ export async function computeCentroid(samples: FloatBuf, sampleRate: number, tic
   const N = 4096;
   const frames = Math.floor(samples.length / N);
   if (frames === 0) return null;
-  const { cosT, sinT, win, half } = fftTables(N);
+  const { cosT, sinT, win, half, rev } = fftTables(N);
   // Reused across frames - this allocated two Float32Arrays per frame before,
   // which on a long track meant thousands of throwaway buffers.
   const re = new Float32Array(N), im = new Float32Array(N);
@@ -63,6 +84,7 @@ export async function computeCentroid(samples: FloatBuf, sampleRate: number, tic
     if (tick && (f & 0x1F) === 0) await tick();
     const off = f * N;
     for (let i = 0; i < N; i++) { re[i] = samples[off + i] * win[i]; im[i] = 0; }
+    bitReverse(re, im, rev);
     for (let s = 1; s < N; s <<= 1) {
       const step = half / s;
       for (let k = 0; k < N; k += s << 1) {
@@ -187,7 +209,7 @@ export async function detectBPM(samples: FloatBuf, sampleRate: number, tick?: Ti
   // held live, for a calculation that only ever looks at the previous frame. Two
   // rolling buffers do the same job, and the FFT scratch buffers are reused
   // instead of reallocated per frame.
-  const { cosT, sinT, win } = fftTables(N);
+  const { cosT, sinT, win, rev } = fftTables(N);
   const re = new Float32Array(N), im = new Float32Array(N);
   let prevMag = new Float32Array(halfN), curMag = new Float32Array(halfN);
   const flux = new Float32Array(numFrames);
@@ -196,6 +218,7 @@ export async function detectBPM(samples: FloatBuf, sampleRate: number, tick?: Ti
     const off = f * hop;
     // Hann window + copy
     for (let i = 0; i < N; i++) { re[i] = samples[off + i] * win[i]; im[i] = 0; }
+    bitReverse(re, im, rev);
     // In-place radix-2 FFT (same pattern as computeCentroid)
     for (let s = 1; s < N; s <<= 1) {
       const step = halfN / s;

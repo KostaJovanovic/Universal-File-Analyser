@@ -113,7 +113,15 @@
                 // land on the linked #anchor if the URL has one, otherwise the top of
                 // the new page (not wherever the link sat on the previous page).
                 var hash = new URL(url).hash;
-                var target = hash ? document.getElementById(decodeURIComponent(hash.slice(1))) : null;
+                // A malformed escape (#%E0) throws in decodeURIComponent; inside this
+                // callback that would abort the swap before anr:navigate fires, leaving
+                // the new page un-booted. Fall back to the raw fragment.
+                var id = hash.slice(1);
+                try {
+                    id = decodeURIComponent(id);
+                }
+                catch (_) { }
+                var target = id ? document.getElementById(id) : null;
                 if (target)
                     target.scrollIntoView();
                 else
@@ -138,6 +146,13 @@
         var link = e.target.closest('a[href]');
         if (!link)
             return;
+        // Links inside analysis output belong to the analysed file, not to the site:
+        // an EPUB's "ch2.xhtml", an email's "/foo", a link in a previewed SVG. Routing
+        // them here would fetch that path as a site page and swap it over the live
+        // analysis. The viewers that want their own links (epub.js) handle them
+        // before this listener; everything else takes the browser's default.
+        if (link.closest('.anr-results, [data-anr-untrusted]'))
+            return;
         var href = link.getAttribute('href');
         if (!href)
             return;
@@ -150,7 +165,19 @@
         // Canonical URLs are clean (no .html): /about, /patch, / . Normalise any
         // stray .html link to that form so the address bar and history stay clean
         // and a reload hits the same URL the server serves.
-        var u = new URL(href, location.href);
+        var u;
+        try {
+            u = new URL(href, location.href);
+        }
+        catch (_) {
+            return;
+        }
+        // Only this site's own pages are swapped in. The prefix checks above miss
+        // `//evil.example/x`, `HTTPS://...` and ` https://...`; fetching one of those
+        // and grafting its .site-main into this page would hand a third party the
+        // page's own origin. Anything off-origin is left to the browser.
+        if (u.origin !== location.origin)
+            return;
         u.pathname = u.pathname.replace(/\/index\.html(?=$)/, '/').replace(/\.html(?=$)/, '');
         // The /docs tree renders its own shell (.docs-shell, no .site-main), so an SPA
         // swap would find nothing to replace and leave the current page's content in

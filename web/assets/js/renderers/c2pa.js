@@ -243,56 +243,81 @@ function dataOf(node) {
     return node.children.find((k) => k.type === 'cbor' || k.type === 'json') || null;
 }
 // ---------- minimal CBOR decoder ----------
+// Every length is checked against the bytes actually left (an array or map item
+// needs at least one byte, so its count can't exceed what remains either), and
+// nesting is capped, so a crafted manifest can't run past the end of the buffer,
+// spin a billion-iteration loop or blow the stack. Any violation throws, which
+// the outer try turns into a clean null.
+const CBOR_MAX_DEPTH = 64;
 function decodeCbor(b, offRef) {
     const st = offRef || { p: 0 };
-    const read = () => {
+    const need = (n) => { if (!(n >= 0) || st.p + n > b.length)
+        throw new Error('CBOR truncated'); };
+    const read = (depth) => {
+        if (depth > CBOR_MAX_DEPTH)
+            throw new Error('CBOR nested too deeply');
+        need(1);
         const ib = b[st.p++];
         const major = ib >> 5, minor = ib & 0x1f;
         let len = minor;
-        if (minor === 24)
+        if (minor === 24) {
+            need(1);
             len = b[st.p++];
+        }
         else if (minor === 25) {
+            need(2);
             len = (b[st.p] << 8 | b[st.p + 1]);
             st.p += 2;
         }
         else if (minor === 26) {
+            need(4);
             len = (b[st.p] * 0x1000000 + (b[st.p + 1] << 16 | b[st.p + 2] << 8 | b[st.p + 3]));
             st.p += 4;
         }
         else if (minor === 27) { // 64-bit: read as Number (fine for our field sizes)
+            need(8);
             let v = 0;
             for (let k = 0; k < 8; k++)
                 v = v * 256 + b[st.p++];
             len = v;
         }
+        else if (minor >= 28 && major !== 7)
+            throw new Error('CBOR indefinite/reserved length');
+        const left = b.length - st.p;
         switch (major) {
             case 0: return len; // uint
             case 1: return -1 - len; // negint
             case 2: {
+                need(len);
                 const s = b.subarray(st.p, st.p + len);
                 st.p += len;
                 return s;
             } // bytes
             case 3: {
+                need(len);
                 const s = utf8(b.subarray(st.p, st.p + len));
                 st.p += len;
                 return s;
             } // text
             case 4: {
+                if (len > left)
+                    throw new Error('CBOR array too long');
                 const a = [];
                 for (let k = 0; k < len; k++)
-                    a.push(read());
+                    a.push(read(depth + 1));
                 return a;
             } // array
             case 5: {
+                if (len * 2 > left)
+                    throw new Error('CBOR map too long');
                 const m = {};
                 for (let k = 0; k < len; k++) {
-                    const key = read();
-                    m[key] = read();
+                    const key = read(depth + 1);
+                    m[key] = read(depth + 1);
                 }
                 return m;
             } // map
-            case 6: return read(); // tag: return the tagged value
+            case 6: return read(depth + 1); // tag: return the tagged value
             case 7:
                 if (minor === 20)
                     return false;
@@ -305,7 +330,7 @@ function decodeCbor(b, offRef) {
         return null;
     };
     try {
-        return read();
+        return read(0);
     }
     catch (_) {
         return null;

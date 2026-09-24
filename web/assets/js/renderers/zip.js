@@ -10,6 +10,7 @@
    renderers (xlsx, epub, pptx, docx, odf, iwork, comic, textdoc, paint, f3d,
    lottie, proprietary, ...) and several parsers-*.js chunks. */
 import { loadScript } from '../core/util.js';
+import { DECOMP_ENTRY_MAX } from '../core/limits.js';
 // fflate (vendored ES module) is the pure-JS raw-DEFLATE fallback for the
 // method-8 path below, used when DecompressionStream is missing (Safari < 16.4,
 // Firefox < 113) or throws on 'deflate-raw' (Chromium 80-102 / old Android
@@ -23,39 +24,74 @@ async function loadFflate() {
     fflateLib = await import(FFLATE_URL);
     return fflateLib;
 }
+// Output ceiling for one inflated entry. DECOMP_ENTRY_MAX stops a small
+// deflate/zstd bomb, but an entry that barely compresses (an embedded video in
+// a .pptx) is already paid for in compressed bytes, so a few times its
+// compressed size is allowed too - that is bounded by the file, not the ratio.
+function entryOutMax(compSize) {
+    return Math.max(DECOMP_ENTRY_MAX, (compSize || 0) * 4);
+}
+function joinChunks(chunks, total) {
+    if (chunks.length === 1)
+        return chunks[0];
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const c of chunks) {
+        out.set(c, off);
+        off += c.length;
+    }
+    return out;
+}
 // Inflate raw DEFLATE (ZIP method 8). Prefers the native DecompressionStream,
-// falling back to fflate. Returns bytes, or null if every path fails.
-async function inflateRaw(raw) {
+// falling back to fflate. Returns bytes, or null if every path fails or the
+// output passes `maxOut` (the reader is cancelled there, so a bomb never
+// finishes inflating).
+async function inflateRaw(raw, maxOut) {
     if (typeof DecompressionStream !== 'undefined') {
+        let reader = null;
         try {
-            const ds = new DecompressionStream('deflate-raw');
-            const writer = ds.writable.getWriter();
-            writer.write(raw);
-            writer.close();
-            const reader = ds.readable.getReader();
+            reader = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
             const chunks = [];
+            let total = 0;
             while (true) {
                 const { done, value } = await reader.read();
                 if (done)
                     break;
+                total += value.length;
+                if (total > maxOut) {
+                    try {
+                        reader.cancel();
+                    }
+                    catch (_) { }
+                    return null;
+                }
                 chunks.push(value);
             }
-            const total = chunks.reduce((s, c) => s + c.length, 0);
-            const out = new Uint8Array(total);
-            let off = 0;
-            for (const c of chunks) {
-                out.set(c, off);
-                off += c.length;
-            }
-            return out;
+            return joinChunks(chunks, total);
         }
         catch (_) {
             // 'deflate-raw' unsupported on this build - fall through to fflate.
         }
     }
     try {
-        const { inflateSync } = await loadFflate();
-        return inflateSync(raw);
+        const { Inflate } = await loadFflate();
+        const chunks = [];
+        let total = 0, over = false;
+        const inf = new Inflate((chunk) => {
+            total += chunk.length;
+            if (total > maxOut) {
+                over = true;
+                throw new Error('entry too large');
+            }
+            chunks.push(chunk);
+        });
+        // Feed in slices so the size check runs between them, not after the lot.
+        const STEP = 64 * 1024;
+        for (let o = 0; o < raw.length && !over; o += STEP)
+            inf.push(raw.subarray(o, o + STEP), o + STEP >= raw.length);
+        if (!raw.length)
+            inf.push(raw, true);
+        return over ? null : joinChunks(chunks, total);
     }
     catch (_) {
         return null;
@@ -63,19 +99,46 @@ async function inflateRaw(raw) {
 }
 // Zstandard (ZIP method 93) - Autodesk Fusion 360 .f3d packs every member this
 // way. Decompressed lazily via the vendored fzstd UMD library, loaded on first
-// use. Returns the bytes, or null on any failure so callers degrade gracefully.
-async function zstdInflate(raw) {
+// use, through its streaming Decompress so the output can be stopped at
+// `maxOut`. Returns the bytes, or null on any failure so callers degrade
+// gracefully.
+async function zstdInflate(raw, maxOut) {
     try {
-        if (!(window.fzstd && window.fzstd.decompress))
+        if (!(window.fzstd && window.fzstd.Decompress))
             await loadScript('assets/vendor/fzstd.js');
-        if (!(window.fzstd && window.fzstd.decompress))
+        if (!(window.fzstd && window.fzstd.Decompress))
             return null;
-        const out = window.fzstd.decompress(raw);
-        return out instanceof Uint8Array ? out : (out ? new Uint8Array(out) : null);
+        const chunks = [];
+        let total = 0;
+        const dec = new window.fzstd.Decompress((chunk) => {
+            total += chunk.length;
+            if (total > maxOut)
+                throw new Error('entry too large');
+            chunks.push(chunk);
+        });
+        const STEP = 64 * 1024;
+        for (let o = 0; o < raw.length; o += STEP)
+            dec.push(raw.subarray(o, o + STEP), o + STEP >= raw.length);
+        if (!raw.length)
+            dec.push(raw, true);
+        return joinChunks(chunks, total);
     }
     catch (_) {
         return null;
     }
+}
+// Decode one entry's compressed bytes by ZIP method (0 stored, 8 deflate, 93
+// zstd), stopping at `maxOut`. Null for any other method, corrupt data, or an
+// entry that would pass the ceiling. Shared with archive.ts, which reads the
+// raw bytes out of its own buffer.
+export async function inflateZipData(raw, method, maxOut) {
+    if (method === 0)
+        return raw.length > maxOut ? null : raw;
+    if (method === 8)
+        return inflateRaw(raw, maxOut);
+    if (method === 93)
+        return zstdInflate(raw, maxOut);
+    return null;
 }
 // Sequential local-header walk (fallback path). Returns { entries, buf } where
 // each entry is { name, method, compSize, uncompSize, dataStart } indexing into
@@ -184,15 +247,19 @@ async function readEntryRaw(file, buf, entry) {
     return new Uint8Array(await file.slice(ds, ds + entry.compSize).arrayBuffer());
 }
 async function decodeEntry(file, buf, entry) {
+    const maxOut = entryOutMax(entry.compSize);
+    // A declared size past the ceiling is refused before a byte is read.
+    if (entry.method !== 0 && entry.uncompSize > maxOut)
+        return null;
     const raw = await readEntryRaw(file, buf, entry);
     if (raw == null)
         return null;
     if (entry.method === 0)
         return raw;
     if (entry.method === 8)
-        return inflateRaw(raw);
+        return inflateRaw(raw, maxOut);
     if (entry.method === 93)
-        return zstdInflate(raw);
+        return zstdInflate(raw, maxOut);
     return null;
 }
 // Open an archive as a name -> entry map. Reads the central directory first

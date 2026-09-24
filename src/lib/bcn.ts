@@ -15,6 +15,8 @@
    table than the four families here, and the containers that carry them say so
    in their header, so the callers report the format and skip the preview. */
 
+import { BCN_MAX_PIXELS } from '../core/limits.js';
+
 /** The block-compression families decodeBcn() understands. */
 export type BcKind = 'bc1' | 'bc2' | 'bc3' | 'bc4' | 'bc5';
 
@@ -91,7 +93,7 @@ export function bcnSurfaceBytes(width: number, height: number, kind: BcKind) {
 // Decode a BCn-compressed surface (kind: bc1/bc2/bc3/bc4/bc5) into RGBA.
 export function decodeBcn(b: Uint8Array, off: number, width: number, height: number, kind: string) {
   const px = width * height;
-  if (px <= 0 || px > 64_000_000) return null;
+  if (px <= 0 || px > BCN_MAX_PIXELS) return null;
   const dst = new Uint8ClampedArray(px * 4);
   const blocksX = (width + 3) >> 2;
   const blocksY = (height + 3) >> 2;

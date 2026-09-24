@@ -11,10 +11,12 @@
    stays in xz-loader.js. No top-level side effects: the script is only injected
    when lzmaDecompress runs. */
 import { loadScript } from '../core/util.js';
+import { DECOMP_OUTPUT_MAX, DECOMP_DICT_MAX } from '../core/limits.js';
 // Hard caps so a tiny "decompression bomb" can't exhaust memory: a maximum
 // decompressed size, and a refusal to allocate an absurd dictionary window.
-const MAX_OUTPUT = 256 * 1024 * 1024; // 256 MB of output
-const MAX_DICT = 128 * 1024 * 1024; // 128 MB dictionary window
+// Both live in limits.js.
+const MAX_OUTPUT = DECOMP_OUTPUT_MAX;
+const MAX_DICT = DECOMP_DICT_MAX;
 // Decompress a legacy .lzma byte buffer. Returns the decompressed Uint8Array, or
 // null on any failure (unsupported, corrupt, over a cap, or load error) so the
 // caller can fall back to header-only identification.
@@ -37,24 +39,6 @@ export async function lzmaDecompress(bytes) {
             size: input.length,
             readByte() { return this.offset < this.size ? this.data[this.offset++] : 0; },
         };
-        // Output stream: collect window flushes (the WASM-free core reuses one window
-        // buffer, so each chunk must be copied) and enforce the output cap.
-        let total = 0;
-        const chunks = [];
-        const outStream = {
-            writeBytes(buf, len) {
-                if (total + len > MAX_OUTPUT)
-                    throw new Error('lzma output too large');
-                chunks.push(buf.slice(0, len));
-                total += len;
-            },
-            writeByte(b) {
-                if (total + 1 > MAX_OUTPUT)
-                    throw new Error('lzma output too large');
-                chunks.push(new Uint8Array([b]));
-                total += 1;
-            },
-        };
         const decoder = new LZMA.Decoder();
         const header = decoder.decodeHeader(inStream);
         if (!header)
@@ -67,15 +51,54 @@ export async function lzmaDecompress(bytes) {
         let maxSize = header.uncompressedSize;
         if (!(maxSize >= 0) || maxSize >= 0xFFFFFFFF)
             maxSize = -1;
+        if (maxSize > MAX_OUTPUT)
+            return null;
+        // Output stream: collect window flushes (the WASM-free core reuses one window
+        // buffer, so each chunk must be copied) and enforce the output cap. With a
+        // declared size the bytes go straight into one buffer of that size, so they
+        // are held once rather than as chunks plus a joined copy.
+        let total = 0;
+        const pre = maxSize > 0 ? new Uint8Array(maxSize) : null;
+        const chunks = [];
+        const outStream = {
+            writeBytes(buf, len) {
+                if (total + len > MAX_OUTPUT)
+                    throw new Error('lzma output too large');
+                if (pre) {
+                    if (total + len > pre.length)
+                        throw new Error('lzma output larger than declared');
+                    pre.set(buf.subarray(0, len), total);
+                }
+                else
+                    chunks.push(buf.slice(0, len));
+                total += len;
+            },
+            writeByte(b) {
+                if (total + 1 > MAX_OUTPUT)
+                    throw new Error('lzma output too large');
+                if (pre) {
+                    if (total + 1 > pre.length)
+                        throw new Error('lzma output larger than declared');
+                    pre[total] = b;
+                }
+                else
+                    chunks.push(new Uint8Array([b]));
+                total += 1;
+            },
+        };
         if (!decoder.decodeBody(inStream, outStream, maxSize))
             return null;
         if (!total)
             return new Uint8Array(0);
+        if (pre)
+            return total === pre.length ? pre : pre.subarray(0, total);
         const out = new Uint8Array(total);
         let off = 0;
-        for (const c of chunks) {
+        for (let i = 0; i < chunks.length; i++) {
+            const c = chunks[i];
             out.set(c, off);
             off += c.length;
+            chunks[i] = null;
         }
         return out;
     }

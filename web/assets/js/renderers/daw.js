@@ -23,8 +23,12 @@
    read out instead, by parseFlp() in proprietary.js. */
 import { el, row, rowHelp, h3help, errorCard, fmtBytes } from '../core/util.js';
 import { gunzip } from '../core/binutil.js';
-import { DAW_PROJECT_MAX, DAW_CLIP_MAX } from '../core/limits.js';
+import { DAW_PROJECT_MAX, DAW_CLIP_MAX, DAW_POS_MAX, DAW_TEMPO_MIN, DAW_TEMPO_MAX, DAW_RULER_MARKS_MAX, DECOMP_ENTRY_MAX } from '../core/limits.js';
 const clean = (s) => (s || '').trim();
+// A crafted project can state "1e309" or a tempo of 1e-300; either turns the
+// timeline length into Infinity and the ruler loop into a hang.
+const saneTempo = (t) => (t != null && isFinite(t) && t >= DAW_TEMPO_MIN && t <= DAW_TEMPO_MAX ? t : null);
+const sanePos = (v) => isFinite(v) && v >= 0 && v <= DAW_POS_MAX;
 /* ---- Ableton Live ---- */
 // Live nests the name two levels down (<Name><EffectiveName Value="..."/></Name>)
 // and the user-visible one is EffectiveName, not the raw Name.
@@ -51,7 +55,7 @@ function parseAls(xml) {
     // (MasterTrack, then MainTrack in 12), so match either.
     let tempo = null;
     for (const sel of ['MasterTrack Tempo Manual', 'MainTrack Tempo Manual', 'Tempo Manual']) {
-        tempo = attrNum(xml.querySelector(sel));
+        tempo = saneTempo(attrNum(xml.querySelector(sel)));
         if (tempo)
             break;
     }
@@ -79,7 +83,7 @@ function parseAls(xml) {
             }
             const start = attrNum(c.querySelector(':scope > CurrentStart'));
             const end = attrNum(c.querySelector(':scope > CurrentEnd'));
-            if (start == null || end == null || end <= start)
+            if (start == null || end == null || end <= start || !sanePos(start) || !sanePos(end))
                 continue;
             clips.push({ name: clean(c.querySelector(':scope > Name')?.getAttribute('Value')), start, end });
             clipCount++;
@@ -175,8 +179,8 @@ function parseRpp(text) {
         const key = tok[0];
         const inside = stack[stack.length - 1];
         if (key === 'TEMPO' && stack.length <= 1) {
-            const t = parseFloat(tok[1]);
-            if (isFinite(t))
+            const t = saneTempo(parseFloat(tok[1]));
+            if (t != null)
                 tempo = t;
             if (tok[2] && tok[3])
                 sig = tok[2] + '/' + tok[3];
@@ -205,7 +209,7 @@ function parseRpp(text) {
         tracks.push(cur);
     // Item ends are only known once LENGTH has been seen; drop any that never got one.
     for (const t of tracks)
-        t.clips = t.clips.filter((c) => c.end > c.start);
+        t.clips = t.clips.filter((c) => c.end > c.start && sanePos(c.start) && sanePos(c.end));
     return {
         app: 'Reaper', version,
         tempo, sig, tracks, media: [...new Set(media)],
@@ -249,8 +253,9 @@ function buildTimeline(p) {
     const strip = el('div', { class: 'anr-daw-strip' });
     // Ruler: a mark roughly every 80px at 100% zoom, on a round number of seconds.
     const ruler = el('div', { class: 'anr-daw-ruler' });
-    const step = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find((s) => endSec / s <= 20) || 600;
-    for (let t = 0; t <= endSec; t += step) {
+    const step = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find((s) => endSec / s <= 20)
+        || Math.ceil(endSec / 20 / 600) * 600;
+    for (let t = 0, n = 0; t <= endSec && n < DAW_RULER_MARKS_MAX; t += step, n++) {
         const mark = el('span', { class: 'anr-daw-mark' }, fmtClock(t));
         mark.style.left = (t / endSec * 100) + '%';
         ruler.appendChild(mark);
@@ -303,7 +308,7 @@ export async function renderDaw(file, resultsEl) {
         const bytes = new Uint8Array(await file.arrayBuffer());
         if (bytes[0] === 0x1F && bytes[1] === 0x8B) {
             // Ableton gzips its XML; the extension alone never says so.
-            const xmlBytes = await gunzip(bytes);
+            const xmlBytes = await gunzip(bytes, DECOMP_ENTRY_MAX);
             if (!xmlBytes)
                 throw new Error('gunzip failed');
             const doc = new DOMParser().parseFromString(new TextDecoder().decode(xmlBytes), 'application/xml');

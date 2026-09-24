@@ -88,7 +88,7 @@ export async function* audioDspPasses({ channels, mono, sampleRate, needBpm, onT
   yield ['key', key];
 
   let r128 = null;
-  try { r128 = await loudnessR128(mono, sampleRate, tick); } catch (_) {}
+  try { r128 = await loudnessR128(channels, sampleRate, tick); } catch (_) {}
   yield ['r128', r128];
 
   let tpDb = null;

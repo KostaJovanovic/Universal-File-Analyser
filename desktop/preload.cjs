@@ -66,8 +66,8 @@ contextBridge.exposeInMainWorld('anrDesktop', {
   /** True when this is a portable copy: every stored byte lives beside the
    *  executable, and the host machine keeps nothing. */
   portable: !!info.portable,
-  /** Where this copy stores its data (offline cache, history, window state). */
-  dataDir: String(info.dataDir || ''),
+  /* No dataDir: the full profile path names the Windows user, and nothing in
+     the page needs it. Help > About (main.mjs) shows the folder and opens it. */
   /** Total physical RAM in GB, from os.totalmem() in main. Chromium clamps
    *  navigator.deviceMemory at 8 for fingerprinting reasons; this is the real
    *  number, and core/limits.ts uses it for the device tier. */

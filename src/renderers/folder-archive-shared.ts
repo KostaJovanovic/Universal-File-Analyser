@@ -69,7 +69,9 @@ export function normalizeArchive(entries: any[]) {
 
 export function buildCategoryBreakdown(items: any[]) {
   const byCategory: any = {};
-  const byExt: Record<string, { count: number; size: number }> = {};
+  // Prototype-free: an extension is attacker-chosen text (`a.__proto__`), and on
+  // a plain object that key would hit Object.prototype instead of a bucket.
+  const byExt: Record<string, { count: number; size: number }> = Object.create(null);
   for (const cat of CATEGORIES) byCategory[cat] = { count: 0, size: 0 };
   for (const item of items) {
     byCategory[item.category].count += 1;

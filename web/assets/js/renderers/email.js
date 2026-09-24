@@ -44,6 +44,25 @@ function parseHeaders(head) {
     return out;
 }
 const h1 = (hdrs, name) => (hdrs[name] && hdrs[name][0]) || '';
+// Decode bytes in the charset a header or part declares. TextDecoder knows the
+// WHATWG label set (windows-1251, koi8-r, shift_jis, gb2312, iso-2022-jp, ...),
+// so Cyrillic or Japanese mail no longer comes out as Latin-1 mojibake. An
+// unknown label falls back to UTF-8; no label at all keeps the old Latin-1
+// reading, since bare bytes in a part with no charset are rarely UTF-8.
+function decodeCharset(bytes, charset) {
+    // RFC 2231 lets an encoded word carry a language after '*' (utf-8*en).
+    const label = (charset || '').trim().replace(/^["']|["']$/g, '').replace(/\*.*$/, '');
+    if (!label)
+        return new TextDecoder('iso-8859-1').decode(bytes);
+    let dec;
+    try {
+        dec = new TextDecoder(label);
+    }
+    catch (_) {
+        dec = new TextDecoder('utf-8');
+    }
+    return dec.decode(bytes);
+}
 // RFC 2047 encoded words: =?charset?B?....?= or =?charset?Q?....?=
 function decodeWords(s) {
     if (!s || s.indexOf('=?') < 0)
@@ -59,7 +78,7 @@ function decodeWords(s) {
                 const q = data.replace(/_/g, ' ').replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
                 bytes = Uint8Array.from(q, (ch) => ch.charCodeAt(0));
             }
-            return new TextDecoder(/utf-?8/i.test(cs) ? 'utf-8' : 'iso-8859-1').decode(bytes);
+            return decodeCharset(bytes, cs);
         }
         catch (_) {
             return m;
@@ -70,6 +89,24 @@ function paramOf(headerVal, key) {
     const re = new RegExp(key + '\\s*=\\s*"?([^";]+)"?', 'i');
     const m = re.exec(headerVal || '');
     return m ? m[1].trim() : '';
+}
+// Quoted-printable to bytes. The message was read as UTF-8 text, so a literal
+// non-ASCII character is re-encoded to its UTF-8 bytes (not truncated to its low
+// byte), and each =XX escape becomes the single byte it names.
+function qpBytes(body) {
+    const raw = new TextEncoder().encode(body.replace(/=\r?\n/g, ''));
+    const out = new Uint8Array(raw.length);
+    const hex = (b) => (b >= 48 && b <= 57) || (b >= 65 && b <= 70) || (b >= 97 && b <= 102);
+    let n = 0;
+    for (let i = 0; i < raw.length; i++) {
+        if (raw[i] === 0x3d && i + 2 < raw.length && hex(raw[i + 1]) && hex(raw[i + 2])) {
+            out[n++] = parseInt(String.fromCharCode(raw[i + 1], raw[i + 2]), 16);
+            i += 2;
+        }
+        else
+            out[n++] = raw[i];
+    }
+    return out.subarray(0, n);
 }
 function decodeBody(body, encoding, charset) {
     const enc = (encoding || '').toLowerCase();
@@ -84,14 +121,13 @@ function decodeBody(body, encoding, charset) {
         }
     }
     else if (enc.includes('quoted-printable')) {
-        const q = body.replace(/=\r?\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
-        bytes = Uint8Array.from(q, (c) => c.charCodeAt(0));
+        bytes = qpBytes(body);
     }
     else {
         return body;
     }
     try {
-        return new TextDecoder(/utf-?8/i.test(charset || '') ? 'utf-8' : 'iso-8859-1').decode(bytes);
+        return decodeCharset(bytes, charset);
     }
     catch (_) {
         return body;

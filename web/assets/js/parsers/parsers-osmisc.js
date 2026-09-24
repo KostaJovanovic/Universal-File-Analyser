@@ -10,6 +10,7 @@
    Dependency-free: only the shared toolkit (util/binutil) is imported. */
 import { el, fmtBytes, preBlock, fmtDate, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, cp437, latin1, utf8 } from '../core/binutil.js';
+import { PARSE_TEXT_MAX } from '../core/limits.js';
 // ---------- small helpers ----------
 // A monospace block that preserves ASCII art (no wrapping, horizontal scroll).
 function monoBlock(text) {
@@ -53,7 +54,7 @@ function xmlText(doc, sel) {
 }
 // ---------- OPML ----------
 async function parseOpml(file) {
-    const text = await file.text();
+    const text = await readText(file, PARSE_TEXT_MAX);
     const doc = new DOMParser().parseFromString(text, 'application/xml');
     if (doc.querySelector('parsererror') || !doc.querySelector('opml'))
         return null;
@@ -91,7 +92,7 @@ async function parseOpml(file) {
 }
 // ---------- RSS / Atom ----------
 async function parseFeed(file) {
-    const text = await file.text();
+    const text = await readText(file, PARSE_TEXT_MAX);
     const doc = new DOMParser().parseFromString(text, 'application/xml');
     if (doc.querySelector('parsererror'))
         return null;
@@ -158,7 +159,7 @@ async function parseFeed(file) {
 }
 // ---------- .desktop (freedesktop entry) ----------
 async function parseDesktop(file) {
-    const text = await file.text();
+    const text = await readText(file, PARSE_TEXT_MAX);
     if (!/\[Desktop Entry\]/.test(text))
         return null;
     const { sections } = parseIni(text);
@@ -203,7 +204,7 @@ async function parseNfo(file) {
 }
 // ---------- systemd .service unit ----------
 async function parseService(file) {
-    const text = await file.text();
+    const text = await readText(file, PARSE_TEXT_MAX);
     if (!/\[Unit\]|\[Service\]|\[Install\]/.test(text))
         return null;
     const { sections } = parseIni(text);
@@ -430,9 +431,8 @@ async function parseJob(file) {
             p += bytes;
             return s;
         };
-        // Running instance count (u16) precedes the application name in the var section.
-        if (p + 2 <= b.length)
-            p += 2;
+        // AppNameLenOffset (MS-TSCH) points straight at the application name's length
+        // word - the running instance count before it is already behind us.
         const appName = readUStr();
         const params = readUStr();
         const workingDir = readUStr();
@@ -595,7 +595,7 @@ function identSdb() {
 // children). Google Camera ports (GCam) ship their tuning as .agc files in this
 // exact shape, so read the entry counts by type and the key list.
 async function parseAndroidPrefs(file, ext) {
-    const text = (await file.text()).slice(0, 4_000_000);
+    const text = await readText(file, 4_000_000);
     if (!/<map\b/.test(text))
         return null;
     const doc = new DOMParser().parseFromString(text, 'application/xml');

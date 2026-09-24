@@ -254,22 +254,30 @@ export function decodeGifFrames(buffer, budget = 120e6) {
     if (!count)
         return null;
     // ---- lazy compositing engine ----
+    // Every full-canvas buffer retained counts against `budget`: the LRU of output
+    // frames, the keyframe snapshots, and the replay cursor. A frame larger than the
+    // whole budget still gets the one buffer it cannot do without (the cursor).
     const px = width * height;
     const stride = px * 4;
-    const L = Math.max(8, Math.floor(budget / px)); // max frames retained in the LRU
-    const K = Math.max(8, Math.ceil(count / 32)); // keyframe interval (<= ~32 snapshots)
+    const frameBudget = Math.max(1, Math.floor(budget / px)); // full frames the budget holds
+    const S = Math.min(32, Math.floor(frameBudget / 4)); // keyframe snapshots (<= 32, a quarter of the budget)
+    const K = S > 0 ? Math.max(1, Math.ceil(count / S)) : count; // keyframe interval; S = 0 means replay from 0
+    const L = Math.max(0, frameBudget - S - 1); // max frames retained in the LRU
     const lru = new Map(); // idx -> RGBA (insertion order = LRU)
-    const entry = new Map(); // keyframe idx -> canvas ENTERING that frame
-    entry.set(0, new Uint8ClampedArray(stride)); // frame 0 starts fully transparent
+    const entry = new Map(); // keyframe idx (> 0) -> canvas ENTERING that frame
+    // The canvas entering frame `idx` as the last compose() left it, so sequential
+    // playback continues from there instead of replaying from a keyframe each step.
+    let cursor = null;
     const lruPut = (idx, data) => {
         if (lru.has(idx))
             lru.delete(idx);
         lru.set(idx, data);
-        if (lru.size > L)
+        while (lru.size > L)
             lru.delete(lru.keys().next().value); // evict oldest
     };
-    // Composite frame `idx`, replaying forward from the nearest keyframe. Caches every
-    // frame produced along the way plus keyframe snapshots at each K boundary.
+    // Composite frame `idx`, replaying forward from the cursor or the nearest
+    // keyframe. Caches the last L frames produced along the way plus keyframe
+    // snapshots at each K boundary.
     const compose = (idx) => {
         if (lru.has(idx)) {
             const d = lru.get(idx);
@@ -278,12 +286,20 @@ export function decodeGifFrames(buffer, budget = 120e6) {
             return d;
         }
         let s = Math.floor(idx / K) * K;
-        while (!entry.has(s))
-            s -= K; // 0 is always present
-        let canvas = new Uint8ClampedArray(entry.get(s)); // canvas entering frame s
+        while (s > 0 && !entry.has(s))
+            s -= K; // frame 0 starts fully transparent
+        let canvas; // canvas entering frame s
+        if (cursor && cursor.idx <= idx && cursor.idx >= s) {
+            s = cursor.idx;
+            canvas = cursor.canvas;
+            cursor = null;
+        }
+        else {
+            canvas = s > 0 ? new Uint8ClampedArray(entry.get(s)) : new Uint8ClampedArray(stride);
+        }
         let result = null;
         for (let k = s; k <= idx; k++) {
-            if (k % K === 0 && !entry.has(k))
+            if (k > 0 && k % K === 0 && !entry.has(k))
                 entry.set(k, new Uint8ClampedArray(canvas));
             const fr = table[k];
             // disposal 3 ("restore to previous") needs the canvas as it was before drawing.
@@ -291,16 +307,19 @@ export function decodeGifFrames(buffer, budget = 120e6) {
             const indices = new Uint8Array(fr.iw * fr.ih);
             lzwDecode(fr.minCodeSize, fr.lzwData, indices, fr.iw * fr.ih);
             drawFrame(canvas, width, height, indices, fr.palette, fr.ix, fr.iy, fr.iw, fr.ih, fr.interlace, fr.transIdx);
-            const out = new Uint8ClampedArray(canvas); // output = canvas AFTER drawing k
-            lruPut(k, out);
-            if (k === idx)
-                result = out;
+            if (k === idx || idx - k < L) {
+                const out = new Uint8ClampedArray(canvas); // output = canvas AFTER drawing k
+                lruPut(k, out);
+                if (k === idx)
+                    result = out;
+            }
             // Apply disposal so the NEXT frame starts from the right canvas.
             if (fr.disposal === 2)
                 clearRect(canvas, width, height, fr.ix, fr.iy, fr.iw, fr.ih);
             else if (fr.disposal === 3 && before)
                 canvas = before;
         }
+        cursor = { idx: idx + 1, canvas };
         return result;
     };
     const clamp = (i) => Math.max(0, Math.min(count - 1, i | 0));
@@ -308,7 +327,7 @@ export function decodeGifFrames(buffer, budget = 120e6) {
     return {
         width, height, count, loop, anyTransparency, delaysMs,
         get: (idx) => Promise.resolve(compose(clamp(idx))),
-        close() { lru.clear(); entry.clear(); },
+        close() { lru.clear(); entry.clear(); cursor = null; },
     };
 }
 //# sourceMappingURL=gif-frames.js.map

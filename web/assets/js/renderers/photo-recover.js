@@ -16,6 +16,7 @@
    Pure helpers (no DOM): they take a Uint8Array, or a reader(start,end) ->
    Promise<Uint8Array> for the carve, so the same code runs under a Node test
    harness exactly as video-recover.js does. */
+import { SALVAGE_MAX_PIXELS } from '../core/limits.js';
 // ---------------------------------------------------------------- format sniff
 const PNG_SIG = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 function eq(bytes, off, sig) {
@@ -401,8 +402,9 @@ export function scanPng(bytes) {
 }
 // Inflate (zlib) bytes, returning whatever decompressed before any error - so a
 // truncated IDAT stream still yields its leading scanlines. Uses the platform
-// DecompressionStream (browser + Node 18+).
-async function inflatePartial(chunks) {
+// DecompressionStream (browser + Node 18+). Output stops at `maxOut` bytes (the
+// caller's exact expected size), so a small deflate bomb can't balloon the tab.
+async function inflatePartial(chunks, maxOut) {
     let blobBytes = 0;
     for (const c of chunks)
         blobBytes += c.length;
@@ -417,21 +419,35 @@ async function inflatePartial(chunks) {
         const writer = ds.writable.getWriter();
         const reader = ds.readable.getReader();
         const got = [];
-        const pump = (async () => { try {
-            for (;;) {
-                const { done, value } = await reader.read();
-                if (done)
-                    break;
-                if (value)
+        let have = 0;
+        const pump = (async () => {
+            try {
+                for (;;) {
+                    const { done, value } = await reader.read();
+                    if (done)
+                        break;
+                    if (!value)
+                        continue;
+                    if (have + value.length >= maxOut) {
+                        got.push(value.subarray(0, maxOut - have));
+                        have = maxOut;
+                        try {
+                            await reader.cancel();
+                        }
+                        catch (_) { }
+                        break;
+                    }
                     got.push(value);
+                    have += value.length;
+                }
             }
-        }
-        catch (_) { /* keep what we got */ } })();
+            catch (_) { /* keep what we got */ }
+        })();
         try {
             await writer.write(input);
             await writer.close();
         }
-        catch (_) { /* truncated tail */ }
+        catch (_) { /* truncated tail, or cancelled at the cap */ }
         try {
             await pump;
         }
@@ -468,8 +484,12 @@ export async function decodePngPartial(bytes) {
     if (interlace !== 0 || bitDepth !== 8 || PNG_BPP[colorType] == null)
         return null; // common case only
     const channels = PNG_BPP[colorType];
+    // Checked before anything is inflated or allocated: a hostile IHDR can claim a
+    // canvas whose RGBA buffer alone would take the tab down.
+    if (!width || !height || width * height > SALVAGE_MAX_PIXELS)
+        return null;
     const stride = width * channels;
-    const raw = await inflatePartial(scan.idat);
+    const raw = await inflatePartial(scan.idat, (stride + 1) * height);
     if (!raw.length)
         return null;
     // Each scanline is 1 filter byte + stride data bytes.

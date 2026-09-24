@@ -26,6 +26,24 @@ function getWorker() {
 // request - the compare view analyses two files at once, and without this each
 // would consume the other's pass results.
 let _jobSeq = 0;
+// Every job still waiting on the shared worker, by id. Terminating the worker
+// (one job's abort, or a load failure) kills all of them at once, so each must
+// be settled here - otherwise the other compare panel's promise never settles.
+// They reject with an ordinary Error, which audio.js answers by running the
+// passes inline, so an unrelated job carries on rather than being lost.
+const _jobs = new Map();
+function killWorker(exceptJob, err) {
+    try {
+        if (worker) {
+            worker.terminate();
+            worker = null;
+        }
+    }
+    catch (_) { }
+    for (const [id, fail] of [..._jobs])
+        if (id !== exceptJob)
+            fail(err);
+}
 /**
  * True when this audio is small enough to copy across to the worker. The copy
  * is unavoidable: getChannelData() returns live views into the AudioBuffer, so
@@ -79,34 +97,27 @@ export function runAudioDsp(audioBuffer, { needBpm, signal, onPass }) {
         // cleanly instead of reusing a dead worker.
         const onErr = () => {
             cleanup();
-            try {
-                if (worker) {
-                    worker.terminate();
-                    worker = null;
-                }
-            }
-            catch (_) { }
+            if (worker === w)
+                killWorker(jobId, new Error('audio DSP worker failed to start'));
             reject(new Error('audio DSP worker failed to start'));
         };
         const onAbort = () => {
             cleanup();
             // Kill the worker so an in-flight sweep actually stops - it holds a full
             // copy of the audio, which we want released now, not at the end of a pass.
-            try {
-                if (worker) {
-                    worker.terminate();
-                    worker = null;
-                }
-            }
-            catch (_) { }
+            // Any other job on it is settled too (see _jobs).
+            if (worker === w)
+                killWorker(jobId, new Error('audio DSP worker was stopped by another analysis'));
             reject(new DOMException('audio DSP aborted', 'AbortError'));
         };
         function cleanup() {
+            _jobs.delete(jobId);
             w.removeEventListener('message', onMsg);
             w.removeEventListener('error', onErr);
             if (signal)
                 signal.removeEventListener('abort', onAbort);
         }
+        _jobs.set(jobId, (err) => { cleanup(); reject(err); });
         if (signal) {
             if (signal.aborted) {
                 onAbort();

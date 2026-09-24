@@ -1,7 +1,7 @@
 /* Analyser - folder overview
    Recursively walks a dropped folder via webkitGetAsEntry
    and renders a treemap + summary using the shared folder/archive modules. */
-import { el, row, inlineLoader, probeReadable, asciiBar, copyText, desktopFile } from '../core/util.js';
+import { el, row, inlineLoader, probeReadable, asciiBar, copyText, desktopFile, errorCard } from '../core/util.js';
 import { normalizeFolder, renderBreakdownCards, renderViewToggle } from './folder-archive-shared.js';
 import { ARCHIVE_EXTS, RAW_EXTS, HEIC_EXTS, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS, CSV_EXTS } from '../core/formats.js';
 import { FORMATS } from './proprietary-formats.js';
@@ -564,7 +564,7 @@ export function renderFolder(files, resultsEl) {
     const folderName = files.length ? files[0].path.split('/')[0] : 'folder';
     const items = normalizeFolder(files);
     // Build a lookup from path → original file object for click-to-analyse
-    const fileByPath = {};
+    const fileByPath = Object.create(null);
     for (const f of files)
         fileByPath[f.path] = f.file;
     // KiCad project detection (done early): when the folder is a KiCad project, the
@@ -658,11 +658,22 @@ export function renderFolder(files, resultsEl) {
                 let res;
                 // desktopFile() is identity on the website; in the desktop app it turns
                 // this entry's stub into real bytes so the probe has something to read.
+                // It throws when the shell refuses the read (an expired access token), which
+                // is reported as that, not as a fault in the file.
+                let real = null;
                 try {
-                    res = await probeOpenable(await desktopFile(f.file));
+                    real = await desktopFile(f.file);
                 }
                 catch (e) {
-                    res = { ok: false, reason: 'Unexpected error: ' + ((e && e.message) || e) };
+                    res = { ok: false, reason: 'Could not be read - access to the folder has expired. Open the folder again to re-check it.' };
+                }
+                if (real) {
+                    try {
+                        res = await probeOpenable(real);
+                    }
+                    catch (e) {
+                        res = { ok: false, reason: 'Unexpected error: ' + ((e && e.message) || e) };
+                    }
                 }
                 if (res && !res.ok)
                     failures.push({ path: f.path, size: f.size, reason: res.reason, cloud: !!res.cloud });
@@ -706,9 +717,30 @@ export function renderFolder(files, resultsEl) {
             return;
         // A folder opened through the desktop shell lists stubs, not File objects -
         // this is where one becomes real bytes. Identity on the website.
-        const file = await desktopFile(entry);
+        let file;
+        try {
+            file = await desktopFile(entry);
+        }
+        catch (e) {
+            // The desktop shell refused the read (an expired access token): say so at
+            // the top of the folder view instead of failing silently.
+            resultsEl.insertBefore(errorCard('Could not open this file - access to the folder has expired. Open the folder again and retry.'), resultsEl.firstChild);
+            return;
+        }
         const ext = extOf(file.name);
+        // renderArchive reads ZIP only, so only a real PK container goes there; a
+        // .rar/.7z/.tar/.gz takes the main pipeline, whose resolveKind routes it.
+        let isZip = false;
         if (ARCHIVE_EXTS.has(ext)) {
+            try {
+                const h = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+                isZip = h[0] === 0x50 && h[1] === 0x4B && (h[2] === 0x03 || h[2] === 0x05) && (h[3] === 0x04 || h[3] === 0x06);
+            }
+            catch (_) {
+                isZip = false;
+            }
+        }
+        if (isZip) {
             import('./archive.js').then(m => {
                 pushBack();
                 resultsEl.innerHTML = '';
@@ -734,13 +766,15 @@ export function renderFolder(files, resultsEl) {
     requestAnimationFrame(() => requestAnimationFrame(() => {
         // Leaves are tagged with a Symbol so directory objects (plain {}) can never
         // be mistaken for files, even if a file is literally named "name"/"size".
-        const tree = {};
+        // Prototype-free nodes, so a folder named `__proto__` or `constructor` is an
+        // ordinary key.
+        const tree = Object.create(null);
         for (const f of files) {
             const parts = f.path.split('/');
             let node = tree;
             for (let i = 0; i < parts.length - 1; i++) {
                 if (!node[parts[i]] || typeof node[parts[i]] !== 'object' || node[parts[i]][LEAF])
-                    node[parts[i]] = {};
+                    node[parts[i]] = Object.create(null);
                 node = node[parts[i]];
             }
             node[parts[parts.length - 1]] = { [LEAF]: true, size: f.size, file: f.file, path: f.path };

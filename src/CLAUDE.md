@@ -128,11 +128,16 @@ js/
     binutil.js    — shared binary toolkit (cursor reader, decoders, magic)
     sanitize.js   — THE HTML/URL sanitiser. Any viewer that renders markup from
                     an untrusted file inline (email.js, textdoc.js's MHTML,
-                    epub.js chapters, svg.js) must go through this - the site
-                    ships no CSP, so it is the only thing stopping a crafted
-                    file executing script in the page's own origin. Never
-                    hand-roll a second copy: there used to be four, they drifted,
-                    and three carried a javascript:-scheme bypass
+                    epub.js chapters, svg.js via sanitizeSvgDoc, dwg.js) must go
+                    through this - the site ships no CSP, so it is the only
+                    thing stopping a crafted file executing script in the page's
+                    own origin. Insert its output as NODES; never serialise it
+                    and re-parse it with innerHTML (XML and HTML parse comments
+                    differently - that was a live bypass). Sanitised content
+                    loses class/data-*, and every id/name is prefixed with
+                    ID_PREFIX ('anr-u-') against DOM clobbering. Never hand-roll
+                    a second copy: there used to be five, they drifted, and
+                    they carried javascript:-scheme and comment bypasses
   renderers/      — one module per top-level type (classifyFile() routes to these
                     via ROUTES in app.js). Inventory by domain:
     photo.js · photo-convert.js · photo-recover.js · sonify.js · tiff.js · mpo.js · ico.js · embedded-images.js

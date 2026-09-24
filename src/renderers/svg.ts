@@ -4,104 +4,52 @@
 
 import { el, row, rowHelp, fmtBytes, errorCard, integrityCard } from '../core/util.js';
 import { SVG_MAX_NODES } from '../core/limits.js';
-import { urlScheme } from '../core/sanitize.js';
+import { sanitizeSvgDoc, emptySanitizeReport } from '../core/sanitize.js';
 import { renderPhoto } from './photo.js';
 
-// Scan a parsed SVG document for active/unsafe content, strip it, and return
-// { findings, safe } where `safe` is sanitised serialised markup for the
-// preview (null if there's no <svg> root). The preview injects markup via
-// innerHTML, so an untrusted SVG could otherwise run inline event handlers,
-// embed arbitrary HTML through <foreignObject>, or phone home through external
-// references. We remove <script>/<foreignObject>, on* handlers, javascript:
-// links, and external/remote refs before anything is rendered.
+// Sanitise a parsed SVG document for the preview and return { findings, node },
+// where `node` is a clean copy of the <svg>, already imported into this page and
+// inserted AS A NODE (null if there's no <svg> root). The rules are core/
+// sanitize.js's - scripts, <foreignObject>, <style>, SMIL, on* handlers,
+// script-capable links, remote refs and non-SVG elements all go. The preview
+// never goes through markup: serialising the cleaned tree and re-parsing it as
+// HTML is what let `<!--><img src=x onerror=...>-->` come back to life.
+// The parsed document itself is left untouched, so the statistics below still
+// count what the file really contains.
 function sanitizeSvg(doc: Document) {
   const findings: string[] = [];
-  const root = doc.querySelector('svg');
-  if (!root) return { findings, safe: null };
-
-  // The attribute walk below is O(nodes) with per-attribute regexes. A
+  // Sanitising is a walk over every node with per-attribute checks. A
   // pathologically large SVG (e.g. a DWG-derived drawing with 100k+ elements)
   // would freeze the tab, so decline to inline it rather than sanitising every
   // node. This never weakens sanitisation - an oversized SVG is simply not
-  // rendered (safe:null), the same fail-closed path as a missing <svg> root.
-  if (doc.querySelectorAll('*').length > SVG_MAX_NODES) {
-    return { findings, safe: null, tooComplex: true };
+  // rendered (node:null), the same fail-closed path as a missing <svg> root.
+  if (doc.getElementsByTagName('*').length > SVG_MAX_NODES) {
+    return { findings, node: null, tooComplex: true };
   }
-
-  const scripts = doc.querySelectorAll('script');
-  if (scripts.length) findings.push(scripts.length + ' <script> element' + (scripts.length > 1 ? 's' : ''));
-  scripts.forEach((n) => n.remove());
-
-  const fo = doc.querySelectorAll('foreignObject');
-  if (fo.length) findings.push(fo.length + ' <foreignObject> (embedded HTML)');
-  fo.forEach((n) => n.remove());
-
-  // Inline <style> is NOT scoped to the SVG when injected inline - its rules
-  // apply document-wide (CSS injection / UI-redress) and can pull remote fonts
-  // and images via url()/@import. SMIL animation (<animate>/<set>/...) can also
-  // rewrite an href to javascript: at runtime, bypassing the static-attribute
-  // scan below. Remove both element classes outright.
-  const styles = doc.querySelectorAll('style');
-  if (styles.length) findings.push(styles.length + ' <style> element' + (styles.length > 1 ? 's' : '') + ' (document-wide CSS)');
-  styles.forEach((n) => n.remove());
-
-  const smil = doc.querySelectorAll('animate, animateTransform, animateMotion, set');
-  if (smil.length) findings.push(smil.length + ' SMIL animation element' + (smil.length > 1 ? 's' : ''));
-  smil.forEach((n) => n.remove());
-
-  let handlers = 0, jsLinks = 0, extRefs = 0, cssRefs = 0;
-  for (const node of doc.querySelectorAll('*')) {
-    for (const attr of Array.from<any>(node.attributes)) {
-      const name = attr.name.toLowerCase();
-      const val = (attr.value || '').trim();
-      if (name.startsWith('on')) { node.removeAttribute(attr.name); handlers++; continue; }
-      if (name === 'href' || name === 'src' || name.endsWith(':href')) {
-        // Normalise the way the browser's URL parser does before deciding - see
-        // urlScheme() in core/sanitize.js for why a plain /^javascript:/ test is
-        // not enough (`java&#9;script:` slips straight past it).
-        const flat = val.replace(/[\x00-\x20]+/g, '');
-        const scheme = urlScheme(val);
-        // Remote reference: absolute or protocol-relative http(s), or an inline
-        // HTML document. Stripped so a rendered SVG can never call home.
-        if (scheme === 'http' || scheme === 'https' || /^\/\//.test(flat) || /^data:text\/html/i.test(flat)) {
-          node.removeAttribute(attr.name); extRefs++;
-        }
-        // No scheme at all is a relative path or #fragment (both fine), and
-        // data:/mailto:/tel: are the schemes SVG legitimately uses (base64
-        // images, contact links). Anything else that carries a scheme can
-        // execute - javascript:, vbscript:, blob:, filesystem: - so it goes.
-        else if (scheme && !/^(?:data|mailto|tel)$/.test(scheme)) {
-          node.removeAttribute(attr.name); jsLinks++;
-        }
-      }
-      // Any attribute (style="", fill="url(...)", filter="url(...)", …) that
-      // references a remote resource via CSS url() or @import - strip it.
-      else if (/(?:url\s*\(|@import)/i.test(val) && /(?:url\s*\(\s*['"]?\s*(?:https?:)?\/\/|@import\s+['"]?\s*(?:https?:)?\/\/)/i.test(val)) {
-        node.removeAttribute(attr.name); cssRefs++;
-      }
-    }
-  }
-  if (handlers) findings.push(handlers + ' inline event handler' + (handlers > 1 ? 's' : '') + ' (on*)');
-  if (jsLinks) findings.push(jsLinks + ' script-capable link' + (jsLinks > 1 ? 's' : '') + ' (javascript:, vbscript:, ...)');
-  if (extRefs) findings.push(extRefs + ' external/remote reference' + (extRefs > 1 ? 's' : ''));
-  if (cssRefs) findings.push(cssRefs + ' remote CSS url() reference' + (cssRefs > 1 ? 's' : ''));
-
-  let safe;
-  try { safe = new XMLSerializer().serializeToString(root); }
-  catch (_) { safe = null; }
-  return { findings, safe };
+  const rep = emptySanitizeReport();
+  const node = sanitizeSvgDoc(doc, rep);
+  const n = (count: number, one: string, many: string) => { if (count) findings.push(count + ' ' + (count > 1 ? many : one)); };
+  n(rep.script, '<script> element', '<script> elements');
+  n(rep.foreignObject, '<foreignObject> (embedded HTML)', '<foreignObject> (embedded HTML)');
+  n(rep.html, 'embedded HTML element', 'embedded HTML elements');
+  n(rep.style, '<style> element (document-wide CSS)', '<style> elements (document-wide CSS)');
+  n(rep.smil, 'SMIL animation element', 'SMIL animation elements');
+  n(rep.handlers, 'inline event handler (on*)', 'inline event handlers (on*)');
+  n(rep.jsLinks, 'script-capable link (javascript:, vbscript:, ...)', 'script-capable links (javascript:, vbscript:, ...)');
+  n(rep.extRefs, 'external/remote reference', 'external/remote references');
+  n(rep.cssRefs, 'remote CSS url() reference', 'remote CSS url() references');
+  return { findings, node };
 }
 
-// Sanitise a raw SVG markup string and return safe serialised markup (or null
-// if there's no <svg> root / it won't parse). Shared entry point for other
-// renderers that inject parser-produced SVG (e.g. dwg.js) so they get the same
-// element/attribute allow-list as the SVG viewer instead of a bespoke regex.
+// Sanitise a raw SVG markup string and return a safe <svg> element to insert
+// (or null if there's no <svg> root / it won't parse / it is too large). Shared
+// entry point for other renderers that show parser-produced SVG (dwg.js) so
+// they get the same rules as the SVG viewer. Insert the node - never its markup.
 export function sanitizeSvgMarkup(markup: string) {
   try {
     const doc = new DOMParser().parseFromString(String(markup || ''), 'image/svg+xml');
     if (doc.querySelector('parsererror')) return null;
-    const { safe } = sanitizeSvg(doc);
-    return safe;
+    return sanitizeSvg(doc).node;
   } catch (_) { return null; }
 }
 
@@ -143,13 +91,18 @@ export async function renderSvg(file: File, resultsEl: HTMLElement) {
   const doc = parser.parseFromString(svgText, 'image/svg+xml');
   const parseErr = doc.querySelector('parsererror');
   const svgRoot = doc.querySelector('svg');
-  const { findings, safe, tooComplex } = sanitizeSvg(doc);
+  const { findings, node: safeNode, tooComplex } = sanitizeSvg(doc);
+  // Markup of the sanitised copy, for the rasteriser only: it is drawn through an
+  // <img>, where an SVG runs no script and loads nothing.
+  let safe: string|null = null;
+  if (safeNode) { try { safe = new XMLSerializer().serializeToString(safeNode); } catch (_) { safe = null; } }
 
   // --- Preview card: render the (sanitised) SVG, capped so it doesn't dominate ---
   const previewCard = el('div', { class: 'anr-card' });
   previewCard.appendChild(el('h3', {}, 'SVG preview'));
-  if (safe) {
-    const svgContainer = el('div', { class: 'anr-svg-preview', html: safe });
+  if (safeNode) {
+    // data-anr-untrusted: navigate.js leaves links inside it alone.
+    const svgContainer = el('div', { class: 'anr-svg-preview', 'data-anr-untrusted': '' }, [safeNode]);
     svgContainer.style.maxHeight = '400px';
     svgContainer.style.overflow = 'auto';
     previewCard.appendChild(svgContainer);
@@ -312,7 +265,11 @@ export async function renderSvg(file: File, resultsEl: HTMLElement) {
           });
         }
       });
-      swatch.style.background = c;
+      // backgroundColor, not background: the value comes straight from the file,
+      // and the shorthand would also accept image-set(...) or an escaped u\72l(...)
+      // - a remote fetch the moment the palette renders. A colour property takes
+      // colours only; anything else is simply ignored.
+      swatch.style.backgroundColor = c;
       const item = el('div', { class: 'anr-svg-swatch-item' }, [swatch, label]);
       swatchWrap.appendChild(item);
     }

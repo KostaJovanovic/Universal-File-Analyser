@@ -29,7 +29,7 @@
 import { app, dialog, net, shell } from 'electron';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
+import { chmodSync, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 const OWNER = 'KostaJovanovic';
@@ -50,6 +50,24 @@ const ASSET = {
 const FIRST_CHECK_MS = 20 * 1000;
 const EVERY_MS = 6 * 60 * 60 * 1000;
 
+/** The API answer must arrive within this, and a download may go this long
+ *  without a byte before it is abandoned - a stalled request would otherwise
+ *  hold `busy` for the rest of the session. */
+const API_TIMEOUT_MS = 20 * 1000;
+const DOWNLOAD_IDLE_MS = 60 * 1000;
+
+/** A check the PAGE asked for (the footer button, via the preload) is dropped
+ *  silently while a check runs, while any update dialog is open, or within
+ *  this long of the last one - so a page that calls it in a loop cannot stack
+ *  modal dialogs. Help > Check for updates is not limited. */
+const PAGE_CHECK_GAP_MS = 10 * 1000;
+
+/** Where a release file may come from: this repository's release downloads on
+ *  github.com, and GitHub's asset storage (objects.githubusercontent.com,
+ *  release-assets.githubusercontent.com, ...) that those redirect to. Anything
+ *  else in the API answer, or at the end of the redirects, is refused. */
+const GITHUB_ASSET_HOST = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.githubusercontent\.com$/;
+
 let kind = 'dev';
 let portableCopy = false;
 let getWindow = () => null;
@@ -61,6 +79,9 @@ let launched = false;
 /** Versions the user answered "Later" to. The automatic check stays quiet about
  *  them for the rest of the session. The menu entry still reports them. */
 const declined = new Set();
+/** Update dialogs currently open, and when the page last asked for a check. */
+let dialogsOpen = 0;
+let lastPageCheck = 0;
 
 /** How this copy was installed - see the header. */
 export function installKind(portable) {
@@ -85,6 +106,8 @@ export function startUpdates({ window, portable }) {
   if (kind === 'dev') return;
   if (kind === 'installer') {
     rmSync(downloadDir(), { recursive: true, force: true });
+    // Where 9.12 and earlier kept it.
+    rmSync(join(app.getPath('temp'), 'analyser-update'), { recursive: true, force: true });
     // "Later" still installs: the downloaded installer runs as the app closes,
     // silently, without starting the app again.
     app.on('will-quit', () => runInstaller(false));
@@ -98,6 +121,15 @@ export function startUpdates({ window, portable }) {
 
 /** Help > Check for updates. Unlike the automatic check, it always answers. */
 export function checkForUpdates() {
+  return check(true);
+}
+
+/** The same check, asked for by the page (see PAGE_CHECK_GAP_MS). A dropped
+ *  request resolves quietly: there is nothing the page could do with an error. */
+export function checkForUpdatesFromPage() {
+  const now = Date.now();
+  if (busy || dialogsOpen > 0 || now - lastPageCheck < PAGE_CHECK_GAP_MS) return Promise.resolve();
+  lastPageCheck = now;
   return check(true);
 }
 
@@ -116,10 +148,24 @@ function newer(a, b) {
   return false;
 }
 
-const downloadDir = () => join(app.getPath('temp'), 'analyser-update');
+/* Under userData, not %TEMP%: the installer sits there until the app quits and
+   then runs, and a folder only this user's profile holds is a smaller target
+   than the shared temp directory. It is re-hashed right before it runs too. */
+const downloadDir = () => join(app.getPath('userData'), 'update');
+
+/** True for an https URL GitHub serves release files from (see
+ *  GITHUB_ASSET_HOST). `first` is the URL from the API answer, which must be
+ *  this repository's own release download on github.com. */
+function allowedDownload(url, first) {
+  let u;
+  try { u = new URL(String(url || '')); } catch (_) { return false; }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port) return false;
+  if (u.hostname === 'github.com') return u.pathname.startsWith(`/${OWNER}/${REPO}/releases/download/`);
+  return !first && GITHUB_ASSET_HOST.test(u.hostname);
+}
 
 async function latestRelease() {
-  const res = await net.fetch(API, { headers: { accept: 'application/vnd.github+json' } });
+  const res = await net.fetch(API, { headers: { accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(API_TIMEOUT_MS) });
   if (!res.ok) throw new Error('GitHub answered ' + res.status);
   const rel = await res.json();
   const assets = Array.isArray(rel.assets) ? rel.assets : [];
@@ -134,22 +180,41 @@ async function latestRelease() {
 async function download(asset, dest) {
   const want = /^sha256:([0-9a-f]{64})$/.exec(String(asset.digest || ''));
   if (!want) throw new Error('the release gives no SHA-256 for ' + asset.name);
-  const res = await net.fetch(String(asset.browser_download_url || ''));
-  if (!res.ok || !res.body) throw new Error('the download failed: ' + res.status);
-  mkdirSync(dirname(dest), { recursive: true });
+  const size = Number(asset.size);
+  if (!Number.isSafeInteger(size) || size <= 0) throw new Error('the release gives no size for ' + asset.name);
+  if (!allowedDownload(asset.browser_download_url, true)) throw new Error('the release points outside GitHub for ' + asset.name);
+  // An idle timer rather than a total one: a slow line may take minutes over a
+  // large file, but a connection that sends nothing for a minute is dead.
+  const ctl = new AbortController();
+  let idle = setTimeout(() => ctl.abort(), DOWNLOAD_IDLE_MS);
+  const poke = () => { clearTimeout(idle); idle = setTimeout(() => ctl.abort(), DOWNLOAD_IDLE_MS); };
   const part = dest + '.part';
   const hash = createHash('sha256');
-  const out = createWriteStream(part);
+  let out = null;
   try {
+    const res = await net.fetch(String(asset.browser_download_url), { signal: ctl.signal });
+    if (!res.ok || !res.body) throw new Error('the download failed: ' + res.status);
+    // Where the redirects ended up must be GitHub's too.
+    if (res.url && !allowedDownload(res.url, false)) throw new Error('the download was redirected outside GitHub');
+    mkdirSync(dirname(dest), { recursive: true });
+    out = createWriteStream(part);
+    let got = 0;
     for await (const chunk of res.body) {
+      poke();
+      got += chunk.length;
+      // Never more than the release says the file is.
+      if (got > size) throw new Error('the download is larger than the release says');
       hash.update(chunk);
       if (!out.write(chunk)) await new Promise((resolve) => out.once('drain', resolve));
     }
+    if (got !== size) throw new Error('the download is shorter than the release says');
     await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())));
   } catch (err) {
-    out.destroy();
+    if (out) out.destroy();
     rmSync(part, { force: true });
     throw err;
+  } finally {
+    clearTimeout(idle);
   }
   if (hash.digest('hex') !== want[1]) {
     rmSync(part, { force: true });
@@ -162,9 +227,12 @@ async function download(asset, dest) {
 /** Fetch the update for a self-updating copy, and leave it ready to take over. */
 async function fetchUpdate(version, asset) {
   if (kind === 'installer') {
-    const file = join(downloadDir(), asset.name);
+    // The name from the API answer is only used as a file name, so strip it to
+    // one: no folder, nothing Windows would read as a device or a stream.
+    const safe = String(asset.name).replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '_') || 'update.exe';
+    const file = join(downloadDir(), safe);
     await download(asset, file);
-    ready = { version, file };
+    ready = { version, file, sha256: String(asset.digest).slice('sha256:'.length) };
   } else {
     // Beside the running AppImage, so the rename below stays on one disk.
     // Linux lets a running file be replaced: this copy keeps running from the
@@ -181,9 +249,24 @@ async function fetchUpdate(version, asset) {
 function runInstaller(restart) {
   if (kind !== 'installer' || !ready || launched) return;
   launched = true;
+  // Hashed again right before it runs: the file sat on disk since the download,
+  // and a check made then says nothing about what is there now.
+  try {
+    if (createHash('sha256').update(readFileSync(ready.file)).digest('hex') !== ready.sha256) throw new Error('changed');
+  } catch (_) {
+    rmSync(ready.file, { force: true });
+    ready = null;
+    return;
+  }
   const args = ['/S', '--updated'];
   if (restart) args.push('--force-run');
-  spawn(ready.file, args, { detached: true, stdio: 'ignore' }).unref();
+  try {
+    const child = spawn(ready.file, args, { detached: true, stdio: 'ignore' });
+    // Without a listener, a spawn failure (the file removed, blocked by
+    // antivirus) is an uncaught error in the main process during will-quit.
+    child.on('error', () => {});
+    child.unref();
+  } catch (_) { /* the next start downloads it again */ }
 }
 
 async function check(manual) {
@@ -230,8 +313,10 @@ async function check(manual) {
 function show(options) {
   const win = getWindow();
   const opts = Object.assign({ type: 'info', title: 'Analyser', noLink: true }, options);
+  dialogsOpen++;
   return (win && !win.isDestroyed() ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts))
-    .catch(() => ({ response: -1 }));
+    .catch(() => ({ response: -1 }))
+    .then((r) => { dialogsOpen--; return r; });
 }
 
 function tell(message, detail) {

@@ -226,12 +226,14 @@ export async function renderDwg(file, resultsEl) {
     // same strict allow-list sanitiser as the SVG viewer (strips <script>, on*,
     // <foreignObject>, <style>, SMIL, external/remote refs) rather than a
     // <script>-only regex that leaves event handlers and remote refs intact.
+    // It comes back as a node and is inserted as one: LibreDWG interpolates MTEXT
+    // into the SVG unescaped, so markup would be a re-parse away from live HTML.
     const safeSvg = svg && /<svg[\s>]/i.test(svg) ? sanitizeSvgMarkup(svg) : null;
     if (safeSvg) {
         const dcard = el('div', { class: 'anr-card' });
         dcard.appendChild(el('h3', {}, 'Drawing'));
-        const wrap = el('div', { class: 'anr-dwg-wrap' });
-        wrap.innerHTML = safeSvg;
+        const wrap = el('div', { class: 'anr-dwg-wrap', 'data-anr-untrusted': '' });
+        wrap.appendChild(safeSvg);
         dcard.appendChild(wrap);
         resultsEl.insertBefore(dcard, resultsEl.firstChild);
     }

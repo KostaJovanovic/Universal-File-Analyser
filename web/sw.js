@@ -1,8 +1,8 @@
-﻿/* Analyser - service worker
+/* Analyser - service worker
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v317';
+const VERSION = 'analyser-v318';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -280,6 +280,19 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// What the runtime fetch handler may store in the VERSION cache: the site's own
+// files (status 200 only - a 404 or a redirect pinned for a whole release is a
+// bug), plus the pinned, versioned CDN assets the app loads lazily (ffmpeg core,
+// OCCT, ONNX runtime from jsDelivr; Tesseract language data). Everything else -
+// OpenStreetMap tiles above all, whose opaque responses are each padded to
+// several MB of quota and include 429/404s - goes to the network uncached.
+const CACHE_HOSTS = ['cdn.jsdelivr.net', 'tessdata.projectnaptha.com'];
+function cacheable(url, res) {
+  if (url.origin === self.location.origin) return res.status === 200 && res.type === 'basic' && !res.redirected;
+  if (!CACHE_HOSTS.includes(url.hostname)) return false;
+  return res.status === 200 || res.type === 'opaque';
+}
+
 self.addEventListener('fetch', (e) => {
   // Dev: never intercept - let every request go straight to the network so edits
   // appear on a single refresh. The activate handler above already deleted any
@@ -302,6 +315,11 @@ self.addEventListener('fetch', (e) => {
   // the user's own bytes, often hundreds of MB, and never the same twice - so
   // they must never land in a cache. Nothing on the website lives there.
   if (url.pathname.startsWith('/__anr/')) return;
+
+  // /__chrome/* is the Electron desktop window's OWN title bar (desktop/chrome/),
+  // served by the main process beside the app. It is not part of the site and
+  // must never be cached or answered from a cache under the app's origin.
+  if (url.pathname.startsWith('/__chrome/')) return;
 
   // The connectivity probe (core/popups.js probeOnline) must always hit the
   // network - a cached answer would report Online with the cable out. It is a
@@ -331,11 +349,15 @@ self.addEventListener('fetch', (e) => {
   // whose own refresh logic then can't detect that it is stale. Only fall back to the
   // other surviving caches (offline tiers, mdx model) on a VERSION miss - those hold
   // large vendor/model files the version cache doesn't carry.
+  // A cached OPAQUE (no-cors) response is unusable for a CORS-mode request - the
+  // browser turns it into a network error - so such a hit is skipped and the
+  // request goes to the network instead of failing from the cache.
+  const usable = (r) => r && !(r.type === 'opaque' && req.mode === 'cors') ? r : null;
   e.respondWith(
     caches.open(VERSION).then((current) => current.match(req)).then((cached) => {
-      if (cached) return cached;
+      if (usable(cached)) return cached;
       return caches.match(req).then((fallback) => {
-        if (fallback) return fallback;
+        if (usable(fallback)) return fallback;
         return fetch(req).then((res) => {
           // AI models have their own persistent, validated caches. Keeping the
           // same large response here too doubles storage and can strand removed
@@ -345,7 +367,7 @@ self.addEventListener('fetch', (e) => {
           if (res && (res.status === 200 || res.type === 'opaque') && isOrtRuntime) {
             const copy = res.clone();
             caches.open(AI_RUNTIME_CACHE).then((c) => c.put(req, copy)).catch(() => {});
-          } else if (!isModelRequest && res && (res.status === 200 || res.type === 'opaque')) {
+          } else if (!isModelRequest && res && cacheable(url, res)) {
             const copy = res.clone();
             caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
           }

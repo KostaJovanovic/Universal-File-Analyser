@@ -14,6 +14,7 @@
    as bipolar bars, the HSL colour mixer, the crop rectangle. A sidecar we can't
    read as XMP is handed back to the generic identifier so it is never worse off. */
 import { el, rowHelp, h3help, fmtBytes, integrityCard, errorCard, buildReadout } from '../core/util.js';
+import { XMP_READ_MAX } from '../core/limits.js';
 // ---- small value helpers -----------------------------------------------------
 const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : null; };
 // Reduce an XMP rational ("56/10", "500/1") to a plain number where it is one.
@@ -161,7 +162,7 @@ export async function renderXmp(file, resultsEl) {
     resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));
     let text;
     try {
-        text = await file.slice(0, 8 * 1024 * 1024).text();
+        text = await file.slice(0, XMP_READ_MAX).text();
     }
     catch (e) {
         resultsEl.innerHTML = '';

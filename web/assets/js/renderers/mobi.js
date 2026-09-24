@@ -21,6 +21,48 @@ function metaStr(v) {
         return v.name ? metaStr(v.name) : metaStr(Object.values(v)[0]);
     return String(v);
 }
+// What a section may load: only what foliate already resolved into it (blob:
+// images, stylesheets and fonts) and inline data: URIs. Nothing from the network.
+const SECTION_CSP = "default-src 'none'; img-src blob: data:; style-src blob: data: 'unsafe-inline'; font-src blob: data:; media-src blob: data:";
+// foliate hands back each section as a blob: URL of the book's own (X)HTML. The
+// iframe sandbox stops script, but not a remote <img>, a remote stylesheet, or a
+// <meta http-equiv="refresh"> that navigates the frame to any URL. Rewrite the
+// section before showing it: drop refresh/base/script and any <link> that is not
+// already local, and put a CSP <meta> first in <head> so every fetch the page -
+// or its stylesheets - attempts is refused. Returns a new blob: URL (the caller
+// revokes it); the sanitiser in core/sanitize.js is not used because it strips
+// the blob: image sources foliate resolved, which would leave the book blank.
+async function lockDown(url) {
+    const blob = await (await fetch(url)).blob();
+    const text = await blob.text();
+    const type = blob.type || 'text/html';
+    let xml = /xml/i.test(type);
+    let doc = new DOMParser().parseFromString(text, xml ? 'application/xhtml+xml' : 'text/html');
+    if (xml && doc.querySelector('parsererror')) {
+        xml = false;
+        doc = new DOMParser().parseFromString(text, 'text/html');
+    }
+    const root = doc.documentElement;
+    for (const n of Array.from(doc.getElementsByTagName('*'))) {
+        const ln = n.localName.toLowerCase();
+        if (ln === 'script' || ln === 'base' || (ln === 'meta' && n.hasAttribute('http-equiv')))
+            n.remove();
+        else if (ln === 'link' && !/^\s*(?:blob|data):/i.test(n.getAttribute('href') || ''))
+            n.remove();
+    }
+    const ns = root.namespaceURI;
+    let head = doc.head;
+    if (!head) {
+        head = doc.createElementNS(ns, 'head');
+        root.insertBefore(head, root.firstChild);
+    }
+    const meta = doc.createElementNS(ns, 'meta');
+    meta.setAttribute('http-equiv', 'Content-Security-Policy');
+    meta.setAttribute('content', SECTION_CSP);
+    head.insertBefore(meta, head.firstChild);
+    const out = xml ? new XMLSerializer().serializeToString(doc) : '<!DOCTYPE html>\n' + root.outerHTML;
+    return URL.createObjectURL(new Blob([out], { type: xml ? type : 'text/html' }));
+}
 export async function renderMobi(file, resultsEl) {
     resultsEl.hidden = false;
     resultsEl.innerHTML = '';
@@ -94,7 +136,7 @@ export async function renderMobi(file, resultsEl) {
     const frame = el('iframe', { class: 'anr-ebook-frame', sandbox: 'allow-same-origin' });
     view.appendChild(frame);
     resultsEl.insertBefore(view, _renderAnchor);
-    let cur = -1, busy = false;
+    let cur = -1, busy = false, shownUrl = '';
     async function show(n) {
         if (busy)
             return;
@@ -103,8 +145,11 @@ export async function renderMobi(file, resultsEl) {
         prev.disabled = next.disabled = true;
         status.textContent = 'Loading section ' + (n + 1) + ' of ' + sections.length + '…';
         try {
-            const url = await sections[n].load();
+            const url = await lockDown(await sections[n].load());
             frame.src = url;
+            if (shownUrl)
+                URL.revokeObjectURL(shownUrl);
+            shownUrl = url;
             if (cur >= 0 && sections[cur] && sections[cur].unload) {
                 try {
                     sections[cur].unload();

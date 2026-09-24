@@ -23,6 +23,22 @@ const DFN_MODEL_MB = Math.round(DFN_MODEL.bytes / 1e6);
 // carries the desktop and Android apps (the same link as the header's Get App chip).
 const RELEASES_URL = 'https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest';
 
+// Module scope, not per call: setupOfflineTiers() re-runs on every SPA navigation,
+// but a download outlives the footer that started it.
+// Live AbortControllers for in-progress tier downloads, so "Clear storage" can
+// stop them before wiping the cache they are writing into - otherwise a running
+// download keeps repopulating the just-cleared cache and records the tier as
+// cached again, making the clear look inert. Shared by every boot, so a clear on
+// a later page still reaches a download started on an earlier one.
+const activeDownloads = new Set<AbortController>();
+// Tiers/packs with a download running, keyed like the buttons' data-tier, so the
+// fresh footer of a later navigation cannot start a second, parallel copy.
+const activeTiers = new Set<string>();
+// The version-refresh re-download runs once per page load. Per boot it started
+// a forced re-download of every stale tier (120-345 MB each) in parallel with
+// the previous boot's.
+let autoRefreshStarted = false;
+
 export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[], analyserVersion: (n: number, r: number[]) => string) {
   // ----- Offline download buttons -----
   const TESS_DATA = 'assets/vendor/tesseract';
@@ -397,12 +413,6 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
     refreshCompleteButton();
   }
 
-  // Live AbortControllers for in-progress tier downloads, so "Clear storage" can
-  // stop them before wiping the cache they are writing into - otherwise a running
-  // download keeps repopulating the just-cleared cache and records the tier as
-  // cached again, making the clear look inert.
-  const activeDownloads = new Set<AbortController>();
-
   // Download (or, with force, re-download) every file in a tier into the
   // 'analyser-offline' cache, driving the button's progress bar. Records the
   // current app version on full success. On partial failure a user-initiated
@@ -451,11 +461,13 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
         if (exists) {
           ok = true;
         } else {
-          const resp = await fetch(url, { mode: url.startsWith('http') ? 'cors' : 'same-origin', signal: abort.signal })
-            .catch(() => fetch(url, { mode: 'no-cors', signal: abort.signal }));
-          // Opaque (cross-origin no-cors) responses report ok=false but are
-          // still cacheable; only a same-origin non-ok counts as a real failure.
-          if (resp && (resp.type === 'opaque' || resp.ok)) {
+          // CORS only - no opaque no-cors fallback. Every remote asset here
+          // (ffmpeg core, OCCT, Tesseract data, the ONNX runtime) is later
+          // fetched in CORS mode, and an opaque cache entry turns that fetch
+          // into a network error while the badge claims "Cached". A host that
+          // refuses CORS is a real failure the user can retry.
+          const resp = await fetch(url, { mode: url.startsWith('http') ? 'cors' : 'same-origin', signal: abort.signal });
+          if (resp && resp.ok) {
             await cache.put(url, resp);
             ok = true;
           }
@@ -488,8 +500,11 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
   async function downloadTier(btn: HTMLElement, { force = false, auto = false } : any = {}) {
     if (btn.classList.contains('is-active')) return false;
     const tier = btn.dataset.tier!;
-    const r = await runCacheLoop(btn, tierUrls(tier), force);
-    if (r.aborted) return false;   // Clear storage cancelled us: it resets the UI itself
+    if (activeTiers.has(tier)) return false;   // already running from an earlier boot
+    activeTiers.add(tier);
+    let r;
+    try { r = await runCacheLoop(btn, tierUrls(tier), force); } finally { activeTiers.delete(tier); }
+    if (r.aborted) return false;  // Clear storage cancelled us: it resets the UI itself
     r.setBar(1);
     const state = readOfflineState();
     if (r.failed > 0) {
@@ -518,7 +533,10 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
     if (btn.classList.contains('is-active')) return false;
     const feat = FEATURES[key];
     if (!feat) return false;
-    const r = await runCacheLoop(btn, tierUrls('everything').concat(feat.urls), false);
+    if (activeTiers.has('feat:' + key)) return false;   // already running from an earlier boot
+    activeTiers.add('feat:' + key);
+    let r;
+    try { r = await runCacheLoop(btn, tierUrls('everything').concat(feat.urls), false); } finally { activeTiers.delete('feat:' + key); }
     if (r.aborted) return false;
     r.setBar(1);
     if (r.failed > 0) { reportDownloadFailure(r); return false; }
@@ -707,6 +725,9 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
 
     // Paint the restored / self-healed state (badges, greying, upgrade deltas).
     refreshTierButtons();
+    // Once per page load (see autoRefreshStarted): later boots only repaint.
+    if (autoRefreshStarted || !Object.keys(buttons).length) return;
+    autoRefreshStarted = true;
     for (const tier of Object.keys(state)) {
       if (state[tier] !== COMMIT_COUNT && buttons[tier]) {
         await downloadTier(buttons[tier], { force: true, auto: true });

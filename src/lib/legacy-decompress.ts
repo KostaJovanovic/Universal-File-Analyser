@@ -1,6 +1,6 @@
 /* Analyser - small pure-JS decompressors for single-stream legacy codecs.
 
-   Two compact, dependency-free decoders for bare (non-tar) compressed files that
+   Two compact decoders (no library; only the output cap comes from limits.js) for bare (non-tar) compressed files that
    the bundled libarchive engine cannot open on its own:
 
    - unlz4()  : the modern LZ4 frame format (magic 04 22 4D 18), as written by the
@@ -14,9 +14,13 @@
    decompression bombs. (Legacy .lzma lives in lzma-loader.js; gzip/xz/zstd are
    handled elsewhere.) */
 
-const MAX_OUTPUT = 256 * 1024 * 1024;   // 256 MB ceiling on decompressed output
+import { DECOMP_OUTPUT_MAX } from '../core/limits.js';
 
-// Growable output buffer helper shared by both decoders.
+const MAX_OUTPUT = DECOMP_OUTPUT_MAX;   // ceiling on decompressed output (limits.js)
+
+// Growable output buffer helper shared by both decoders. One buffer, grown by
+// doubling but never past MAX_OUTPUT, and the result is a view of it - there
+// is no separate chunk list to be joined into a second copy at the end.
 function makeSink() {
   let buf = new Uint8Array(1 << 16);
   let len = 0;
@@ -26,6 +30,7 @@ function makeSink() {
       if (len + n <= buf.length) return;
       let cap = buf.length;
       while (cap < len + n) cap *= 2;
+      cap = Math.min(cap, MAX_OUTPUT);
       const nb = new Uint8Array(cap);
       nb.set(buf.subarray(0, len));
       buf = nb;

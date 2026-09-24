@@ -133,7 +133,7 @@ export async function renderF3d(file: File, resultsEl: HTMLElement) {
         const pv = el('div', { class: 'anr-card' });
         const [ph, phelp] = h3help('Preview', 'The thumbnail image Fusion 360 rendered and saved inside the file, so it can be shown without rebuilding the model.');
         pv.appendChild(ph); pv.appendChild(phelp);
-        const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+        const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'image/png' }));
         const img = el('img', {
           src: url, alt: 'Fusion 360 model preview', loading: 'lazy',
           style: 'max-width:100%; height:auto; border:1px solid var(--rule); background:var(--surface);',

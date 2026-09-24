@@ -520,7 +520,9 @@ export const EXT_VARIANTS = {
 // or nothing matched without a default. The FIRST variant whose `detect` rule
 // matches wins; a { default: true } variant is the fallback.
 export function detectVariant(ext, bytes, text, opts) {
-    const entry = EXT_VARIANTS[(ext || '').toLowerCase()];
+    const key = (ext || '').toLowerCase();
+    // hasOwn: a file-controlled extension like `constructor` must not hit the prototype.
+    const entry = Object.hasOwn(EXT_VARIANTS, key) ? EXT_VARIANTS[key] : null;
     if (!entry)
         return null;
     // specificOnly: return a name only when a real rule matched, not the bare

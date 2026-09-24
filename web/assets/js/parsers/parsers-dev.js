@@ -7,7 +7,7 @@
    Return null to fall back to the generic identification card. */
 import { el, row, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
 import { Reader, ascii } from '../core/binutil.js';
-import { SCAN_SMALL, SOURCE_SCAN_MAX } from '../core/limits.js';
+import { SCAN_SMALL, SCAN_MED, SCAN_LARGE, SOURCE_SCAN_MAX } from '../core/limits.js';
 import { parsePlist } from '../lib/plist.js';
 import { openZip } from '../renderers/zip.js';
 // ---------- small helpers ----------
@@ -31,7 +31,7 @@ function uleb(b, cur) { let r = 0, sh = 0, x; do {
 } while (x & 0x80); return r; }
 // ---------- JSON Web Token ----------
 async function parseJwt(file) {
-    const text = (await file.text()).trim();
+    const text = (await readText(file, SCAN_SMALL)).trim(); // a token is KBs; never read a big file whole
     const parts = text.split('.');
     if (parts.length < 2)
         return null;
@@ -86,9 +86,11 @@ async function parseJwt(file) {
 }
 // ---------- HTTP Archive (.har) ----------
 async function parseHar(file) {
+    // JSON must be parsed whole, so past SCAN_LARGE the read is cut and the parse
+    // fails (falls through) rather than pulling a multi-GB capture into memory.
     let j;
     try {
-        j = JSON.parse(await file.text());
+        j = JSON.parse(await readText(file, SCAN_LARGE));
     }
     catch (_) {
         return null;
@@ -131,11 +133,11 @@ async function parseHar(file) {
 async function parseIpynb(file) {
     let j;
     try {
-        j = JSON.parse(await file.text());
+        j = JSON.parse(await readText(file, SCAN_LARGE));
     }
     catch (_) {
         return null;
-    }
+    } // capped like parseHar
     if (!Array.isArray(j.cells))
         return null;
     const out = { 'Format': 'Jupyter Notebook' };
@@ -162,8 +164,13 @@ async function parseIpynb(file) {
 }
 // ---------- JSON Lines / NDJSON ----------
 async function parseJsonl(file) {
-    const text = await file.text();
+    // Line-oriented, so a capped head still counts correctly up to the cap; the
+    // count gets a '+' when the file runs past it.
+    const cut = file.size > SCAN_MED;
+    const text = await readText(file, SCAN_MED);
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (cut)
+        lines.pop(); // the last line is probably cut mid-record
     let valid = 0;
     const keys = new Set();
     for (const l of lines.slice(0, 5000)) {
@@ -178,14 +185,15 @@ async function parseJsonl(file) {
     }
     return {
         'Format': 'JSON Lines / NDJSON',
-        'Records': lines.length,
+        'Records': lines.length + (cut ? '+ (first ' + fmtBytes(SCAN_MED) + ')' : ''),
         'Valid (first 5k)': valid,
         'Union keys': keys.size + (keys.size ? ': ' + Array.from(keys).slice(0, 20).join(', ') : ''),
     };
 }
 // ---------- Unified diff / patch ----------
 async function parseDiff(file) {
-    const text = await file.text();
+    const cut = file.size > SCAN_MED;
+    const text = await readText(file, SCAN_MED);
     const lines = text.split(/\r?\n/);
     const files = new Set();
     let add = 0, del = 0;
@@ -207,9 +215,10 @@ async function parseDiff(file) {
     }
     return {
         'Format': 'Unified diff / patch',
-        'Files changed': files.size,
+        'Files changed': files.size + (cut ? '+' : ''),
         'Additions': '+' + add,
         'Deletions': '-' + del,
+        ...(cut ? { 'Note': 'Counted over the first ' + fmtBytes(SCAN_MED) + ' of the patch.' } : {}),
         _sections: files.size ? [{ title: 'Files (' + files.size + ')', node: preBlock(Array.from(files).join('\n')) }] : null,
     };
 }
@@ -392,14 +401,36 @@ async function parseSql(file) {
     // Per-table schema: capture each CREATE TABLE name ( ... ) block, then split its
     // body on top-level commas and pull "<column> <type>" from each definition line
     // (skipping table-level constraints).
+    // The header is matched by regex, the body by walking to the MATCHING ')' with
+    // a bounded scan: a lazy `[\s\S]*?` body regex rescans to the end of the text
+    // for every unterminated CREATE TABLE, which is quadratic on a hostile dump.
     const tables = [];
-    const reTable = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"'\[]?([A-Za-z0-9_.]+)[`"'\]]?\s*\(([\s\S]*?)\)\s*(?:ENGINE|DEFAULT|;|WITHOUT|STRICT|AS\b)/gi;
-    let m;
-    while ((m = reTable.exec(text)) && tables.length < 300) {
+    const reTable = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"'\[]?([A-Za-z0-9_.]+)[`"'\]]?\s*\(/gi;
+    const reTail = /^\s*(?:ENGINE|DEFAULT|;|WITHOUT|STRICT|AS\b)/i;
+    const BODY_MAX = 32768;
+    let m, attempts = 0;
+    while ((m = reTable.exec(text)) && tables.length < 300 && attempts++ < 1000) {
+        const open = reTable.lastIndex;
+        let close = -1;
+        for (let i = open, d = 0, stop = Math.min(text.length, open + BODY_MAX); i < stop; i++) {
+            const c = text.charCodeAt(i);
+            if (c === 40)
+                d++;
+            else if (c === 41) {
+                if (d === 0) {
+                    close = i;
+                    break;
+                }
+                d--;
+            }
+        }
+        if (close < 0 || !reTail.test(text.slice(close + 1, close + 64)))
+            continue;
+        const body = text.slice(open, close);
         const name = m[1].replace(/^.*\./, '');
         let depth = 0, cur = '';
         const parts = [];
-        for (const ch of m[2]) {
+        for (const ch of body) {
             if (ch === '(')
                 depth++;
             else if (ch === ')')
@@ -447,7 +478,7 @@ async function parseSql(file) {
 }
 // ---------- Visual Studio solution ----------
 async function parseSln(file) {
-    const text = await file.text();
+    const text = await readText(file, SCAN_SMALL); // solutions are KBs; cap the read
     const ver = (text.match(/Format Version ([\d.]+)/) || [])[1];
     const projects = Array.from(text.matchAll(/^Project\("\{[^}]+\}"\)\s*=\s*"([^"]+)"/gm)).map((m) => m[1]);
     return {
@@ -459,7 +490,7 @@ async function parseSln(file) {
 }
 // ---------- .NET project ----------
 async function parseDotnetProj(file) {
-    const text = await file.text();
+    const text = await readText(file, SCAN_SMALL); // project files are KBs; cap the read
     const doc = new DOMParser().parseFromString(text, 'application/xml');
     if (doc.querySelector('parsererror'))
         return null;
@@ -1248,32 +1279,110 @@ async function parsePickle(file) {
     const globals = [];
     let scanned = 0;
     const cur = { i: 0 };
-    // Light opcode scan: record opcode frequency and capture GLOBAL imports.
+    // Opcode walk: every opcode's argument is skipped by its real encoding, so a
+    // '.' or 'c' byte inside a string or a length is never read as STOP / GLOBAL.
+    // The imports feed the security readout, so both spellings are recorded: the
+    // text GLOBAL/INST ('module\nname\n') and protocol 4+'s STACK_GLOBAL, which
+    // takes the module and name from the two values pushed before it - usually
+    // SHORT_BINUNICODE strings, or memo GETs of ones pushed earlier.
+    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    const line = () => {
+        let s = '';
+        while (cur.i < b.length && b[cur.i] !== 0x0a && s.length < 256)
+            s += String.fromCharCode(b[cur.i++]);
+        while (cur.i < b.length && b[cur.i] !== 0x0a)
+            cur.i++;
+        cur.i++;
+        return s;
+    };
+    const str = (n) => { const s = new TextDecoder('utf-8').decode(b.subarray(cur.i, Math.min(b.length, cur.i + Math.min(n, 256)))); cur.i += n; return s; };
+    const u32 = () => { const v = dv.getUint32(cur.i, true); cur.i += 4; return v; };
+    const u64 = () => { const v = Number(dv.getBigUint64(cur.i, true)); cur.i += 8; return v; };
+    const addGlobal = (g) => { if (globals.length < 60)
+        globals.push(g); };
+    // What the last two pushes were (a string, or null for anything else) and the
+    // memo, as far as strings go - enough to resolve STACK_GLOBAL's operands.
+    let prev = null, last = null;
+    const push = (v) => { prev = last; last = v; };
+    const memo = new Map();
+    let memoNext = 0;
+    const FIXED = {
+        0x4a: 4, 0x4b: 1, 0x4d: 2, 0x47: 8, 0x82: 1, 0x83: 2, 0x84: 4, // BININT*, BINFLOAT, EXT1/2/4
+    };
+    const NOARG = new Set([0x28, 0x30, 0x31, 0x32, 0x4e, 0x52, 0x5d, 0x61, 0x62, 0x64, 0x7d, 0x65, 0x6c, 0x29, 0x74,
+        0x73, 0x75, 0x6f, 0x81, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8f, 0x90, 0x91, 0x92, 0x97, 0x98]);
     try {
         while (cur.i < b.length && scanned < 50000) {
             const op = b[cur.i++];
             scanned++;
             const nm = PICKLE_OPS[op] || ('op 0x' + op.toString(16));
             opHist[nm] = (opHist[nm] || 0) + 1;
-            if (op === 0x63) { // GLOBAL: 'module\nname\n'
-                let s = '';
-                while (cur.i < b.length && b[cur.i] !== 0x0a)
-                    s += String.fromCharCode(b[cur.i++]);
-                cur.i++;
-                let nm2 = '';
-                while (cur.i < b.length && b[cur.i] !== 0x0a)
-                    nm2 += String.fromCharCode(b[cur.i++]);
-                cur.i++;
-                if (globals.length < 60)
-                    globals.push(s + '.' + nm2);
+            if (op === 0x63 || op === 0x69) { // GLOBAL / INST: 'module\nname\n'
+                const mod = line(), name = line();
+                addGlobal(mod + '.' + name);
+                push(null);
             }
-            else if (op === 0x2e)
-                break; // STOP
+            else if (op === 0x93) { // STACK_GLOBAL
+                addGlobal(prev != null && last != null ? prev + '.' + last : '(STACK_GLOBAL, operands not resolved)');
+                push(null);
+            }
+            else if (op === 0x2e) { // STOP - another pickle may follow (legacy torch)
+                if (b[cur.i] !== 0x80)
+                    break;
+                prev = last = null;
+            }
             else if (op === 0x80)
-                cur.i++; // PROTO arg
-            else if (op === 0x71 || op === 0x42)
-                cur.i++; // BINPUT / SHORT_BINBYTES-ish 1-byte arg
-            // (other opcodes' args are skipped implicitly; this is a histogram, not a VM)
+                cur.i++; // PROTO
+            else if (op === 0x95)
+                cur.i += 8; // FRAME
+            else if (op === 0x94)
+                memo.set(memoNext++, last); // MEMOIZE
+            else if (op === 0x70)
+                memo.set(parseInt(line(), 10), last); // PUT
+            else if (op === 0x71)
+                memo.set(b[cur.i++], last); // BINPUT
+            else if (op === 0x72)
+                memo.set(u32(), last); // LONG_BINPUT
+            else if (op === 0x67)
+                push(memo.get(parseInt(line(), 10)) ?? null); // GET
+            else if (op === 0x68)
+                push(memo.get(b[cur.i++]) ?? null); // BINGET
+            else if (op === 0x6a)
+                push(memo.get(u32()) ?? null); // LONG_BINGET
+            else if (op === 0x8c || op === 0x55)
+                push(str(b[cur.i++])); // SHORT_BINUNICODE / SHORT_BINSTRING
+            else if (op === 0x58 || op === 0x54)
+                push(str(u32())); // BINUNICODE / BINSTRING
+            else if (op === 0x8d)
+                push(str(u64())); // BINUNICODE8
+            else if (op === 0x56 || op === 0x53)
+                push(line().replace(/^'|'$/g, '')); // UNICODE / STRING (text)
+            else if (op === 0x49 || op === 0x4c || op === 0x46 || op === 0x50) {
+                line();
+                push(null);
+            } // INT/LONG/FLOAT/PERSID
+            else if (op === 0x43 || op === 0x8a) {
+                cur.i += 1 + b[cur.i];
+                push(null);
+            } // SHORT_BINBYTES / LONG1
+            else if (op === 0x42 || op === 0x8b) {
+                const n = u32();
+                cur.i += n;
+                push(null);
+            } // BINBYTES / LONG4
+            else if (op === 0x8e || op === 0x96) {
+                const n = u64();
+                cur.i += n;
+                push(null);
+            } // BINBYTES8 / BYTEARRAY8
+            else if (FIXED[op] != null) {
+                cur.i += FIXED[op];
+                push(null);
+            }
+            else if (NOARG.has(op))
+                push(null);
+            else
+                break; // not a pickle opcode: stop rather than guess
         }
     }
     catch (_) { }
@@ -2071,9 +2180,16 @@ async function parseNativeBinary(file, ext) {
     const be = dv.getUint32(0, false);
     const label = ext === 'dylib' ? 'macOS dynamic library (.dylib)' : 'Native add-on module (.node)';
     const out = { 'Format': label };
-    if (be === 0xFEEDFACE || be === 0xFEEDFACF) { // thin Mach-O (BE magic written LE)
-        out['Container'] = 'Mach-O (' + (be === 0xFEEDFACF ? '64-bit' : '32-bit') + ')';
-        const cpu = dv.getUint32(4, true);
+    const le = dv.getUint32(0, true);
+    // Thin Mach-O: the magic is written in the file's own byte order - CF FA ED FE on
+    // disk for little-endian (x86, ARM), FE ED FA CF for big-endian (PowerPC) - and
+    // cputype follows the same order.
+    const machoLE = le === 0xFEEDFACE || le === 0xFEEDFACF;
+    const machoBE = be === 0xFEEDFACE || be === 0xFEEDFACF;
+    if (machoLE || machoBE) {
+        const magic = machoLE ? le : be;
+        out['Container'] = 'Mach-O (' + (magic === 0xFEEDFACF ? '64-bit' : '32-bit') + ')';
+        const cpu = dv.getUint32(4, machoLE);
         if (MACHO_CPU[cpu])
             out['Architecture'] = MACHO_CPU[cpu];
         out['Platform'] = 'macOS';
@@ -2132,7 +2248,7 @@ async function parseGitRev(file) {
 // Walk the declarations and surface interfaces, coclasses, the type library and
 // the import list. The text itself is shown by the parse:'text' source preview.
 async function parseIdl(file) {
-    const text = (await file.text()).slice(0, 2_000_000);
+    const text = await readText(file, 2_000_000); // slice first: file.text() read the whole file
     if (!/\b(interface|coclass|library|dispinterface|import|importlib|module|typedef)\b/.test(text))
         return null;
     const names = (re) => [...text.matchAll(re)].map((m) => m[1]);
@@ -2171,7 +2287,7 @@ async function parseIdl(file) {
 // from the <%@ Language %> directive or <script runat=server>. Distinct from the
 // .NET .aspx page already handled.
 async function parseAsp(file) {
-    const text = (await file.text()).slice(0, 2_000_000);
+    const text = await readText(file, 2_000_000); // slice first: file.text() read the whole file
     const codeBlocks = (text.match(/<%[^@=]/g) || []).length;
     const exprBlocks = (text.match(/<%=/g) || []).length;
     const serverScripts = [...text.matchAll(/<script[^>]*runat\s*=\s*["']?server/gi)].length;
@@ -2202,7 +2318,7 @@ async function parseAsp(file) {
 // ---------- pkg-config (.pc) ----------
 // The metadata file pkg-config reads to emit compiler/linker flags for a library.
 async function parsePkgConfig(file) {
-    const text = (await file.text()).slice(0, 200_000);
+    const text = await readText(file, 200_000); // slice first: file.text() read the whole file
     if (!/^\s*(Name|Description|Version|Cflags|Libs)\s*:/mi.test(text))
         return null;
     const field = (k) => { const m = text.match(new RegExp('^\\s*' + k + '\\s*:\\s*(.+)$', 'mi')); return m ? m[1].trim() : null; };
@@ -2221,7 +2337,7 @@ async function parsePkgConfig(file) {
 // The Nintendo DS emulator's GLSL ES shader bundle: <vertex> and <fragment>
 // sections wrapping shader source. (Unrelated to DSD audio, which is .dsf/.dff.)
 async function parseDsdShader(file) {
-    const text = (await file.text()).slice(0, 500_000);
+    const text = await readText(file, 500_000); // slice first: file.text() read the whole file
     const hasV = /<vertex>/i.test(text), hasF = /<fragment>/i.test(text);
     if (!hasV && !hasF)
         return null;
@@ -2248,7 +2364,7 @@ async function parseDsdShader(file) {
 // time (CMake configure, Meson, autotools, CI templates). Surfaces the engine
 // (Meson recognised by its project() call) and the placeholders it expects.
 async function parseTemplate(file) {
-    const text = (await file.text()).slice(0, 500_000);
+    const text = await readText(file, 500_000); // slice first: file.text() read the whole file
     const ph = [...new Set([...text.matchAll(/\$\{(\w+)\}|@(\w+)@/g)].map((m) => m[1] || m[2]))];
     const isMeson = /\bproject\s*\(/.test(text) && /\bmeson|get_compiler|dependency\b/.test(text);
     const isCMake = /@\w+@/.test(text) && /cmake/i.test(text);

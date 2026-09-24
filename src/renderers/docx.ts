@@ -205,16 +205,23 @@ function renderDocumentXml(xmlStr: string, imageMap: any) {
 // Build a map of relationship-id → blob URL for every embedded raster image
 // referenced by the document. Relationship targets in word/_rels/document.xml.rels
 // are relative to word/.
-// Object URLs minted for embedded images. They are global and used later as <img>
-// srcs elsewhere in the render, so they can't be revoked on load; track them and
-// free the previous document's set when a new document is opened.
-const _docxImageUrls = new Set<string>();
-function revokeDocxImageUrls() {
-  for (const u of _docxImageUrls) { try { URL.revokeObjectURL(u); } catch (_) {} }
-  _docxImageUrls.clear();
+// Object URLs minted for embedded images. They are used later as <img> srcs
+// elsewhere in the render, so they can't be revoked on load; track them per
+// container and free a set when a new document renders into the same container,
+// or once its container has left the page. Per container, not module-wide:
+// /compare renders two documents side by side, and B's render must not revoke
+// the images A is still lazily loading.
+const _docxRenders: { el: HTMLElement; urls: Set<string> }[] = [];
+function revokeDocxImageUrls(container: HTMLElement) {
+  for (let i = _docxRenders.length - 1; i >= 0; i--) {
+    const r = _docxRenders[i];
+    if (r.el !== container && r.el.isConnected) continue;
+    _docxRenders.splice(i, 1);
+    for (const u of r.urls) { try { URL.revokeObjectURL(u); } catch (_) {} }
+  }
 }
 
-async function buildImageMap(zip: any) {
+async function buildImageMap(zip: any, urls: Set<string>) {
   const map: any = {};
   if (!zip.has('word/_rels/document.xml.rels')) return map;
   const relsXml = await zip.text('word/_rels/document.xml.rels');
@@ -236,7 +243,7 @@ async function buildImageMap(zip: any) {
       if (bytes) {
         const ext = (path.match(/\.(\w+)$/) || [, 'png'])[1].toLowerCase();
         const url = URL.createObjectURL(new Blob([bytes], { type: 'image/' + (ext === 'jpg' ? 'jpeg' : ext) }));
-        _docxImageUrls.add(url);
+        urls.add(url);
         map[id] = url;
       }
     } catch (_) { /* skip unreadable entry */ }
@@ -488,7 +495,9 @@ async function buildCollabCard(zip: any) {
 export async function renderDocx(file: File, container: HTMLElement) {
   container.hidden = false;
   container.innerHTML = '';
-  revokeDocxImageUrls();   // free the previous document's embedded-image object URLs
+  revokeDocxImageUrls(container);   // free earlier documents' embedded-image object URLs
+  const imageUrls = new Set<string>();
+  _docxRenders.push({ el: container, urls: imageUrls });
   // Ghost sheets rather than a bare "Reading document…" line: unzipping, decoding
   // the images and laying the flow onto pages all happen before a single real
   // page exists, and the placeholder shows where they will land.
@@ -537,7 +546,7 @@ export async function renderDocx(file: File, container: HTMLElement) {
       if (collab) container.appendChild(collab);
     } catch (_) { /* never block document rendering */ }
 
-    const imageMap = await buildImageMap(zip);
+    const imageMap = await buildImageMap(zip, imageUrls);
 
     // Render the document body, then lay it out onto page sheets (the PDF-style
     // "Page previews" presentation). textContent must be read before paginating,

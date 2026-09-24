@@ -245,6 +245,13 @@ export function launchAsteroids() {
     function onVis() { paused = document.hidden; if (!paused)
         last = performance.now(); }
     document.addEventListener('visibilitychange', onVis);
+    // Leaving the page must end the game. The SPA router swaps only .site-main, so
+    // without this the fullscreen overlay, its rAF loop and its capture-phase key
+    // handlers would outlive the navigation (and keep swallowing keys on the next
+    // page). popstate covers Back/Forward; anr:navigate every SPA page swap.
+    function onLeave() { teardown(); }
+    window.addEventListener('popstate', onLeave);
+    window.addEventListener('anr:navigate', onLeave);
     // Open on the splash screen now that every control exists (so it can hide them and the
     // pause button until the player presses Play).
     showSplash();
@@ -583,6 +590,8 @@ export function launchAsteroids() {
         if (window.visualViewport)
             window.visualViewport.removeEventListener('resize', onResize);
         document.removeEventListener('visibilitychange', onVis);
+        window.removeEventListener('popstate', onLeave);
+        window.removeEventListener('anr:navigate', onLeave);
         if (g.sbAsteroidHold) {
             clearTimeout(g.sbAsteroidHold);
             clearInterval(g.sbAsteroidHold);

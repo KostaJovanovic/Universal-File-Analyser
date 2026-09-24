@@ -219,8 +219,15 @@ function dxfToSvg(entities: any[]) {
     } else if (t === 'ARC' && e.xs.length) {
       const r = parseFloat(e.codes[40]) || 0;
       const a0 = (parseFloat(e.codes[50]) || 0) * Math.PI / 180, a1 = (parseFloat(e.codes[51]) || 0) * Math.PI / 180;
-      let sweep = a1 - a0; while (sweep <= 0) sweep += Math.PI * 2;
-      const steps = Math.max(6, Math.ceil(sweep / (Math.PI / 18)));
+      // Angles are the file's: a non-finite one is skipped, and the sweep is
+      // normalised by modulo rather than a loop (1e30 degrees would never finish
+      // adding 2 pi, and a huge positive sweep would ask for billions of steps).
+      // An equal start and end is a full circle, as before.
+      if (!Number.isFinite(a0) || !Number.isFinite(a1)) continue;
+      const TAU = Math.PI * 2;
+      let sweep = ((a1 - a0) % TAU + TAU) % TAU;
+      if (!(sweep > 0)) sweep = TAU;
+      const steps = Math.max(6, Math.ceil(sweep / (Math.PI / 18)));   // at most 36: sweep <= 2 pi
       const pts = [];
       for (let s = 0; s <= steps; s++) { const a = a0 + sweep * (s / steps); const x = e.xs[0] + r * Math.cos(a), y = e.ys[0] + r * Math.sin(a); see(x, y); pts.push(x + ',' + Y(y)); }
       draw.push('<polyline points="' + pts.join(' ') + '" class="anr-dxf-line"/>');

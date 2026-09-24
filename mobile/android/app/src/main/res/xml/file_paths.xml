@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The only file this app hands out through its FileProvider is the photo
+     Capacitor's BridgeWebChromeClient asks the camera to write, when a file
+     input offers "take a photo": File.createTempFile in
+     getExternalFilesDir(Environment.DIRECTORY_PICTURES). Nothing else - the
+     cache (WebView data, anr-stage, ffmpeg sessions, the update APK) and shared
+     storage are deliberately not listed. The update installs through a
+     PackageInstaller session, not a content URI. -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="my_images" path="." />
-    <cache-path name="my_cache_images" path="." />
+    <external-files-path name="camera_photos" path="Pictures/" />
 </paths>
