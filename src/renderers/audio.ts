@@ -2776,14 +2776,19 @@ function buildCoverArtCard(art: any, file: File, resultsEl?: HTMLElement) {
   }
   // Lazy-load the photo module (kept out of the audio bundle) only when there is
   // actually cover art to analyse, then render into the slot chosen above.
-  import('./photo.js').then(({ renderPhoto, revealPhotoSection }) => {
+  import('./photo.js').then(({ renderPhoto, mountPhotoPrompt }) => {
     if (inlineSlot) { renderPhoto(artFile, inlineSlot, { inline: true, sourceNote: note }); return; }
-    const photoResults = revealPhotoSection();
-    if (photoResults) renderPhoto(artFile, photoResults, { sourceNote: note });
+    // The page's Photo area: offer the cover as a prompt box at the foot of the
+    // analysis rather than running a second full analysis unasked.
+    mountPhotoPrompt('Cover art',
+      'This file carries an embedded cover picture. Analyse it with the photo tools - colours, dimensions, EXIF and the rest.',
+      'Analyse cover art', (host) => { renderPhoto(artFile, host, { sourceNote: note }); });
   }).catch(() => {});
 
   const labelCard = el('div', { class: 'anr-card' });
-  const [artH, artHelp] = h3help('Embedded cover art', 'The picture stored inside this file’s metadata. It is shown and analysed in full in the Photo section.');
+  const [artH, artHelp] = h3help('Embedded cover art', inlineSlot
+    ? 'The picture stored inside this file’s metadata. It is shown and analysed in full below.'
+    : 'The picture stored inside this file’s metadata. The Cover art box at the end of the analysis opens it in the photo tools.');
   labelCard.appendChild(artH);
   labelCard.appendChild(artHelp);
   labelCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' },

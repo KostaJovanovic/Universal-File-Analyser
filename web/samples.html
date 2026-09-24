@@ -132,13 +132,14 @@
   <button type="button" id="anrBackBar" class="anr-back-bar" hidden><span class="anr-back-arrow" aria-hidden="true">&larr;</span> Back to <span class="anr-back-label"></span></button>
 
   <!-- Analyser result scaffold - shared with index.html so a clicked sample
-       renders inline through the normal handleFile pipeline. The three media
-       sections start hidden; handleFile reveals the right one when a
-       photo/audio/video sample is analysed (non-media samples land in
-       #unknownResults). -->
+       renders inline through the normal handleFile pipeline. It is the same
+       result stack as the main page's: a section shows only while it holds a
+       result (MAIN PAGE REDESIGN in analyser.css), and handleFile moves the
+       analysed one to the front. Non-media samples land in #unknownResults. -->
+  <div class="anr-stack" id="anrStack">
   <div id="unknownResults" class="anr-results anr-unknown-results" hidden></div>
 
-  <section id="photo" class="section" hidden>
+  <section id="photo" class="section">
     <div class="grid">
       <aside class="section-meta">
         <span class="section-num">01</span>
@@ -156,7 +157,7 @@
     </div>
   </section>
 
-  <section id="audio" class="section" hidden>
+  <section id="audio" class="section">
     <div class="grid">
       <aside class="section-meta">
         <span class="section-num">02</span>
@@ -171,7 +172,7 @@
     </div>
   </section>
 
-  <section id="video" class="section" hidden>
+  <section id="video" class="section">
     <div class="grid">
       <aside class="section-meta">
         <span class="section-num">03</span>
@@ -186,6 +187,7 @@
       </div>
     </div>
   </section>
+  </div>
 
   <!-- Post-analysis link to the analysed extension's own /formats guide page.
        Filled + revealed by handleFile() in app.js. -->

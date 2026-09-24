@@ -113,7 +113,8 @@ can expand into prose. British spelling, no em-dashes (site house style).
   vectorscope.
 - **Tags** - ID3, Vorbis comments and MP4 atoms: title, artist, album, year,
   genre, track, composer, publisher, comment, BPM, ISRC, copyright, lyrics, etc.
-- **Embedded cover art** - extracted and sent to the full photo analyser.
+- **Embedded cover art** - extracted, and offered to the full photo analyser as a
+  box at the end of the analysis.
 - **Reverse audio** - plays it backwards and lets you download the reversed WAV.
 - **Codec-specific deep dives** - MP3 (Xing/VBRI/LAME frame info, encoder), FLAC
   (raw-audio MD5, compression ratio), WAV (PCM details), AAC (ADTS handling).
@@ -533,8 +534,12 @@ can expand into prose. British spelling, no em-dashes (site house style).
 - **Smooth SPA navigation** - pages (about, patch notes, formats, stats, privacy)
   swap using the View Transitions API instead of a hard reload.
 - **Fully responsive** - dropzones, search and overlays adapt to phones and touch.
-- **Navigation helpers** - sticky back bar, "scroll to data" button, and in-page
-  section tabs (Photo/Sound/Video) that grey out when not relevant.
+- **Navigation helpers** - a sticky back bar, and Export data and Analyse next
+  under the dropzones. After a drop the header folds down to a slim sticky bar -
+  the kicker, the description and the meta rail fade out and the wordmark
+  shrinks, leaving the page links with search at their right - and extra analyses
+  (a video's sound and frames, a cover, an icon) wait as boxes at the end of the
+  analysis until you click them.
 
 ## Public stats page
 

@@ -158,7 +158,7 @@ as a full photo (EXIF-less, since it's a grabbed frame, but the same
 histogram/OCR/etc. pipeline).
 
 **How to reach it.** **Prev frame**/**Next frame** step through frames;
-**Analyse frame** (also **Analyse in Photo section** in alternate flows)
+**Analyse frame** (also **Analyse as a photo** in alternate flows)
 sends the current frame to the full photo analyser (`renderPhoto` via
 `photo.js`). Built in `video.js`.
 

@@ -2941,10 +2941,10 @@ function buildContainerCard(container) {
     return card;
 }
 // ---------- main render ----------
-// Reveal the dedicated Photo section and re-enable its nav tab, so an image
-// extracted from a non-photo file (audio cover art, an EPUB cover, a PDF page)
+// Reveal the dedicated Photo area, so an image extracted from a non-photo file
+// (a video frame, a PDF page, or a cover or icon offered by mountPhotoPrompt)
 // can be analysed there instead of inline. Returns the #photoResults container
-// (or null if the page has no photo section). The caller then renders into it.
+// (or null if the page has no Photo area). The caller then renders into it.
 export function revealPhotoSection() {
     const photoResults = document.getElementById('photoResults');
     const photoSection = document.getElementById('photo');
@@ -2952,10 +2952,34 @@ export function revealPhotoSection() {
         photoSection.hidden = false;
     if (photoResults)
         photoResults.hidden = false;
-    const navLink = document.querySelector('.site-nav a[href="#photo"]');
-    if (navLink)
-        navLink.classList.remove('is-disabled');
     return photoResults;
+}
+// Offer an image to the photo tools without analysing it yet: a prompt box in
+// the Photo area, which the result stack puts at the foot of the analysis. A
+// click removes the box, brings the area into view and runs `run` into it. The
+// markup matches video.ts's "Analyse audio" prompt, which the compare merge
+// recognises by its .anr-btn--cta button. Returns null on a page with no Photo
+// area (the compare view), so the caller can fall back to rendering inline.
+export function mountPhotoPrompt(title, text, label, run) {
+    const host = revealPhotoSection();
+    if (!host)
+        return null;
+    const card = el('div', { class: 'anr-card anr-prompt-card' });
+    card.appendChild(el('h3', {}, title));
+    card.appendChild(el('p', { class: 'anr-info' }, text));
+    const btn = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, label);
+    card.appendChild(btn);
+    host.appendChild(card);
+    btn.addEventListener('click', () => {
+        // Emptied, not removed: the home page only draws a section that holds a
+        // result, so an empty host between the click and the render would hide the
+        // section out from under the scroll below. It goes once run() settles.
+        card.innerHTML = '';
+        card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' }, 'Analysing…'));
+        (host.closest('.section') || host).scrollIntoView({ behavior: 'smooth', block: 'start' });
+        Promise.resolve(run(host)).catch(() => { }).finally(() => { card.remove(); });
+    });
+    return card;
 }
 // Build an animated-image frame viewer: a still-canvas stage plus the site's
 // stylised transport (play / draggable scrub / time), Prev/Next stepping, and

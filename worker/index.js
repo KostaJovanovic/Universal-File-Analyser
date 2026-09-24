@@ -368,6 +368,24 @@ async function handleLeaderboard(env) {
 const LEGACY_HOST = 'lab.valjdakosta.com';
 const CANONICAL_HOST = 'analyser.valjdakosta.com';
 
+// A format page lives at /formats/<ext> (full analysis) or /formats/id/<ext>
+// (identification only), so promoting a format from id to full moves its URL and
+// the old one - still in Google's index from an earlier sitemap - 404s. When a
+// format URL misses, try the same extension on the other tier and 301 there if it
+// exists. Runs only after a 404, so a normal page request pays nothing, and it
+// needs no list of moved formats: every past and future promotion (or demotion)
+// is covered by what is actually deployed.
+const FORMAT_PAGE = /^\/formats\/(id\/)?([^/]+?)(?:\.html)?\/?$/;
+
+async function movedFormatPage(env, url) {
+  const m = url.pathname.match(FORMAT_PAGE);
+  if (!m) return null;
+  const moved = new URL(url);
+  moved.pathname = (m[1] ? '/formats/' : '/formats/id/') + m[2];
+  const probe = await env.ASSETS.fetch(new Request(moved.toString(), { method: 'HEAD' }));
+  return probe.status === 200 ? Response.redirect(moved.toString(), 301) : null;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -389,7 +407,13 @@ export default {
     // Everything that isn't an API call is a page/asset (or an SPA deep link) -
     // hand it straight back to the assets system, which applies the same
     // clean-URL + single-page-application fallback as a Worker-less deploy.
-    if (!path.startsWith('/api/')) return env.ASSETS.fetch(request);
+    if (!path.startsWith('/api/')) {
+      const res = await env.ASSETS.fetch(request);
+      if (res.status === 404 && path.startsWith('/formats/')) {
+        return (await movedFormatPage(env, url)) || res;
+      }
+      return res;
+    }
 
     try {
       if (path === '/api/visit' && request.method === 'POST') return await handleVisit(request, env);

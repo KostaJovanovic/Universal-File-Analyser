@@ -22,7 +22,7 @@ Stripping it is the **Remove metadata** control on the same card
 removed - pixels and colour profile untouched.
 
 **How to reach it.** Drop any recognised photo extension (JPEG, PNG, HEIC,
-RAW, etc.) - the metadata table appears automatically in the Photo section.
+RAW, etc.) - the metadata table appears automatically in the analysis.
 Built in `web/assets/js/renderers/photo.js` via `buildExifSections()`, using
 the vendored **exifr** library.
 

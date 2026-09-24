@@ -251,7 +251,7 @@ The menus are drawn to match the site rather than popped from the system, and
 they carry the same shortcuts as before. The window controls use the system
 glyphs, from the icon font every native Windows title bar draws, so they sit at
 the weight and size you expect. Drag anywhere on the bar to move the window, and
-double-click it to maximise.
+double-click it to maximise. Click the wordmark to reload the app.
 
 Narrow the window and the bar sheds what it can spare, in order: the section
 name, then the wordmark, then the arrows, then the file name. The window

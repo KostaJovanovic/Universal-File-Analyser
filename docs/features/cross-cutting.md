@@ -99,7 +99,8 @@ flat Section/Group/Field/Value sheet (text blobs like hex dumps/OCR text
 are capped at 5000 chars; images become placeholder rows since a CSV can't
 hold them).
 
-**How to reach it.** Click **Export data** (next to "Analyse next file?").
+**How to reach it.** Click **Export data** in the action row under the
+dropzones, next to **Analyse next file?**.
 Built in `export-data.js`.
 
 ```demo
@@ -127,7 +128,8 @@ leaves the browser.
 as you type, with synonym expansion and prev/next navigation between
 matches.
 
-**How to reach it.** The search box in the sticky nav (desktop: inline
+**How to reach it.** The search button at the right of the header's page
+links, which appears once a file is loaded (desktop: inline
 arrows; mobile: a dedicated full-screen overlay with its own prev/next/
 close controls). Built in `search.js`'s `initSearch()`.
 

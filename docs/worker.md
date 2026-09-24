@@ -29,10 +29,16 @@ engineers touching `/stats`, `/atari`, or the visitor/analysed-file counters.
   like `.pdf`, or `nuke`). One row per identity (`iphash`+`name`, unique
   index), keeping only each player's best score via an atomic upsert.
 
-Five endpoints, all under `/api/*` (everything else is handed straight back
-to `env.ASSETS.fetch(request)`, i.e. the static site, since a Worker +
-static-assets deploy only invokes the Worker for paths with no matching
-asset):
+`run_worker_first` routes every request except `/assets/*` through the
+Worker, which hands everything outside `/api/*` back to
+`env.ASSETS.fetch(request)`, i.e. the static site. Two things happen on the
+way: the legacy `lab.valjdakosta.com` host gets a 307 to the canonical host,
+and a `/formats/...` page that 404s gets a 301 to the same extension on the
+other tier when that page exists. Promoting a format from identification to
+full analysis moves it from `/formats/id/<ext>` to `/formats/<ext>`, and the
+redirect keeps the old URL that search engines already indexed working.
+
+Five endpoints, all under `/api/*`:
 
 | Endpoint | Method | Does |
 |---|---|---|

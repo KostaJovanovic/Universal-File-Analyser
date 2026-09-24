@@ -93,7 +93,7 @@
 <section class="docs-card">
 <h3 id="export-analysis-data">Export analysis data<a class="h-anchor" href="#export-analysis-data" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Exports everything currently on the page (every metadata table, plus visuals) in one of four formats: <strong>Complete report (HTML)</strong> - a single self-contained file with every table inline and visuals (spectrogram, histogram, previews, maps) embedded as base64 images, opens in any browser, works offline; <strong>PDF (print)</strong> - opens that same report in a new tab and launches the browser's print dialog ("Save as PDF"); <strong>JSON</strong> - every field/table/text block, typed and grouped by section; <strong>CSV</strong> - a flat Section/Group/Field/Value sheet (text blobs like hex dumps/OCR text are capped at 5000 chars; images become placeholder rows since a CSV can't hold them).</p>
-<p><strong>How to reach it.</strong> Click <strong>Export data</strong> (next to "Analyse next file?"). Built in <code>export-data.js</code>.</p>
+<p><strong>How to reach it.</strong> Click <strong>Export data</strong> in the action row under the dropzones, next to <strong>Analyse next file?</strong>. Built in <code>export-data.js</code>.</p>
 <div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Export data</button></div></div></div>
 <p>It offers four export formats:</p>
 <div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Complete report (HTML)</button><button type="button" class="anr-btn">PDF (print)</button><button type="button" class="anr-btn">JSON</button><button type="button" class="anr-btn">CSV</button></div></div></div>
@@ -102,7 +102,7 @@
 <section class="docs-card">
 <h3 id="in-page-metadata-search">In-page metadata search<a class="h-anchor" href="#in-page-metadata-search" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Highlights matching cards/rows across all result panels as you type, with synonym expansion and prev/next navigation between matches.</p>
-<p><strong>How to reach it.</strong> The search box in the sticky nav (desktop: inline arrows; mobile: a dedicated full-screen overlay with its own prev/next/ close controls). Built in <code>search.js</code>'s <code>initSearch()</code>.</p>
+<p><strong>How to reach it.</strong> The search button at the right of the header's page links, which appears once a file is loaded (desktop: inline arrows; mobile: a dedicated full-screen overlay with its own prev/next/ close controls). Built in <code>search.js</code>'s <code>initSearch()</code>.</p>
 <p><strong>Notes / limits.</strong> Re-initialises on every SPA navigation, tearing down the previous run's mobile overlay and resize listener first so neither accumulates duplicates across page swaps.</p>
 </section>
 <section class="docs-card">

@@ -945,10 +945,10 @@
         <h2 class="section-head" id="window">Window chrome.</h2>
         <p class="section-lede">Desktop app only. The Electron window is frameless off macOS and draws its own title bar (desktop/chrome/titlebar.js). It is not part of the site: the bar is the window's own document and the app runs in a view parked below it, which is what gives the app an ordinary full viewport with nothing reserved at the top. Nothing on the website carries these classes. The demos below are pinned into the flow; in the app the bar is fixed to the window edge.</p>
         <div class="about-block">
-          <div class="tst-sub">Title bar (.anr-titlebar), focused. Wordmark, the drawn menu bar, back/forward, then the section and the open file, and the window controls on the right. The whole bar is a drag region and every button opts out of it.</div>
+          <div class="tst-sub">Title bar (.anr-titlebar), focused. Wordmark (a button that reloads the app), the drawn menu bar, back/forward, then the section and the open file, and the window controls on the right. The whole bar is a drag region and every button opts out of it.</div>
           <div class="tst-fixwrap">
             <div class="anr-titlebar">
-              <div class="anr-tb-brand">Analyser</div>
+              <button type="button" class="anr-tb-btn anr-tb-brand" title="Reload Analyser" aria-label="Reload Analyser">Analyser</button>
               <div class="anr-tb-menubar"><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">File</button></div><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">View</button></div><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">Go</button></div><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">Help</button></div></div>
               <div class="anr-tb-nav"><button type="button" class="anr-tb-btn anr-tb-back" title="Back" aria-label="Back" disabled><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M7.5 1.5 3 6l4.5 4.5"/></svg></button><button type="button" class="anr-tb-btn anr-tb-fwd" title="Forward" aria-label="Forward" disabled><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M4.5 1.5 9 6l-4.5 4.5"/></svg></button></div>
               <div class="anr-tb-sub"><span class="anr-tb-section">Home</span><span class="anr-tb-file" hidden></span></div>
@@ -965,7 +965,7 @@
           <div class="tst-sub">Analysing a file, with history behind it: the open file's name sits after the section, and back is live. Unfocused (.is-unfocused - the bar recedes to muted rather than changing shape) and maximised (.is-max on the maximise button swaps in the restore glyph).</div>
           <div class="tst-fixwrap">
             <div class="anr-titlebar is-unfocused">
-              <div class="anr-tb-brand">Analyser</div>
+              <button type="button" class="anr-tb-btn anr-tb-brand" title="Reload Analyser" aria-label="Reload Analyser">Analyser</button>
               <div class="anr-tb-menubar"><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">File</button></div><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">View</button></div><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">Go</button></div><div class="anr-tb-menu"><button type="button" class="anr-tb-btn anr-tb-menu-title">Help</button></div></div>
               <div class="anr-tb-nav"><button type="button" class="anr-tb-btn anr-tb-back" title="Back" aria-label="Back"><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M7.5 1.5 3 6l4.5 4.5"/></svg></button><button type="button" class="anr-tb-btn anr-tb-fwd" title="Forward" aria-label="Forward" disabled><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M4.5 1.5 9 6l-4.5 4.5"/></svg></button></div>
               <div class="anr-tb-sub"><span class="anr-tb-section">Home</span><span class="anr-tb-file">DSC_4417.NEF</span></div>
@@ -981,7 +981,7 @@
           <div class="tst-sub">A menu open (.anr-tb-menu.is-open + .anr-tb-panel). Drawn by the app rather than popped from the OS, so it is the site's type, hairlines and square corners. The tree has one definition, in desktop/menu.mjs.</div>
           <div class="tst-fixwrap" style="padding-bottom:190px">
             <div class="anr-titlebar">
-              <div class="anr-tb-brand">Analyser</div>
+              <button type="button" class="anr-tb-btn anr-tb-brand" title="Reload Analyser" aria-label="Reload Analyser">Analyser</button>
               <div class="anr-tb-menubar">
                 <div class="anr-tb-menu is-open">
                   <button type="button" class="anr-tb-btn anr-tb-menu-title">File</button>
