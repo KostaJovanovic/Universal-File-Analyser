@@ -534,10 +534,16 @@ can expand into prose. British spelling, no em-dashes (site house style).
 - **Smooth SPA navigation** - pages (about, patch notes, formats, stats, privacy)
   swap using the View Transitions API instead of a hard reload.
 - **Fully responsive** - dropzones, search and overlays adapt to phones and touch.
+  On a touch screen the page scrollbar is the site's own: a square bar at the
+  right edge that shows while you scroll and can be dragged.
 - **Navigation helpers** - a sticky back bar, and Export data and Analyse next
-  under the dropzones. After a drop the header folds down to a slim sticky bar -
-  the kicker, the description and the meta rail fade out and the wordmark
-  shrinks, leaving the page links with search at their right - and extra analyses
+  under the dropzones. After a drop the header and the page glide up as if
+  scrolled, and the header drops back in as a slim bar at the top edge - the page
+  links and search on the left, the wordmark at the right end. On a narrow screen
+  the links fold into a Menu button that drops a panel of equal-width buttons
+  under the bar, with Home and Get App kept out beside it. Analyse next plays
+  it back: the analysis fades, and the header glides down with the dropzones
+  under it. Extra analyses
   (a video's sound and frames, a cover, an icon) wait as boxes at the end of the
   analysis until you click them.
 
