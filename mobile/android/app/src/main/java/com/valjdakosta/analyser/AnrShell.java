@@ -87,6 +87,14 @@ public class AnrShell extends Plugin {
         Context ctx = getContext();
         AnrBytes.clearStage(ctx);
 
+        // A newer release, or none: the page turns its Get App chip into Update
+        // (core/popups.ts). Retained, so a page not listening yet still gets it.
+        AnrUpdate.setListener((version) -> {
+            JSObject o = new JSObject();
+            o.put("version", version);
+            notifyListeners("update", o, true);
+        });
+
         AnrWebViewClient client = new AnrWebViewClient(bridge, new AnrRouter(ctx.getAssets()), ctx);
         bridge.setWebViewClient(client);
         // sw.js fetches pages to precache them. Its requests skip the WebView
@@ -459,6 +467,25 @@ public class AnrShell extends Plugin {
     public void checkUpdates(PluginCall call) {
         Activity activity = getActivity();
         if (activity != null) AnrUpdate.checkNow(activity);
+        call.resolve();
+    }
+
+    /** The version the header's Update chip offers, or "" for none. The "update"
+     *  event says the same; this is for a page that loads after it fired. */
+    @PluginMethod
+    public void updateOffer(PluginCall call) {
+        JSObject o = new JSObject();
+        o.put("version", AnrUpdate.offeredVersion());
+        call.resolve(o);
+    }
+
+    /** The header's Update chip was tapped. AnrUpdate asks once (size, and that
+     *  Analyser closes), then downloads and installs. It only ever offers the
+     *  release its own check found, so the page cannot name a file. */
+    @PluginMethod
+    public void installUpdate(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity != null) AnrUpdate.offerPending(activity);
         call.resolve();
     }
 

@@ -94,15 +94,23 @@ Every build is on one page, the
 [latest release](https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest)
 on GitHub. The [download page](download.md) says which file to pick.
 
-The app looks for a new version 20 seconds after it starts, then every six
-hours. **Help > Check for updates** looks at once. What happens next depends on
-the copy you run:
+The app looks for a new version 20 seconds after it starts, and then once a
+day. **Help > Check for updates** and the **Check for updates** button in the
+footer look at once. The app never opens a message about updates. It shows the
+answer on a green **Update** button at the right of the title bar, next to the
+window buttons, and the button shows only while there is something to say.
+Point at it to read the whole sentence. What a press does depends on the copy
+you run:
 
-| Copy | When a new version is out |
+| Copy | A press on Update |
 |---|---|
-| Windows, installed | It downloads in the background and installs when you quit. A message offers to restart at once |
+| Windows, installed | Downloads the new version, with the button counting the percentage, then restarts into it |
 | Linux AppImage | The same |
-| Windows portable copy, macOS | A message offers to open the download page |
+| Windows portable copy, macOS | Opens the download page |
+
+If a download or a check fails, the button reads **Retry update**, and a press
+tries again. A check that fails on its own, for example while you are offline,
+shows nothing and tries again later.
 
 The copies in the last row cannot replace themselves. For a portable copy, run
 the new Windows file, choose **Portable copy** and pick the same folder. macOS

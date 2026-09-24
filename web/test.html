@@ -256,6 +256,8 @@
 <div class="tst-anim"><span class="tst-anim-box" style="animation:anr-altium-ping 1.8s linear infinite"></span><code>anr-altium-ping</code></div>
 <div class="tst-anim"><span class="tst-anim-box" style="animation:anr-ghost-sweep 1.8s linear infinite"></span><code>anr-ghost-sweep</code></div>
 <div class="tst-anim"><span class="tst-anim-box" style="animation:sample-more-reveal 1.8s linear infinite"></span><code>sample-more-reveal</code></div>
+<div class="tst-anim"><span class="tst-anim-box" style="animation:anr-tb-panel-drop 1.8s linear infinite"></span><code>anr-tb-panel-drop</code></div>
+<div class="tst-anim"><span class="tst-anim-box" style="animation:anr-tb-panel-fade 1.8s linear infinite"></span><code>anr-tb-panel-fade</code></div>
 </div></div>
 <!-- TOKENS:END -->
 
@@ -290,12 +292,13 @@
           <div class="tst-sub">.anr-btn.anr-btn--cta - the prominent red call to action</div>
           <button type="button" class="anr-btn anr-btn--cta">Analyse audio</button>
 
-          <div class="tst-sub">Header chips out of context: a plain chip, the current-page active fill (aria-current="page"), the Samples accent (href-driven), the green Get App chip (.header-btn-app, removed inside the desktop and Android apps), the Share chip with its icon, and .dark-toggle</div>
+          <div class="tst-sub">Header chips out of context: a plain chip, the current-page active fill (aria-current="page"), the Samples accent (href-driven), the green Get App chip (.header-btn-app, hidden inside the desktop and Android apps), its Android-app Update form (.header-btn-update, the same chip as a button, shown in its place while a newer version is out), the Share chip with its icon, and .dark-toggle</div>
           <div class="tst-row">
             <a href="/about" class="header-btn">About</a>
             <a href="/about" class="header-btn" aria-current="page">Current</a>
             <a href="/samples" class="header-btn">Samples</a>
             <a href="https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest" class="header-btn header-btn-app" target="_blank" rel="noopener">Get App</a>
+            <button type="button" class="header-btn header-btn-app header-btn-update" title="Analyser 9.14 is out. Tap to update." aria-label="Analyser 9.14 is out. Tap to update.">Update</button>
             <button type="button" class="header-btn header-btn-share"><svg class="header-btn-ico" viewBox="0 0 50 50" fill="currentColor" aria-hidden="true" focusable="false"><path d="M15 30c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 20c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 40c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M19.007 25.885l12.88 6.44-.895 1.788-12.88-6.44z"/><path d="M30.993 15.885l.894 1.79-12.88 6.438-.894-1.79z"/></svg>Share</button>
             <button type="button" class="dark-toggle">Dark mode</button>
           </div>
@@ -980,11 +983,22 @@
               <div class="anr-tb-nav"><button type="button" class="anr-tb-btn anr-tb-back" title="Back" aria-label="Back"><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M7.5 1.5 3 6l4.5 4.5"/></svg></button><button type="button" class="anr-tb-btn anr-tb-fwd" title="Forward" aria-label="Forward" disabled><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M4.5 1.5 9 6l-4.5 4.5"/></svg></button></div>
               <div class="anr-tb-sub"><span class="anr-tb-section">Home</span><span class="anr-tb-file">DSC_4417.NEF</span></div>
               <div class="anr-tb-space"></div>
+              <button type="button" class="anr-tb-btn anr-tb-update" data-state="available" title="Analyser 9.14 is out. Press to download it. Analyser then restarts into it." aria-label="Analyser 9.14 is out. Press to download it. Analyser then restarts into it."><svg class="anr-tb-update-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M6 1.5v7M3 5.5l3 3 3-3M2 10.5h8"/></svg><span class="anr-tb-update-word">Update</span></button>
               <div class="anr-tb-ctl">
                 <button type="button" class="anr-tb-btn anr-tb-min" title="Minimise" aria-label="Minimise"><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M1 6.5h10"/></svg></button>
                 <button type="button" class="anr-tb-btn anr-tb-max is-max" title="Maximise" aria-label="Maximise"><svg class="anr-tb-ico anr-tb-ico-max" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><rect x="1.5" y="1.5" width="9" height="9"/></svg><svg class="anr-tb-ico anr-tb-ico-restore" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M3.5 3.5v-2h7v7h-2"/><rect x="1.5" y="3.5" width="7" height="7"/></svg></button>
                 <button type="button" class="anr-tb-btn anr-tb-close" title="Close" aria-label="Close"><svg class="anr-tb-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M2 2 10 10M10 2 2 10"/></svg></button>
               </div>
+            </div>
+          </div>
+
+          <div class="tst-sub">The Update button (.anr-tb-update, desktop/updater.mjs), shown above, just left of the window controls. Every answer about updates is said on it, never in a dialog, and it is hidden while there is nothing to say. Green from --go, the Get App chip's colour. The states a press acts on carry the arrow (available, manual, failed); the rest are answers, in muted. Downloading fills the button from the left (--progress, 0 to 1) in the site's active idiom: an 8% green tint with a solid 2px green line along the bottom.</div>
+          <div class="tst-fixwrap">
+            <div class="anr-titlebar">
+              <div class="anr-tb-space"></div>
+              <button type="button" class="anr-tb-btn anr-tb-update" data-state="downloading" style="--progress:0.42" disabled title="Downloading Analyser 9.14." aria-label="Downloading Analyser 9.14."><svg class="anr-tb-update-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M6 1.5v7M3 5.5l3 3 3-3M2 10.5h8"/></svg><span class="anr-tb-update-word">Downloading 42%</span></button>
+              <button type="button" class="anr-tb-btn anr-tb-update" data-state="current" disabled title="Version 9.13 is the latest release." aria-label="Version 9.13 is the latest release."><svg class="anr-tb-update-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M6 1.5v7M3 5.5l3 3 3-3M2 10.5h8"/></svg><span class="anr-tb-update-word">Up to date</span></button>
+              <button type="button" class="anr-tb-btn anr-tb-update" data-state="failed" title="Analyser could not check for updates. Press to try again." aria-label="Analyser could not check for updates. Press to try again."><svg class="anr-tb-update-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1"><path d="M6 1.5v7M3 5.5l3 3 3-3M2 10.5h8"/></svg><span class="anr-tb-update-word">Retry update</span></button>
             </div>
           </div>
 

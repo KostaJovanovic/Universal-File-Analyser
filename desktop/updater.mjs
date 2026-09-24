@@ -5,20 +5,25 @@
  * GitHub's API for the latest release instead: the answer gives the tag, the
  * download URL of every file and the SHA-256 digest GitHub computed for it.
  *
+ * Every answer goes to the title bar's Update button (chrome/titlebar.js), never
+ * a native dialog - the same design as mbrd's desktop/updates.ts. A check only
+ * FINDS a new version and puts the button up; a press on it downloads the
+ * update, with the button counting, and then installs it.
+ *
  * Two kinds of copy can replace themselves:
  *
  *   installer  The Windows install (its uninstaller sits beside the exe). The
- *              new installer downloads in the background, and its digest must
- *              match. It then runs silently (/S --updated) when the app quits,
- *              or at once on "Restart now". NSIS installs over the old copy in
- *              the same folder and keeps every setting.
+ *              new installer downloads, its digest must match, and it runs
+ *              silently (/S --updated --force-run) as the app quits, then
+ *              starts the new version. NSIS installs over the old copy in the
+ *              same folder and keeps every setting.
  *   appimage   Linux. The new AppImage downloads beside the running one, its
- *              digest must match, and it takes the old file's place. The next
- *              start runs it, or "Restart now" does.
+ *              digest must match, it takes the old file's place, and the app
+ *              relaunches into it.
  *
- * Everything else only announces a new version and opens the download page: a
- * portable copy (portable.txt beside the exe, see main.mjs), and macOS, where
- * an app without an Apple Developer ID signature cannot install an update.
+ * Everything else only announces a new version, and a press opens the download
+ * page: a portable copy (portable.txt beside the exe, see main.mjs), and macOS,
+ * where an app without an Apple Developer ID signature cannot install an update.
  *
  * A development copy (desktop.bat, npm start) never checks.
  *
@@ -26,10 +31,10 @@
  * nothing about what was analysed.
  */
 
-import { app, dialog, net, shell } from 'electron';
+import { app, net, shell } from 'electron';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
+import { chmodSync, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 const OWNER = 'KostaJovanovic';
@@ -46,9 +51,15 @@ const ASSET = {
   appimage: { name: 'Analyser-linux-x64-<version>.AppImage', match: /^Analyser-linux-x64(-\d+(\.\d+)*)?\.AppImage$/ },
 };
 
-/** The first check waits for start-up to settle, then one runs every six hours. */
+/** The first look waits for start-up to settle. After that the clock looks
+ *  every hour and checks when the last answer is a day old, so a laptop asleep
+ *  for a week checks within the hour it wakes, and a restart does not check
+ *  again. The time of the last answer is kept in userData. */
 const FIRST_CHECK_MS = 20 * 1000;
-const EVERY_MS = 6 * 60 * 60 * 1000;
+const LOOK_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** How long a passing answer ("Up to date") stays on the button. */
+const PASSING_MS = 5000;
 
 /** The API answer must arrive within this, and a download may go this long
  *  without a byte before it is abandoned - a stalled request would otherwise
@@ -57,9 +68,10 @@ const API_TIMEOUT_MS = 20 * 1000;
 const DOWNLOAD_IDLE_MS = 60 * 1000;
 
 /** A check the PAGE asked for (the footer button, via the preload) is dropped
- *  silently while a check runs, while any update dialog is open, or within
- *  this long of the last one - so a page that calls it in a loop cannot stack
- *  modal dialogs. Help > Check for updates is not limited. */
+ *  while one runs or within this long of the last one. The answer is only a
+ *  word on the button now, but a page calling it in a loop still should not
+ *  turn into a request to GitHub per call. Help > Check for updates is not
+ *  limited. */
 const PAGE_CHECK_GAP_MS = 10 * 1000;
 
 /** Where a release file may come from: this repository's release downloads on
@@ -68,20 +80,85 @@ const PAGE_CHECK_GAP_MS = 10 * 1000;
  *  else in the API answer, or at the end of the redirects, is refused. */
 const GITHUB_ASSET_HOST = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.githubusercontent\.com$/;
 
+/* What the button says, as { state, version, progress?, note }:
+     available    a newer version this copy can install; a press downloads it
+     downloading  `progress` counts from 0 to 1
+     installing   the app is closing into the new version
+     manual       this copy cannot replace itself; a press opens the download page
+     failed       a press tries again
+     checking, current, dev   answers to Help > Check for updates, which pass
+   `note` is the whole sentence the word stands for - the tooltip. */
+
 let kind = 'dev';
 let portableCopy = false;
-let getWindow = () => null;
+let started = false;
+/** A check or a download is running. */
 let busy = false;
-/** A downloaded update waiting to take over: { version, file }, or null. */
+/** Somebody asked (the menu or the footer), so the running check answers aloud. */
+let asked = false;
+/** The newer release this copy can install, found by the last check. */
+let pending = null;
+/** A downloaded update waiting to take over: { version, file, sha256 }, or null. */
 let ready = null;
 /** The installer was started, so quitting must not start it twice. */
 let launched = false;
-/** Versions the user answered "Later" to. The automatic check stays quiet about
- *  them for the rest of the session. The menu entry still reports them. */
-const declined = new Set();
-/** Update dialogs currently open, and when the page last asked for a check. */
-let dialogsOpen = 0;
+/** The press on Update asked for this quit, so the new version starts after it. */
+let restartAfter = false;
+/** What the button says for good, or null for no button. */
+let offered = null;
+/** A passing answer's timer. When it runs out the button goes back to `offered`. */
+let passing = null;
+let announce = () => {};
 let lastPageCheck = 0;
+
+/** Put a lasting state on the button. */
+function publish(offer) {
+  if (passing) clearTimeout(passing);
+  passing = null;
+  offered = offer;
+  announce(offer);
+}
+
+/** Put a passing answer on the button, and after `ms` go back to what it said.
+ *  With no `ms` it stays until the next answer replaces it. */
+function say(offer, ms = 0) {
+  if (passing) clearTimeout(passing);
+  passing = null;
+  announce(offer);
+  if (ms) passing = setTimeout(() => { passing = null; announce(offered); }, ms);
+}
+
+/** The button's state, for a title bar that loads after the answer came. */
+export const currentOffer = () => offered;
+
+const stampFile = () => join(app.getPath('userData'), 'update-check.json');
+
+/** When the last check got an answer, in ms since the epoch. 0 when never. */
+function lastCheck() {
+  try {
+    const at = Number(JSON.parse(readFileSync(stampFile(), 'utf8')).at);
+    return Number.isFinite(at) ? at : 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+function stamp() {
+  try { writeFileSync(stampFile(), JSON.stringify({ at: Date.now() })); } catch (_) { /* checks again sooner */ }
+}
+
+/** A day since the last answer, or a clock set back past it. */
+function due() {
+  const since = Date.now() - lastCheck();
+  return since >= DAY_MS || since < 0;
+}
+
+/** Remove what an earlier update left, and never fail the start for it: the
+ *  installer that has just updated this copy starts it again before it exits,
+ *  so its own file can still be locked here (EBUSY on Windows). */
+function tidy(path, recursive = false) {
+  try { rmSync(path, { recursive, force: true }); } catch (_) { /* the next start tries again */ }
+}
 
 /** How this copy was installed - see the header. */
 export function installKind(portable) {
@@ -98,25 +175,49 @@ export function installKind(portable) {
   return 'manual';
 }
 
-/** Start the automatic checks. `window` returns the main window, or null. */
-export function startUpdates({ window, portable }) {
-  portableCopy = !!portable;
+/** Start the automatic checks. `announce` puts an offer on the title bar's
+ *  Update button (null takes the button away). */
+export function startUpdates(opts) {
+  // macOS makes a new window on a dock click, and the checks must not arm twice.
+  if (started) return;
+  started = true;
+  portableCopy = !!opts.portable;
   kind = installKind(portableCopy);
-  getWindow = window;
+  announce = typeof opts.announce === 'function' ? opts.announce : () => {};
   if (kind === 'dev') return;
   if (kind === 'installer') {
-    rmSync(downloadDir(), { recursive: true, force: true });
+    tidy(downloadDir(), true);
     // Where 9.12 and earlier kept it.
-    rmSync(join(app.getPath('temp'), 'analyser-update'), { recursive: true, force: true });
-    // "Later" still installs: the downloaded installer runs as the app closes,
-    // silently, without starting the app again.
-    app.on('will-quit', () => runInstaller(false));
+    tidy(join(app.getPath('temp'), 'analyser-update'), true);
+    // After the window has gone: the installer closes a copy that is still
+    // running. A download that finished as the window was closing installs
+    // too, silently, without starting the app again.
+    app.on('will-quit', () => runInstaller(restartAfter));
   }
   if (kind === 'appimage') {
-    for (const stale of [process.env.APPIMAGE + '.new', process.env.APPIMAGE + '.new.part']) rmSync(stale, { force: true });
+    for (const stale of [process.env.APPIMAGE + '.new', process.env.APPIMAGE + '.new.part']) tidy(stale);
   }
-  setTimeout(() => check(false), FIRST_CHECK_MS);
-  setInterval(() => check(false), EVERY_MS);
+  const look = () => { if (due()) check(false); };
+  setTimeout(look, FIRST_CHECK_MS);
+  setInterval(look, LOOK_MS).unref();
+}
+
+/**
+ * The title bar's Update button. A press does what the button says: download
+ * the update then install it, open the download page for a copy that cannot
+ * replace itself, or try again after a failure.
+ */
+export function clickUpdate() {
+  if (!offered || busy) return;
+  if (offered.state === 'manual') {
+    shell.openExternal(DOWNLOAD_PAGE).catch(() => {});
+    return;
+  }
+  if (offered.state !== 'available' && offered.state !== 'failed') return;
+  // A failed download tries the download again. A failed check has nothing to
+  // download yet, so it checks again.
+  if (pending) downloadAndInstall(pending);
+  else check(true);
 }
 
 /** Help > Check for updates. Unlike the automatic check, it always answers. */
@@ -128,7 +229,7 @@ export function checkForUpdates() {
  *  request resolves quietly: there is nothing the page could do with an error. */
 export function checkForUpdatesFromPage() {
   const now = Date.now();
-  if (busy || dialogsOpen > 0 || now - lastPageCheck < PAGE_CHECK_GAP_MS) return Promise.resolve();
+  if (busy || now - lastPageCheck < PAGE_CHECK_GAP_MS) return Promise.resolve();
   lastPageCheck = now;
   return check(true);
 }
@@ -147,6 +248,8 @@ function newer(a, b) {
   }
   return false;
 }
+
+const errorText = (err) => String((err && err.message) || err).slice(0, 200);
 
 /* Under userData, not %TEMP%: the installer sits there until the app quits and
    then runs, and a folder only this user's profile holds is a smaller target
@@ -168,16 +271,17 @@ async function latestRelease() {
   const res = await net.fetch(API, { headers: { accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(API_TIMEOUT_MS) });
   if (!res.ok) throw new Error('GitHub answered ' + res.status);
   const rel = await res.json();
-  const assets = Array.isArray(rel.assets) ? rel.assets : [];
+  const assets = Array.isArray(rel && rel.assets) ? rel.assets : [];
   return {
-    version: String(rel.tag_name || '').replace(/^v/, ''),
+    version: String((rel && rel.tag_name) || '').replace(/^v/, ''),
     asset: (match) => assets.find((a) => a && match.test(String(a.name))) || null,
   };
 }
 
-/** Download a release asset to `dest`, hashing as it streams. Nothing lands at
- *  `dest` unless the SHA-256 matches the digest GitHub gives for the file. */
-async function download(asset, dest) {
+/** Download a release asset to `dest`, hashing as it streams, and report how
+ *  much has come, in whole-percent steps. Nothing lands at `dest` unless the
+ *  SHA-256 matches the digest GitHub gives for the file. */
+async function download(asset, dest, onProgress) {
   const want = /^sha256:([0-9a-f]{64})$/.exec(String(asset.digest || ''));
   if (!want) throw new Error('the release gives no SHA-256 for ' + asset.name);
   const size = Number(asset.size);
@@ -199,12 +303,15 @@ async function download(asset, dest) {
     mkdirSync(dirname(dest), { recursive: true });
     out = createWriteStream(part);
     let got = 0;
+    let told = 0;
     for await (const chunk of res.body) {
       poke();
       got += chunk.length;
       // Never more than the release says the file is.
       if (got > size) throw new Error('the download is larger than the release says');
       hash.update(chunk);
+      const share = got / size;
+      if (share - told >= 0.01) { told = share; onProgress(share); }
       if (!out.write(chunk)) await new Promise((resolve) => out.once('drain', resolve));
     }
     if (got !== size) throw new Error('the download is shorter than the release says');
@@ -225,25 +332,63 @@ async function download(asset, dest) {
 }
 
 /** Fetch the update for a self-updating copy, and leave it ready to take over. */
-async function fetchUpdate(version, asset) {
+async function fetchUpdate(version, asset, onProgress) {
   if (kind === 'installer') {
     // The name from the API answer is only used as a file name, so strip it to
     // one: no folder, nothing Windows would read as a device or a stream.
     const safe = String(asset.name).replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '_') || 'update.exe';
     const file = join(downloadDir(), safe);
-    await download(asset, file);
+    await download(asset, file, onProgress);
     ready = { version, file, sha256: String(asset.digest).slice('sha256:'.length) };
   } else {
     // Beside the running AppImage, so the rename below stays on one disk.
     // Linux lets a running file be replaced: this copy keeps running from the
     // old one until it quits.
     const target = process.env.APPIMAGE;
+    if (!target) throw new Error('APPIMAGE is not set');
     const next = target + '.new';
-    await download(asset, next);
+    await download(asset, next, onProgress);
     chmodSync(next, 0o755);
     renameSync(next, target);
     ready = { version, file: target };
   }
+}
+
+/** The press on Update: download with the button counting, then install. */
+async function downloadAndInstall(want) {
+  busy = true;
+  const v = label(want.version);
+  const counting = (progress) => publish({
+    state: 'downloading', version: want.version, progress,
+    note: `Downloading Analyser ${v}. Analyser restarts into it when the download is done.`,
+  });
+  counting(0);
+  try {
+    await fetchUpdate(want.version, want.asset, counting);
+    publish({ state: 'installing', version: want.version, note: `Restarting into Analyser ${v}` });
+    install();
+  } catch (err) {
+    publish({
+      state: 'failed', version: want.version,
+      note: `Analyser ${v} did not download: ${errorText(err)}. Press to try again.`,
+    });
+  } finally {
+    busy = false;
+  }
+}
+
+/** Put the downloaded update in place and restart into it. */
+function install() {
+  if (kind === 'installer') {
+    // The quit runs the installer from will-quit (startUpdates), which waits
+    // for this copy to close, installs, then starts the new version.
+    restartAfter = true;
+  } else {
+    // relaunch starts the new file once this process has gone, so the two
+    // never meet at the single-instance lock.
+    app.relaunch({ execPath: process.env.APPIMAGE, args: [] });
+  }
+  app.quit();
 }
 
 function runInstaller(restart) {
@@ -269,98 +414,65 @@ function runInstaller(restart) {
   } catch (_) { /* the next start downloads it again */ }
 }
 
+/** What a copy that cannot replace itself tells somebody to do. */
+function manualHow(version) {
+  const out = `Analyser ${label(version)} is out.`;
+  if (process.platform === 'darwin') {
+    return `${out} Press to open the download page, then drag the new copy into Applications. Your settings stay.`;
+  }
+  if (portableCopy) {
+    return `${out} Press to open the download page, run the new Windows file, choose "Portable copy" and pick this folder. The Analyser-data folder here keeps your settings.`;
+  }
+  return `${out} This copy cannot replace itself. Press to open the download page.`;
+}
+
 async function check(manual) {
   if (kind === 'dev') {
-    if (manual) tell('Updates are off in a development copy', 'This copy runs the code in the desktop folder, so there is nothing to update.');
+    if (manual) say({ state: 'dev', version: '', note: 'This copy runs the code in the desktop folder, so there is nothing to update.' }, PASSING_MS);
     return;
   }
-  if (ready) {
-    if (manual) offerRestart();
-    return;
+  // The button already says what there is, and a new check adds nothing.
+  if (manual && offered && offered.state !== 'failed') return;
+  if (manual) {
+    asked = true;
+    say({ state: 'checking', version: '', note: 'Looking for a newer version' });
   }
-  if (busy) {
-    if (manual) tell('Analyser is already checking for an update', 'Try again in a moment.');
-    return;
-  }
+  // A running check answers the question too, now that it has been asked.
+  if (busy) return;
   busy = true;
   try {
     const rel = await latestRelease();
+    stamp();
     if (!newer(rel.version, app.getVersion())) {
-      if (manual) tell('Analyser is up to date', `Version ${label(app.getVersion())} is the latest release.`);
+      // A failed check before this one, or a release since withdrawn, must not
+      // stay on the button for the rest of the run.
+      pending = null;
+      if (offered) publish(null);
+      if (asked) say({ state: 'current', version: '', note: `Version ${label(app.getVersion())} is the latest release.` }, PASSING_MS);
       return;
     }
     if (kind === 'installer' || kind === 'appimage') {
       const asset = rel.asset(ASSET[kind].match);
       if (!asset) throw new Error('the release has no ' + ASSET[kind].name);
-      if (manual) tell(`Analyser ${label(rel.version)} is downloading`, 'A message offers a restart as soon as the download is done.');
-      await fetchUpdate(rel.version, asset);
-      offerRestart();
+      pending = { version: rel.version, asset };
+      publish({
+        state: 'available', version: rel.version,
+        note: `Analyser ${label(rel.version)} is out. Press to download it. Analyser then restarts into it.`,
+      });
       return;
     }
-    if (manual || !declined.has(rel.version)) offerDownload(rel.version);
+    publish({ state: 'manual', version: rel.version, note: manualHow(rel.version) });
   } catch (err) {
-    // A background failure (offline, GitHub down, a bad download) stays
-    // silent, and the next check tries again.
-    if (manual) {
-      tell('Analyser could not update',
-        'Check the connection, then try again.\n\n' + String((err && err.message) || err).slice(0, 300));
+    // A background failure (offline, GitHub down) stays silent, and the next
+    // look tries again.
+    if (asked) {
+      publish({
+        state: 'failed', version: '',
+        note: `Analyser could not check for updates. Check the connection. ${errorText(err)}. Press to try again.`,
+      });
     }
   } finally {
     busy = false;
+    asked = false;
   }
-}
-
-function show(options) {
-  const win = getWindow();
-  const opts = Object.assign({ type: 'info', title: 'Analyser', noLink: true }, options);
-  dialogsOpen++;
-  return (win && !win.isDestroyed() ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts))
-    .catch(() => ({ response: -1 }))
-    .then((r) => { dialogsOpen--; return r; });
-}
-
-function tell(message, detail) {
-  show({ message, detail, buttons: ['Close'] });
-}
-
-function offerRestart() {
-  if (!ready) return;
-  show({
-    message: `Analyser ${label(ready.version)} is ready`,
-    detail: kind === 'installer'
-      ? 'Restart now to finish the update, or keep working and it installs when you quit.'
-      : 'Restart now to start the new version, or keep working and it starts next time.',
-    buttons: ['Restart now', 'Later'],
-    defaultId: 0,
-    cancelId: 1,
-  }).then((r) => {
-    if (r.response !== 0) return;
-    if (kind === 'installer') {
-      // The installer waits for this copy to close, installs, then starts
-      // the new version (--force-run).
-      runInstaller(true);
-    } else {
-      // relaunch starts the new file once this process has gone, so the two
-      // never meet at the single-instance lock.
-      app.relaunch({ execPath: process.env.APPIMAGE, args: [] });
-    }
-    app.quit();
-  });
-}
-
-function offerDownload(version) {
-  let how;
-  if (process.platform === 'darwin') how = 'Download it, then drag it into Applications to replace this copy. Your settings stay.';
-  else if (portableCopy) how = 'Download the new Windows file, run it, choose "Portable copy", and pick this folder. The Analyser-data folder here keeps your settings.';
-  else how = 'This copy cannot replace itself. Download the new version and use it in place of this one.';
-  show({
-    message: `Analyser ${label(version)} is out`,
-    detail: how,
-    buttons: ['Open the download page', 'Later'],
-    defaultId: 0,
-    cancelId: 1,
-  }).then((r) => {
-    if (r.response === 0) shell.openExternal(DOWNLOAD_PAGE).catch(() => {});
-    else declined.add(version);
-  });
 }

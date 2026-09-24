@@ -199,6 +199,52 @@ document.addEventListener('keydown', (e) => {
   if (openMenu && e.key === 'Escape') closeMenu();
 });
 
+/* ---------------------------------------------------------------------------
+ * The Update button.
+ *
+ * An arrow and the word, at the right of the bar, only while updater.mjs has
+ * something to say - mbrd's design. Every answer about updates is said here and
+ * never in a dialog: a check finds a new version and puts the button up, and a
+ * press downloads it (the button fills as it comes) and restarts into it.
+ * ------------------------------------------------------------------------- */
+
+/** The word the button says in each state. The tooltip carries the sentence. */
+const UPDATE_WORDS = {
+  available: () => 'Update',
+  downloading: (o) => `Downloading ${Math.round((Number(o.progress) || 0) * 100)}%`,
+  installing: () => 'Restarting',
+  manual: () => 'Update',
+  failed: () => 'Retry update',
+  checking: () => 'Checking for updates',
+  current: () => 'Up to date',
+  dev: () => 'No updates in a dev copy',
+};
+/** The states in which a press does something. */
+const UPDATE_PRESSABLE = new Set(['available', 'manual', 'failed']);
+
+function updateButton() {
+  const btn = button('anr-tb-update', 'Update',
+    '<svg class="anr-tb-update-ico" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false"'
+    + ' fill="none" stroke="currentColor" stroke-width="1"><path d="M6 1.5v7M3 5.5l3 3 3-3M2 10.5h8"/></svg>'
+    + '<span class="anr-tb-update-word">Update</span>');
+  btn.hidden = true;
+  btn.addEventListener('click', () => chrome.update());
+  return btn;
+}
+
+function paintUpdate(btn, offer) {
+  const words = offer && UPDATE_WORDS[offer.state];
+  btn.hidden = !words;
+  if (!words) return;
+  btn.querySelector('.anr-tb-update-word').textContent = words(offer);
+  btn.dataset.state = offer.state;
+  const note = String(offer.note || '');
+  btn.title = note;
+  btn.setAttribute('aria-label', note);
+  btn.disabled = !UPDATE_PRESSABLE.has(offer.state);
+  btn.style.setProperty('--progress', String(Number(offer.progress) || 0));
+}
+
 /* ------------------------------------------------------------------------- */
 
 function build() {
@@ -257,7 +303,9 @@ function build() {
   closeBtn.addEventListener('click', () => { chrome.close(); });
   ctl.append(minBtn, maxBtn, closeBtn);
 
-  bar.append(brand, menuBarEl, navGroup, sub, space, ctl);
+  const update = updateButton();
+
+  bar.append(brand, menuBarEl, navGroup, sub, space, update, ctl);
   document.body.appendChild(bar);
 
   // Double-clicking the bar's own surface maximises, the way a real title bar
@@ -284,6 +332,7 @@ function build() {
     subFile.textContent = name || '';
     subFile.hidden = !name;
   });
+  chrome.onUpdate((offer) => paintUpdate(update, offer));
 
   /* Tell main how tall the bar actually is, so --anr-tb-h in analyser.css stays
      the only place the number is written. Re-measured on resize because a zoom

@@ -51,8 +51,13 @@ import org.json.JSONObject;
  * named Analyser-android-<version>.apk its download URL, its size and the
  * SHA-256 digest GitHub computed for it.
  *
- * At most one check every six hours, at start-up. A newer tag asks the user.
- * "Update" downloads the APK into the cache, checks its SHA-256, its package
+ * At most one check every six hours, at start-up. A newer tag does not
+ * interrupt: it puts a green Update chip in the page header, where the website
+ * has its Get App chip (core/popups.ts, via AnrShell's "update" event). The
+ * offer is kept in the preferences, so the chip comes back on every start until
+ * the update is installed or a later check finds none. A tap on the chip asks
+ * once more (the size, and that Analyser closes), and "Update" downloads the
+ * APK into the cache, checks its SHA-256, its package
  * name and that its versionCode is higher, and writes it into a
  * PackageInstaller session. On Android 12 and later the session asks for no
  * confirm screen (USER_ACTION_NOT_REQUIRED), which Android grants to an app
@@ -97,7 +102,73 @@ public final class AnrUpdate {
         void at(int permille);
     }
 
+    /** Hears the version on offer: a newer one, or "" when there is none. */
+    interface Listener {
+        void offered(String version);
+    }
+
+    /** The newer release the last check found, and its APK asset. */
+    private static volatile String offerVersion = "";
+    private static volatile JSONObject offerApk;
+    private static volatile Listener listener;
+
     private AnrUpdate() {}
+
+    /** AnrShell passes the page's side here, and hears the current offer at once. */
+    static void setListener(Listener l) {
+        listener = l;
+        if (l != null && !offerVersion.isEmpty()) l.offered(offerVersion);
+    }
+
+    /** The version on offer, or "" - for a page that asks after the event. */
+    static String offeredVersion() {
+        return offerVersion;
+    }
+
+    /** The page's Update chip was tapped: ask, then download and install. */
+    static void offerPending(Activity activity) {
+        JSONObject apk = offerApk;
+        String version = offerVersion;
+        if (apk == null || version.isEmpty()) return;
+        activity.runOnUiThread(() -> offer(activity, version, apk));
+    }
+
+    private static void announce() {
+        Listener l = listener;
+        if (l != null) l.offered(offerVersion);
+    }
+
+    private static void setOffer(SharedPreferences prefs, String version, JSONObject apk) {
+        offerVersion = version;
+        offerApk = apk;
+        prefs.edit().putString("offerVersion", version).putString("offerApk", apk.toString()).apply();
+        announce();
+    }
+
+    private static void clearOffer(SharedPreferences prefs) {
+        boolean had = !offerVersion.isEmpty();
+        offerVersion = "";
+        offerApk = null;
+        prefs.edit().remove("offerVersion").remove("offerApk").apply();
+        if (had) announce();
+    }
+
+    /** Between checks, show what the last one found - unless it is installed now. */
+    private static void restoreOffer(Context app, SharedPreferences prefs) {
+        String version = prefs.getString("offerVersion", "");
+        String json = prefs.getString("offerApk", "");
+        if (version == null || version.isEmpty() || json == null || json.isEmpty() || !newer(version, installedName(app))) {
+            clearOffer(prefs);
+            return;
+        }
+        try {
+            offerVersion = version;
+            offerApk = new JSONObject(json);
+            announce();
+        } catch (Exception e) {
+            clearOffer(prefs);
+        }
+    }
 
     /** Called from MainActivity.onCreate. Returns at once: the work runs on NET. */
     static void maybeCheck(Activity activity) {
@@ -136,7 +207,10 @@ public final class AnrUpdate {
             try {
                 // The installer copied the last update when it ran, so the file is spare now.
                 deleteQuietly(apkFile(app));
-                if (!manual && System.currentTimeMillis() - prefs.getLong("checked", 0) < EVERY_MS) return;
+                if (!manual && System.currentTimeMillis() - prefs.getLong("checked", 0) < EVERY_MS) {
+                    restoreOffer(app, prefs);
+                    return;
+                }
                 HttpURLConnection c = open(feed, "application/vnd.github+json");
                 JSONObject release;
                 try {
@@ -148,12 +222,18 @@ public final class AnrUpdate {
                 String version = release.optString("tag_name", "").replaceFirst("^v", "");
                 JSONObject apk = asset(release, APK_NAME);
                 if (apk == null || !newer(version, installedName(app))) {
+                    clearOffer(prefs);
                     if (manual) toast(activity, "Analyser is up to date.");
                     return;
                 }
-                activity.runOnUiThread(() -> offer(activity, version, apk));
+                // The chip in the page header. Only the footer's check, which
+                // asked a question, gets the answer as a dialog too.
+                setOffer(prefs, version, apk);
+                if (manual) activity.runOnUiThread(() -> offer(activity, version, apk));
             } catch (Exception e) {
-                // Offline, or GitHub did not answer. The next start tries again.
+                // Offline, or GitHub did not answer. The next start tries again,
+                // and meanwhile the chip shows what the last check found.
+                restoreOffer(app, prefs);
                 if (manual) toast(activity, "Analyser could not reach GitHub. Check the connection, then try again.");
             } finally {
                 BUSY.set(false);

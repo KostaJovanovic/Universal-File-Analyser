@@ -22,7 +22,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { looksLikeWebRoot, mimeFor, route } from './router.mjs';
 import { buildMenu, menuModel, runMenuItem } from './menu.mjs';
 import * as ffnative from './ffmpeg-native.mjs';
-import { checkForUpdates, checkForUpdatesFromPage, startUpdates } from './updater.mjs';
+import { checkForUpdates, checkForUpdatesFromPage, clickUpdate, currentOffer, startUpdates } from './updater.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -709,13 +709,44 @@ const PANEL_MAX_H = 800;
 let panelClosedId = '';
 let panelClosedAt = 0;
 
+/* The panel is never hidden on Windows and macOS - it is VEILED. Windows plays
+   its open animation on every show() of a window like this one, a zoom out of
+   the window's middle, and thickFrame: false does not stop it. So the window is
+   shown once, invisible (opacity 0, clicks passing through), and an open only
+   lifts the veil: setOpacity is not a show, so nothing animates but the panel's
+   own CSS. Linux has no setOpacity, so there it is still show() and hide(), and
+   the toolbar window type keeps the compositors from animating it. */
+const VEIL = process.platform !== 'linux';
+/** Whether a menu is on screen. With the veil the window is always "visible". */
+let panelShown = false;
+
 const fromPanel = (e) => !!panelWin && !panelWin.isDestroyed() && e.sender === panelWin.webContents;
-const panelFocused = () => !!panelWin && !panelWin.isDestroyed() && panelWin.isFocused();
+const panelFocused = () => panelShown && !!panelWin && !panelWin.isDestroyed() && panelWin.isFocused();
+
+function veilPanel(win) {
+  win.setOpacity(0);
+  win.setIgnoreMouseEvents(true);
+}
 
 function closePanel() {
   if (panelMenuId) { panelClosedId = panelMenuId; panelClosedAt = Date.now(); }
   panelMenuId = '';
-  if (panelWin && !panelWin.isDestroyed() && panelWin.isVisible()) panelWin.hide();
+  if (panelShown && panelWin && !panelWin.isDestroyed()) {
+    panelShown = false;
+    if (!VEIL) {
+      panelWin.hide();
+    } else {
+      /* hide() handed focus back to the main window by itself; a veiled window
+         keeps it, so an Escape or a run entry has to return it by hand. After a
+         blur the focus is already elsewhere and must stay there. */
+      const hadFocus = panelWin.isFocused();
+      veilPanel(panelWin);
+      if (hadFocus && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.focus();
+        if (appView && !appView.webContents.isDestroyed()) appView.webContents.focus();
+      }
+    }
+  }
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('anr:menu-closed');
 }
 
@@ -731,15 +762,13 @@ function ensurePanelWindow() {
     maximizable: false,
     fullscreenable: false,
     skipTaskbar: true,
-    /* No open animation. Every open is a show(), and the OS animates that for a
-       window it takes for an ordinary one - Windows through the caption the
-       thick frame adds, KDE and GNOME by scaling it up from nothing - so a menu
-       swelled out of the bar instead of just being there. thickFrame is Windows
-       only (it also drops the OS shadow, which the hairline border stands in
-       for anyway), and a toolbar window is one the Linux compositors leave
-       alone. */
+    /* No OS open animation. KDE and GNOME scale an ordinary window up from
+       nothing on show(), and a toolbar window is one they leave alone. Windows
+       and macOS never show() it after the first time at all - see VEIL above.
+       thickFrame is Windows only and drops the OS shadow, which the hairline
+       border stands in for anyway. */
     thickFrame: false,
-    ...(process.platform === 'linux' ? { type: 'toolbar' } : {}),
+    ...(VEIL ? { opacity: 0 } : { type: 'toolbar' }),
     backgroundColor: '#00000000',
     width: 220,
     height: 100,
@@ -749,12 +778,21 @@ function ensurePanelWindow() {
       sandbox: true,
       nodeIntegration: false,
       spellcheck: false,
+      // A veiled window reads as hidden to Chromium, and a throttled one would
+      // hold back the frame the panel waits for before it asks to be shown.
+      backgroundThrottling: false,
     },
   });
   // Clicking anywhere else - the bar, the page, another app - dismisses it,
   // which is the whole of "click outside to close" in one line.
-  panelWin.on('blur', () => { closePanel(); if (chromeHooks) chromeHooks.pushState(); });
-  panelWin.on('closed', () => { panelWin = null; panelMenuId = ''; });
+  panelWin.on('blur', () => { if (!panelShown) return; closePanel(); if (chromeHooks) chromeHooks.pushState(); });
+  panelWin.on('closed', () => { panelWin = null; panelMenuId = ''; panelShown = false; });
+  if (VEIL) {
+    // The one show() it ever gets, while it is still invisible.
+    const win = panelWin;
+    veilPanel(win);
+    win.once('ready-to-show', () => { if (!win.isDestroyed() && !win.isVisible()) win.showInactive(); });
+  }
   panelWin.loadURL(ORIGIN + CHROME_PATH + 'panel.html');
   return panelWin;
 }
@@ -786,7 +824,11 @@ ipcMain.on('anr:menu-open', (e, req) => {
     y: Math.round(Math.min(Math.max(Number(req.y) || 0, 0), c.height)),
   };
   panelAt = at;
-  const send = () => win.webContents.send('anr:panel-menu', { menu, at });
+  /* fresh: a menu opening from nothing drops in; one the pointer slid across
+     to from an open neighbour just replaces it, as a menu bar's always has.
+     veiled: the window is showing (see VEIL), so the panel can wait for a
+     painted frame before it asks to be seen. */
+  const send = () => win.webContents.send('anr:panel-menu', { menu, at, fresh: !panelShown, veiled: VEIL && win.isVisible() });
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send); else send();
 });
 
@@ -812,7 +854,15 @@ ipcMain.on('anr:panel-size', (e, size) => {
   const x = Math.min(Math.max(area.x, c.x + at.x * zoomFactor), area.x + area.width - w);
   const y = Math.min(Math.max(area.y, c.y + at.y * zoomFactor), area.y + area.height - h);
   panelWin.setBounds({ x: Math.round(x), y: Math.round(y), width: w, height: h });
-  if (!panelWin.isVisible()) panelWin.show();
+  if (!panelShown) {
+    panelShown = true;
+    if (!VEIL || !panelWin.isVisible()) panelWin.show();
+    if (VEIL) {
+      panelWin.setIgnoreMouseEvents(false);
+      panelWin.setOpacity(1);
+      panelWin.focus();
+    }
+  }
   if (chromeHooks) chromeHooks.pushState();
 });
 
@@ -880,6 +930,14 @@ ipcMain.on('anr:chrome-ready', (e) => {
   if (!fromChrome(e) || !chromeHooks) return;
   chromeHooks.pushState();
   chromeHooks.pushNav();
+  e.sender.send('anr:chrome-update', currentOffer());
+});
+
+/* The title bar's Update button. updater.mjs does what the button says:
+   download and install, open the download page, or try again. */
+ipcMain.on('anr:update-press', (e) => {
+  if (!fromChrome(e)) return;
+  clickUpdate();
 });
 
 /* Back and forward, from the bar's own arrows. */
@@ -1028,8 +1086,8 @@ ipcMain.handle('anr:ffmpeg-close', async (e, { id }) => {
 
 /* The footer's "Check for updates" button (core/offline-tiers.ts via the
    preload). The same check as Help > Check for updates: updater.mjs answers
-   in a native dialog, so nothing comes back to the page. Page-initiated, so
-   it is debounced there: a page calling this in a loop gets one dialog. */
+   on the title bar's Update button, so nothing comes back to the page.
+   Page-initiated, so it is debounced there. */
 ipcMain.handle('anr:check-updates', (e) => {
   if (!fromMainWindow(e)) return false;
   checkForUpdatesFromPage().catch(() => {});
@@ -1194,8 +1252,15 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     // Updates from the GitHub release (updater.mjs). A development copy never
-    // checks, and a portable one only announces a new version.
-    startUpdates({ window: () => mainWindow, portable: !!PORTABLE_DIR });
+    // checks, and a portable one only announces a new version. Every answer
+    // goes to the title bar's Update button; the bar also pulls the current
+    // one when it loads (anr:chrome-ready).
+    startUpdates({
+      portable: !!PORTABLE_DIR,
+      announce: (offer) => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('anr:chrome-update', offer);
+      },
+    });
 
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) mainWindow = createWindow();

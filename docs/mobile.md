@@ -17,7 +17,10 @@ it. The app needs Android 7 or later. Android asks you once to allow installs
 from your browser or file manager.
 
 The app looks for a new version when it starts, at most once every six hours.
-When one is out, it asks you first. **Update** downloads the new version with a
+When one is out, nothing pops up: a green **Update** button appears at the top
+of the page, in the place where the website shows **Get App**, and it stays on
+every start until you update. Tap it, and the app asks you first. **Update**
+downloads the new version with a
 progress bar and makes sure that the file is complete and really is Analyser.
 Then it hands the file to Android. On Android 12 and later the update installs
 with no further question, and Analyser closes when it is done. Older versions,
@@ -150,7 +153,7 @@ privacy page.
 | Status bar | Takes the background colour of the page, in light and dark themes |
 | Landscape | Fullscreen. The status bar and the gesture bar hide, and a swipe in from the edge shows them for a moment. Only the side with the camera keeps a strip in the page colour, so no text sits under the camera |
 | "Install as app" | Becomes **Check for updates** |
-| "Get App" button | Hidden. You already have the app |
+| "Get App" button | Hidden, because you already have the app. While a newer version is out it reads **Update** instead, and a tap installs it |
 | "Email me!" and "Suggest this format" | The app skips the human-check, because that widget belongs to the address of the site. A tap on "Open mail app" then opens the mail app |
 | Memory limits | The same as the browser on the phone. The app deliberately does not raise them, because a WebView gets only part of the memory of the phone |
 

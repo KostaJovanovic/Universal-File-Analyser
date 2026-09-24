@@ -313,8 +313,8 @@ The five things worth knowing before you touch anything:
   sets no CORS headers, so a renderer fetch would fail).
 - **Every desktop-only branch in `src/` sits behind `window.anrDesktop`**, which
   a browser never defines - that is what keeps the website's behaviour
-  unchanged. Today that is `popups.ts` (online probe + the Turnstile skip + removing the green Get App chip),
-  `offline-tiers.ts` (the footer install button - a link to the latest GitHub release on the website - becomes "Check for updates", via `anrDesktop.checkUpdates()`), `limits.ts` (real RAM for
+  unchanged. Today that is `popups.ts` (online probe + the Turnstile skip + hiding the green Get App chip - on Android it becomes an Update chip while `anrDesktop.onUpdate` reports a newer version),
+  `offline-tiers.ts` (the footer install button - a link to the latest GitHub release on the website - becomes "Check for updates", via `anrDesktop.checkUpdates()`, and the footer's "Everything runs in your browser." reads "Everything runs offline."), `limits.ts` (real RAM for
   the device tier), `export-data.ts` (native save dialog), the native-FFmpeg
   shim in `video.ts` and the open-by-path glue in `app.ts` + `folder.ts`. Keep
   new ones equally narrow, and prefer a guarded branch in an existing module to
