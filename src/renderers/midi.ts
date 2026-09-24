@@ -62,7 +62,15 @@ export async function renderMidi(file: File, resultsEl: HTMLElement) {
   let maxTick = 0;
   const dec = new TextDecoder();
 
-  function readVLQ(p: number) { let v = 0, b; do { b = buf[p++]; v = (v << 7) | (b & 0x7F); } while (b & 0x80); return [v, p]; }
+  // SMF variable-length quantity: at most 4 bytes, unsigned, never read past `end`.
+  function readVLQ(p: number, end: number) {
+    let v = 0, b = 0, n = 0;
+    do {
+      if (p >= end) break;
+      b = buf[p++]; v = ((v << 7) | (b & 0x7F)) >>> 0;
+    } while ((b & 0x80) && ++n < 4);
+    return [v, p];
+  }
 
   let pos = 14;
   for (let t = 0; t < ntrks && pos + 8 <= buf.length; t++) {
@@ -72,11 +80,12 @@ export async function renderMidi(file: File, resultsEl: HTMLElement) {
     const endTrk = Math.min(p + len, buf.length);
     let tick = 0, running = 0;
     while (p < endTrk) {
-      let dt; [dt, p] = readVLQ(p); tick += dt;
+      let dt; [dt, p] = readVLQ(p, endTrk); tick += dt;
       let status = buf[p];
       if (status & 0x80) { p++; running = status; } else { status = running; }
       if (status === 0xFF) {
-        const type = buf[p++]; let mlen; [mlen, p] = readVLQ(p);
+        const type = buf[p++]; let mlen; [mlen, p] = readVLQ(p, endTrk);
+        mlen = Math.min(mlen, Math.max(0, endTrk - p));
         const data = buf.slice(p, p + mlen); p += mlen;
         if (type === 0x51 && mlen === 3) tempos.push({ tick, us: (data[0] << 16) | (data[1] << 8) | data[2] });
         else if (type === 0x58 && mlen >= 2 && !timeSig) timeSig = data[0] + '/' + (1 << data[1]);
@@ -84,7 +93,7 @@ export async function renderMidi(file: File, resultsEl: HTMLElement) {
         else if (type === 0x03) { const n = dec.decode(data).trim(); if (n) trackNames.push(n); }
         else if (type === 0x04) { const n = dec.decode(data).trim(); if (n) instrNames.push(n); }
       } else if (status === 0xF0 || status === 0xF7) {
-        let slen; [slen, p] = readVLQ(p); p += slen;
+        let slen; [slen, p] = readVLQ(p, endTrk); p = Math.min(p + slen, endTrk);
       } else {
         const hi = status & 0xF0, ch = status & 0x0F;
         channels.add(ch);

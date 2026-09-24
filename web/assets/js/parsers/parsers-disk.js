@@ -445,7 +445,7 @@ async function parseIntelHex(file) {
                 maxAddr = a + len;
         }
         else if (type === 0x04) {
-            base = parseInt(bytes.slice(8, 12), 16) << 16;
+            base = parseInt(bytes.slice(8, 12), 16) * 65536; // not << 16: upper words >= 0x8000 would go negative
         }
         else if (type === 0x02) {
             base = parseInt(bytes.slice(8, 12), 16) << 4;
@@ -1082,8 +1082,9 @@ async function parseDfu(file) {
     // suffix length byte at offset 11, total 16 bytes at end of file.
     try {
         const tail = await readRange(file, file.size - 16, file.size);
-        if (tail.length === 16 && tail[10] === 0x55 && tail[9] === 0x46 && tail[8] === 0x44) {
-            // bytes are stored 'UFD' reversed in the stream ('D','F','U' little-endian);
+        if (tail.length === 16 && tail[8] === 0x55 && tail[9] === 0x46 && tail[10] === 0x44) {
+            // the "DFU" signature is stored least-significant byte first, so the
+            // stream reads 'U','F','D' at suffix offsets 8, 9, 10;
             // suffix layout: bcdDevice(2) idProduct(2) idVendor(2) bcdDFU(2) 'UFD'(3) len(1) crc(4)
             const r = new Reader(tail, true);
             const bcdDevice = r.u16();

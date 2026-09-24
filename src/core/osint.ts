@@ -35,13 +35,22 @@ export function extractIndicators(text: string, opts: any = {}) {
   const seen: Record<IndicatorKind, Set<string>> = { urls: new Set(), ips: new Set(), domains: new Set(), emails: new Set() };
   const add = (k: IndicatorKind, v: string) => { if (v && !seen[k].has(v) && out[k].length < cap) { seen[k].add(v); out[k].push(v); } };
 
+  // Every pattern below is length-bounded: the text is a whole file, and an
+  // unbounded run (`a.a.a.a...` for megabytes) made the email and domain scans
+  // quadratic - each start position re-walked the rest of the run. With the caps
+  // (URL 2048, local part 64, host 253, at most 16 labels) the work per start
+  // position is constant, so a scan is linear in the text.
   // URLs first; strip them out so their host isn't re-counted as a bare domain.
-  let work = text.replace(/\bhttps?:\/\/[^\s"'<>()[\]{}\\|^`]+/gi, (m: string) => {
-    add('urls', m.replace(/[.,;:'")\]}>]+$/, ''));
+  let work = text.replace(/\bhttps?:\/\/[^\s"'<>()[\]{}\\|^`]{1,2048}/gi, (m: string) => {
+    // Trailing punctuation trimmed by hand - a `[...]+$` regex is itself
+    // quadratic on a URL full of dots.
+    let end = m.length;
+    while (end > 0 && '.,;:\'")]}>'.includes(m[end - 1])) end--;
+    add('urls', m.slice(0, end));
     return ' ';
   });
   // Emails next, also removed before the domain pass.
-  work = work.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,24}\b/g, (m) => {
+  work = work.replace(/\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,24}\b/g, (m) => {
     add('emails', m);
     return ' ';
   });
@@ -51,7 +60,7 @@ export function extractIndicators(text: string, opts: any = {}) {
   while ((mm = ipRe.exec(work))) add('ips', mm[0]);
   // Bare domains (a dotted hostname ending in a 2+ char alpha TLD), skipping the
   // filename-shaped ones and anything that's actually an IP.
-  const domRe = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,24})\b/gi;
+  const domRe = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){1,16}([a-z]{2,24})\b/gi;
   while ((mm = domRe.exec(work))) {
     const dom = mm[0].toLowerCase();
     if (FILE_TLDS.has(mm[1].toLowerCase())) continue;

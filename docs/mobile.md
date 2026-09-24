@@ -132,6 +132,12 @@ privacy page.
   out network support and capture devices.
 - The app switches off two built-in Capacitor routes that would let the page
   read files anywhere the app can reach.
+- Links to web pages and email addresses open in another app only when you
+  tap them. The page cannot open any other kind of app link.
+- "Open with" never accepts a file from the app's own storage, and a file
+  another app hands in is never shown as a web page - only analysed.
+- Nothing is backed up to Google Drive or copied to a new phone, so the
+  "Recently analysed" list stays on this phone.
 
 ## What differs from the website
 
@@ -145,7 +151,7 @@ privacy page.
 | Landscape | Fullscreen. The status bar and the gesture bar hide, and a swipe in from the edge shows them for a moment. Only the side with the camera keeps a strip in the page colour, so no text sits under the camera |
 | "Install as app" | Becomes **Check for updates** |
 | "Get App" button | Hidden. You already have the app |
-| "Email me!" and "Suggest this format" | The app skips the human-check, because that widget belongs to the address of the site. The mail app opens directly |
+| "Email me!" and "Suggest this format" | The app skips the human-check, because that widget belongs to the address of the site. A tap on "Open mail app" then opens the mail app |
 | Memory limits | The same as the browser on the phone. The app deliberately does not raise them, because a WebView gets only part of the memory of the phone |
 
 ## Not built yet

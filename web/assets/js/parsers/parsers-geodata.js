@@ -12,6 +12,7 @@
 import { row, fmtBytes, preBlock } from '../core/util.js';
 import { Reader, ascii, latin1 } from '../core/binutil.js';
 import { sqliteSummary } from '../lib/sqlite.js';
+import { PARSE_TEXT_MAX } from '../core/limits.js';
 // ---------- small helpers ----------
 // Read up to `max` bytes of the file as text (UTF-8, lossy).
 async function readText(file, max = 1_000_000) {
@@ -85,7 +86,7 @@ async function parseTopojson(file) {
 //  OSM XML
 // =====================================================================
 async function parseOsm(file) {
-    const text = await readText(file, 8_000_000);
+    const text = await readText(file, PARSE_TEXT_MAX);
     if (!/<osm\b/.test(text))
         return null;
     const out = { 'Format': 'OpenStreetMap XML' };
@@ -113,7 +114,7 @@ async function parseOsm(file) {
     const b = text.match(/<bounds\b[^>]*\bminlat\s*=\s*"([^"]*)"[^>]*\bminlon\s*=\s*"([^"]*)"[^>]*\bmaxlat\s*=\s*"([^"]*)"[^>]*\bmaxlon\s*=\s*"([^"]*)"/);
     if (b)
         out['Bounds'] = fmtBBox(+b[2], +b[1], +b[4], +b[3]);
-    if (text.length >= 8_000_000)
+    if (text.length >= PARSE_TEXT_MAX)
         out['Note'] = 'counts cover the first 8 MB only';
     return out;
 }
@@ -159,7 +160,7 @@ async function parseShp(file) {
         out['M range'] = fc(h.minM) + ' … ' + fc(h.maxM);
     // Count records by walking record headers (each: 4-byte BE record no + 4-byte BE content length in words).
     try {
-        const buf = await readBytes(file, Math.min(file.size, 8_000_000));
+        const buf = await readBytes(file, Math.min(file.size, PARSE_TEXT_MAX));
         const r = new Reader(buf); // big-endian
         r.seek(100);
         let records = 0;
@@ -178,7 +179,7 @@ async function parseShp(file) {
             if (records > 2_000_000)
                 break;
         }
-        out['Features'] = records.toLocaleString() + (file.size > 8_000_000 ? ' (first 8 MB)' : '');
+        out['Features'] = records.toLocaleString() + (file.size > PARSE_TEXT_MAX ? ' (first 8 MB)' : '');
     }
     catch (_) { }
     out['Companion files'] = '.dbf (attributes), .shx (index), .prj (CRS)';
@@ -314,7 +315,7 @@ async function parseWorldFile(file, ext) {
 //  GML
 // =====================================================================
 async function parseGml(file) {
-    const text = await readText(file, 8_000_000);
+    const text = await readText(file, PARSE_TEXT_MAX);
     if (!/<(?:\w+:)?(?:FeatureCollection|featureMember|gml:|boundedBy)/i.test(text) && !/xmlns[^=]*=["'][^"']*\/gml/i.test(text)) {
         if (!/\bgml\b/i.test(text))
             return null;
@@ -347,7 +348,7 @@ async function parseGml(file) {
         if (coords.length >= 4)
             out['boundedBy'] = fmtBBox(coords[0], coords[1], coords[2], coords[3]);
     }
-    if (text.length >= 8_000_000)
+    if (text.length >= PARSE_TEXT_MAX)
         out['Note'] = 'counts cover the first 8 MB only';
     return out;
 }
@@ -489,7 +490,7 @@ function igcCoord(d) {
     return { lat, lon };
 }
 async function parseIgc(file) {
-    const text = await readText(file, 8_000_000);
+    const text = await readText(file, PARSE_TEXT_MAX);
     if (!/^[AHBLG]/m.test(text) || !/\bH[FP]/.test(text) && !/^B\d{6}/m.test(text)) {
         if (!/^B\d{6}\d{7}[NS]/m.test(text))
             return null;
@@ -1028,7 +1029,7 @@ async function parseMbtiles(file, ext) {
 //  OSM o5m / o5c (osmconvert binary)
 // =====================================================================
 async function parseO5m(file, ext) {
-    const b = await readBytes(file, Math.min(file.size, 8_000_000));
+    const b = await readBytes(file, Math.min(file.size, PARSE_TEXT_MAX));
     // o5m: 0xFF reset then 0xE0 'o5m2' header; o5c (change) uses the same framing.
     if (b.length < 6 || b[0] !== 0xff)
         return null;
@@ -1070,7 +1071,7 @@ async function parseO5m(file, ext) {
     if (resets)
         out['Reset markers'] = resets.toLocaleString();
     out['Note'] = 'Marker tallies are upper-bound estimates from a byte scan'
-        + (file.size > 8_000_000 ? ' of the first 8 MB' : '')
+        + (file.size > PARSE_TEXT_MAX ? ' of the first 8 MB' : '')
         + '; o5m is a varint/delta-encoded binary - exact counts need a full o5m decoder.';
     return out;
 }
@@ -1141,7 +1142,7 @@ async function parseLyr(file) {
 //  QGIS project: .qgs (XML) / .qgz (ZIP wrapping a .qgs)
 // =====================================================================
 async function parseQgs(file) {
-    const text = await readText(file, 8_000_000);
+    const text = await readText(file, PARSE_TEXT_MAX);
     if (!/<qgis\b/i.test(text))
         return null;
     const out = { 'Format': 'QGIS project (.qgs, XML)' };
@@ -1186,7 +1187,7 @@ async function parseQgs(file) {
         out['Data providers'] = topCounts(byProvider, 10);
     if (lines.length)
         out._sections = [{ title: 'Layers (' + (layers.length || treeLayers) + ')', node: preBlock(lines.join('\n')), open: true }];
-    if (text.length >= 8_000_000)
+    if (text.length >= PARSE_TEXT_MAX)
         out['Note'] = 'parsed the first 8 MB only';
     return out;
 }
@@ -1213,12 +1214,12 @@ async function parseSbn(file, ext) {
     const code = r.u32();
     if (code !== 9994)
         return null;
-    // .sbn / .sbx share the .shp 100-byte header layout: file code 9994 (BE),
-    // file length in 16-bit words at byte 24 (BE), then a LE bounding box.
+    // .sbn / .sbx headers resemble .shp's but differ after byte 24: file code 9994
+    // (BE), file length in 16-bit words at 24 (BE), shape count at 28 (BE), then a
+    // BIG-endian bounding box at 32 (unlike .shp's little-endian one at 36).
     r.seek(24);
     const wordLen = r.u32();
-    r.le(true);
-    r.seek(36);
+    const shapes = r.u32();
     const minX = r.f64(), minY = r.f64(), maxX = r.f64(), maxY = r.f64();
     const out = {
         'Format': ext === 'sbx'
@@ -1227,6 +1228,8 @@ async function parseSbn(file, ext) {
         'File code': '9994 (Esri index)',
         'File length': fmtBytes(wordLen * 2),
     };
+    if (shapes > 0 && shapes < 1e9)
+        out['Shapes indexed'] = shapes.toLocaleString();
     if ([minX, minY, maxX, maxY].every((n) => isFinite(n)) && (minX || minY || maxX || maxY)) {
         out['Bounding box'] = fmtBBox(minX, minY, maxX, maxY);
     }

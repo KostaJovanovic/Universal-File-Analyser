@@ -13,6 +13,7 @@ import { fmtBytes, preBlock } from '../core/util.js';
 import { Reader, ascii, latin1, utf8, utf16, gunzip } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 import { openCfbf } from '../lib/cfbf.js';
+import { SCAN_SMALL, PARSE_TEXT_MAX } from '../core/limits.js';
 import type { Row, ParseFn, ParseCtx } from '../core/types.js';
 
 /** An axis-aligned bounding box accumulated over a point/vertex stream. */
@@ -169,7 +170,7 @@ async function parseOff(file: File) {
 // ---------- glTF (JSON) ----------
 async function parseGltf(file: File) {
   let j;
-  try { j = JSON.parse(await file.slice(0, Math.min(file.size, 8 * 1024 * 1024)).text()); } catch (_) { return null; }
+  try { j = JSON.parse(await file.slice(0, Math.min(file.size, PARSE_TEXT_MAX)).text()); } catch (_) { return null; }
   if (!j || !j.asset) return null;
   const a = j.asset;
   const out: Row = { 'Format': 'glTF (JSON)' };
@@ -277,9 +278,10 @@ async function parseVox(file: File) {
       } else if (id === 'PACK') {
         // explicit model count
       }
-      if (next <= r.tell()) break;
-      r.seek(next);
+      // `next` is always past the 12-byte chunk header, so the walk advances even
+      // when the reads above consumed the whole content (SIZE is exactly 12).
       if (next > b.length) break;
+      r.seek(next);
     }
   } catch (_) {}
   if (sizes.length) out['Model dimensions'] = sizes.slice(0, 4).map((s) => s.join('x')).join(', ') + (sizes.length > 4 ? ', ...' : '');
@@ -684,19 +686,30 @@ async function parseE57(file: File) {
   const b = await head(file, 64);
   if (ascii(b, 0, 8) !== 'ASTM-E57') return null;
   const r = new Reader(b, true); r.seek(8);
-  const verMajor = r.u16(), verMinor = r.u16();
+  const verMajor = r.u32(), verMinor = r.u32();   // both u32 (ASTM E2807 header)
   const fileLen = Number(r.u64());
-  const xmlOffset = Number(r.u64());
-  const xmlLength = Number(r.u64());
+  const xmlOffset = Number(r.u64());              // PHYSICAL offset
+  const xmlLength = Number(r.u64());              // LOGICAL length (CRCs excluded)
+  const pageSize = Number(r.u64()) || 1024;
   const out: Row = {
     'Format': 'E57 point cloud (ASTM E57)',
     'Version': verMajor + '.' + verMinor,
     'File length': fmtBytes(fileLen),
   };
   // The XML section at the file tail holds scan metadata.
-  if (xmlOffset > 0 && xmlLength > 0 && xmlOffset + Math.min(xmlLength, 524288) <= file.size) {
+  if (xmlOffset > 0 && xmlLength > 0 && xmlOffset < file.size && pageSize > 4 && pageSize <= 1 << 20) {
     try {
-      const xml = await file.slice(xmlOffset, xmlOffset + Math.min(xmlLength, 524288)).text();
+      // Every page ends in a 4-byte CRC, so the logical XML is the physical run
+      // with the last 4 bytes of each page (counted from file start) dropped.
+      const want = Math.min(xmlLength, 524288);
+      const physLen = Math.min(file.size - xmlOffset, (Math.ceil(want / (pageSize - 4)) + 1) * pageSize);
+      const phys = new Uint8Array(await file.slice(xmlOffset, xmlOffset + physLen).arrayBuffer());
+      const logical = new Uint8Array(want);
+      let n = 0;
+      for (let i = 0; i < phys.length && n < want; i++) {
+        if ((xmlOffset + i) % pageSize < pageSize - 4) logical[n++] = phys[i];
+      }
+      const xml = new TextDecoder().decode(logical.subarray(0, n));
       const scans = (xml.match(/<vectorChild\b/gi) || []).length || (xml.match(/type="Structure"/gi) || []).length;
       const data3d = (xml.match(/<data3D\b/i) ? (xml.match(/<vectorChild\b/gi) || []).length : 0);
       const guid = (xml.match(/<guid[^>]*>([^<]+)<\/guid>/i) || [])[1];
@@ -806,15 +819,19 @@ async function parseJt(file: File) {
   const ver = (hdr.match(/^Version\s+([\d.]+)/i) || [])[1];
   if (ver) out['JT version'] = ver;
   out['Version header'] = hdr.replace(/\0+/g, '').trim().slice(0, 80);
-  // TOC count follows the GUID after the 80-byte header (offset 80 + 16 GUID = 96)
+  // After the 80-byte version string: byte order u8 @80 (0 = little-endian),
+  // empty field i32 @81, TOC offset @85 (i32 before JT 10, u64 from JT 10), then
+  // the LSG segment GUID.
   try {
-    const tb = new Uint8Array(await file.slice(80, 200).arrayBuffer());
-    const tr = new Reader(tb, true);
-    tr.skip(16); // GUID
-    const tocOffset = Number(tr.u64 ? tr.u64() : tr.u32());
+    const tb = new Uint8Array(await file.slice(80, 96).arrayBuffer());
+    const le = tb[0] === 0;
+    const tr = new Reader(tb, le);
+    tr.seek(5);
+    const major = parseInt(ver || '0', 10);
+    const tocOffset = major >= 10 ? Number(tr.u64()) : tr.i32();
     if (tocOffset > 0 && tocOffset < file.size) {
       const cb = new Uint8Array(await file.slice(tocOffset, tocOffset + 4).arrayBuffer());
-      const cr = new Reader(cb, true);
+      const cr = new Reader(cb, le);
       const entryCount = cr.u32();
       if (entryCount > 0 && entryCount < 1e6) out['TOC segments'] = entryCount;
     }
@@ -856,9 +873,9 @@ async function parseSpz(file: File) {
   const raw = await head(file, 64);
   let b = raw;
   // SPZ payload is gzip-compressed.
+  // Only the 16-byte header is needed: stream-inflate the prefix, never the file.
   if (raw[0] === 0x1F && raw[1] === 0x8B) {
-    const all = new Uint8Array(await file.arrayBuffer());
-    const inf = await gunzip(all);
+    const inf = await gunzip(file, 64, { partial: true });
     if (inf) b = inf;
   }
   // header: magic u32 (0x5053474E 'NGSP'), version u32, numPoints u32, shDegree u8, ...
@@ -1015,10 +1032,10 @@ async function parseU3d(file: File) {
   const verMajor = r.i16 ? r.i16() : r.u16();
   const verMinor = r.i16 ? r.i16() : r.u16();
   const profile = r.u32();
-  const profiles = [];
-  if (profile & 0x1) profiles.push('extensible');
-  if (profile & 0x2) profiles.push('no compression');
-  if (profile & 0x4) profiles.push('defined units');
+  const profiles = [];                 // ECMA-363 9.4.1.3: 0 = base profile
+  if (profile & 0x2) profiles.push('extensible');
+  if (profile & 0x4) profiles.push('no compression');
+  if (profile & 0x8) profiles.push('defined units');
   const out: Row = {
     'Format': 'Universal 3D (ECMA-363)',
     'Version': verMajor + (verMinor ? '.' + verMinor : ''),
@@ -1075,8 +1092,9 @@ async function parseWings(file: File) {
   for (let i = 0; i < raw.length - 1; i++) { if (raw[i] === 0x1f && raw[i + 1] === 0x8b) { gzStart = i; break; } }
   if (gzStart >= 0) {
     try {
-      const all = new Uint8Array(await file.arrayBuffer());
-      const inf = await gunzip(all.subarray(gzStart));
+      // Stream-inflate from the file (never read it whole) and stop at
+      // SCAN_SMALL of output: the counts below are approximate either way.
+      const inf = await gunzip(file.slice(gzStart), SCAN_SMALL, { partial: true });
       if (inf && inf.length) {
         const text = latin1(inf);
         // Erlang term holds shape/material atoms; count object/material markers.

@@ -48,6 +48,29 @@ for (const ts of sources) {
   if (statSync(ts).mtimeMs > statSync(js).mtimeMs + 2000) stale.push(rel);
 }
 
+// The reverse direction: emitted .js (or .js.map) with no .ts behind it any more.
+// tsc never deletes output, so a renamed or removed source leaves its old module
+// in web/assets/js/, where it still deploys and can still be imported by a stale
+// reference without any build error. Reported loudly but NOT fatal - it is a
+// leftover to delete, not skew between source and output.
+const orphans = [];
+function walkOut(dir) {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, e.name);
+    if (e.isDirectory()) { walkOut(full); continue; }
+    const m = e.name.match(/^(.*)\.js(\.map)?$/);
+    if (!m) continue;
+    const rel = relative(OUT, full).split(sep).join('/');
+    const ts = join(SRC, rel.replace(/\.js(\.map)?$/, '.ts'));
+    if (!existsSync(ts)) orphans.push(rel);
+  }
+}
+if (existsSync(OUT)) walkOut(OUT);
+if (orphans.length) {
+  console.warn(`[check-build] WARN - ${orphans.length} emitted file(s) with no source in src/ (delete them):`);
+  for (const o of orphans) console.warn(`    orphan:     web/assets/js/${o}`);
+}
+
 if (missing.length || stale.length) {
   console.error(`[check-build] FAIL - ${sources.length} sources checked`);
   for (const m of missing) console.error(`    no output:  ${m}`);

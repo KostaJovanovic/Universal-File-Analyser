@@ -85,6 +85,8 @@ settings. To update a portable copy, run the new Windows file, choose
 You can also drop an `ffmpeg.exe` next to the portable program, or in an
 `ffmpeg` folder there. The app prefers that one, so the stick carries its own
 hardware video support rather than relying on the computer it is plugged into.
+A portable copy runs whatever `ffmpeg.exe` it finds there, so only put a copy
+you trust in that folder, and keep the folder where nobody else can write to it.
 
 ## Updates
 

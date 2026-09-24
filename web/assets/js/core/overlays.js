@@ -181,8 +181,13 @@ export function showTypeSuggestion(sniff, onAccept) {
 }
 // Cursor-style confirm popup (reuses the treemap .anr-treemap-menu look) shown
 // when the "Links" button is clicked, so leaving the site is deliberate.
+// The open popup's close(), so a new one retires it WITH its capture listeners
+// rather than just removing the node and leaving them piled up on document.
+let _linkConfirmClose = null;
 export function showLinkConfirm(anchor, opts) {
     opts = opts || {};
+    if (_linkConfirmClose)
+        _linkConfirmClose();
     document.querySelectorAll('.anr-link-confirm').forEach((n) => n.remove());
     const url = anchor.getAttribute('href');
     const message = opts.message || 'This link leads to link.valjdakosta.com, proceed?';
@@ -203,12 +208,17 @@ export function showLinkConfirm(anchor, opts) {
         py = r.top - mh - 8;
     menu.style.left = Math.max(4, px) + 'px';
     menu.style.top = Math.max(4, py) + 'px';
+    let closed = false;
     function close() {
+        closed = true;
+        if (_linkConfirmClose === close)
+            _linkConfirmClose = null;
         menu.remove();
         document.removeEventListener('mousedown', onOut, true);
         document.removeEventListener('keydown', onKey, true);
         window.removeEventListener('scroll', close, true);
     }
+    _linkConfirmClose = close;
     function onOut(e) { if (!menu.contains(e.target) && e.target !== anchor)
         close(); }
     function onKey(e) { if (e.key === 'Escape')
@@ -216,6 +226,8 @@ export function showLinkConfirm(anchor, opts) {
     cancelBtn.addEventListener('click', close);
     okBtn.addEventListener('click', () => { close(); onProceed(); });
     setTimeout(() => {
+        if (closed)
+            return; // already retired before the listeners went on
         document.addEventListener('mousedown', onOut, true);
         document.addEventListener('keydown', onKey, true);
         window.addEventListener('scroll', close, true);

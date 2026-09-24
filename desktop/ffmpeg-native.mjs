@@ -32,7 +32,7 @@ import { delimiter, join } from 'node:path';
 
 // The encoder families, the argument rewrite and the safety checks live in a
 // pure module, so the Android shell runs the same rules. See its header.
-import { FAMILIES, accelerate, checkArgs, checkInputText, inputsOf } from './ffmpeg-accel.mjs';
+import { FAMILIES, LIST_PEEK, accelerate, checkArgs, checkInputBytes, inputsOf, isSafeName } from './ffmpeg-accel.mjs';
 export { accelerate };
 
 // ---------------------------------------------------------------------------
@@ -215,8 +215,15 @@ export function capabilities(cacheDir, bundled) {
 
 const sessions = new Map();
 
+/** The session-folder path for a page-supplied name. Slashes are flattened as
+ *  before, then the result must be a bare name by the checks' own rule
+ *  (isSafeName): no colon (an NTFS stream, or a drive), no control character,
+ *  no Windows device name (CON, NUL, COM1...). Anything else throws, which the
+ *  page sees as a failed writeFile/readFile - as ffmpeg.wasm would report it. */
 function safeName(name) {
-  return String(name || 'f').replace(/[\\/]+/g, '_').replace(/^\.+/, '_') || 'f';
+  const flat = String(name || 'f').replace(/[\\/]+/g, '_').replace(/^\.+/, '_') || 'f';
+  if (!isSafeName(flat)) throw new Error('not a valid ffmpeg file name');
+  return flat;
 }
 
 export async function openSession(id, tmpRoot) {
@@ -268,28 +275,26 @@ export async function closeSession(id) {
 // it wrote itself - so each small text input is read and checked too.
 // ---------------------------------------------------------------------------
 
-/** Only this much of an input is read to look for a list. Lists are tiny, and a
- *  video is binary and fails the text test on its first bytes anyway. */
-const LIST_PEEK = 1024 * 1024;
-
+/* Only the first LIST_PEEK bytes of an input are read. Lists are tiny, a video
+ * is binary and fails the text test on its first bytes, and a list larger than
+ * the peek is refused by checkInputBytes rather than half-checked. The byte
+ * rules live in ffmpeg-accel.mjs so the Android port decides identically. */
 async function checkInputs(dir, args) {
   for (const { name, format } of inputsOf(args)) {
     const path = join(dir, safeName(name));
     let st;
     try { st = await stat(path); } catch (_) { continue; }   // ffmpeg reports the missing file itself
-    if (!st.isFile()) continue;
+    if (!st.isFile()) return 'the input ' + JSON.stringify(name) + ' is not a file';
     const fh = await open(path, 'r');
-    let text;
+    let head;
     try {
       const buf = Buffer.alloc(Math.min(st.size, LIST_PEEK));
       const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
-      const head = buf.subarray(0, bytesRead);
-      if (head.subarray(0, 4096).includes(0)) continue;       // binary - not a list
-      text = head.toString('utf8');
+      head = buf.subarray(0, bytesRead);
     } finally {
       await fh.close();
     }
-    const bad = checkInputText(text, format === 'concat');
+    const bad = checkInputBytes(head, st.size, format === 'concat');
     if (bad) return bad;
   }
   return null;
@@ -322,12 +327,15 @@ export async function runJob(id, rawArgs, opts) {
   // in ffmpeg-accel.mjs. Refuse before anything spawns. The code is 1, not -1:
   // video.ts reads -1 as "ffmpeg could not start" and throws the instance
   // away, while a non-zero exit is a clean failure it already handles.
-  const refused = checkArgs(rawArgs) || await checkInputs(s.dir, rawArgs);
-  if (refused) {
-    const log = '[analyser] refused to run ffmpeg: ' + refused + '\n';
+  const refuse = (why) => {
+    const log = '[analyser] refused to run ffmpeg: ' + why + '\n';
     if (onLog) onLog(log);
     return { ok: false, code: 1, accelerated: false, note: 'refused', log };
-  }
+  };
+  let refused;
+  try { refused = checkArgs(rawArgs) || await checkInputs(s.dir, rawArgs); }
+  catch (err) { refused = String(err && err.message || err); }
+  if (refused) return refuse(refused);
 
   const attempt = (args, accelerated, note) => new Promise((resolve) => {
     let child;
@@ -374,8 +382,14 @@ export async function runJob(id, rawArgs, opts) {
   });
 
   const { args, changed, note } = accelerate(rawArgs, accel);
+  // The rewrite is what actually spawns, so it is checked too. It only ever
+  // swaps in names from FAMILIES, but a check that trusts its input's
+  // provenance is not a check. A refused rewrite runs the (already checked)
+  // original instead, like any other hardware failure.
+  const again = changed ? checkArgs(args) : null;
+  if (again && onLog) onLog('[analyser] hardware rewrite refused (' + again + '), running in software\n');
 
-  if (changed) {
+  if (changed && !again) {
     const hw = await attempt(args, true, note);
     if (hw.ok) return hw;
     // The hardware path failed: a driver refusing this resolution, a pixel

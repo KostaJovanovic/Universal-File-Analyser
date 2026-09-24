@@ -102,7 +102,7 @@ Browse ZIP, 7z, RAR and whole dropped folders, with a treemap that breaks down w
 ## Privacy
 
 - No uploads: files are read with the File API and never leave the device.
-- No accounts, no tracking, no analytics, ZERO tracking cookies.
+- No accounts, no trackers, ZERO tracking cookies. The only thing counted is an anonymous per-extension tally (see the privacy page).
 - Works fully offline once installed; the service worker precaches the app shell and keeps the WASM engines after first use.
 - Private keys and secrets found inside files are flagged, not transmitted.
 

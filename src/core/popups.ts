@@ -50,20 +50,25 @@ function loadTurnstile() {
 // 'failed' (rendered but errored/expired). Callers reveal the address ONLY in the
 // resolve path, so it stays hidden until a real challenge is solved. Mail needs
 // the network regardless, so offline is a hard stop, not a fallback.
-async function turnstileChallenge(box: HTMLDivElement, setStatus: (s: string) => void) {
+// An aborted `signal` (the contact modal was closed) removes the widget and
+// rejects with 'cancelled', so a challenge solved late can never reveal anything.
+async function turnstileChallenge(box: HTMLDivElement, setStatus: (s: string) => void, signal?: AbortSignal) {
   // Real reachability check, not just navigator.onLine - the Turnstile script may
   // be precached and load offline, but the challenge itself needs the network.
   if (!(await probeOnline())) throw 'offline';
+  if (signal && signal.aborted) throw 'cancelled';
   // Desktop app: the widget is bound to the site's hostname, so it can never
   // verify on an analyser:// origin - the challenge would fail every time and
   // the address would stay unreachable. Skip straight to the mail client. The
   // reachability check above still stands, because mail needs the network.
   if (window.anrDesktop) return;
-  let ts;
+  let ts: any;
   try { ts = await loadTurnstile(); } catch (_) { throw 'offline'; }
+  if (signal && signal.aborted) throw 'cancelled';
   return new Promise<void>((resolve, reject) => {
     let wid: any = null;
     const drop = () => { if (wid != null) { try { ts.remove(wid); } catch (_) {} wid = null; } };
+    if (signal) signal.addEventListener('abort', () => { drop(); reject('cancelled'); }, { once: true });
     wid = ts.render(box, {
       sitekey: TURNSTILE_SITEKEY,
       theme: 'auto',
@@ -120,10 +125,16 @@ export function showSuggestPopup(ext: string) {
 
     const resetCta = () => {
       cta._busy = false;
+      delete cta.dataset.verified;
       cta.disabled = false;
       cta.textContent = 'Email a suggestion →';
     };
     cta.addEventListener('click', async () => {
+      // Second click, after the check passed: open the mail app from THIS click.
+      // Opening it straight from the challenge callback ran outside any user
+      // activation (the probe and the challenge are awaited), so browsers
+      // blocked the window.open silently.
+      if (cta.dataset.verified) { openMailto(); return; }
       if (cta._busy) return;
       cta._busy = true;
       cta.disabled = true;
@@ -136,9 +147,14 @@ export function showSuggestPopup(ext: string) {
       gate.appendChild(box);
       try {
         await turnstileChallenge(box, (t: string|null) => { status.textContent = t; });
-        status.textContent = 'Verified - opening your mail app…';
+        // The desktop app skips the challenge and Electron hands mailto: to the
+        // OS without needing a user gesture, so open straight away there.
+        if (window.anrDesktop && !window.anrDesktop.shell) { openMailto(); resetCta(); gate.hidden = true; return; }
+        status.textContent = 'Verified - tap below to open your mail app.';
         cta._busy = false;
-        openMailto();
+        cta.dataset.verified = '1';
+        cta.disabled = false;
+        cta.textContent = 'Open mail app →';
       } catch (reason) {
         if (reason === 'offline') {
           status.textContent = 'You need an internet connection to send mail. Please connect to a network and try again.';
@@ -158,6 +174,7 @@ export function showSuggestPopup(ext: string) {
   // Reset the CTA/gate so a reused popup starts fresh for the new file.
   if (_suggestPopEl._cta) {
     _suggestPopEl._cta._busy = false;
+    delete _suggestPopEl._cta.dataset.verified;
     _suggestPopEl._cta.disabled = false;
     _suggestPopEl._cta.textContent = 'Email a suggestion →';
   }
@@ -202,9 +219,11 @@ function openContactModal() {
   document.body.appendChild(overlay);
 
   let settled = false;
+  const abort = new AbortController();
   const close = () => {
     if (settled) return;
     settled = true;
+    abort.abort();   // drops the Turnstile widget; a late pass reveals nothing
     _contactModalOpen = false;
     overlay.classList.remove('is-open');
     setTimeout(() => overlay.remove(), 200);
@@ -217,22 +236,36 @@ function openContactModal() {
   requestAnimationFrame(() => overlay.classList.add('is-open'));
 
   // Run the challenge inside the modal; reveal + open mail only on success.
-  turnstileChallenge(box, (t: string|null) => { status.textContent = t; })
+  turnstileChallenge(box, (t: string|null) => { status.textContent = t; }, abort.signal)
     .then(() => {
-      status.textContent = 'Verified - opening your mail app…';
-      const addr = ['valjdakosta', 'gmail.com'].join('@');
-      const subject = 'Hello from the Analyser site';
-      const body = 'Hi!\n\n'
-        + 'I was using Analyser and wanted to get in touch about:\n\n'
-        + '\n\n'
-        + '(Feel free to attach a file if it helps.)\n';
-      // Open in a new tab so this page stays put rather than being navigated away.
-      window.open('mailto:' + addr
-        + '?subject=' + encodeURIComponent(subject)
-        + '&body=' + encodeURIComponent(body), '_blank');
-      setTimeout(close, 700);
+      if (settled) return;
+      // The mail app opens from a click on this button, not from here: after the
+      // awaited probe and challenge there is no user activation left, and a
+      // window.open without one is silently blocked.
+      status.textContent = 'Verified - press Open mail app to write your message.';
+      const mailBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-ok' }, 'Open mail app');
+      const openMail = () => {
+        const addr = ['valjdakosta', 'gmail.com'].join('@');
+        const subject = 'Hello from the Analyser site';
+        const body = 'Hi!\n\n'
+          + 'I was using Analyser and wanted to get in touch about:\n\n'
+          + '\n\n'
+          + '(Feel free to attach a file if it helps.)\n';
+        // Open in a new tab so this page stays put rather than being navigated away.
+        window.open('mailto:' + addr
+          + '?subject=' + encodeURIComponent(subject)
+          + '&body=' + encodeURIComponent(body), '_blank');
+        setTimeout(close, 700);
+      };
+      // The desktop app skips the challenge and Electron hands mailto: to the
+      // OS without needing a user gesture, so open straight away there.
+      if (window.anrDesktop && !window.anrDesktop.shell) { openMail(); return; }
+      mailBtn.addEventListener('click', openMail);
+      closeBtn.before(mailBtn);
+      mailBtn.focus();
     })
     .catch((reason) => {
+      if (settled) return;
       status.textContent = reason === 'offline'
         ? 'You need an internet connection to send mail. Please connect to a network and try again.'
         : 'Couldn’t verify. Close this and try again.';

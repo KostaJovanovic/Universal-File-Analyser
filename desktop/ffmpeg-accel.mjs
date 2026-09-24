@@ -14,7 +14,7 @@
  *  1. REWRITES - accelerate() and softwareFallback() move a software encode
  *     onto whatever this machine can actually run. A wrong rewrite costs speed
  *     or a retry, never safety, so the page side may run them.
- *  2. CHECKS - checkArgs() and checkInputText() refuse anything that reaches
+ *  2. CHECKS - checkArgs() and checkInputBytes() refuse anything that reaches
  *     outside the session folder. These ARE a security boundary. The page
  *     chooses the arguments, and a crafted file that finds an XSS in a
  *     renderer controls the page. Unchecked, that page could make ffmpeg read
@@ -210,18 +210,40 @@ export function softwareFallback(args, encoders) {
 // Checks: nothing may reach outside the session folder
 //
 // The page only ever means bare names inside the session folder ('input',
-// 'rev_seg_%03d.mp4', 'out.mp4'). So anything that looks like a way out is
-// refused: an absolute or drive path, a parent-directory step, a URL or an
-// ffmpeg protocol, a capture device, a filter that loads a library, or an
-// option that reads more arguments from a file this check never saw.
+// 'rev_seg_%03d.mp4', 'out.mp4'). Two layers, both of which must pass:
+//
+//  1. A DENY-LIST that looks inside every argument for a way out: an absolute
+//     or drive path, a parent-directory step, a URL or an ffmpeg protocol, a
+//     capture device, a filter that loads a library, or an option that reads
+//     more arguments from a file this check never saw.
+//  2. An ALLOW-LIST of exactly the options, formats, filters and file names the
+//     app emits (see desktop/tools/check-ffmpeg-args.mjs, which holds every
+//     shape from src/, plus the hardware rewrites and the openh264 fallback).
+//     Anything else - an unknown option, a muxer that writes extra files, a
+//     name with a path in it - is refused. ffmpeg has hundreds of options and
+//     a deny-list cannot model them all; this layer does not have to.
+//
+// Every pattern is ASCII-only on purpose, and so is the Java port
+// (AnrFfmpegChecks.java): no \s, \S, \b, . or $ and no case-insensitive flag,
+// because JavaScript, OpenJDK and Android's ICU regex engine each give those
+// different Unicode meanings. Case folding is asciiLower() instead. When you add
+// an option here, add it there and to both test suites.
 // ---------------------------------------------------------------------------
 
 const MAX_ARGS = 512;
 const MAX_ARG_LEN = 16384;
 
+/** ASCII whitespace, spelled out - the characters `\s` means in OpenJDK. */
+const WS = '\\t\\n\\x0B\\f\\r ';
+
+/** Lower-cases A-Z only, so the patterns below never meet Unicode case rules. */
+export function asciiLower(s) {
+  return String(s).replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32));
+}
+
 /** Where a path or URL can start inside one argument: at its start, or after
  *  the characters that separate values in ffmpeg's option and filter syntax. */
-const D = '(?:^|[\\s=|,;\'"\\[\\]])';
+const D = '(?:^|[' + WS + '=|,;\'"\\[\\]])';
 
 /** ffmpeg's URL protocols (`ffmpeg -protocols`, plus the ones other builds
  *  add). Before a colon - escaped or not, since the filter parser unescapes
@@ -236,21 +258,24 @@ const PROTOCOLS = [
   'unix', 'zmq',
 ];
 
+/* Each runs on asciiLower(value), so none needs the `i` flag. `(?![^X])` is
+ * "end of text, or a character from X" - written that way because `$` also
+ * matches before a final line break in Java. */
 const RE = [
   // Any URL at all: scheme://
-  [new RegExp(D + '[a-z][a-z0-9+.-]*\\\\?:(?:\\\\?[\\\\/]){2}', 'i'), 'a URL'],
-  [new RegExp(D + '(?:' + PROTOCOLS.join('|') + ')(?:\\\\?:|,)', 'i'), 'an ffmpeg protocol'],
+  [new RegExp(D + '[a-z][a-z0-9+.-]*\\\\?:(?:\\\\?[\\\\/]){2}'), 'a URL'],
+  [new RegExp(D + '(?:' + PROTOCOLS.join('|') + ')(?:\\\\?:|,)'), 'an ffmpeg protocol'],
   // C:\ and C:/ - also after a colon, as in movie=x:filename=C\:/...
-  [new RegExp('(?:^|[\\s=|,;\'"\\[\\]:])[a-z]\\\\?:[\\\\/]', 'i'), 'a drive path'],
+  [new RegExp('(?:^|[' + WS + '=|,;\'"\\[\\]:])[a-z]\\\\?:[\\\\/]'), 'a drive path'],
   // C:file - relative to that drive's own current folder, not the session's.
-  [new RegExp('(?:^|[\\s=|\'"])[a-z]\\\\?:(?![\\\\/:])\\S', 'i'), 'a drive-relative path'],
+  [new RegExp('(?:^|[' + WS + '=|\'"])[a-z]\\\\?:(?![\\\\/:])[^' + WS + ']'), 'a drive-relative path'],
   // /abs, \abs and \\server\share. A lone backslash must be followed by a path
   // character, so ffmpeg's own escapes (\, and \:) never match.
-  [new RegExp(D + '(?:\\/|\\\\{1,2}(?=[a-z0-9_$.~-]))', 'i'), 'an absolute path'],
-  [new RegExp('(?:^|[\\s=|,;\'"\\[\\]\\\\/:])\\.\\.(?=$|[\\s\\\\/|,;\'"\\[\\]:])'), 'a parent-folder step'],
+  [new RegExp(D + '(?:\\/|\\\\{1,2}(?=[a-z0-9_$.~-]))'), 'an absolute path'],
+  [new RegExp('(?:^|[' + WS + '=|,;\'"\\[\\]\\\\/:])\\.\\.(?![^' + WS + '\\\\/|,;\'"\\[\\]:])'), 'a parent-folder step'],
   // Filters that load a native library or open a socket. Instance names may
   // carry an @label, hence the lookahead.
-  [new RegExp('(?:^|[\\s,;\'"\\[\\]])(?:frei0r|frei0r_src|ladspa|lv2|a?zmq|a?sendcmd)(?=$|[=@,;\\s\'"\\[\\]])', 'i'), 'a filter that loads code or opens a socket'],
+  [new RegExp('(?:^|[' + WS + ',;\'"\\[\\]])(?:frei0r|frei0r_src|ladspa|lv2|a?zmq|a?sendcmd)(?![^=@,;' + WS + '\'"\\[\\]])'), 'a filter that loads code or opens a socket'],
 ];
 
 /** Input and output devices. Any of these after -f captures the screen, a
@@ -266,27 +291,142 @@ const DEVICES = new Set([
  *  check would never see. `-/opt file` is FFmpeg 7's general form of it. */
 const FILE_OPTIONS = new Set(['-filter_script', '-filter_complex_script']);
 
+/** Options that write or open files the checks never see, or widen what ffmpeg
+ *  may open. Refused by name so the log says why; the allow-list below would
+ *  refuse them anyway. */
+const NAMED_REFUSALS = new Map([
+  ['-dump_attachment', 'writes attachments to files'],
+  ['-attach', 'reads a file into the output'],
+  ['-protocol_whitelist', 'widens the protocols ffmpeg may open'],
+  ['-protocol_blacklist', 'changes the protocols ffmpeg may open'],
+]);
+
+/** Muxers that write files beyond the one output named. `segment` is allowed
+ *  in exactly the shape the reverse uses (see SEGMENT_NAME). */
+const EXTRA_FILE_MUXERS = new Set(['hls', 'dash', 'tee', 'stream_segment', 'ssegment', 'image2', 'fifo', 'webm_chunk', 'webm_dash_manifest', 'smoothstreaming', 'hds']);
+
 /** One value: the first problem found in it, or null. */
 export function valueProblem(s) {
-  for (const [re, what] of RE) if (re.test(s)) return what;
+  const low = asciiLower(s);
+  for (const [re, what] of RE) if (re.test(low)) return what;
   return null;
 }
 
+// ---- The allow-list ------------------------------------------------------
+
+/** A plain number, as the app writes them (String(0.7291666666666666) too). */
+const NUM = '^[0-9]{1,10}(?:\\.[0-9]{1,20})?$';
+
 /**
- * @param {unknown} args  what the page sent
+ * Every option the app emits, with the pattern its value must match, or null
+ * for a flag that takes no value. Includes what accelerate() and
+ * softwareFallback() write: -hwaccel, the NVENC/QSV/AMF/VideoToolbox/MediaCodec
+ * quality options and their presets, and the encoders themselves. `-i`, `-f`,
+ * `-safe` and the segment options are handled specially in checkArgs().
+ */
+const OPTIONS = new Map([
+  ['-i', ''], ['-f', ''],
+  ['-y', null], ['-vn', null], ['-an', null],
+  ['-fflags', '^\\+genpts$'],
+  ['-skip_loop_filter', '^all$'],
+  ['-hwaccel', '^(?:cuda|qsv|d3d11va|videotoolbox)$'],
+  ['-safe', '^0$'],
+  ['-c', '^copy$'],
+  ['-c:v', '^(?:copy|libx264|libopenh264|(?:h264|hevc|av1)_(?:nvenc|qsv|amf|videotoolbox|mediacodec))$'],
+  ['-vcodec', '^(?:copy|libx264|libopenh264|(?:h264|hevc|av1)_(?:nvenc|qsv|amf|videotoolbox|mediacodec))$'],
+  ['-c:a', '^(?:copy|aac|pcm_s16le)$'],
+  ['-acodec', '^(?:copy|aac|pcm_s16le)$'],
+  ['-r', NUM], ['-ar', NUM], ['-ac', NUM], ['-t', NUM],
+  ['-frames:v', NUM], ['-q:v', NUM], ['-crf', NUM],
+  ['-cq', NUM], ['-global_quality', NUM], ['-qp_i', NUM], ['-qp_p', NUM],
+  ['-preset', '^(?:ultrafast|superfast|veryfast|faster|fast|medium|slow|slower|veryslow|p[1-7]|speed|balanced|quality)$'],
+  ['-tune', '^zerolatency$'],
+  ['-pix_fmt', '^yuv420p$'],
+  ['-movflags', '^\\+faststart$'],
+  ['-vf', '^(?:reverse|scale=-2:2\\*trunc\\(min\\([0-9]{1,5}\\\\,ih\\)/2\\))$'],
+  ['-af', '^areverse$'],
+  ['-force_key_frames', '^expr:gte\\(t,n_forced\\*[0-9]{1,10}(?:\\.[0-9]{1,20})?\\)$'],
+  ['-map', '^0$'],
+  ['-segment_time', NUM],
+  ['-reset_timestamps', '^1$'],
+  ['-rc', '^(?:vbr|cqp)$'],
+  ['-bitrate_mode', '^vbr$'],
+  ['-b:v', '^[0-9]{1,9}k$'],
+]);
+const OPTION_RE = new Map([...OPTIONS].map(([k, v]) => [k, v === null ? null : new RegExp(v)]));
+
+/** -f before an -i, and -f before an output. */
+const INPUT_FORMATS = new Set(['h264', 'hevc', 'concat']);
+const OUTPUT_FORMATS = new Set(['wav', 'null', 'segment']);
+
+/** A file in the session folder: no path, no drive, no `..`, no `%` pattern. */
+const NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/;
+/** An output: one file, with an extension whose muxer writes only that file. */
+const OUTPUT_NAME = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}\.(?:mp4|wav|jpg)$/;
+/** The only numbered output: the reverse's `rev_seg_%03d.mp4`. The `_` before
+ *  the number keeps a name like `com%01d` from expanding into a device name. */
+const SEGMENT_NAME = /^[A-Za-z0-9_]{0,63}_%0[1-9]d\.mp4$/;
+/** Windows device names. They are devices with any extension, in any folder. */
+const RESERVED = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?![^.])/;
+
+/** True for a bare file name the session folder may hold. The native shells
+ *  map every page-supplied name through this too (safeName). */
+export function isSafeName(name) {
+  return typeof name === 'string' && NAME.test(name) && !RESERVED.test(asciiLower(name));
+}
+
+/**
+ * @param {unknown} args  what the page sent - or what accelerate() made of it
  * @returns {string|null} why the job is refused, or null when it may run
  */
 export function checkArgs(args) {
   if (!Array.isArray(args) || args.length > MAX_ARGS) return 'not a valid argument list';
+  // Layer 1: the deny-list, over every argument.
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (typeof a !== 'string' || a.length > MAX_ARG_LEN) return 'not a valid argument list';
     if (a.startsWith('-/') || FILE_OPTIONS.has(a)) return a + ' reads options from a file';
-    if (a === '-f' && i + 1 < args.length && DEVICES.has(String(args[i + 1]).toLowerCase())) {
+    if (a === '-f' && i + 1 < args.length && DEVICES.has(asciiLower(args[i + 1]))) {
       return '-f ' + args[i + 1] + ' is a capture or playback device';
     }
     const bad = valueProblem(a);
     if (bad) return JSON.stringify(a) + ' contains ' + bad;
+  }
+  // Layer 2: the allow-list. `fmt` is the -f waiting for its -i or output.
+  let fmt = null;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a.startsWith('-') && a !== '-') {
+      if (NAMED_REFUSALS.has(a)) return a + ' ' + NAMED_REFUSALS.get(a);
+      if (!OPTION_RE.has(a)) return a + ' is not an option the app uses';
+      const re = OPTION_RE.get(a);
+      if (re === null) continue;                       // a flag
+      if (i + 1 >= args.length) return a + ' has no value';
+      const v = args[++i];
+      if (a === '-f') {
+        if (EXTRA_FILE_MUXERS.has(asciiLower(v))) return '-f ' + v + ' writes extra files';
+        if (!INPUT_FORMATS.has(v) && !OUTPUT_FORMATS.has(v)) return '-f ' + v + ' is not a format the app uses';
+        fmt = v;
+      } else if (a === '-i') {
+        if (fmt !== null && !INPUT_FORMATS.has(fmt)) return '-f ' + fmt + ' is not an input format the app uses';
+        if (!isSafeName(v)) return 'the input ' + JSON.stringify(v) + ' is not a bare file name';
+        fmt = null;
+      } else {
+        if (a === '-safe' && fmt !== 'concat') return '-safe only goes with -f concat';
+        if ((a === '-segment_time' || a === '-reset_timestamps') && fmt !== 'segment') return a + ' only goes with -f segment';
+        if (!re.test(v)) return a + ' ' + JSON.stringify(v) + ' is not a value the app uses';
+      }
+    } else {
+      if (fmt !== null && !OUTPUT_FORMATS.has(fmt)) return '-f ' + fmt + ' is not an output format the app uses';
+      if (fmt === 'segment') {
+        if (!SEGMENT_NAME.test(a)) return 'the segment output ' + JSON.stringify(a) + ' is not the reverse\'s shape';
+      } else if (a === '-') {
+        if (fmt !== 'null') return 'only -f null may write to "-"';
+      } else if (!OUTPUT_NAME.test(a) || RESERVED.test(asciiLower(a))) {
+        return 'the output ' + JSON.stringify(a) + ' is not a bare file name the app writes';
+      }
+      fmt = null;
+    }
   }
   return null;
 }
@@ -303,12 +443,35 @@ export function inputsOf(args) {
   return out;
 }
 
-/** The start of a text file that names OTHER files or addresses: an HLS
- *  playlist, a concat list, a DASH or SMIL manifest, an SDP description. */
-const LIST_HEAD = /^\uFEFF?\s*(?:#EXTM3U|ffconcat\b|file\s|<\?xml|<MPD|<smil|v=0|\[playlist\])/i;
+/** A byte-order mark: U+FEFF as decoded text, or its three UTF-8 bytes read
+ *  one byte per character (which is how checkInputBytes reads a file). */
+const BOM = '(?:\\uFEFF|\\xEF\\xBB\\xBF)?';
 
-/** A name the concat list may point at: a bare file in the session folder. */
-const SAFE_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
+/** The start of a text file that names OTHER files or addresses: an HLS
+ *  playlist, a concat list, a DASH or SMIL manifest, an SDP description.
+ *  Tested against asciiLower(text). */
+const LIST_HEAD = new RegExp('^' + BOM + '[' + WS + ']*(?:#extm3u|ffconcat(?![a-z0-9_])|file[' + WS + ']|<\\?xml|<mpd|<smil|v=0|\\[playlist\\])');
+const CONCAT_HEAD = new RegExp('^' + BOM + '[' + WS + ']*ffconcat(?![a-z0-9_])');
+const SDP_HEAD = new RegExp('^' + BOM + '[' + WS + ']*v=0');
+const BOM_AT_START = new RegExp('^' + BOM);
+
+/** The one line shape the reverse writes: `file 'name'` (or unquoted). The
+ *  whole line must match - ffmpeg joins quoted and unquoted pieces into one
+ *  name, so `file 'x'/../../y` must not pass on its first piece. */
+const CONCAT_FILE = /^file[ \t]+(?:'([^'\\]*)'|([^'\\ \t]+))$/;
+
+/** Only this much of an input is read to look for a list. A list larger than
+ *  this is refused rather than half-checked. */
+export const LIST_PEEK = 1024 * 1024;
+
+/** Strip spaces and tabs from both ends - the same set in both ports, unlike
+ *  String.trim(), which means different things in JavaScript and Java. */
+function trimAscii(s) {
+  let a = 0, b = s.length;
+  while (a < b && (s[a] === ' ' || s[a] === '\t')) a++;
+  while (b > a && (s[b - 1] === ' ' || s[b - 1] === '\t')) b--;
+  return s.slice(a, b);
+}
 
 /**
  * Look inside one input that may be a list of other inputs. The arguments can
@@ -316,25 +479,71 @@ const SAFE_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
  * exactly what `-f concat -safe 0` (used by the reverse in video.ts) would
  * otherwise follow.
  *
+ * A concat list is held to the allow-list too: blank lines, comments,
+ * `ffconcat version 1.0` and plain `file` lines naming a bare session file,
+ * nothing else. Any list must be printable ASCII (plus tab and line breaks),
+ * which also refuses a NUL, a lone carriage return and undecodable bytes -
+ * each of which ffmpeg and this check could read differently.
+ *
  * @param {string} text        the start of the input file, as text
  * @param {boolean} isConcat   true when -f concat applies to this input
  * @returns {string|null} why the job is refused, or null
  */
 export function checkInputText(text, isConcat) {
-  if (!isConcat && !LIST_HEAD.test(text)) return null;
-  if (/^\uFEFF?\s*v=0/.test(text)) return 'an SDP description opens network sockets';
-  for (const raw of String(text).split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#') && !/URI=/i.test(line)) continue;
-    if (/^option\b/i.test(line)) return 'the concat list sets demuxer options';
-    const m = /^file\s+(?:'((?:[^'\\]|\\.)*)'|(\S+))/i.exec(line);
-    if (m) {
+  text = String(text);
+  const low = asciiLower(text);
+  const concat = isConcat || CONCAT_HEAD.test(low);
+  if (!concat && !LIST_HEAD.test(low)) return null;
+  if (SDP_HEAD.test(low)) return 'an SDP description opens network sockets';
+  const body = text.replace(BOM_AT_START, '');
+  if (/[^\t\n\r\x20-\x7E]/.test(body)) return 'a list input holds control or non-ASCII characters';
+  if (/\r(?!\n)/.test(body)) return 'a list input holds a lone carriage return';
+  for (const raw of body.split(/\r?\n/)) {
+    const line = trimAscii(raw);
+    if (!line) continue;
+    if (concat) {
+      if (line.startsWith('#') || line === 'ffconcat version 1.0') continue;
+      const m = CONCAT_FILE.exec(line);
+      if (!m) return 'the concat list line ' + JSON.stringify(line) + ' is not one the app writes';
       const name = m[1] !== undefined ? m[1] : m[2];
-      if (!SAFE_NAME.test(name)) return 'the concat list names ' + JSON.stringify(name);
+      if (!isSafeName(name)) return 'the concat list names ' + JSON.stringify(name);
       continue;
     }
+    if (line.startsWith('#') && asciiLower(line).indexOf('uri=') === -1) continue;
     const bad = valueProblem(line);
     if (bad) return 'a list input contains ' + bad;
   }
   return null;
+}
+
+/**
+ * The file half of the check, on raw bytes, so both shells decide the same
+ * way: the caller reads the first min(size, LIST_PEEK) bytes and passes them
+ * with the file's full size.
+ *
+ * Bytes are read one per character (Latin-1), never decoded as UTF-8: decoders
+ * disagree on a cut or broken sequence, and any byte above 0x7E is refused in
+ * a list anyway. A concat input must fit the peek and hold no NUL. Any other
+ * input with a NUL in its first 4 KB is binary - a video, not a list - and a
+ * list larger than the peek is refused rather than half-checked.
+ *
+ * @param {Uint8Array} head      the first bytes of the input
+ * @param {number} totalSize     the input's size on disk
+ * @param {boolean} isConcat     true when -f concat applies to this input
+ * @returns {string|null} why the job is refused, or null
+ */
+export function checkInputBytes(head, totalSize, isConcat) {
+  const n = head.length;
+  let nul = -1;
+  for (let i = 0; i < n; i++) if (head[i] === 0) { nul = i; break; }
+  if (!isConcat && nul !== -1 && nul < 4096) return null;
+  const truncated = totalSize > n;
+  if (isConcat && truncated) return 'the concat list is larger than ' + LIST_PEEK + ' bytes';
+  if (isConcat && nul !== -1) return 'the concat list holds a NUL byte';
+  let text = '';
+  for (let i = 0; i < n; i += 8192) text += String.fromCharCode.apply(null, Array.from(head.subarray(i, Math.min(n, i + 8192))));
+  if (!isConcat && truncated && LIST_HEAD.test(asciiLower(text))) {
+    return 'a list input is larger than ' + LIST_PEEK + ' bytes';
+  }
+  return checkInputText(text, isConcat);
 }

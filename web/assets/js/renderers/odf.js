@@ -7,7 +7,7 @@
    ODP like the PPTX viewer - all shown as paper page sheets.
    ============================================================================ */
 import { el, rowHelp, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
-import { HASH_FILE_MAX } from '../core/limits.js';
+import { HASH_FILE_MAX, ODF_SPACE_RUN_MAX } from '../core/limits.js';
 import { openZip } from './zip.js';
 import { paginateFlow, pagedPreviewCard, pagedTextCard, makePage, pagePreviewSkeleton } from './paged.js';
 // Each key maps to the candidate namespace URIs: the OASIS ODF 1.x URI first,
@@ -106,21 +106,28 @@ function collectStyles(doc, into) {
     }
     return into;
 }
-// ---------- images ----------
-// Object URLs minted for embedded Pictures/* images. They are global and would
-// otherwise leak one Blob per image on every re-render (a document can hold many),
-// so track them and revoke the previous document's set when a new one is opened.
-const _odfImageUrls = new Set();
-function revokeOdfImageUrls() {
-    for (const u of _odfImageUrls) {
-        try {
-            URL.revokeObjectURL(u);
+const _odfRenders = [];
+function releaseOdfRenders(container) {
+    for (let i = _odfRenders.length - 1; i >= 0; i--) {
+        const r = _odfRenders[i];
+        if (r.el !== container && r.el.isConnected)
+            continue;
+        _odfRenders.splice(i, 1);
+        for (const h of r.tks) {
+            try {
+                h.destroy();
+            }
+            catch (_) { /* ignore */ }
         }
-        catch (_) { }
+        for (const u of r.urls) {
+            try {
+                URL.revokeObjectURL(u);
+            }
+            catch (_) { }
+        }
     }
-    _odfImageUrls.clear();
 }
-async function buildImageMap(zip) {
+async function buildImageMap(zip, urls) {
     const map = {};
     for (const e of zip.entries) {
         if (!/^Pictures\//i.test(e.name))
@@ -134,7 +141,7 @@ async function buildImageMap(zip) {
             const ext = (e.name.match(/\.(\w+)$/) || [, 'png'])[1].toLowerCase();
             const mime = ext === 'jpg' ? 'image/jpeg' : (ext === 'svg' ? 'image/svg+xml' : 'image/' + ext);
             const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
-            _odfImageUrls.add(url);
+            urls.add(url);
             map[e.name] = url;
         }
         catch (_) { /* skip */ }
@@ -200,7 +207,9 @@ function renderInline(node, frag, styles, imageMap) {
             frag.appendChild(a);
         }
         else if (isEl(child, 'text', 's')) {
-            const c = parseInt(attrNS(child, 'text', 'c'), 10) || 1;
+            // text:c is the file's claim: clamp it, or "1e9" is a gigabyte of spaces
+            // and a negative count throws.
+            const c = Math.min(ODF_SPACE_RUN_MAX, Math.max(1, parseInt(attrNS(child, 'text', 'c'), 10) || 1));
             frag.appendChild(document.createTextNode(' '.repeat(c)));
         }
         else if (isEl(child, 'text', 'tab')) {
@@ -483,23 +492,15 @@ function renderSlidePage(drawPage, styles, imageMap, index) {
     return page;
 }
 // ---------- main render ----------
-// Workbench mounts (.ods only) from the previous render - torn down before the
-// container is cleared so their ResizeObservers/listeners don't leak.
-let _odfTkHandles = [];
-function destroyOdfTableKits() {
-    for (const h of _odfTkHandles) {
-        try {
-            h.destroy();
-        }
-        catch (_) { /* ignore */ }
-    }
-    _odfTkHandles = [];
-}
 export async function renderOdf(file, container, kind) {
     container.hidden = false;
-    destroyOdfTableKits();
+    // Tear down workbench mounts (.ods) and free embedded-image object URLs from
+    // earlier renders into this container, or into ones no longer on the page -
+    // before the container is cleared, so their listeners don't leak.
+    releaseOdfRenders(container);
+    const render = { el: container, urls: new Set(), tks: [] };
+    _odfRenders.push(render);
     container.innerHTML = '';
-    revokeOdfImageUrls(); // free the previous document's embedded-image object URLs
     // Ghost sheets hold the page grid's space through the unzip / XML parse / image
     // decode below - all of it happens before a single real page exists.
     container.appendChild(pagePreviewSkeleton({ note: 'Reading document…' }));
@@ -522,7 +523,7 @@ export async function renderOdf(file, container, kind) {
                 collectStyles(contentDoc, styles);
                 if (zip.has('styles.xml'))
                     collectStyles(parseXml(await zip.text('styles.xml')), styles);
-                imageMap = await buildImageMap(zip);
+                imageMap = await buildImageMap(zip, render.urls);
             }
         }
         else {
@@ -581,6 +582,9 @@ export async function renderOdf(file, container, kind) {
             const wbWrap = el('div');
             container.appendChild(wbWrap);
             import('./tablekit.js').then(({ mountTableKit }) => {
+                // A newer render already released this one - don't mount into it.
+                if (_odfRenders.indexOf(render) === -1)
+                    return;
                 odsTables.forEach((tableEl, i) => {
                     const grid = extractSheetGrid(tableEl);
                     if (!grid)
@@ -588,7 +592,7 @@ export async function renderOdf(file, container, kind) {
                     const tkHost = el('div');
                     wbWrap.appendChild(tkHost);
                     const name = attrNS(tableEl, 'table', 'name') || ('Sheet ' + (i + 1));
-                    _odfTkHandles.push(mountTableKit(tkHost, grid, { sheetName: name }));
+                    render.tks.push(mountTableKit(tkHost, grid, { sheetName: name }));
                 });
             }).catch(() => { });
         }

@@ -17,7 +17,7 @@ import { el, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '.
 // Saved web pages arrive as untrusted markup - sanitised with the shared rules.
 import { sanitizeHtml } from '../core/sanitize.js';
 import { buildOsintCard } from '../core/osint.js';
-import { SCAN_LARGE, HASH_FILE_MAX } from '../core/limits.js';
+import { SCAN_LARGE, HASH_FILE_MAX, TEXTDOC_READ_MAX } from '../core/limits.js';
 import { openZip } from './zip.js';
 import { paginateText, paginateFlow, pagedPreviewCard, pagedTextCard, pagePreviewSkeleton } from './paged.js';
 const LABELS = {
@@ -197,12 +197,39 @@ function extractMhtmlHtml(text) {
         if (!/content-type:\s*text\/html/.test(headers))
             return null;
         let body = raw.slice(split + sep.length);
+        // QP and base64 decode to BYTES, which then need the part's own charset -
+        // a windows-1251 or shift_jis page otherwise comes out as Latin-1 mojibake.
+        const cs = /charset\s*=\s*"?([^";\s]+)/.exec(headers);
+        const decode = (bytes) => {
+            let dec;
+            try {
+                dec = new TextDecoder(cs ? cs[1] : 'utf-8');
+            }
+            catch (_) {
+                dec = new TextDecoder('utf-8');
+            }
+            return dec.decode(bytes);
+        };
         if (/content-transfer-encoding:\s*quoted-printable/.test(headers)) {
-            body = body.replace(/=\r?\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+            // The archive was read as UTF-8 text, so literal non-ASCII characters go
+            // back to their UTF-8 bytes and each =XX escape becomes the byte it names.
+            const rawBytes = new TextEncoder().encode(body.replace(/=\r?\n/g, ''));
+            const out = new Uint8Array(rawBytes.length);
+            const hex = (b) => (b >= 48 && b <= 57) || (b >= 65 && b <= 70) || (b >= 97 && b <= 102);
+            let n = 0;
+            for (let i = 0; i < rawBytes.length; i++) {
+                if (rawBytes[i] === 0x3d && i + 2 < rawBytes.length && hex(rawBytes[i + 1]) && hex(rawBytes[i + 2])) {
+                    out[n++] = parseInt(String.fromCharCode(rawBytes[i + 1], rawBytes[i + 2]), 16);
+                    i += 2;
+                }
+                else
+                    out[n++] = rawBytes[i];
+            }
+            body = decode(out.subarray(0, n));
         }
         else if (/content-transfer-encoding:\s*base64/.test(headers)) {
             try {
-                body = atob(body.replace(/\s+/g, ''));
+                body = decode(Uint8Array.from(atob(body.replace(/\s+/g, '')), (c) => c.charCodeAt(0)));
             }
             catch (_) { }
         }
@@ -232,6 +259,17 @@ export async function renderTextDoc(file, container, kind, ext) {
         ext = (ext || (file.name.split('.').pop() || '')).toLowerCase();
         let pages, pageLabel = 'Page';
         const label = LABELS[ext] || LABELS[kind] || 'Document';
+        // Whole-file reads are capped (TEXTDOC_READ_MAX): everything below turns the
+        // text into DOM, and a multi-GB file with a .tex name would take the tab down.
+        // A truncated FB2 / AbiWord no longer parses as XML - the FB2 path says so,
+        // the AbiWord one falls back to showing the text.
+        let truncated = false;
+        const readCapped = () => {
+            if (file.size <= TEXTDOC_READ_MAX)
+                return file.text();
+            truncated = true;
+            return file.slice(0, TEXTDOC_READ_MAX).text();
+        };
         if (kind === 'hwpx') {
             const text = await extractHwpx(file);
             pages = paginateText(text);
@@ -250,7 +288,7 @@ export async function renderTextDoc(file, container, kind, ext) {
             pages = paginateFlow(sanitizeHtml(html));
         }
         else if (kind === 'fb2') {
-            const doc = parseXml(await file.text());
+            const doc = parseXml(await readCapped());
             if (!doc) {
                 container.innerHTML = '';
                 container.appendChild(errorCard('Could not parse this FictionBook file.'));
@@ -259,15 +297,16 @@ export async function renderTextDoc(file, container, kind, ext) {
             pages = paginateFlow(renderFb2Content(doc));
         }
         else if (kind === 'abw') {
-            const doc = parseXml(await file.text());
-            pages = paginateText(doc ? paragraphsFromXml(doc) : await file.text());
+            const text = await readCapped();
+            const doc = parseXml(text);
+            pages = paginateText(doc ? paragraphsFromXml(doc) : text);
         }
         else if (kind === 'rtf') {
-            pages = paginateText(stripRtf(await file.text()));
+            pages = paginateText(stripRtf(await readCapped()));
         }
         else {
             // markup / source: show the raw text as selectable source on page sheets.
-            pages = paginateText(await file.text(), { mono: true });
+            pages = paginateText(await readCapped(), { mono: true });
         }
         const pageTexts = pages.map((p) => p.textContent);
         container.innerHTML = '';
@@ -276,6 +315,7 @@ export async function renderTextDoc(file, container, kind, ext) {
         info.appendChild(buildReadout([
             ['File', file.name],
             ['Size', fmtBytes(file.size)],
+            truncated && ['Shown', 'The first ' + fmtBytes(TEXTDOC_READ_MAX) + ' only'],
             file.type && rowHelp('MIME', file.type, "The MIME type is a short standard label for what kind of file this is - for example image/jpeg for a photo or audio/mpeg for an MP3. The browser guesses it from the file's extension or from the operating system, so it's a hint about the format, not proof."),
             file.lastModified && ['Last modified', new Date(file.lastModified).toLocaleString()],
         ]));

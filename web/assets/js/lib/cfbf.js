@@ -16,9 +16,10 @@
        "mini-stream" which holds every stream smaller than 4096 bytes, allocated
        in 64-byte mini-sectors via a parallel mini-FAT.
 
-   This module is dependency-free and side-effect-free: it only reads. Everything
-   is bounds-checked and returns null / empty on malformed input so a corrupt file
-   can never throw out of `openCfbf`. */
+   This module is side-effect-free (its one import is a cap from limits.js): it
+   only reads. Everything is bounds-checked and returns null / empty on malformed
+   input so a corrupt file can never throw out of `openCfbf`. */
+import { CFBF_DEPTH_MAX } from '../core/limits.js';
 // Special FAT sector values.
 const MAXREGSECT = 0xFFFFFFFA; // last regular sector id
 const ENDOFCHAIN = 0xFFFFFFFE; // end of a sector chain
@@ -167,11 +168,15 @@ export async function openCfbf(input) {
             return out;
         };
         // Read a whole FAT-allocated stream (start sector + byte size) into bytes.
-        const readFatStream = (start, size) => {
-            if (size <= 0)
+        // The size is a 64-bit field straight from the directory entry, so the
+        // allocation is clamped to what the sector chain (and the file) can
+        // actually supply - a lying size never allocates more than the file holds.
+        const readFatStream = (start, declared) => {
+            if (declared <= 0)
                 return new Uint8Array(0);
-            const need = Math.ceil(size / sectorSize);
+            const need = Math.ceil(declared / sectorSize);
             const chain = fatChain(start, need + 1);
+            const size = Math.min(declared, chain.length * sectorSize, bytes.length);
             const out = new Uint8Array(size);
             let written = 0;
             for (const sid of chain) {
@@ -262,15 +267,22 @@ export async function openCfbf(input) {
             }
         }
         const miniFatLen = miniFat.length;
-        // The mini-stream lives in the Root Entry (FAT-allocated).
-        let miniStream = new Uint8Array(0);
-        if (root && root.type === T_ROOT && root.size > 0) {
-            miniStream = readFatStream(root.startSect, root.size);
-        }
+        // The mini-stream lives in the Root Entry (FAT-allocated). Read on first
+        // use, not up front: a listing that never opens a small stream never pays
+        // for it.
+        let miniStreamCache = null;
+        const getMiniStream = () => {
+            if (!miniStreamCache) {
+                miniStreamCache = (root && root.type === T_ROOT && root.size > 0)
+                    ? readFatStream(root.startSect, root.size) : new Uint8Array(0);
+            }
+            return miniStreamCache;
+        };
         // Read a mini-FAT-allocated stream (start mini-sector + size) from the mini-stream.
         const readMiniStream = (start, size) => {
             if (size <= 0)
                 return new Uint8Array(0);
+            const miniStream = getMiniStream();
             const out = new Uint8Array(size);
             let written = 0;
             let s = start >>> 0;
@@ -304,28 +316,32 @@ export async function openCfbf(input) {
         // ---- build paths via the red-black sibling/child tree ----
         // Each storage's `child` points at the root of a red-black tree of its
         // immediate children (linked by left/right). Walk it to assign full paths.
-        const assignPaths = (nodeIndex, prefix, depth) => {
-            if (nodeIndex === NOSTREAM || nodeIndex >= rawEntries.length)
-                return;
-            if (depth > rawEntries.length)
-                return; // safety
-            const visit = (idx, seen) => {
-                if (idx === NOSTREAM || idx >= rawEntries.length || seen.has(idx))
-                    return;
-                seen.add(idx);
-                const e = rawEntries[idx];
-                visit(e.left, seen);
-                e.path = prefix + e.name;
-                if (e.type === T_STORAGE && e.child !== NOSTREAM) {
-                    assignPaths(e.child, e.path + '/', depth + 1);
-                }
-                visit(e.right, seen);
-            };
-            visit(nodeIndex, new Set());
-        };
+        // One visited set for the WHOLE walk (every entry has exactly one parent in
+        // a well-formed file, so it gets one path), storage nesting capped at
+        // CFBF_DEPTH_MAX, and an explicit stack rather than recursion: a crafted
+        // file whose storages all share the same children would otherwise be walked
+        // again under every parent - 2^N work - and a long sibling chain could
+        // overflow the call stack.
         root.path = root.name || 'Root Entry';
-        if (root.child !== NOSTREAM)
-            assignPaths(root.child, root.path + '/', 0);
+        {
+            const assigned = new Uint8Array(rawEntries.length);
+            assigned[0] = 1;
+            const stack = [];
+            if (root.child !== NOSTREAM)
+                stack.push([root.child, root.path + '/', 0]);
+            while (stack.length) {
+                const [idx, prefix, depth] = stack.pop();
+                if (idx === NOSTREAM || idx >= rawEntries.length || assigned[idx])
+                    continue;
+                assigned[idx] = 1;
+                const e = rawEntries[idx];
+                e.path = prefix + e.name;
+                stack.push([e.right, prefix, depth], [e.left, prefix, depth]);
+                if (e.type === T_STORAGE && e.child !== NOSTREAM && depth + 1 < CFBF_DEPTH_MAX) {
+                    stack.push([e.child, e.path + '/', depth + 1]);
+                }
+            }
+        }
         // Any entry the tree walk missed still gets at least its bare name as a path.
         for (const e of rawEntries)
             if (e.path == null && e.type !== T_UNKNOWN)

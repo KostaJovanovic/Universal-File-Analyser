@@ -13,8 +13,15 @@
 // Bindings (configured in wrangler.jsonc):
 //   DB             - D1 database (schema in worker/schema.sql)
 //   ASSETS         - the static site; used for every non-/api request
-//   ANALYSED_LIMIT - rate-limit binding: 15 writes / 60s, keyed by hashed IP
-//   IP_SALT        - secret salt for the IP hash (set with `wrangler secret put`)
+//   ANALYSED_LIMIT - rate-limit binding: 15 requests / 60s per key; the key is
+//                    endpoint + hashed IP (IPv6: the /64), so /api/visit,
+//                    /api/analysed and /api/score each get their own bucket
+//   IP_SALT        - secret salt for the IP hash (set with `wrangler secret put`).
+//                    REQUIRED: without it every write endpoint fails closed.
+//
+// Retention: visitor_seen rows (salted hash + last-counted time) are deleted once
+// older than VISIT_WINDOW. scores.iphash is kept for as long as the score is on
+// the board - it is what keeps one entry per player and name.
 //
 // Routing: wrangler.jsonc sets run_worker_first for everything except /assets/*,
 // so this handler sees every page request (including ones that match a static
@@ -23,7 +30,16 @@
 // lab.valjdakosta.com/about would be served straight from the asset store and
 // never reach this code.
 
+// Generated from the formats catalog by tools/stamp-counts.mjs on every save.
+// The ONLY source of the `supported` decision - the client's flag is ignored.
+import { SUPPORTED_EXTS } from './supported-exts.js';
+
 const VISIT_WINDOW = 3 * 24 * 60 * 60; // seconds - one counted visit per IP / 3 days
+
+// Most distinct UNSUPPORTED extension rows ext_stats may hold. Supported rows are
+// bounded by the catalog; unsupported ones are raw client strings, so past this
+// many a new one is counted under '(other)' instead of getting its own row.
+const UNSUPPORTED_ROWS_MAX = 5000;
 
 const JSON_HEADERS = {
   'content-type': 'application/json; charset=utf-8',
@@ -42,9 +58,50 @@ async function hashIp(ip, salt) {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Fail closed: without the secret the "salted" hash would be salted with a string
+// that is public in this repo, i.e. reversible by brute force over the IPv4 space.
+// Throwing lands in the fetch handler's catch -> a generic 500, nothing stored.
+// (For `wrangler dev`, put IP_SALT in .dev.vars.)
+function ipSalt(env) {
+  if (!env.IP_SALT) throw new Error('IP_SALT secret is not set');
+  return env.IP_SALT;
+}
+
 async function clientIpHash(request, env) {
   const ip = request.headers.get('CF-Connecting-IP') || '0.0.0.0';
-  return hashIp(ip, env.IP_SALT || 'analyser-dev-salt');
+  return hashIp(ip, ipSalt(env));
+}
+
+// Rate-limit key. IPv6 clients usually hold a whole /64 and can rotate through it
+// freely, so an IPv6 address is keyed on its first four hextets (the /64); IPv4
+// keeps the full address. `scope` gives each endpoint its own bucket, so a folder
+// of 15 analysed files doesn't use up the leaderboard submit.
+async function rateKey(request, env, scope) {
+  let ip = request.headers.get('CF-Connecting-IP') || '0.0.0.0';
+  if (ip.includes(':')) {
+    const [head, tail = ''] = ip.split('::');
+    const h = head ? head.split(':') : [];
+    const t = tail ? tail.split(':') : [];
+    const full = ip.includes('::') ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill('0'), ...t] : h;
+    ip = full.slice(0, 4).map((x) => (parseInt(x, 16) || 0).toString(16)).join(':') + '::/64';
+  }
+  return scope + ':' + await hashIp(ip, ipSalt(env));
+}
+
+// Returns true when the request may proceed. With no binding (wrangler dev
+// without it) nothing is limited.
+async function withinLimit(request, env, scope) {
+  if (!env.ANALYSED_LIMIT) return true;
+  const { success } = await env.ANALYSED_LIMIT.limit({ key: await rateKey(request, env, scope) });
+  return success;
+}
+
+// Every POST the site makes is a fetch() with `content-type: application/json`.
+// Requiring it turns a cross-site request into a non-simple one that needs a CORS
+// preflight - which this Worker never answers - so another page can't inflate the
+// counters with a plain <form> or a text/plain fetch.
+function isJsonPost(request) {
+  return (request.headers.get('content-type') || '').toLowerCase().startsWith('application/json');
 }
 
 // Keep the ext table clean and bounded: lowercase a-z0-9 only, <= 16 chars.
@@ -56,8 +113,16 @@ function cleanExt(raw) {
   return e.length <= 16 ? e : '(other)';
 }
 
+// May this ext_stats key be shown by name on /stats? A catalog extension, or the
+// server-made '(none)' bucket (files with no extension - often a PDF or ZIP the
+// content sniffer identified). Never a raw client string that isn't in the catalog.
+function isListed(ext) {
+  return ext === '(none)' || SUPPORTED_EXTS.has(ext);
+}
+
 // --- Asteroids leaderboard ---
 const SCORE_MAX = 100000000;   // sanity cap so a tampered client can't post nonsense
+const SCORE_NAMES_PER_IP = 10; // distinct leaderboard names one hashed IP may hold
 
 // Leet-fold digits/symbols to letters so "5h1t" still reads as "shit" for the
 // profanity check. Names are A-Z0-9 only, so this just maps the digit lookalikes.
@@ -199,9 +264,24 @@ async function readDaily(env, limit = 400) {
   }
 }
 
+// Delete dedup rows older than the visit window. Past VISIT_WINDOW a row changes
+// nothing (the next visit from that hash counts either way, via the upsert's
+// WHERE), so keeping it would only retain a salted IP hash for no purpose. Run
+// off the response path on a fraction of counted visits - often enough that no
+// row outlives the window by more than a short while.
+async function pruneVisitors(env, now) {
+  try {
+    await env.DB.prepare('DELETE FROM visitor_seen WHERE last < ?').bind(now - VISIT_WINDOW).run();
+  } catch (_) { /* best-effort housekeeping */ }
+}
+
 // POST /api/visit - count this visitor at most once per IP / 3 days, then return
 // the live totals so the homepage badge can paint. Body is ignored.
-async function handleVisit(request, env) {
+async function handleVisit(request, env, ctx) {
+  // Over the limit: still paint the badge, just don't touch visitor_seen.
+  if (!(await withinLimit(request, env, 'visit'))) {
+    return json({ ...(await readTotals(env)), counted: false });
+  }
   const ipHash = await clientIpHash(request, env);
   const now = Math.floor(Date.now() / 1000);
 
@@ -225,43 +305,55 @@ async function handleVisit(request, env) {
       await ensureDaily(env);
       await env.DB.prepare(BUMP_DAY_VISITOR).bind(dayKey(now * 1000)).run();
     } catch (_) { /* daily series is non-critical */ }
+    if (Math.random() < 0.05) {
+      if (ctx && ctx.waitUntil) ctx.waitUntil(pruneVisitors(env, now));
+      else await pruneVisitors(env, now);
+    }
   }
 
   return json({ ...(await readTotals(env)), counted });
 }
 
-// POST /api/analysed {ext, supported} - record one analysed file. Rate-limited to
-// 15/min per IP so a script loop can't inflate the counter; over the limit the
+// POST /api/analysed {ext} - record one analysed file. Rate-limited to 15/min per
+// IP (/64 on IPv6) so a script loop can't inflate the counter; over the limit the
 // request is accepted (200) but not recorded.
 async function handleAnalysed(request, env) {
-  if (env.ANALYSED_LIMIT) {
-    const ipHash = await clientIpHash(request, env);
-    const { success } = await env.ANALYSED_LIMIT.limit({ key: ipHash });
-    if (!success) return json({ throttled: true });
-  }
+  if (!(await withinLimit(request, env, 'analysed'))) return json({ throttled: true });
 
   let body = {};
   try { body = await request.json(); } catch (_) {}
   const ext = cleanExt(body.ext);
-  const supported = body.supported ? 1 : 0;
 
-  // `supported` is MONOTONIC: once any client has classified a type as supported
-  // it stays supported (MAX, never back to 0). Two reasons:
-  //   - When you add support for a type that was previously counted as unsupported,
-  //     the first analysis of it afterwards flips the existing row's flag to 1, so
-  //     its whole accumulated count leaves the "(unsupported)" dogpile and starts
-  //     listing individually - and stays there.
-  //   - Without MAX, a visitor still running an OLD cached build (sw.js) would
-  //     classify that same type as unknown and flip it straight back into the
-  //     dogpile. MAX makes the upgrade stick regardless of stale clients.
-  await env.DB.batch([
-    env.DB.prepare(
-      'INSERT INTO ext_stats (ext, supported, count) VALUES (?, ?, 1) '
-      + 'ON CONFLICT(ext) DO UPDATE SET count = count + 1, '
-      + 'supported = MAX(ext_stats.supported, excluded.supported)',
-    ).bind(ext, supported),
-    env.DB.prepare(BUMP_FILES),
-  ]);
+  // `supported` is decided HERE, from the catalog allow-list - never from the
+  // client's `supported` field (still sent by the app, now ignored). Trusting it
+  // let a single hand-made POST mark any string as supported and so publish it on
+  // /stats. The stored flag simply follows the current catalog: a type that gains
+  // support flips to 1 on its next drop, and handleStats filters through the same
+  // set at read time, so the public list is right even before that.
+  const supported = isListed(ext) ? 1 : 0;
+
+  // Supported rows are bounded by the catalog. Unsupported ones are raw client
+  // strings: an existing row just counts up, a NEW one is only created while there
+  // are fewer than UNSUPPORTED_ROWS_MAX of them - past that the file is counted
+  // under '(other)' instead, so the table can't be grown without limit.
+  const upsert = supported
+    ? env.DB.prepare(
+      'INSERT INTO ext_stats (ext, supported, count) VALUES (?1, 1, 1) '
+      + 'ON CONFLICT(ext) DO UPDATE SET count = count + 1, supported = 1',
+    ).bind(ext)
+    : env.DB.prepare(
+      'INSERT INTO ext_stats (ext, supported, count) SELECT ?1, 0, 1 '
+      + 'WHERE EXISTS (SELECT 1 FROM ext_stats WHERE ext = ?1) '
+      + 'OR (SELECT COUNT(*) FROM ext_stats WHERE supported = 0) < ?2 '
+      + 'ON CONFLICT(ext) DO UPDATE SET count = count + 1, supported = 0',
+    ).bind(ext, UNSUPPORTED_ROWS_MAX);
+  const [res] = await env.DB.batch([upsert, env.DB.prepare(BUMP_FILES)]);
+  if (!supported && !(res && res.meta && res.meta.changes)) {
+    await env.DB.prepare(
+      "INSERT INTO ext_stats (ext, supported, count) VALUES ('(other)', 0, 1) "
+      + 'ON CONFLICT(ext) DO UPDATE SET count = count + 1',
+    ).run();
+  }
   // Add to today's per-day bucket (best-effort; never blocks the file count).
   try {
     await ensureDaily(env);
@@ -283,17 +375,21 @@ async function handleAnalysed(request, env) {
 // individually in ext_stats, so the operator can inspect the wish-list privately
 // (e.g. `wrangler d1 execute DB --command
 //   "SELECT ext, count FROM ext_stats WHERE supported = 0 ORDER BY count DESC"`).
+//
+// Whether a row is listed by name is decided by SUPPORTED_EXTS at read time, not
+// by the stored flag: rows written before the server-side decision may carry a
+// client-set supported = 1 for an arbitrary string, and a newly supported type
+// should list individually straight away, without waiting to be re-dropped.
 async function handleStats(env) {
-  const rows = await env.DB.prepare(
-    'SELECT ext, count FROM ext_stats WHERE supported = 1 ORDER BY count DESC, ext ASC LIMIT 500',
-  ).all();
-  const extensions = (rows.results || []).map((r) => ({
-    ext: r.ext, supported: true, count: r.count,
-  }));
-  const un = await env.DB.prepare(
-    'SELECT COALESCE(SUM(count), 0) AS total FROM ext_stats WHERE supported = 0',
-  ).first();
-  const unsupported = (un && un.total) || 0;
+  const rows = await env.DB.prepare('SELECT ext, count FROM ext_stats').all();
+  const extensions = [];
+  let unsupported = 0;
+  for (const r of rows.results || []) {
+    if (isListed(r.ext)) extensions.push({ ext: r.ext, supported: true, count: r.count });
+    else unsupported += Number(r.count) || 0;
+  }
+  extensions.sort((a, b) => (b.count - a.count) || (a.ext < b.ext ? -1 : 1));
+  extensions.length = Math.min(extensions.length, 500);
   if (unsupported > 0) extensions.push({ ext: '(unsupported)', supported: false, count: unsupported });
   extensions.sort((a, b) => (b.count - a.count) || (a.ext < b.ext ? -1 : 1));
   return json({
@@ -306,13 +402,13 @@ async function handleStats(env) {
 
 // POST /api/score {name, score} - submit one Asteroids run to the leaderboard.
 // Validates the name (5x [A-Z0-9], not profane) and the score (positive, capped),
-// inserts it, and returns the new top 5. Rate-limited like /api/analysed so a
-// script can't flood the board.
+// inserts it, and returns the new top 5. Rate-limited in its own bucket (same
+// 15/60s binding as /api/analysed, separate key) so a script can't flood the board
+// and a burst of analysed files can't block a genuine submit.
 async function handleScore(request, env) {
   const ipHash = await clientIpHash(request, env);
-  if (env.ANALYSED_LIMIT) {
-    const { success } = await env.ANALYSED_LIMIT.limit({ key: ipHash });
-    if (!success) return json({ ok: false, error: 'Too many submissions, try again shortly.' }, 429);
+  if (!(await withinLimit(request, env, 'score'))) {
+    return json({ ok: false, error: 'Too many submissions, try again shortly.' }, 429);
   }
   let body = {};
   try { body = await request.json(); } catch (_) {}
@@ -328,6 +424,17 @@ async function handleScore(request, env) {
   const wave = Number.isFinite(waveN) && waveN >= 0 && waveN <= 100000 ? waveN : null;
   const cause = cleanCause(body.cause);
   await ensureScoreColumns(env);
+  // At most SCORE_NAMES_PER_IP names per identity: an existing name can always
+  // improve its score, but a new one is refused past the cap, so one address
+  // can't fill the table (or the board) by cycling through names.
+  const known = await env.DB.prepare('SELECT 1 FROM scores WHERE iphash = ? AND name = ? LIMIT 1')
+    .bind(ipHash, name).first();
+  if (!known) {
+    const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM scores WHERE iphash = ?').bind(ipHash).first();
+    if (n && Number(n.n) >= SCORE_NAMES_PER_IP) {
+      return json({ ok: false, error: 'Too many names from this connection - reuse one of yours.' }, 429);
+    }
+  }
   const ts = Math.floor(Date.now() / 1000);
   // One entry per identity (hashed IP + chosen name), and only the player's best.
   // Atomic upsert: insert, or on identity conflict overwrite ONLY when the new
@@ -386,8 +493,44 @@ async function movedFormatPage(env, url) {
   return probe.status === 200 ? Response.redirect(moved.toString(), 301) : null;
 }
 
+// Served as /sw.js on the LEGACY host instead of a redirect. A browser refuses a
+// redirected service-worker script, so a PWA installed from lab.valjdakosta.com
+// could never update - it kept serving its old precache forever. This worker
+// replaces it on the next update check: it takes over at once, drops every cache
+// the old one filled, unregisters itself and sends each open window to the same
+// path on the canonical host.
+const LEGACY_SW_KILL_SWITCH = `// Analyser moved to https://analyser.valjdakosta.com/ - this retires the old install.
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    try { await self.clients.claim(); } catch (_) {}
+    try { const keys = await caches.keys(); await Promise.all(keys.map((k) => caches.delete(k))); } catch (_) {}
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true }).catch(() => []);
+    try { await self.registration.unregister(); } catch (_) {}
+    for (const c of wins) {
+      try {
+        const u = new URL(c.url);
+        u.protocol = 'https:';
+        u.hostname = 'analyser.valjdakosta.com';
+        u.port = '';
+        await c.navigate(u.href);
+      } catch (_) {}
+    }
+  })());
+});
+`;
+
+// A bare error page when the asset system itself throws, instead of Cloudflare's
+// raw 1101 "Worker threw exception" page.
+function assetFailure() {
+  return new Response('Analyser is temporarily unavailable. Please try again in a moment.', {
+    status: 503,
+    headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'retry-after': '30' },
+  });
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -399,7 +542,16 @@ export default {
     // the old host still run a service worker on that origin and post their counts
     // to lab.../api/*; a cross-origin redirect would fail CORS and silently lose
     // those stats, so the API keeps answering on both hosts.
+    //
+    // Neither is sw.js: a redirected service-worker script is rejected by the
+    // browser, which would pin an old install on its stale cache for good. It
+    // gets the kill-switch worker above instead.
     if (url.hostname === LEGACY_HOST && !path.startsWith('/api/')) {
+      if (path.endsWith('/sw.js')) {
+        return new Response(LEGACY_SW_KILL_SWITCH, {
+          headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' },
+        });
+      }
       url.hostname = CANONICAL_HOST;
       return Response.redirect(url.toString(), 307);
     }
@@ -408,15 +560,30 @@ export default {
     // hand it straight back to the assets system, which applies the same
     // clean-URL + single-page-application fallback as a Worker-less deploy.
     if (!path.startsWith('/api/')) {
-      const res = await env.ASSETS.fetch(request);
+      let res;
+      try {
+        res = await env.ASSETS.fetch(request);
+      } catch (_) {
+        return assetFailure();
+      }
       if (res.status === 404 && path.startsWith('/formats/')) {
-        return (await movedFormatPage(env, url)) || res;
+        try {
+          return (await movedFormatPage(env, url)) || res;
+        } catch (_) {
+          return res;   // the probe failed - the genuine 404 is still the right answer
+        }
       }
       return res;
     }
 
+    // Every POST the app makes sends JSON; anything else is a cross-site simple
+    // request (form / text/plain) trying to inflate the counters.
+    if (request.method === 'POST' && !isJsonPost(request)) {
+      return json({ error: 'unsupported media type' }, 415);
+    }
+
     try {
-      if (path === '/api/visit' && request.method === 'POST') return await handleVisit(request, env);
+      if (path === '/api/visit' && request.method === 'POST') return await handleVisit(request, env, ctx);
       if (path === '/api/analysed' && request.method === 'POST') return await handleAnalysed(request, env);
       if (path === '/api/stats' && request.method === 'GET') return await handleStats(env);
       if (path === '/api/score' && request.method === 'POST') return await handleScore(request, env);

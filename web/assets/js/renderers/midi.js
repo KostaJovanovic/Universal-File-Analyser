@@ -61,10 +61,17 @@ export async function renderMidi(file, resultsEl) {
     let noteOns = 0;
     let maxTick = 0;
     const dec = new TextDecoder();
-    function readVLQ(p) { let v = 0, b; do {
-        b = buf[p++];
-        v = (v << 7) | (b & 0x7F);
-    } while (b & 0x80); return [v, p]; }
+    // SMF variable-length quantity: at most 4 bytes, unsigned, never read past `end`.
+    function readVLQ(p, end) {
+        let v = 0, b = 0, n = 0;
+        do {
+            if (p >= end)
+                break;
+            b = buf[p++];
+            v = ((v << 7) | (b & 0x7F)) >>> 0;
+        } while ((b & 0x80) && ++n < 4);
+        return [v, p];
+    }
     let pos = 14;
     for (let t = 0; t < ntrks && pos + 8 <= buf.length; t++) {
         if (ascii(pos, 4) !== 'MTrk')
@@ -75,7 +82,7 @@ export async function renderMidi(file, resultsEl) {
         let tick = 0, running = 0;
         while (p < endTrk) {
             let dt;
-            [dt, p] = readVLQ(p);
+            [dt, p] = readVLQ(p, endTrk);
             tick += dt;
             let status = buf[p];
             if (status & 0x80) {
@@ -88,7 +95,8 @@ export async function renderMidi(file, resultsEl) {
             if (status === 0xFF) {
                 const type = buf[p++];
                 let mlen;
-                [mlen, p] = readVLQ(p);
+                [mlen, p] = readVLQ(p, endTrk);
+                mlen = Math.min(mlen, Math.max(0, endTrk - p));
                 const data = buf.slice(p, p + mlen);
                 p += mlen;
                 if (type === 0x51 && mlen === 3)
@@ -110,8 +118,8 @@ export async function renderMidi(file, resultsEl) {
             }
             else if (status === 0xF0 || status === 0xF7) {
                 let slen;
-                [slen, p] = readVLQ(p);
-                p += slen;
+                [slen, p] = readVLQ(p, endTrk);
+                p = Math.min(p + slen, endTrk);
             }
             else {
                 const hi = status & 0xF0, ch = status & 0x0F;

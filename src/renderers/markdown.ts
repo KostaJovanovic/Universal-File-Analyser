@@ -29,6 +29,56 @@ function safeUrl(raw: string) {
   return '#';
 }
 
+// Would this image source be fetched from another host? An <img> loads the
+// moment the preview renders - a tracking pixel in a README reports that the
+// file was opened, breaking the "requests nothing" promise. Links are fine (they
+// only load on a click). Normalised the way the URL parser does: tabs and
+// newlines vanish and a backslash counts as a slash, so `/\evil/x.png` is
+// protocol-relative too.
+function isRemoteImage(raw: string) {
+  const flat = (raw || '').replace(/[\x00-\x20]+/g, '').replace(/\\/g, '/');
+  return /^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(flat) || /^https?:/i.test(flat);
+}
+
+// Code spans: a run of N backticks ... the next run of exactly N backticks.
+// Their contents are stashed behind a \x00C<i>\x00 placeholder so the rest of
+// the inline pass leaves them alone. A single linear scan: the old
+// /(`+)([\s\S]+?)\1/ regex retried every start position against the whole rest
+// of the line, which is quadratic on a long run of unmatched backticks. Runs are
+// collected once, and for each length a pointer only ever moves forward through
+// that length's runs, so finding every closer costs O(n) in total. An opener
+// with no closer of its length stays literal backticks, as in CommonMark.
+function stashCodeSpans(s: string, stash: string[]) {
+  const runs: number[][] = [];            // [start, length]
+  for (let i = 0; i < s.length;) {
+    if (s.charCodeAt(i) !== 96) { i++; continue; }
+    let j = i;
+    while (j < s.length && s.charCodeAt(j) === 96) j++;
+    runs.push([i, j - i]);
+    i = j;
+  }
+  if (runs.length < 2) return s;
+  const byLen = new Map<number, number[]>();   // length -> run indexes, ascending
+  runs.forEach((r, k) => { let a = byLen.get(r[1]); if (!a) byLen.set(r[1], a = []); a.push(k); });
+  const ptr = new Map<number, number>();
+  let out = '', last = 0;
+  for (let k = 0; k < runs.length; k++) {
+    const [start, len] = runs[k];
+    const list = byLen.get(len)!;
+    let p = ptr.get(len) || 0;
+    while (p < list.length && list[p] <= k) p++;
+    ptr.set(len, p);
+    if (p >= list.length) continue;       // no closer: literal backticks
+    const close = list[p];
+    const body = s.slice(start + len, runs[close][0]);
+    out += s.slice(last, start) + '\x00C' + stash.length + '\x00';
+    stash.push('<code class="anr-md-icode">' + body.replace(/^ | $/g, '') + '</code>');
+    last = runs[close][0] + len;
+    k = close;                            // runs inside the span are content
+  }
+  return out + s.slice(last);
+}
+
 // ---------- inline ----------
 // Operates on already-HTML-escaped text. Order matters: code spans are pulled
 // out first (so * and _ inside them are left alone), then images, links, then
@@ -39,16 +89,14 @@ function inlineMd(escaped: string) {
   // Code spans: a run of N backticks ... N backticks. Protect their contents
   // by stashing them behind a placeholder while the rest is processed.
   const codeStash: any[] = [];
-  s = s.replace(/(`+)([\s\S]+?)\1/g, (m, ticks, body: string) => {
-    const i = codeStash.length;
-    codeStash.push('<code class="anr-md-icode">' + body.replace(/^ | $/g, '') + '</code>');
-    return '\x00C' + i + '\x00';
-  });
+  s = stashCodeSpans(s, codeStash);
 
-  // Images: ![alt](src "title")
+  // Images: ![alt](src "title"). A remote source is not loaded (see
+  // isRemoteImage); its alt text stands in, marked as a remote image.
   s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;([^)]*?)&quot;)?\)/g,
-    (m, alt, src, title) =>
-      '<img class="anr-md-img" src="' + safeUrl(src) + '" alt="' + escAttr(alt) + '"' +
+    (m, alt, src, title) => isRemoteImage(src)
+      ? '<span class="anr-md-img-remote" title="Remote image, not loaded: ' + src.replace(/"/g, '&quot;') + '">[image' + (alt ? ': ' + alt : '') + ']</span>'
+      : '<img class="anr-md-img" src="' + safeUrl(src) + '" alt="' + escAttr(alt) + '"' +
       (title ? ' title="' + escAttr(title) + '"' : '') + ' loading="lazy">');
 
   // Links: [text](href "title")

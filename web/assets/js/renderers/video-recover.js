@@ -346,7 +346,10 @@ export async function carveAvccToAnnexB(reader, mdatStart, mdatEnd, opts = {}) {
         }
         if (atEof)
             break;
-        pos += i; // resume exactly where we stopped (a NAL/resync boundary)
+        // Resume exactly where we stopped (a NAL/resync boundary). A window no larger
+        // than MARGIN (a short read, or a WIN <= MARGIN) parses nothing, so i stays 0 -
+        // always move forward, or the same window is re-read for ever.
+        pos += i > 0 ? i : Math.max(1, n);
         if (onProgress)
             onProgress((pos - mdatStart) / (mdatEnd - mdatStart), { nals, bytes });
     }

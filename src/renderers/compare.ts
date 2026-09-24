@@ -16,11 +16,14 @@
    Everything runs on-device; nothing is uploaded. renderCompare is handed
    { classify, routes } from app.js so it reuses the real classifyFile()/ROUTES. */
 
-import { el, fmtBytes, sha256Hex, extraHashRows, crc32Hex, errorCard, type ElChild } from '../core/util.js';
-import { FUZZY_HASH_MAX } from '../core/limits.js';
+import { el, fmtBytes, sha256Hex, extraHashRows, errorCard, type ElChild } from '../core/util.js';
+import { FUZZY_HASH_MAX, SCAN_SMALL } from '../core/limits.js';
 
 // Renderers that need { inline: true } to keep their output inside the panel.
 const MEDIA = new Set(['photo', 'audio', 'video']);
+
+// The live comparison's controller - aborted when the next pair is rendered.
+let _cmpAbort: AbortController | null = null;
 
 function stripText(a: File, b: File, typeA: string, typeB: string, sha: string) {
   const shaLabel = sha === 'pending' ? 'SHA-256 checking…'
@@ -285,7 +288,28 @@ function mergePanels(aBlocks: any[], bBlocks: any[], mount: HTMLDivElement) {
 // even for large files.
 const HASH_AUTO_LIMIT = 50 * 1024 * 1024;
 const CRC_DESC = 'CRC-32 is a fast, non-cryptographic checksum - the same one ZIP, PNG and gzip embed, and what SFV checksum files store. It reliably catches accidental corruption, but unlike the hashes below it is not collision-resistant, so it is not proof against deliberate tampering.';
-async function crc32Of(file: File) { return crc32Hex(new Uint8Array(await file.arrayBuffer())); }
+// Streaming CRC-32: read in SCAN_SMALL slices and carry the register across
+// them, so a multi-GB file never has to be held whole (crc32Hex in util.js
+// takes one complete array). Yields between slices to keep the page live.
+let _cmpCrcTable: Uint32Array | null = null;
+async function crc32Of(file: File) {
+  if (!_cmpCrcTable) {
+    _cmpCrcTable = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      _cmpCrcTable[n] = c >>> 0;
+    }
+  }
+  const T = _cmpCrcTable;
+  let crc = 0xFFFFFFFF;
+  for (let off = 0; off < file.size; off += SCAN_SMALL) {
+    const bytes = new Uint8Array(await file.slice(off, off + SCAN_SMALL).arrayBuffer());
+    for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ T[(crc ^ bytes[i]) & 0xFF];
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  return ((crc ^ 0xFFFFFFFF) >>> 0).toString(16).padStart(8, '0');
+}
 async function appendHashExtras(mergedRoot: HTMLDivElement, fileA: File, fileB: File, shaMatch: Promise<any>) {
   let table = null, shaRow = null;
   for (const t of mergedRoot.querySelectorAll<HTMLTableElement>('table.anr-readout.anr-cmp')) {
@@ -400,6 +424,14 @@ export async function renderCompare(fileA: File, fileB: File, resultsEl: HTMLEle
   const classify = deps.classify || (() => 'unknown');
   const routes = deps.routes || {};
 
+  // One AbortSignal per comparison, handed to the media renderers ({ signal }):
+  // loading a new pair aborts the previous one, so its inline object URLs and
+  // background jobs (video.js honours opts.signal) are released rather than left
+  // running behind the new comparison.
+  if (_cmpAbort) _cmpAbort.abort();
+  const cmpAbort = new AbortController();
+  _cmpAbort = cmpAbort;
+
   resultsEl.innerHTML = '';
   resultsEl.classList.remove('anr-diff-only');
 
@@ -476,7 +508,7 @@ export async function renderCompare(fileA: File, fileB: File, resultsEl: HTMLEle
     // single-file page does. A PDF gets a single-page preview up front (the full
     // page set is a lot to show twice).
     let opts;
-    if (MEDIA.has(kind)) opts = { inline: true, compare: true };
+    if (MEDIA.has(kind)) opts = { inline: true, compare: true, signal: cmpAbort.signal };
     else if (kind === 'pdf') opts = { previewPages: 1 };
     try { await Promise.resolve(route.render(file, staging, opts)); }
     catch (e) { staging.appendChild(errorCard('Could not analyse ' + file.name + ': ' + (e && e.message ? e.message : e))); }

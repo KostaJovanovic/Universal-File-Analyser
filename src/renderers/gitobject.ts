@@ -9,18 +9,13 @@
    sniffGitObject, called from handleFile()'s magic-byte sniff. */
 
 import { el, row, rowHelp, h3help, fmtBytes, type ElChild } from '../core/util.js';
-import { hexBytes } from '../core/binutil.js';
+import { hexBytes, inflate } from '../core/binutil.js';
+import { DECOMP_OUTPUT_MAX } from '../core/limits.js';
 
 const TYPES = new Set(['blob', 'tree', 'commit', 'tag']);
 
 
 function hasInflate() { return typeof DecompressionStream !== 'undefined'; }
-
-// Inflate a whole zlib blob to bytes.
-async function inflateAll(blob: File) {
-  const stream = blob.stream().pipeThrough(new DecompressionStream('deflate'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
-}
 
 // Inflate at most maxOut decompressed bytes, then stop - so peeking a huge blob's
 // header doesn't decompress the whole thing. A truncated input tail is ignored.
@@ -222,12 +217,15 @@ export async function renderGitObject(file: File, resultsEl: HTMLElement) {
     return;
   }
 
-  let data;
-  try { data = await inflateAll(file); }
-  catch (_) {
+  // Capped inflate: a small zlib bomb stops at DECOMP_OUTPUT_MAX instead of
+  // filling memory. `partial` keeps what decoded before the cap (or before a
+  // truncated tail), so the header and a prefix can still be shown.
+  const data = await inflate(file, 'deflate', DECOMP_OUTPUT_MAX, { partial: true });
+  if (!data) {
     resultsEl.appendChild(card('Git object', [row('Status', 'Could not inflate (corrupt, truncated, or not a git object)')]));
     return;
   }
+  const capped = data.length >= DECOMP_OUTPUT_MAX;
 
   let nul = 0; while (nul < data.length && data[nul] !== 0x00) nul++;
   const header = String.fromCharCode.apply(null, data.subarray(0, Math.min(nul, 64)) as unknown as number[]);
@@ -235,12 +233,17 @@ export async function renderGitObject(file: File, resultsEl: HTMLElement) {
   const type = sp > 0 ? header.slice(0, sp) : '';
   const size = sp > 0 ? (parseInt(header.slice(sp + 1), 10) || 0) : 0;
   const content = data.subarray(nul + 1);
-  const sha = await sha1Hex(data);
+  // A hash of a cut-off object would be a wrong object name, so none is shown.
+  const sha = capped ? null : await sha1Hex(data);
 
   const rows = [
     rowHelp('Object type', type || '(unknown)', 'Which kind of git object this is. A blob is a file’s contents, a tree is a folder listing, a commit is a saved snapshot with its message, and a tag marks a named point such as a release.'),
     rowHelp('Content size', fmtBytes(content.length) + (content.length === size ? '' : '  (header declares ' + size + ')'), 'How big the stored contents are once unpacked. Git records this length in the object’s own header; if that figure differs from the actual contents, the header’s figure is shown in brackets.'),
   ];
+  if (capped) {
+    rows.push(rowHelp('⚠ Truncated', 'Only the first ' + fmtBytes(DECOMP_OUTPUT_MAX) + ' was unpacked',
+      'This object unpacks to more than the browser can safely hold, so only its beginning is shown here and no SHA-1 is worked out.'));
+  }
   if (sha) {
     rows.push(rowHelp('SHA-1', sha, 'A 40-character fingerprint git works out from the object’s contents. Git uses it as the object’s name and identity, so the same contents always produce the same value.'));
     const fn = (file.name || '').toLowerCase().replace(/[^0-9a-f]/g, '');

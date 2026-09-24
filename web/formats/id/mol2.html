@@ -28,7 +28,7 @@
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .MOL2 file?","acceptedAnswer":{"@type":"Answer","text":"MOL2 is Tripos's molecule format, and unlike a Molfile it records the atom TYPE rather than just the element - \"C.ar\" for aromatic carbon, \"N.4\" for a quaternary nitrogen - which is the information a force field needs. The format comes from SYBYL, and its atom typing is why MOL2 is still the usual currency of molecular docking software. MOL2 organises a molecule into labelled record blocks such as @<TRIPOS>ATOM and @<TRIPOS>BOND, which is how parsers locate each section. Its atom types encode chemical detail like hybridisation and aromaticity, making MOL2 a richer description than a bare list of coordinates."}},{"@type":"Question","name":"How do I open a .MOL2 file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .MOL2 file onto Analyser at https://analyser.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Open chemical structures and see the molecule: MOL and SDF connection tables, MOL2, plain XYZ coordinates, Protein Data Bank entries and mmCIF/CIF crystallographic files, all drawn in an interactive 3D viewer you can rotate, zoom and restyle. Small molecules come up as ball-and-stick with the standard element colours; proteins and nucleic acids get a cartoon instead, drawing each chain as a ribbon along its backbone with helices and sheets picked out and any bound ligand still shown as sticks - which is the only way a structure of tens of thousands of atoms is readable at all. Alongside the picture, the composition is worked out from the atoms actually present rather than from any label in the file: molecular formula in Hill notation, molecular weight, net charge, element counts, and for a macromolecule the chain, residue and secondary-structure counts plus every non-polymer group - bound drugs, cofactors, metal ions and crystallisation buffer. PDB headers give up the entry ID, title, experimental method and resolution; an SDF is stepped through record by record with each molecule's tagged data fields read out."}},{"@type":"Question","name":"Can I open a .MOL2 file online for free?","acceptedAnswer":{"@type":"Answer","text":"Yes. Analyser is a free online .MOL2 identifier that runs entirely in your browser - your .MOL2 file never leaves your device, so there is nothing to upload and no software to install. It even works offline once installed."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .MOL2 file?","acceptedAnswer":{"@type":"Answer","text":"MOL2 is Tripos's molecule format, and unlike a Molfile it records the atom TYPE rather than just the element - \"C.ar\" for aromatic carbon, \"N.4\" for a quaternary nitrogen - which is the information a force field needs. The format comes from SYBYL, and its atom typing is why MOL2 is still the usual currency of molecular docking software. MOL2 organises a molecule into labelled record blocks such as @\u003cTRIPOS>ATOM and @\u003cTRIPOS>BOND, which is how parsers locate each section. Its atom types encode chemical detail like hybridisation and aromaticity, making MOL2 a richer description than a bare list of coordinates."}},{"@type":"Question","name":"How do I open a .MOL2 file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .MOL2 file onto Analyser at https://analyser.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Open chemical structures and see the molecule: MOL and SDF connection tables, MOL2, plain XYZ coordinates, Protein Data Bank entries and mmCIF/CIF crystallographic files, all drawn in an interactive 3D viewer you can rotate, zoom and restyle. Small molecules come up as ball-and-stick with the standard element colours; proteins and nucleic acids get a cartoon instead, drawing each chain as a ribbon along its backbone with helices and sheets picked out and any bound ligand still shown as sticks - which is the only way a structure of tens of thousands of atoms is readable at all. Alongside the picture, the composition is worked out from the atoms actually present rather than from any label in the file: molecular formula in Hill notation, molecular weight, net charge, element counts, and for a macromolecule the chain, residue and secondary-structure counts plus every non-polymer group - bound drugs, cofactors, metal ions and crystallisation buffer. PDB headers give up the entry ID, title, experimental method and resolution; an SDF is stepped through record by record with each molecule's tagged data fields read out."}},{"@type":"Question","name":"Can I open a .MOL2 file online for free?","acceptedAnswer":{"@type":"Answer","text":"Yes. Analyser is a free online .MOL2 identifier that runs entirely in your browser - your .MOL2 file never leaves your device, so there is nothing to upload and no software to install. It even works offline once installed."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"HowTo","name":"How to open a .MOL2 file","description":"Open a .MOL2 file online in your browser with Analyser - no upload and no install.","totalTime":"PT1M","tool":[{"@type":"HowToTool","name":"Analyser (any modern web browser)"}],"step":[{"@type":"HowToStep","position":1,"name":"Open Analyser","text":"Go to https://analyser.valjdakosta.com/ in any web browser. There is nothing to install.","url":"https://analyser.valjdakosta.com/"},{"@type":"HowToStep","position":2,"name":"Add your file","text":"Drag your .MOL2 file onto the page, or tap to choose one. The file stays on your device - nothing is uploaded."},{"@type":"HowToStep","position":3,"name":"Identify it","text":"Analyser identifies the .MOL2 file and reads the metadata in its header instantly, on your device."}]}
@@ -118,7 +118,7 @@
 <footer id="about" class="site-footer site-footer--about">
   <div class="footer-about-heading">
     <p class="footer-mark">Everything runs in your browser.</p>
-    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+    <p class="footer-meta">No upload, no trackers, no servers in the loop.</p>
   </div>
   <div class="footer-row footer-bottom">
     <div class="footer-lead">
@@ -155,10 +155,26 @@
   if ('serviceWorker' in navigator) {
     if (navigator.serviceWorker.controller) {
       var anrRefreshing = false;
-      navigator.serviceWorker.addEventListener('controllerchange', function () {
-        if (anrRefreshing) return;
+      // Never over a live analysis, though (an ffmpeg or AI job runs inside
+      // one): the reload then waits until the page is idle again.
+      var anrBusy = function () {
+        var c = document.body.classList;
+        return c.contains('anr-has-file') || c.contains('anr-loading')
+          || !!document.querySelector('.anr-results:not([hidden]), .anr-cmp-split');
+      };
+      var anrReload = function () {
+        if (anrRefreshing || anrBusy()) return false;
         anrRefreshing = true;
         window.location.reload();
+        return true;
+      };
+      var anrReloadPending = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (anrRefreshing || anrReloadPending || anrReload()) return;
+        anrReloadPending = true;
+        new MutationObserver(function (m, obs) { if (anrReload()) obs.disconnect(); })
+          .observe(document.body, { attributes: true, attributeFilter: ['class'] });
+        window.addEventListener('anr:navigate', anrReload);
       });
     }
     window.addEventListener('load', function () {

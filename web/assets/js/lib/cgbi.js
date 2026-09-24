@@ -21,6 +21,7 @@
    does not produce them, so the branch would be untested code on a path where
    being wrong looks like a decoded image. */
 import { inflate } from '../core/binutil.js';
+import { CGBI_MAX_PIXELS, PNG_IDAT_SLACK } from '../core/limits.js';
 const PNG_SIG = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 /** Walk the PNG chunk list once, returning each chunk's type and byte range.
     Stops at IEND or the first malformed length. */
@@ -128,7 +129,7 @@ export async function decodeCgbiPng(b) {
     const bpp = colorType === 6 ? 4 : colorType === 2 ? 3 : 0;
     if (!bpp)
         return null;
-    if (width * height > 64_000_000)
+    if (width * height > CGBI_MAX_PIXELS)
         return null;
     // Concatenate the IDATs and inflate as RAW deflate - the zlib wrapper Apple
     // stripped is exactly why a normal PNG decoder refuses these.
@@ -141,9 +142,11 @@ export async function decodeCgbiPng(b) {
         stream.set(d, off);
         off += d.length;
     }
+    // The filtered scanlines are exactly (width * bpp + 1) * height bytes, so the
+    // inflate is capped there (plus slack) rather than at the generic bomb ceiling.
     let raw;
     try {
-        raw = await inflate(stream, 'deflate-raw');
+        raw = await inflate(stream, 'deflate-raw', (width * bpp + 1) * height + PNG_IDAT_SLACK);
     }
     catch (_) {
         return null;

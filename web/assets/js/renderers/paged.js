@@ -19,6 +19,7 @@
    the .anr-page nodes themselves and skip straight to pagedPreviewCard.
    ============================================================================ */
 import { el, row, openOverlayBack } from '../core/util.js';
+import { PAGED_PAGES_MAX, PAGED_TEXT_LINES_MAX } from '../core/limits.js';
 // A4 at ~96dpi is 794x1123; we trim to a slightly narrower sheet that reads
 // well inside a card and still keeps the 1:1.414 proportion.
 export const PAGE_W = 760;
@@ -34,7 +35,7 @@ export function makePage(variant) {
 // text BEFORE calling this.
 export function paginateFlow(contentEl, opts = {}) {
     const pageH = opts.pageHeight || PAGE_H;
-    const maxPages = opts.maxPages || 600;
+    const maxPages = opts.maxPages || PAGED_PAGES_MAX;
     // Offscreen host so each page can be measured with real layout while hidden.
     const host = el('div', {
         style: 'position:absolute;left:-99999px;top:0;visibility:hidden;width:' + PAGE_W + 'px;'
@@ -48,6 +49,8 @@ export function paginateFlow(contentEl, opts = {}) {
     // down with the host on an error would lose the document rather than
     // degrading to a partial one.
     const measure = makePage();
+    let next = 0; // index of the first block not yet measured
+    let truncated = false; // the page cap cut the flow short
     try {
         // Measure the whole flow once, then distribute arithmetically.
         //
@@ -64,55 +67,91 @@ export function paginateFlow(contentEl, opts = {}) {
         // page breaks with pure arithmetic and move the blocks into place (writes
         // only, never read again).
         host.appendChild(measure);
-        for (const b of blocks)
-            measure.appendChild(b);
-        // --- read pass: nothing below this writes until every measurement is in ---
-        const cs = getComputedStyle(measure);
-        const padV = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-        // scrollHeight used to be compared against pageH including padding, so the
-        // usable content height is the sheet minus its own padding.
-        const capacity = Math.max(50, pageH - padV);
-        const tops = [], heights = [];
-        for (const b of blocks) {
-            tops.push(b.offsetTop);
-            heights.push(b.offsetHeight);
-        }
-        // --- write pass ---
-        let pageTop = tops.length ? tops[0] : 0;
-        for (let i = 0; i < blocks.length; i++) {
-            // Same rule as before: a block that overflows moves to the next page,
-            // unless it is the only thing on this one.
-            if (page.childElementCount > 0 && (tops[i] + heights[i] - pageTop) > capacity + 2) {
-                pages.push(page);
-                if (pages.length >= maxPages) {
-                    page = null;
-                    break;
-                }
-                page = makePage();
-                pageTop = tops[i];
+        let capacity = 0;
+        let pageTop = 0;
+        let used = 0; // height already filled on the current page, carried across chunks
+        // The flow is measured a chunk of blocks at a time, so a document far past
+        // the page cap stops being laid out as soon as the cap is reached instead
+        // of paying for one enormous layout first and then dropping the rest.
+        // A document that fits in one chunk is measured exactly as before.
+        while (next < blocks.length && page) {
+            const chunk = blocks.slice(next, next + PAGINATE_CHUNK);
+            for (const b of chunk)
+                measure.appendChild(b);
+            next += chunk.length;
+            // --- read pass: nothing below this writes until every measurement is in ---
+            if (!capacity) {
+                const cs = getComputedStyle(measure);
+                const padV = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+                // scrollHeight used to be compared against pageH including padding, so the
+                // usable content height is the sheet minus its own padding.
+                capacity = Math.max(50, pageH - padV);
             }
-            page.appendChild(blocks[i]);
+            const tops = [], heights = [];
+            for (const b of chunk) {
+                tops.push(b.offsetTop);
+                heights.push(b.offsetHeight);
+            }
+            // --- write pass ---
+            pageTop = (tops.length ? tops[0] : 0) - used;
+            for (let i = 0; i < chunk.length; i++) {
+                // Same rule as before: a block that overflows moves to the next page,
+                // unless it is the only thing on this one.
+                if (page.childElementCount > 0 && (tops[i] + heights[i] - pageTop) > capacity + 2) {
+                    pages.push(page);
+                    if (pages.length >= maxPages) {
+                        page = null;
+                        truncated = true;
+                        break;
+                    }
+                    page = makePage();
+                    pageTop = tops[i];
+                }
+                page.appendChild(chunk[i]);
+                used = tops[i] + heights[i] - pageTop;
+            }
+            // Whatever a cap break left in the measuring sheet goes with it.
+            if (!page)
+                while (measure.firstChild)
+                    measure.removeChild(measure.firstChild);
         }
+        if (next < blocks.length)
+            truncated = true;
     }
     catch (_) {
         // Fall through with whatever we paginated, keeping any unplaced blocks.
-        // (A maxPages break leaves blocks here deliberately - that path doesn't throw.)
-        if (page)
+        // (A maxPages break leaves blocks unplaced deliberately - that path doesn't throw.)
+        if (page) {
             while (measure.firstChild)
                 page.appendChild(measure.firstChild);
+            for (; next < blocks.length; next++)
+                page.appendChild(blocks[next]);
+        }
     }
     measure.remove();
     if (page)
         pages.push(page);
     host.remove();
+    // Say so when the cap cut the document short, rather than silently ending.
+    if (truncated && pages.length)
+        pages[pages.length - 1].appendChild(truncationNote(pages.length));
     return pages;
+}
+// Blocks laid out per measuring pass in paginateFlow.
+const PAGINATE_CHUNK = 1500;
+function truncationNote(shown) {
+    return el('p', { style: 'margin:16px 0 0;font-size:12px;font-style:italic;color:#666;' }, 'The preview stops here, after ' + shown + ' pages - the rest of the document is not shown.');
 }
 // Lay plain text onto page sheets. `mono` keeps source formatting (one block
 // per line, monospace, whitespace preserved); otherwise each line becomes a
 // prose paragraph. Returns page nodes ready for pagedPreviewCard.
 export function paginateText(text, opts = {}) {
     const container = document.createElement('div');
-    const lines = String(text == null ? '' : text).split('\n');
+    let lines = String(text == null ? '' : text).split('\n');
+    // Size wall: one DOM block per line, and paginateFlow stops at its page cap
+    // anyway, so never build more lines than the preview could possibly show.
+    if (lines.length > PAGED_TEXT_LINES_MAX)
+        lines = lines.slice(0, PAGED_TEXT_LINES_MAX);
     if (opts.mono) {
         container.style.cssText = 'font-family:var(--font-mono, monospace);font-size:12.5px;line-height:1.5;';
         for (const ln of lines) {

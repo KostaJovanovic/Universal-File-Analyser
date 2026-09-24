@@ -53,6 +53,20 @@ echo === git: save ===
 echo.
 
 set SAVE_ERROR=0
+set BUMPED=0
+
+rem Which branch this commit lands on. Every push below targets THIS branch
+rem (origin/<branch>), never a hard-coded main: pushing `main` from a feature
+rem branch used to report "pushed origin/main" while the new commit stayed local,
+rem and --force would overwrite the remote main with a stale local copy.
+rem A release builds from main (the workflow runs with --ref main), so it is
+rem refused on any other branch BEFORE anything is bumped or committed.
+call :getbranch
+if "%BRANCH%"=="" goto nobranch
+if "%BRANCH%"=="HEAD" goto nobranch
+if "%RELEASE_MODE%"=="1" if /i not "%BRANCH%"=="main" goto releasebranch
+echo [git]  branch: %BRANCH%
+if /i not "%BRANCH%"=="main" echo [warn] not on main - this commits and pushes to origin/%BRANCH%, which does not deploy
 
 rem The commit count is the PROJECT's counter, not a property of this clone.
 rem It used to come from `git rev-list --count HEAD`, which is per-device: it
@@ -77,21 +91,33 @@ set RELEASES=29,60,100,151,173,195,250,256,305
 for /f %%v in ('powershell -NoProfile -Command "$n=%NEXT_COUNT%; $major=0; $base=0; foreach($r in @(%RELEASES%)){ if($n -ge $r){ $major++; $base=$r } else { break } }; if($major -eq 0){ '0.{0:D2}' -f $n } elseif(($n-$base) -eq 0){ '{0}.0' -f $major } else { '{0}.{1:D2}' -f $major,($n-$base) }"') do set VERLABEL=%%v
 echo bump: v%VERLABEL% (commit %NEXT_COUNT%)
 
-rem -Encoding UTF8 on BOTH ends is required: without it, Get-Content defaults to
-rem the ANSI code page and reads this UTF-8 file as Windows-1252, mangling every
-rem non-ASCII char (e.g. the ellipsis in "Reading file..." became "...â€¦...") a
-rem little more on every commit. Read and write UTF-8 explicitly so it round-trips.
+rem Both bumped files are read and written as UTF-8 through .NET directly:
+rem   - Get-Content without -Encoding reads the ANSI code page and mangled every
+rem     non-ASCII char (the ellipsis in "Reading file..." became "â€¦") a little
+rem     more on every commit;
+rem   - PowerShell 5's Set-Content -Encoding utf8 adds a BOM and rewrites every
+rem     line ending as CRLF, against .gitattributes eol=lf.
+rem ReadAllText/WriteAllText with UTF8Encoding($false) keeps the text byte-exact
+rem apart from the one replaced number: no BOM, line endings as they were.
 rem NB: COMMIT_COUNT now lives in the TypeScript SOURCE (src/core/app.ts);
 rem web/assets/js/core/app.js is generated and is rewritten by the build below.
 rem \d* (not \d+) so a previously-blanked "const COMMIT_COUNT = ;" is still
 rem rewritten here. Reading the count above uses \d+ and aborts on a blank, so
 rem a damaged value stops the commit rather than silently restarting from 1.
-powershell -Command "(Get-Content 'src/core/app.ts' -Encoding UTF8) -replace 'const COMMIT_COUNT = \d*;', 'const COMMIT_COUNT = %NEXT_COUNT%;' | Set-Content 'src/core/app.ts' -Encoding utf8"
+rem
+rem The bump has to happen BEFORE the build (the emitted app.js carries the
+rem count), so both files are backed up first and put back by :restorebump if
+rem the build or the commit then fails - otherwise a failed save would burn a
+rem version number and the next one would skip it.
+copy /y "src\core\app.ts" "%TEMP%\anr-bump-app.ts" >nul
+copy /y "web\sw.js" "%TEMP%\anr-bump-sw.js" >nul
+set BUMPED=1
+powershell -NoProfile -Command "$p=(Resolve-Path 'src/core/app.ts').Path; $t=[IO.File]::ReadAllText($p); $t=$t -replace 'const COMMIT_COUNT = \d*;', 'const COMMIT_COUNT = %NEXT_COUNT%;'; [IO.File]::WriteAllText($p, $t, (New-Object Text.UTF8Encoding $false))"
 
 rem Bump the service-worker cache epoch too, so every commit ships fresh JS/CSS
 rem instead of leaving cached clients on a stale shell (stale-while-revalidate
 rem otherwise keeps serving the old code until VERSION changes).
-powershell -Command "(Get-Content 'web/sw.js' -Encoding UTF8) -replace 'const VERSION = ''analyser-v\d+'';', 'const VERSION = ''analyser-v%NEXT_COUNT%'';' | Set-Content 'web/sw.js' -Encoding utf8"
+powershell -NoProfile -Command "$p=(Resolve-Path 'web/sw.js').Path; $t=[IO.File]::ReadAllText($p); $t=$t -replace 'const VERSION = ''analyser-v\d+'';', 'const VERSION = ''analyser-v%NEXT_COUNT%'';'; [IO.File]::WriteAllText($p, $t, (New-Object Text.UTF8Encoding $false))"
 
 rem ---------------------------------------------------------------------------
 rem Compile src/*.ts -> web/assets/js/*.js BEFORE any generator runs. Four
@@ -146,6 +172,20 @@ echo         truncated. Type errors are reported but do NOT stop a commit;
 echo         only these do:
 echo.
 findstr /R /C:"error TS1[0-9][0-9][0-9]:" "%TEMP%\anr-tsc-all.log"
+call :restorebump
+pause
+exit /b 1
+:nobranch
+echo.
+echo [FATAL] Not on a branch (detached HEAD?) - aborting.
+echo         Check out the branch to commit to, then run save.bat again.
+pause
+exit /b 1
+:releasebranch
+echo.
+echo [FATAL] A release is built from main, but this is branch "%BRANCH%" - aborting.
+echo         Merge into main and release from there, or use a plain save.
+echo         (Nothing was bumped, staged or committed.)
 pause
 exit /b 1
 :countfail
@@ -162,6 +202,7 @@ echo [FATAL] Build output is missing or stale - aborting commit.
 echo         Committing now would ship the previous build against new sources.
 echo         Fix the build, then run save.bat again.
 echo         (Nothing was staged or committed.)
+call :restorebump
 pause
 exit /b 1
 :buildok
@@ -253,21 +294,17 @@ set /p MSG=commit message [v%VERLABEL%]:
 if "%MSG%"=="" set MSG=v%VERLABEL%
 
 git commit -m "%MSG%"
-if errorlevel 1 (
-  echo.
-  echo [err]  git commit failed
-  set SAVE_ERROR=1
-  goto end
-)
+if errorlevel 1 goto commitfail
+set BUMPED=0
 
 if "%COMMIT_ONLY%"=="1" goto committed
 if "%FORCE_MODE%"=="1" goto forcepush
 
 echo.
-set /p DOPUSH=push to origin/main? (y/n):
+set /p DOPUSH=push to origin/%BRANCH%? (y/n):
 if /i not "%DOPUSH%"=="y" goto skipped
 
-git push origin main
+git push origin %BRANCH%
 if not errorlevel 1 goto pushed
 
 echo.
@@ -283,24 +320,37 @@ echo [git]  skipped - nothing pushed
 set SAVE_ERROR=1
 goto end
 
+:commitfail
+echo.
+echo [err]  git commit failed - the version bump is put back
+call :restorebump
+set SAVE_ERROR=1
+goto end
+
 :fetch
-git pull origin main
+git pull origin %BRANCH%
 if errorlevel 1 set SAVE_ERROR=1
 echo.
 echo [git]  pulled - resolve any conflicts, then re-run
 goto end
 
+rem Force-push only ever sends the CURRENT branch to its own name on origin.
 :forcepush
-git push origin main --force
-if errorlevel 1 set SAVE_ERROR=1
+git push origin %BRANCH% --force
+if errorlevel 1 goto forcefail
 echo.
-echo [git]  force pushed origin/main
-if "%RELEASE_MODE%"=="1" if "%SAVE_ERROR%"=="0" call :runrelease
+echo [git]  force pushed origin/%BRANCH%
+if "%RELEASE_MODE%"=="1" call :runrelease
+goto end
+:forcefail
+set SAVE_ERROR=1
+echo.
+echo [err]  force push to origin/%BRANCH% failed
 goto end
 
 :pushed
 echo.
-echo [git]  pushed origin/main
+echo [git]  pushed origin/%BRANCH%
 if "%RELEASE_MODE%"=="1" call :runrelease
 goto end
 
@@ -344,12 +394,18 @@ echo.
 echo === git: push ===
 echo.
 set SAVE_ERROR=0
-git push origin main
+call :getbranch
+if "%BRANCH%"=="" goto nobranch
+if "%BRANCH%"=="HEAD" goto nobranch
+echo [git]  branch: %BRANCH%
+rem The prompt's parentheses are escaped (^( ^)): inside this if-block an
+rem unescaped close-paren would end the block early and break the parse.
+git push origin %BRANCH%
 if errorlevel 1 (
   echo.
-  set /p FORCE=push failed. force push? overwrites the remote. (y/n):
+  set /p FORCE=push failed. force push origin/%BRANCH%? overwrites the remote. ^(y/n^):
   if /i "!FORCE!"=="y" (
-    git push origin main --force
+    git push origin %BRANCH% --force
     if errorlevel 1 set SAVE_ERROR=1
   ) else (
     set SAVE_ERROR=1
@@ -363,9 +419,32 @@ echo.
 echo === git: pull ===
 echo.
 set SAVE_ERROR=0
-git pull origin main
+call :getbranch
+if "%BRANCH%"=="" goto nobranch
+if "%BRANCH%"=="HEAD" goto nobranch
+echo [git]  branch: %BRANCH%
+git pull origin %BRANCH%
 if errorlevel 1 set SAVE_ERROR=1
 goto end
+
+
+rem The checked-out branch name, or "HEAD" when detached (empty if git fails).
+:getbranch
+set BRANCH=
+for /f "delims=" %%b in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set BRANCH=%%b
+exit /b 0
+
+
+rem Put src/core/app.ts and web/sw.js back as they were before the version bump
+rem (byte-exact copies taken just before it), so an aborted save doesn't skip a
+rem version number. A no-op unless the bump actually ran.
+:restorebump
+if not "%BUMPED%"=="1" exit /b 0
+copy /y "%TEMP%\anr-bump-app.ts" "src\core\app.ts" >nul
+copy /y "%TEMP%\anr-bump-sw.js" "web\sw.js" >nul
+set BUMPED=0
+echo [git]  version bump reverted - src\core\app.ts and web\sw.js restored
+exit /b 0
 
 
 :backup

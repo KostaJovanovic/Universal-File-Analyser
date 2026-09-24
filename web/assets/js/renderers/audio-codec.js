@@ -517,6 +517,18 @@ export function adtsToM4a(arrayBuffer) {
     }
     return out.buffer;
 }
+// Offset of the first ID3v2 frame. With the extended-header flag (0x40) set, the
+// frames start after that header: its size is synchsafe and counts itself in
+// v2.4, and is a plain 32-bit number that excludes its own 4 bytes in v2.3.
+// Without this skip a tagged file read as having no tags or cover.
+function id3FirstFrame(buf, ver) {
+    if (ver < 3 || !(buf[5] & 0x40) || buf.length < 14)
+        return 10;
+    if (ver === 4) {
+        return 10 + (((buf[10] & 0x7F) << 21) | ((buf[11] & 0x7F) << 14) | ((buf[12] & 0x7F) << 7) | (buf[13] & 0x7F));
+    }
+    return 14 + (((buf[10] << 24) | (buf[11] << 16) | (buf[12] << 8) | buf[13]) >>> 0);
+}
 // --- Read BPM from file metadata (ID3v2 TBPM / MP4 tmpo) ---
 export async function readTagBPM(file) {
     const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
@@ -528,7 +540,7 @@ export async function readTagBPM(file) {
         const needed = Math.min(tagSize + 10, file.size, 65536);
         const buf = needed > head.length
             ? new Uint8Array(await file.slice(0, needed).arrayBuffer()) : head;
-        let pos = 10;
+        let pos = id3FirstFrame(buf, ver);
         const idLen = ver === 2 ? 3 : 4;
         const hdrLen = ver === 2 ? 6 : 10;
         const target = ver === 2 ? 'TBP' : 'TBPM';
@@ -567,12 +579,15 @@ export async function readTagBPM(file) {
         const buf = new Uint8Array(await file.slice(0, size).arrayBuffer());
         for (let i = 0; i + 8 < buf.length; i++) {
             if (buf[i] === 0x74 && buf[i + 1] === 0x6D && buf[i + 2] === 0x70 && buf[i + 3] === 0x6F) {
-                const dv = new DataView(buf.buffer, i + 4);
-                if (i + 12 <= buf.length) {
-                    const val = dv.getUint16(8 - 4, false);
-                    if (val > 0 && val < 999)
-                        return val;
-                }
+                // 'tmpo' > child 'data' atom: size(4) 'data'(4) version/flags(4)
+                // reserved(4), then the 16-bit tempo at i + 20.
+                if (i + 22 > buf.length)
+                    continue;
+                if (!(buf[i + 8] === 0x64 && buf[i + 9] === 0x61 && buf[i + 10] === 0x74 && buf[i + 11] === 0x61))
+                    continue;
+                const val = (buf[i + 20] << 8) | buf[i + 21];
+                if (val > 0 && val < 999)
+                    return val;
             }
         }
     }
@@ -596,7 +611,7 @@ async function extractId3Pic(file, head) {
         ((head[8] & 0x7F) << 7) | (head[9] & 0x7F);
     const needed = Math.min(tagSize + 10, file.size, 20 * 1024 * 1024);
     const buf = new Uint8Array(await file.slice(0, needed).arrayBuffer());
-    let pos = 10;
+    let pos = id3FirstFrame(buf, ver);
     const idLen = ver === 2 ? 3 : 4;
     const hdrLen = ver === 2 ? 6 : 10;
     const target = ver === 2 ? 'PIC' : 'APIC';
@@ -761,7 +776,7 @@ async function readId3Tags(file, head) {
     const buf = new Uint8Array(await file.slice(0, needed).arrayBuffer());
     const tags = [];
     let lyrics = null;
-    let pos = 10;
+    let pos = id3FirstFrame(buf, ver);
     const idLen = ver === 2 ? 3 : 4;
     const hdrLen = ver === 2 ? 6 : 10;
     while (pos + hdrLen < buf.length && pos < tagSize + 10) {

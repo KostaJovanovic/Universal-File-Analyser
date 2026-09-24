@@ -35,14 +35,28 @@ export class Archive {
   static open(file, options = null) {
     options = options || Archive._options || Archive.init();
     const arch = new Archive(file, options);
-    return arch.open();
+    // Analyser patch: a failed open (corrupt archive, unsupported codec) used to
+    // leave its worker - and the file copy in its WASM heap - running forever.
+    return arch.open().catch((e) => { arch.close(); throw e; });
   }
 
   constructor(file, options) {
     this._worker = new Worker(options.workerUrl);
     this._worker.addEventListener('message', this._workerMsg.bind(this));
+    // Analyser patch: a worker that fails to load (offline, WASM fetch error) or
+    // dies fires 'error', never a message - reject every pending call instead of
+    // leaving the caller awaiting forever.
+    const fail = (ev) => {
+      const pending = this._callbacks.splice(0);
+      const err = { type: 'ERROR', error: (ev && ev.message) || 'libarchive worker failed' };
+      for (const cb of pending) { try { cb(err); } catch (_) {} }
+    };
+    this._worker.addEventListener('error', fail);
+    this._worker.addEventListener('messageerror', fail);
     this._callbacks = [];
-    this._content = {};
+    // Analyser patch: prototype-free, so an entry path segment named
+    // "__proto__" / "constructor" is an ordinary key (see _getProp).
+    this._content = Object.create(null);
     this._processed = 0;
     this._file = file;
   }
@@ -110,7 +124,7 @@ export class Archive {
 
   _cloneContent(obj) {
     if (obj instanceof File || obj instanceof CompressedFile || obj === null) return obj;
-    const o = {};
+    const o = Object.create(null);   // Analyser patch: see _getProp
     for (const prop of Object.keys(obj)) o[prop] = this._cloneContent(obj[prop]);
     return o;
   }
@@ -127,12 +141,16 @@ export class Archive {
     return files;
   }
 
+  // Analyser patch (prototype pollution): entry paths come from the archive, and
+  // upstream's `cur[part] = cur[part] || {}` on plain objects let a path like
+  // "__proto__/html" walk onto Object.prototype and stamp a property on every
+  // object in the page. Own-key test + prototype-free nodes instead.
   _getProp(obj, path) {
     const parts = path.split('/');
     if (parts[parts.length - 1] === '') parts.pop();
     let cur = obj, prev = null;
     for (const part of parts) {
-      cur[part] = cur[part] || {};
+      if (!Object.prototype.hasOwnProperty.call(cur, part) || !cur[part]) cur[part] = Object.create(null);
       prev = cur;
       cur = cur[part];
     }

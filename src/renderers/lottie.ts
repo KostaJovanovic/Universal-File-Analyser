@@ -13,7 +13,7 @@
    guarded so a malformed file degrades to an error card. */
 
 import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, loadScript } from '../core/util.js';
-import { HASH_FILE_MAX } from '../core/limits.js';
+import { HASH_FILE_MAX, DECOMP_ENTRY_MAX } from '../core/limits.js';
 import { gunzip } from '../core/binutil.js';
 
 const LOTTIE_URL = 'assets/vendor/lottie/lottie.min.js';
@@ -37,7 +37,9 @@ async function readLottieData(file: File, ext: string) {
   const isGzip = head[0] === 0x1f && head[1] === 0x8b;
   const isZip = head[0] === 0x50 && head[1] === 0x4b;
   if (ext === 'tgs' || isGzip) {
-    const out = await gunzip(new Uint8Array(await file.arrayBuffer()));
+    // Capped: a Telegram sticker is tens of KB of JSON, so a .tgs that inflates
+    // past a single-entry ceiling is a decompression bomb, not an animation.
+    const out = await gunzip(file, DECOMP_ENTRY_MAX);
     if (!out) throw new Error('could not decompress this .tgs');
     return JSON.parse(new TextDecoder().decode(out));
   }
@@ -62,6 +64,40 @@ async function readLottieData(file: File, ext: string) {
     return JSON.parse((await zip.text(target))!);
   }
   return JSON.parse(await file.text());
+}
+
+// A 1x1 transparent GIF, standing in for any image asset that is not inline.
+const BLANK_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+// Strip everything in a Lottie object that makes lottie-web reach outside the
+// animation, IN PLACE, before it is handed to loadAnimation. All of it is
+// file-controlled data that the engine turns into page-level DOM:
+//   - fonts.list[*].fPath with fOrigin "p" / "g" / "t" (origin 3 / 1 / 2): the
+//     FontManager writes a document-wide <style> built from fFamily + fPath, or
+//     appends a PERSISTENT <link rel=stylesheet href=fPath> to <body>. That is
+//     arbitrary page CSS and a remote fetch. Without fPath the font counts as a
+//     system font and nothing is injected.
+//   - fFamily also lands in a querySelectorAll() string and in font-family
+//     attributes, so it is cut down to plain name characters.
+//   - assets[].u / .p: an image or audio asset that is not an inline data: URI
+//     is fetched from path + u + p. Those become a blank inline image.
+function neutraliseLottie(data: any) {
+  const fonts = data && data.fonts && Array.isArray(data.fonts.list) ? data.fonts.list : [];
+  for (const f of fonts) {
+    if (!f || typeof f !== 'object') continue;
+    delete f.fPath;
+    f.origin = 0;
+    delete f.fOrigin;
+    if (f.fFamily != null) f.fFamily = String(f.fFamily).replace(/[^\w -]/g, '').slice(0, 100);
+  }
+  const assets = data && Array.isArray(data.assets) ? data.assets : [];
+  for (const a of assets) {
+    // Precomps (a.layers) are nested timelines, not files.
+    if (!a || typeof a !== 'object' || Array.isArray(a.layers) || (a.p == null && a.u == null)) continue;
+    const p = typeof a.p === 'string' ? a.p.replace(/[\x00-\x20]+/g, '') : '';
+    if (/^data:(?:image|audio)\//i.test(p)) { a.p = p; a.u = ''; a.e = 1; continue; }
+    a.p = BLANK_IMAGE; a.u = ''; a.e = 1;
+  }
 }
 
 // Build the player + metadata for an already-parsed Lottie object. Exported so the
@@ -95,8 +131,9 @@ export async function renderLottieData(data: any, resultsEl: HTMLElement, file: 
   const stage = el('div', { class: 'anr-lottie-stage' });
   card.appendChild(stage);
 
-  let anim;
+  let anim: any;
   try {
+    neutraliseLottie(data);
     anim = lib.loadAnimation({ container: stage, renderer: 'svg', loop: true, autoplay: true, animationData: data });
   } catch (e) {
     card.appendChild(errorCard('The engine could not play this animation: ' + (e && e.message)));
@@ -123,6 +160,28 @@ export async function renderLottieData(data: any, resultsEl: HTMLElement, file: 
 
   const loopBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm is-on' }, 'Loop');
   loopBtn.addEventListener('click', () => { anim.loop = !anim.loop; loopBtn.classList.toggle('is-on', anim.loop); if (anim.loop && playing) anim.play(); });
+
+  // lottie-web keeps every loaded animation in its global manager and drives it
+  // from one requestAnimationFrame loop, so an animation whose stage has been
+  // cleared away keeps rendering (and holding its DOM) forever. handleFile and
+  // the SPA router run the media stoppers (then clear the set) on every new file
+  // and page change. Pause at once; a tick later - once the old results are gone
+  // or the router has stashed the home page for a later Back - destroy the
+  // animation if its stage was thrown away, or re-register if it was kept.
+  const lottieStopper = () => {
+    try { anim.pause(); } catch (_) {}
+    playing = false;
+    playBtn.textContent = '▶ Play';
+    setTimeout(() => {
+      const stash = window._anrHomeMain as Element | null | undefined;
+      if (stage.isConnected || (stash && stash.contains(stage))) {
+        (window._anrMediaStoppers = window._anrMediaStoppers || new Set()).add(lottieStopper);
+      } else {
+        try { anim.destroy(); } catch (_) {}
+      }
+    }, 0);
+  };
+  (window._anrMediaStoppers = window._anrMediaStoppers || new Set()).add(lottieStopper);
 
   card.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;align-items:center;gap:8px;' }, [playBtn, range, speed, loopBtn]));
   resultsEl.insertBefore(card, resultsEl.firstChild);

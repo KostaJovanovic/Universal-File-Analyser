@@ -17,7 +17,7 @@ import { renderHandleTree } from './archive.js';
 import { carveImages, repairJpeg, ensureJpegHuffman } from './photo-recover.js';
 import { detectCorruptCut } from './jpeg-salvage.js';
 import { salvageFullCanvas, emptyFraction } from './carve-gallery.js';
-import { WALL_INDEX } from '../core/limits.js';
+import { WALL_INDEX, CARVE_THUMB_EDGE } from '../core/limits.js';
 import {
   looksLikeFatBoot, parseFatVolume, parseMbr, otherFsLabel, readFileBytes,
   FAT_PART_TYPES, PART_TYPE_NAMES, MAX_ENTRIES,
@@ -343,11 +343,21 @@ function carvedImageGallery(readFull: any, file: File, resultsEl: HTMLElement, v
     const pump = async () => {
       if (pumping) return;
       pumping = true;
-      while (queue.length) {
-        await renderCarveThumb(queue.shift()!);
-        await new Promise((r) => setTimeout(r));       // let the bitmap be reclaimed
+      // try/finally per thumbnail: one carve that throws (a RangeError from a
+      // corrupt extent, a decoder fault) must not leave `pumping` stuck true,
+      // which would freeze every thumbnail after it on its placeholder.
+      try {
+        while (queue.length) {
+          const t = queue.shift()!;
+          try { await renderCarveThumb(t); } catch (_) {
+            const ph = t.querySelector('.anr-hint');
+            if (ph) ph.textContent = 'no preview';
+          }
+          await new Promise((r) => setTimeout(r));       // let the bitmap be reclaimed
+        }
+      } finally {
+        pumping = false;
       }
-      pumping = false;
     };
     const io = new IntersectionObserver((entries) => {
       for (const en of entries) {
@@ -398,14 +408,28 @@ function openCarveLightboxAt(pos: number) {
   pos = ((pos % n) + n) % n;                 // wrap around at the ends
   const c = list[pos], img = _carveImg, file = _carveFile, vol = _carveVol;
   const f = carvedFile(img, c, pos, vol);
-  const prevUrl = _carveLbUrl;
   // A carve the browser couldn't decode was shown from the salvage decoder; the
-  // lightbox has to use that recovered raster too, or it would open blank. A data
-  // URL needs no revoking, so only track blob URLs in _carveLbUrl.
-  let url, blob = true;
-  if (c._salvaged) { const sc = salvageFullCanvas(carveBytes(img, vol, c)); if (sc) { url = sc.toDataURL('image/png'); blob = false; } }
-  if (!url) url = URL.createObjectURL(f);
-  _carveLbUrl = blob ? url : null;
+  // lightbox has to use that recovered raster too, or it would open blank. It is
+  // re-decoded here on open (the gallery keeps only the small thumbnail) and
+  // handed over as a PNG blob URL - never a full-resolution data URL, which
+  // would sit in memory as a multi-megabyte string - with the canvas's backing
+  // store released as soon as the PNG is encoded.
+  if (c._salvaged) {
+    const sc = salvageFullCanvas(carveBytes(img, vol, c));
+    if (sc) {
+      sc.toBlob((b) => {
+        sc.width = sc.height = 0;
+        showCarveInLightbox(pos, n, c, f, img, file, vol, URL.createObjectURL(b || f));
+      }, 'image/png');
+      return;
+    }
+  }
+  showCarveInLightbox(pos, n, c, f, img, file, vol, URL.createObjectURL(f));
+}
+
+function showCarveInLightbox(pos: number, n: number, c: any, f: File, img: any, file: File | null, vol: any, url: string) {
+  const prevUrl = _carveLbUrl;
+  _carveLbUrl = url;
   const dims = (c.width && c.height) ? c.width + ' × ' + c.height : '';
   const meta = (pos + 1) + ' / ' + n + '  ·  ' + f.name + (dims ? '  ·  ' + dims : '')
     + '  ·  ' + fmtBytes(f.size) + (c._thumb ? '  · embedded thumbnail (full image overwritten)' : c._corrupt ? '  · top strip real, rest corrupt' : c._salvaged ? '  · recovered (partial)' : c.recovered ? '  · reassembled' : c.complete ? '' : '  · partial');
@@ -507,9 +531,13 @@ function recoverViaChain(img: Uint8Array, vol: any, c: any) {
   // one cluster, and be non-contiguous (a contiguous chain equals the plain
   // carve, so there's nothing to gain). A cleared entry (0 = free) mid-chain, a
   // loop, or a runaway length means the map is gone - bail to contiguous.
+  // The chain length is capped so the reassembled file stays within
+  // MAX_CARVE_BYTES, the same ceiling the contiguous carve is held to - a
+  // runaway chain otherwise asked readFileBytes for gigabytes.
+  const maxLen = Math.max(1, Math.floor(MAX_CARVE_BYTES / g.bytesPerCluster));
   const seen = new Set();
   let cur = startCl, len = 0, contiguous = true, prev = -1, terminated = false;
-  while (cur >= 2 && len < 200000) {
+  while (cur >= 2 && len < maxLen) {
     if (seen.has(cur)) return null;                        // loop -> untrustworthy
     seen.add(cur);
     if (prev >= 0 && cur !== prev + 1) contiguous = false;
@@ -666,7 +694,11 @@ function salvageCanvas(sub: Uint8Array, maxD: number) {
   cv.height = Math.max(1, Math.round(full.height * scale));
   cv.getContext('2d')!.drawImage(full, 0, 0, cv.width, cv.height);
   // A thumbnail-only recovery is 'partial' (you got a preview, not the full image).
-  return { canvas: cv, cat: (full._thumb || full._realFrac <= 0.95) ? 'partial' : 'ok', thumb: full._thumb, corrupt: full._corrupt };
+  const res = { canvas: cv, cat: (full._thumb || full._realFrac <= 0.95) ? 'partial' : 'ok', thumb: full._thumb, corrupt: full._corrupt };
+  // Only the downscaled copy is kept; the lightbox re-decodes on open, so the
+  // full-resolution backing store is released now rather than at GC.
+  full.width = full.height = 0;
+  return res;
 }
 
 // Lazily decode a carved region into a downscaled canvas. Only the placeholder is
@@ -679,7 +711,7 @@ function renderCarveThumb(thumbEl: HTMLElement) {
   // carveBytes reassembles a fragmented file via its FAT chain when it can, so a
   // scattered photo previews correctly here instead of as garbage.
   const sub = carveBytes(img, vol, c);
-  return decodeCarveToCanvas(sub, c.format, 200).then(({ canvas, cat, salvaged, thumb, corrupt }) => {
+  return decodeCarveToCanvas(sub, c.format, CARVE_THUMB_EDGE).then(({ canvas, cat, salvaged, thumb, corrupt }) => {
     c._cat = cat; c._decoded = cat !== 'none'; c.undecodable = cat === 'none'; c._salvaged = salvaged; c._thumb = thumb; c._corrupt = corrupt;
     if (!canvas) {
       // Nothing at all decodes - keep the text placeholder, but the cell stays in

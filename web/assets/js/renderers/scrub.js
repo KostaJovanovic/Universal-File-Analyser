@@ -7,7 +7,9 @@
 
    Rendering-critical blocks are deliberately KEPT so the picture looks the same:
    JPEG JFIF/ICC/Adobe segments, PNG colour chunks (iCCP/gAMA/cHRM/sRGB), WebP
-   ICCP. GPS lives inside EXIF, so stripping EXIF removes location too.
+   ICCP. GPS lives inside EXIF, so stripping EXIF removes location too. Bytes
+   after the primary image's end (JPEG EOI / PNG IEND) are dropped as well - an
+   MPO second image, Ultra HDR gain map or Motion Photo MP4 has its own EXIF.
 
    Supported: JPEG, PNG, WebP. Each stripper returns { out, removed } (or null if
    the bytes don't parse as that format) where `removed` is a list of
@@ -15,10 +17,48 @@
 import { el, fileExt, fmtBytes, wireInfoToggle } from '../core/util.js';
 // ---------- JPEG ----------
 // A JPEG is SOI (FF D8) then a run of marker segments, each FF <marker> <2-byte
-// big-endian length> <payload>, until SOS (FF DA) after which the entropy-coded
-// scan runs to EOI. All metadata sits in APPn/COM segments before SOS, so once
-// we reach SOS we can copy the remainder verbatim.
+// big-endian length> <payload>. SOS (FF DA) is followed by entropy-coded scan
+// data, which runs until the next real marker (FF 00 is a stuffed data byte and
+// FF D0-D7 are restart markers, both part of the scan). A progressive JPEG has
+// several scans with table segments between them, so after each scan we go back
+// to walking segments - stripping any APPn/COM found there too - until the EOI
+// (FF D9) that ends the primary image. Everything after that EOI is dropped:
+// that is where an MPO's second image, an Ultra HDR gain map or a Motion Photo's
+// MP4 lives, and each of those carries its own EXIF/GPS.
 const JPEG_KEEP_APP = new Set([0xE0, 0xE2, 0xEE]); // APP0 JFIF, APP2 ICC, APP14 Adobe
+// Describe what sits after the end of the picture, for the "Removed" list.
+function trailerLabel(b, start) {
+    const head = latin1(b, start, 64);
+    if (head.indexOf('\xFF\xD8\xFF') >= 0)
+        return 'Appended image after the picture (second image, gain map or preview)';
+    if (head.indexOf('ftyp') >= 0)
+        return 'Appended video after the picture (Motion Photo)';
+    if (head.indexOf('jumb') >= 0 || head.indexOf('c2pa') >= 0)
+        return 'Content Credentials (C2PA) after the picture';
+    return 'Data after the end of the picture';
+}
+// From `p` (first byte after an SOS segment), return the offset of the first
+// real marker that ends the entropy-coded data, or b.length if it runs to EOF.
+function scanEnd(b, p) {
+    const n = b.length;
+    while (p + 1 < n) {
+        if (b[p] !== 0xFF) {
+            p++;
+            continue;
+        }
+        const m = b[p + 1];
+        if (m === 0x00 || (m >= 0xD0 && m <= 0xD7)) {
+            p += 2;
+            continue;
+        } // stuffed byte / RSTn
+        if (m === 0xFF) {
+            p++;
+            continue;
+        } // fill byte before a marker
+        return p;
+    }
+    return n;
+}
 function app1Label(bytes, payloadStart) {
     // Identify what an APP1 segment carries from its leading signature.
     const sig = latin1(bytes, payloadStart, 34);
@@ -44,32 +84,43 @@ function stripJpeg(b) {
             i++;
             marker = b[i + 1];
         } // skip fill bytes
-        if (marker === 0xD9) {
-            keep.push([i, b.length]);
+        if (marker === 0xD9) { // EOI - primary image ends here
+            keep.push([i, i + 2]);
+            if (i + 2 < b.length)
+                removed.push({ label: trailerLabel(b, i + 2), bytes: b.length - (i + 2) });
             break;
-        } // EOI
-        if (marker === 0xDA) {
-            keep.push([i, b.length]);
-            break;
-        } // SOS - copy scan to end
+        }
         if (marker === 0x01 || (marker >= 0xD0 && marker <= 0xD7)) {
             keep.push([i, i + 2]);
             i += 2;
             continue;
         }
+        if (i + 3 >= b.length)
+            return null;
         const len = (b[i + 2] << 8) | b[i + 3];
         if (len < 2)
             return null;
         const segEnd = i + 2 + len;
         if (segEnd > b.length)
             return null;
+        if (marker === 0xDA) { // SOS - keep header + scan data
+            const end = scanEnd(b, segEnd);
+            keep.push([i, end]);
+            i = end;
+            continue;
+        }
         const isApp = marker >= 0xE0 && marker <= 0xEF;
         const isCom = marker === 0xFE;
-        if ((isApp && !JPEG_KEEP_APP.has(marker)) || isCom) {
+        // APP2 is kept for its ICC profile, but an MPF index (APP2 "MPF\0") only
+        // points at the appended images removed below, so it goes with them.
+        const isMpf = marker === 0xE2 && latin1(b, i + 4, 4) === 'MPF\0';
+        if ((isApp && !JPEG_KEEP_APP.has(marker)) || isCom || isMpf) {
             const label = isCom ? 'Comment'
-                : marker === 0xE1 ? app1Label(b, i + 4)
-                    : marker === 0xED ? 'IPTC / Photoshop (APP13)'
-                        : 'APP' + (marker - 0xE0) + ' metadata';
+                : isMpf ? 'Multi-picture index (MPF)'
+                    : marker === 0xE1 ? app1Label(b, i + 4)
+                        : marker === 0xED ? 'IPTC / Photoshop (APP13)'
+                            : marker === 0xEB ? 'JUMBF / Content Credentials (APP11)'
+                                : 'APP' + (marker - 0xE0) + ' metadata';
             removed.push({ label, bytes: segEnd - i });
         }
         else {
@@ -84,7 +135,9 @@ function stripJpeg(b) {
 // Metadata lives in text and timestamp chunks; every colour/rendering chunk is
 // kept so the image is unchanged.
 const PNG_SIG = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-const PNG_DROP = new Set(['tEXt', 'zTXt', 'iTXt', 'eXIf', 'tIME']);
+// caBX is the C2PA (Content Credentials) manifest store, which names the creator,
+// the tools used and often a signing identity.
+const PNG_DROP = new Set(['tEXt', 'zTXt', 'iTXt', 'eXIf', 'tIME', 'caBX']);
 function stripPng(b) {
     for (let k = 0; k < 8; k++)
         if (b[k] !== PNG_SIG[k])
@@ -104,6 +157,8 @@ function stripPng(b) {
                 label = 'EXIF';
             else if (type === 'tIME')
                 label = 'Timestamp (tIME)';
+            else if (type === 'caBX')
+                label = 'Content Credentials (C2PA)';
             else {
                 const kw = latin1(b, i + 8, Math.min(len, 79)).split('\0')[0];
                 label = (/xmp/i.test(kw) ? 'XMP' : 'Text') + (kw ? ' (' + kw + ')' : '');
@@ -114,7 +169,10 @@ function stripPng(b) {
             keep.push([i, chunkEnd]);
         }
         if (type === 'IEND') {
-            keep.push([chunkEnd, b.length]);
+            // Nothing after IEND is part of the image - drop it (appended files,
+            // Content Credentials or other data tacked on the end).
+            if (chunkEnd < b.length)
+                removed.push({ label: trailerLabel(b, chunkEnd), bytes: b.length - chunkEnd });
             break;
         }
         i = chunkEnd;
@@ -195,6 +253,36 @@ function assemble(b, ranges) {
     }
     return out;
 }
+// Metadata signatures looked for ANYWHERE in the cleaned output, not just in the
+// block headers the stripper walks - so a copy of EXIF/XMP/IPTC/C2PA hiding in a
+// structure we don't parse still stops the "Verified" line. Long, specific
+// strings, so compressed pixel data can't plausibly match by chance. ICC is kept
+// on purpose and isn't listed.
+const LEFTOVER_SIGS = [
+    ['EXIF', 'Exif\0\0'],
+    ['XMP', '<x:xmpmeta'],
+    ['XMP', 'http://ns.adobe.com/xap/1.0/'],
+    ['IPTC', 'Photoshop 3.0\0'],
+    ['C2PA', 'c2pa.claim'],
+];
+function findLatin1(b, needle) {
+    const n0 = needle.charCodeAt(0), nl = needle.length;
+    outer: for (let i = b.indexOf(n0); i >= 0 && i + nl <= b.length; i = b.indexOf(n0, i + 1)) {
+        for (let k = 1; k < nl; k++)
+            if (b[i + k] !== needle.charCodeAt(k))
+                continue outer;
+        return i;
+    }
+    return -1;
+}
+// Names of the metadata kinds whose signature still appears in `b` (deduplicated).
+function leftoverMetadata(b) {
+    const found = new Set();
+    for (const [name, sig] of LEFTOVER_SIGS)
+        if (!found.has(name) && findLatin1(b, sig) >= 0)
+            found.add(name);
+    return [...found];
+}
 const STRIPPERS = { jpeg: stripJpeg, png: stripPng, webp: stripWebp };
 // Pick a stripper from the magic bytes (trust the bytes, not the extension).
 function detectFormat(b) {
@@ -227,7 +315,8 @@ export async function stripImage(file) {
 // Appends a "Remove metadata" control to an existing card (the photo Metadata
 // card). On click it strips, lists what was removed, re-scans the output to
 // confirm nothing remains, and offers the clean copy for download.
-const SCRUB_HELP = 'Removes identifying information (EXIF, GPS location, XMP, IPTC and comments) by cutting out only those parts of the file - the actual image and its colour profile are copied across untouched, so the picture itself does not change. The cleaned copy is made here on your device and never uploaded. Colour-management data (ICC) is kept so the image still looks the same.';
+const SCRUB_HELP = 'Removes identifying information (EXIF, GPS location, XMP, IPTC, Content Credentials and comments) by cutting out only those parts of the file. Anything stored after the end of the picture - a second image, a Motion Photo video clip, an HDR gain map - is removed too, since it carries its own copy of the same details. ' +
+    'The main image and its colour profile are copied across untouched, so the picture itself does not change. The cleaned copy is made here on your device and never uploaded. Colour-management data (ICC) is kept so the image still looks the same.';
 export function attachImageScrub(file, cardEl) {
     if (!scrubSupportsImage(file))
         return;
@@ -244,9 +333,14 @@ export function attachImageScrub(file, cardEl) {
     const out = el('div', { style: 'margin-top:10px;' });
     wrap.appendChild(btn);
     wrap.appendChild(out);
+    let lastUrl = '';
     btn.addEventListener('click', async () => {
         btn.disabled = true;
         out.textContent = '';
+        if (lastUrl) {
+            URL.revokeObjectURL(lastUrl);
+            lastUrl = '';
+        }
         let res;
         try {
             res = await stripImage(file);
@@ -262,7 +356,10 @@ export function attachImageScrub(file, cardEl) {
             return;
         }
         if (!res.removed.length) {
-            out.appendChild(el('div', { class: 'anr-info' }, 'No removable metadata found - this file is already clean.'));
+            const still = leftoverMetadata(res.out);
+            out.appendChild(el('div', { class: 'anr-info' }, still.length
+                ? 'No removable metadata blocks found, but the file still contains ' + still.join(', ') + ' data somewhere this tool cannot safely cut out, so nothing was changed.'
+                : 'No removable metadata found - this file is already clean.'));
             btn.disabled = false;
             return;
         }
@@ -275,17 +372,25 @@ export function attachImageScrub(file, cardEl) {
         }
         out.appendChild(el('div', { class: 'anr-readout-section', style: 'margin-top:0;' }, 'Removed'));
         out.appendChild(tbl);
-        // Re-scan the output to confirm no metadata blocks remain.
+        // Re-scan the output to confirm no metadata remains: the block structure
+        // (the stripper finds nothing left to cut) AND the whole byte stream (no
+        // EXIF/XMP/IPTC/C2PA signature anywhere, including places we don't parse).
         const verify = STRIPPERS[res.format](res.out);
-        const clean = verify && verify.removed.length === 0;
+        const leftover = leftoverMetadata(res.out);
+        const clean = verify && verify.removed.length === 0 && leftover.length === 0;
         out.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:8px;' }, clean
-            ? '✓ Verified - re-scanned the clean copy and found no remaining metadata blocks. ' + fmtBytes(totalRemoved) + ' removed; pixels unchanged.'
-            : 'Stripped ' + fmtBytes(totalRemoved) + ', but a re-scan still sees metadata - the file may use an unusual structure.'));
+            ? '✓ Verified - re-scanned the whole clean copy and found no remaining metadata. ' + fmtBytes(totalRemoved) + ' removed; pixels unchanged.'
+            : 'Stripped ' + fmtBytes(totalRemoved) + ', but a re-scan still sees metadata' +
+                (leftover.length ? ' (' + leftover.join(', ') + ')' : '') + ' - the file may use an unusual structure.'));
         const cleanName = (file.name || 'image').replace(/(\.[^.]+)?$/, (m) => '-clean' + (m || ''));
         const blob = new Blob([res.out], { type: file.type || 'application/octet-stream' });
-        const url = URL.createObjectURL(blob);
+        // The URL stays valid until the next strip replaces this link, so the
+        // download can be clicked more than once (it used to be revoked 2 s after
+        // the first click, which broke a second try).
+        if (lastUrl)
+            URL.revokeObjectURL(lastUrl);
+        const url = lastUrl = URL.createObjectURL(blob);
         const dl = el('a', { class: 'anr-btn anr-btn--cta', href: url, download: cleanName, style: 'margin-top:10px;' }, 'Download clean copy (' + fmtBytes(res.out.length) + ')');
-        dl.addEventListener('click', () => setTimeout(() => URL.revokeObjectURL(url), 2000));
         out.appendChild(dl);
         btn.disabled = false;
     });

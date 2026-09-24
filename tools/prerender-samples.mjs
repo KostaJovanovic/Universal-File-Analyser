@@ -192,6 +192,8 @@ if (!region.test(html)) {
   console.error(`prerender-samples: markers ${START} … ${END} not found in samples.html`);
   process.exit(1);
 }
-html = html.replace(region, `${START}\n${block}\n          ${END}`);
+// Function replacer: `block` is built from sample file names, and a string
+// replacement would expand any "$&" / "$'" in one of them.
+html = html.replace(region, () => `${START}\n${block}\n          ${END}`);
 writeFileSync(PAGE, html);
 console.log(`prerender-samples: ${files.length} sample(s) -> samples.html`);

@@ -3,14 +3,14 @@
    and magic bytes. Extracts whatever metadata is accessible without
    full format parsers. */
 import { el, row, rowHelp, fmtBytes, preBlock } from '../core/util.js';
-import { findBytes, utf16, utf8, ascii } from '../core/binutil.js';
+import { findBytes, utf16, utf8, ascii, inflate } from '../core/binutil.js';
 import { openZip } from './zip.js';
 import { FORMATS } from './proprietary-formats.js';
 import { EXT_VARIANTS, detectVariant } from '../core/formats.js';
 import { parseNrbf } from '../lib/nrbf.js';
 import { safe } from '../parsers/parser-util.js';
 import { buildEmbeddedImagesCard, rgbaToPngBlob } from './embedded-images.js';
-import { PREVIEW_CARVE_MAX } from '../core/limits.js';
+import { PREVIEW_CARVE_MAX, DECOMP_ENTRY_MAX, READABLE_TEXT_MAX, READABLE_DEPTH_MAX } from '../core/limits.js';
 // ---------- helpers ----------
 function extFromName(name) {
     const dot = name.lastIndexOf('.');
@@ -31,6 +31,29 @@ function forceDeviceViewport(html) {
     if (/<html\b[^>]*>/i.test(html))
         return html.replace(/<html\b[^>]*>/i, (m) => m + '<head>' + VIEWPORT_META + '</head>');
     return VIEWPORT_META + html;
+}
+// The rendered HTML preview is sandboxed without scripts, but a plain page can
+// still fetch: <img src="https://...">, a remote stylesheet or font is a
+// tracking pixel that tells the author the file was opened, and breaks the
+// "nothing leaves the device" promise. A Content-Security-Policy <meta> placed
+// as the FIRST child of <head> blocks every network subresource while leaving
+// inline styles and data:/blob: media alone, so the layout still renders. The
+// document is parsed (inertly, by DOMParser) and re-serialised rather than
+// regex-patched, so nothing in the file can land before the policy. A
+// meta refresh is a navigation, which CSP does not cover, so it is removed.
+const PREVIEW_CSP = "default-src 'none'; style-src 'unsafe-inline' data: blob:; img-src data: blob:; font-src data: blob:; media-src data: blob:";
+function lockDownPreview(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    for (const m of Array.from(doc.querySelectorAll('meta[http-equiv]'))) {
+        if (/^\s*refresh\s*$/i.test(m.getAttribute('http-equiv') || ''))
+            m.remove();
+    }
+    const csp = doc.createElement('meta');
+    csp.setAttribute('http-equiv', 'Content-Security-Policy');
+    csp.setAttribute('content', PREVIEW_CSP);
+    doc.head.insertBefore(csp, doc.head.firstChild);
+    // The file's own doctype is kept, so quirks vs standards layout is unchanged.
+    return (doc.doctype ? new XMLSerializer().serializeToString(doc.doctype) : '') + doc.documentElement.outerHTML;
 }
 // ---------- PSD header ----------
 function parsePsd(buf) {
@@ -327,17 +350,21 @@ function parsePe(buf) {
         return null;
     const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
     const peOffset = view.getUint32(0x3C, true);
+    // The whole COFF header (signature + 20 bytes, read up to peOffset + 24)
+    // must be present - a truncated PE would otherwise throw a RangeError below.
     if (peOffset + 6 > buf.length)
         return { 'Format': 'MS-DOS / PE' };
     if (buf[peOffset] !== 0x50 || buf[peOffset + 1] !== 0x45)
         return { 'Format': 'MS-DOS executable' };
+    if (peOffset + 24 > buf.length)
+        return { 'Format': 'PE (truncated header)' };
     const machine = view.getUint16(peOffset + 4, true);
     const machines = { 0x14C: 'x86 (32-bit)', 0x8664: 'x64 (64-bit)', 0xAA64: 'ARM64' };
     const arch = machines[machine] || '0x' + machine.toString(16);
     const numSections = view.getUint16(peOffset + 6, true);
     const timestamp = view.getUint32(peOffset + 8, true);
     const date = timestamp ? new Date(timestamp * 1000).toISOString().slice(0, 19).replace('T', ' ') : 'N/A';
-    const optMagic = peOffset + 24 < buf.length ? view.getUint16(peOffset + 24, true) : 0;
+    const optMagic = peOffset + 26 <= buf.length ? view.getUint16(peOffset + 24, true) : 0;
     const is64 = optMagic === 0x20B;
     const peType = is64 ? 'PE32+ (64-bit)' : optMagic === 0x10B ? 'PE32 (32-bit)' : 'PE';
     const result = {
@@ -744,14 +771,29 @@ export async function extractPeIcon(file) {
                 return null;
             return { start, size: dataSize };
         };
-        // Descend a name entry's language directory to its first real leaf.
-        const firstLeaf = (dirOff) => {
+        // Descend a name entry's language directory to its first real leaf. A
+        // real resource tree is three levels deep (type / name / language), so the
+        // descent stops at depth 3; results are memoised per directory offset and
+        // a directory already on the path is never re-entered, so a crafted tree
+        // whose entries all point at shared subdirectories costs one visit each
+        // rather than m^k.
+        const leafMemo = new Map();
+        const firstLeaf = (dirOff, depth = 0) => {
+            if (depth >= 3)
+                return null;
+            if (leafMemo.has(dirOff))
+                return leafMemo.get(dirOff);
+            leafMemo.set(dirOff, null); // in progress: a cycle reads as "no leaf"
+            let found = null;
             for (const e of readDir(dirOff)) {
-                const d = e.isDir ? firstLeaf(e.off) : leafData(e.off);
-                if (d)
-                    return d;
+                const d = e.isDir ? firstLeaf(e.off, depth + 1) : leafData(e.off);
+                if (d) {
+                    found = d;
+                    break;
+                }
             }
-            return null;
+            leafMemo.set(dirOff, found);
+            return found;
         };
         const root = readDir(0);
         const typeOff = (t) => { const e = root.find((x) => x.id === t && x.isDir); return e ? e.off : -1; };
@@ -1135,13 +1177,18 @@ function sfntTableOffsets(buf, base) {
     }
     return offs;
 }
-// zlib-inflate (WOFF stores each table zlib-compressed).
-async function inflateZlib(bytes) {
+// zlib-inflate (WOFF stores each table zlib-compressed). The table's declared
+// origLength is the output ceiling (itself held to DECOMP_ENTRY_MAX), so a
+// small table cannot inflate into a bomb - past it the read is cancelled.
+async function inflateZlib(bytes, origLen) {
     if (typeof DecompressionStream === 'undefined')
         throw new Error('no DecompressionStream');
-    const ds = new DecompressionStream('deflate');
-    const ab = await new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer();
-    return new Uint8Array(ab);
+    if (origLen > DECOMP_ENTRY_MAX)
+        throw new Error('table too large');
+    const out = await inflate(bytes, 'deflate', origLen);
+    if (!out)
+        throw new Error('inflate failed or table larger than declared');
+    return out;
 }
 // Pull (and decompress) the requested tables from a WOFF 1.0 file. Header is 44
 // bytes; each 20-byte dir entry is tag(4) offset(4) compLength(4) origLength(4)
@@ -1162,7 +1209,7 @@ async function woffTables(buf, want) {
             continue;
         const comp = buf.subarray(off, off + compLen);
         try {
-            out[tag] = compLen < origLen ? await inflateZlib(comp) : comp.slice();
+            out[tag] = compLen < origLen ? await inflateZlib(comp, origLen) : comp.slice();
         }
         catch (_) { }
     }
@@ -2572,7 +2619,12 @@ async function parseTorrent(file) {
             let colonIdx = pos;
             while (colonIdx < raw.length && raw[colonIdx] !== 0x3A)
                 colonIdx++;
-            const len = parseInt(td.decode(raw.subarray(pos, colonIdx)), 10);
+            // A string length is plain decimal digits. Anything else (a "-3" would
+            // move the cursor backwards and loop forever) ends the parse.
+            const lenStr = td.decode(raw.subarray(pos, colonIdx));
+            if (colonIdx >= raw.length || !/^\d+$/.test(lenStr))
+                throw new Error('bad bencode string length');
+            const len = parseInt(lenStr, 10);
             pos = colonIdx + 1;
             const data = raw.subarray(pos, pos + len);
             pos += len;
@@ -5001,20 +5053,52 @@ async function renderFontPreview(file, card, fontInfo) {
 // ---------- Valve KeyValues (.vdf / .acf) ----------
 // Steam/Source text format: nested "key" "value" pairs with { } blocks. Used by
 // appmanifest, libraryfolders, loginusers, config, etc.
+// Also prints decoded NRBF graphs, which may share children or refer back to
+// themselves, so the walk is bounded three ways: an object already on the
+// current path prints as a back-reference, nesting stops at
+// READABLE_DEPTH_MAX, and output stops at READABLE_TEXT_MAX characters.
 function prettyKV(obj, indent) {
-    indent = indent || 0;
-    const pad = '  '.repeat(indent);
-    let s = '';
-    for (const k in obj) {
-        const v = obj[k];
-        if (v && typeof v === 'object') {
-            s += pad + k + '\n' + pad + '{\n' + prettyKV(v, indent + 1) + pad + '}\n';
+    const parts = [];
+    let size = 0, full = false;
+    const onPath = new Set();
+    const push = (s) => {
+        if (full)
+            return;
+        if (size + s.length > READABLE_TEXT_MAX) {
+            parts.push('… (output truncated)\n');
+            full = true;
+            return;
         }
-        else {
-            s += pad + k + '  =  ' + v + '\n';
+        parts.push(s);
+        size += s.length;
+    };
+    (function walk(o, depth) {
+        const pad = '  '.repeat(depth);
+        onPath.add(o);
+        for (const k in o) {
+            if (full)
+                break;
+            const v = o[k];
+            if (v && typeof v === 'object') {
+                if (onPath.has(v)) {
+                    push(pad + k + '  =  (circular reference)\n');
+                    continue;
+                }
+                if (depth + 1 >= READABLE_DEPTH_MAX) {
+                    push(pad + k + '  =  (nested too deep)\n');
+                    continue;
+                }
+                push(pad + k + '\n' + pad + '{\n');
+                walk(v, depth + 1);
+                push(pad + '}\n');
+            }
+            else {
+                push(pad + k + '  =  ' + v + '\n');
+            }
         }
-    }
-    return s;
+        onPath.delete(o);
+    })(obj, indent || 0);
+    return parts.join('');
 }
 async function parseVdf(file) {
     let text;
@@ -5234,13 +5318,18 @@ const PARSERS = {
 // PEM .key routed here from being read as the Keynote deck FORMATS.key names.
 export function plaintextExt(name) {
     const ext = extFromName(name);
-    const fmt = FORMATS[ext];
+    const fmt = formatFor(ext);
     return fmt && fmt.parse === 'text' ? ext : 'txt';
+}
+// FORMATS entry for an extension, own keys only: a file named `x.constructor`
+// or `x.__proto__` must not resolve to an Object.prototype member.
+function formatFor(ext) {
+    return Object.hasOwn(FORMATS, ext) ? FORMATS[ext] : undefined;
 }
 // ---------- main render ----------
 export async function renderProprietary(file, container, extOverride) {
     const ext = extOverride || extFromName(file.name);
-    const fmt = FORMATS[ext];
+    const fmt = formatFor(ext);
     if (!fmt)
         return false;
     container.hidden = false;
@@ -5398,7 +5487,7 @@ export async function renderProprietary(file, container, extOverride) {
                 // keeps the stage scrollable through the whole page.
                 const MODES = { desktop: 1280, mobile: 390 };
                 let mode = (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) ? 'mobile' : 'desktop';
-                const blob = new Blob([forceDeviceViewport(fullText)], { type: 'text/html;charset=utf-8' });
+                const blob = new Blob([lockDownPreview(forceDeviceViewport(fullText))], { type: 'text/html;charset=utf-8' });
                 const stage = el('div', { style: 'position:relative;overflow:auto;width:100%;height:420px;border:1px solid var(--rule);background:#fff;margin-top:8px' });
                 const scaler = el('div', { style: 'position:relative;margin:0 auto;overflow:hidden' });
                 const iframe = el('iframe', { src: URL.createObjectURL(blob), sandbox: 'allow-same-origin', scrolling: 'no', style: 'border:0;background:#fff;transform-origin:0 0;display:block' });
@@ -5517,6 +5606,6 @@ export async function renderProprietary(file, container, extOverride) {
 }
 // Check if a file extension is a known proprietary format
 export function isProprietaryExt(ext) {
-    return ext in FORMATS;
+    return Object.hasOwn(FORMATS, ext);
 }
 //# sourceMappingURL=proprietary.js.map

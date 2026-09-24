@@ -6,7 +6,7 @@
 import { makePlayer, renderAudio } from './audio.js';
 import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
 import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob, inlineLoader, yieldToMain, setPlayerFill, type ElChild, type Drawable} from '../core/util.js';
-import { HASH_FILE_MAX, AVI_EXTRACT_MAX } from '../core/limits.js';
+import { HASH_FILE_MAX, AVI_EXTRACT_MAX, FFMPEG_MEMFS_MAX, FFMPEG_REMUX_MAX, FFMPEG_FPS_PROBE_HEAD, PCM_COMPANION_MAX, VIDEO_AUDIO_DECODE_MAX, PCM_DECODE_SAMPLES_MAX, VIDEO_SHA_AUTO_MAX, VIDEO_SHA_BUTTON_MAX } from '../core/limits.js';
 import { parseAviHeader, openAviData, encodeWav } from './video-avi.js';
 import { appendSonyGyroCard } from './sony-rtmd.js';
 import { registerSyncedVideo, registerExclusiveVideo, setAudioCompanion } from '../core/video-sync.js';
@@ -367,13 +367,31 @@ let _ffLoaderEl: HTMLDivElement|null = null;
 // FFmpeg jobs through this promise chain: the second job waits for the first to
 // finish before it starts. `onWait` fires (once) if the job has to queue, so the
 // caller can show a "waiting…" state instead of a stalled progress bar.
+// EVERY ffmpeg job in this file goes through here (a job must never call another
+// queued job, or it waits on itself). Exported so other borrowers of the shared
+// instance (audio, gcode) can join the same line.
 let _ffmpegBusy = false;
-let _ffmpegChain = Promise.resolve();
-function queueFFmpeg(job: () => any, onWait?: (() => void)|null) {
+let _ffmpegChain: Promise<any> = Promise.resolve();
+export function queueFFmpeg<T>(job: () => T|Promise<T>, onWait?: (() => void)|null): Promise<T> {
   if (_ffmpegBusy && typeof onWait === 'function') { try { onWait(); } catch (_) {} }
   const run = _ffmpegChain.then(() => { _ffmpegBusy = true; return job(); });
   _ffmpegChain = run.then(() => { _ffmpegBusy = false; }, () => { _ffmpegBusy = false; });
   return run;
+}
+
+// Per-job file names. The instance's filesystem is shared by every job, so a
+// fixed name ('input', 'out.mp4') left by a job that died half-way - or written
+// by a second caller - would be read back as this job's output.
+let _ffJobSeq = 0;
+function ffJobPrefix() { return 'j' + (++_ffJobSeq) + '_'; }
+
+// Run one ffmpeg command. exec RESOLVES on a non-zero exit (a clean failure) and
+// rejects only when the instance itself died (a wasm abort, a terminate, a native
+// binary that could not start) - so a rejection means the instance is a corpse,
+// and it is dropped here so the next job loads a fresh one rather than reusing it.
+async function ffExec(ff: any, args: any[], timeout?: number) {
+  try { return await (timeout ? ff.exec(args, timeout) : ff.exec(args)); }
+  catch (e) { if (ff === ffmpegInstance) killFFmpeg(); throw e; }
 }
 
 // The bottom-of-window loader. Default label/determinate bar for the FFmpeg core
@@ -492,30 +510,49 @@ async function loadNativeFFmpeg() {
   }
 }
 
+// One load at a time: two callers arriving together (a probe and a convert, or
+// the two compare panels) used to build two instances and orphan one of them.
+let _ffLoading: Promise<any>|null = null;
 export async function loadFFmpeg(onProgress?: ((p: number) => void)|null) {
   if (ffmpegInstance && ffmpegInstance.loaded) return ffmpegInstance;
+  if (_ffLoading) return _ffLoading;
+  _ffLoading = loadFFmpegFresh(onProgress);
+  try { return await _ffLoading; }
+  finally { _ffLoading = null; }
+}
+
+async function loadFFmpegFresh(onProgress?: ((p: number) => void)|null) {
   if (ffmpegInstance) killFFmpeg();   // half-loaded / terminated leftover
   // Desktop first. It needs no download, so it must be tried BEFORE the loader
   // bar goes up - there is nothing to show progress for.
   const native = await loadNativeFFmpeg();
   if (native) { ffmpegInstance = native; return native; }
   showFfmpegLoader();
+  let coreJS: string|null = null, wasmURL: string|null = null;
   try {
     const { FFmpeg } = await import(new URL('../../vendor/ffmpeg/ffmpeg.js', import.meta.url).href);
     const report = (p: number) => { setFfmpegLoaderProgress(p); if (onProgress) onProgress(p); };
-    const coreJS = makeBlobURL(await fetchWithProgress(FFMPEG_CORE_BASE + '/ffmpeg-core.js', (p: number) => report(p * 0.3)), 'text/javascript');
+    coreJS = makeBlobURL(await fetchWithProgress(FFMPEG_CORE_BASE + '/ffmpeg-core.js', (p: number) => report(p * 0.3)), 'text/javascript');
     const wasmData = await fetchWithProgress(FFMPEG_CORE_BASE + '/ffmpeg-core.wasm', (p: number) => report(0.3 + p * 0.7));
-    const wasmURL = makeBlobURL(wasmData, 'application/wasm');
+    wasmURL = makeBlobURL(wasmData, 'application/wasm');
     const ff = new FFmpeg();
     await ff.load({ coreURL: coreJS, wasmURL });
     ffmpegInstance = ff;
     return ff;
   } finally {
+    // The single-threaded core has been imported and instantiated by now, so the
+    // ~31 MB of blob URLs are dead weight - and a reload after killFFmpeg() mints
+    // a fresh pair, so without this every crash leaked another copy.
+    if (coreJS) { try { URL.revokeObjectURL(coreJS); } catch (_) {} }
+    if (wasmURL) { try { URL.revokeObjectURL(wasmURL); } catch (_) {} }
     hideFfmpegLoader();
   }
 }
 
-async function ffmpegExtractAudio(file: File, container: HTMLDivElement) {
+function ffmpegExtractAudio(file: File, container: HTMLDivElement) {
+  return queueFFmpeg(() => ffmpegExtractAudioJob(file, container));
+}
+async function ffmpegExtractAudioJob(file: File, container: HTMLDivElement) {
   const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const labelEl = el('div', { class: 'anr-progress-label' }, 'loading ffmpeg');
   const wrap = el('div', { class: 'anr-progress' }, [barEl, labelEl]);
@@ -528,16 +565,25 @@ async function ffmpegExtractAudio(file: File, container: HTMLDivElement) {
     barEl.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' + ' '.repeat(total - filled) + ']';
   }
 
-  const ff = await loadFFmpeg((p: number) => { setBar(p); });
-  labelEl.textContent = 'extracting audio';
-  setBar(1);
-  const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
-  await ff.writeFile('input', await fetchFile(file));
-  await ff.exec(['-i', 'input', '-vn', '-acodec', 'pcm_s16le', '-ar', '48000', '-ac', '2', 'output.wav']);
-  const data = await ff.readFile('output.wav');
-  await ff.deleteFile('input');
-  await ff.deleteFile('output.wav');
-  wrap.remove();
+  let data;
+  try {
+    const ff = await loadFFmpeg((p: number) => { setBar(p); });
+    labelEl.textContent = 'extracting audio';
+    setBar(1);
+    const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
+    const pre = ffJobPrefix();
+    const inName = pre + 'input', outName = pre + 'output.wav';
+    try {
+      await ff.writeFile(inName, await fetchFile(file));
+      await ffExec(ff, ['-i', inName, '-vn', '-acodec', 'pcm_s16le', '-ar', '48000', '-ac', '2', outName]);
+      data = await ff.readFile(outName);
+    } finally {
+      try { await ff.deleteFile(inName); } catch (_) {}
+      try { await ff.deleteFile(outName); } catch (_) {}
+    }
+  } finally {
+    wrap.remove();
+  }
   const wavBlob = new Blob([data.buffer || data], { type: 'audio/wav' });
   // Reuse the shared context - iOS Safari caps concurrent AudioContexts (~4), so
   // a fresh-and-never-closed one per decode exhausts them across a session.
@@ -563,6 +609,7 @@ async function ffmpegExtractAudio(file: File, container: HTMLDivElement) {
 // `onLoad` reports 0..1 core-download progress; `onEnc` reports 0..1 progress.
 // Returns a video/mp4 Blob, or null if nothing could be produced.
 async function ffmpegReverseVideo(file: File, onLoad: ((p: number) => void)|null, onEnc: ((p: number) => void)|null, signal: AbortSignal) {
+  if (signal && signal.aborted) return null;   // queued behind a job, and the file changed meanwhile
   const ff = await loadFFmpeg(onLoad);
   if (signal && signal.aborted) return null;
   const aborted = () => signal && signal.aborted;
@@ -586,11 +633,14 @@ async function ffmpegReverseVideo(file: File, onLoad: ((p: number) => void)|null
   // dead) from a clean non-zero exit (ff.exec resolves, output just isn't there).
   // On a crash we tear the instance down so the next attempt reloads fresh.
   let crashed = false;
-  const exec = async (args: any[]) => { log = ''; try { await ff.exec(args); return true; } catch (_) { crashed = true; return false; } };
+  const exec = async (args: any[]) => { log = ''; try { await ffExec(ff, args); return true; } catch (_) { crashed = true; return false; } };
   const read = async (name: string) => { try { const d = await ff.readFile(name); return d && d.length ? d : null; } catch (_) { return null; } };
   const rm = async (name: string) => { try { await ff.deleteFile(name); } catch (_) {} };
 
-  const src = 'rev_src';
+  const pre = ffJobPrefix();
+  const src = pre + 'rev_src';
+  let segsMade: string[] = [];
+  const revsMade: string[] = [];
   try { await ff.writeFile(src, await fetchFile(file)); }
   catch (_) { detachAll(); return null; }
 
@@ -630,7 +680,7 @@ async function ffmpegReverseVideo(file: File, onLoad: ((p: number) => void)|null
     if (aborted()) { await rm(src); detachAll(); return null; }
 
     // 1) Normalise to H.264 with a keyframe exactly every SEG seconds. (0-30%)
-    const norm = 'rev_norm.mp4';
+    const norm = pre + 'rev_norm.mp4';
     const kf = 'expr:gte(t,n_forced*' + SEG + ')';
     let audio = hadAudio;
     phase(0, 0.30);
@@ -647,15 +697,32 @@ async function ffmpegReverseVideo(file: File, onLoad: ((p: number) => void)|null
     // 2) Split losslessly at those keyframes (near-instant; hold the bar at 30%).
     phase(0.30, 0);
     await exec(['-i', norm, '-c', 'copy', '-map', '0', '-f', 'segment',
-      '-segment_time', String(SEG), '-reset_timestamps', '1', 'rev_seg_%03d.mp4']);
+      '-segment_time', String(SEG), '-reset_timestamps', '1', pre + 'rev_seg_%03d.mp4']);
+    // Find the pieces. ffmpeg.wasm can list its filesystem; the native shim
+    // (desktop, Android) has no listDir, and relying on it silently found nothing
+    // there, so every native reverse fell back to the whole-clip `-vf reverse`.
+    // Without a listing, the names are predictable (%03d from 000), so probe them
+    // in order until one is missing. (The ffmpeg safety checks only allow the
+    // options the app already uses, which is why this doesn't ask the segment
+    // muxer for a -segment_list.)
+    const segName = (i: number) => pre + 'rev_seg_' + String(i).padStart(3, '0') + '.mp4';
     let segs: string[] = [];
-    try { segs = (await ff.listDir('/')).map((n: { name: string }) => n.name).filter((n: string) => /^rev_seg_\d+\.mp4$/.test(n)).sort(); }
-    catch (_) {}
+    if (typeof ff.listDir === 'function') {
+      const segRe = new RegExp('^' + pre + 'rev_seg_\\d+\\.mp4$');
+      try { segs = (await ff.listDir('/')).map((n: { name: string }) => n.name).filter((n: string) => segRe.test(n)).sort(); }
+      catch (_) {}
+    } else {
+      for (let i = 0; i < 100000 && !aborted(); i++) {
+        if (!await read(segName(i))) break;
+        segs.push(segName(i));
+      }
+    }
+    segsMade = segs;
 
     // Short clip (one chunk, or the splitter produced nothing) - reverse it whole.
     if (segs.length <= 1) {
       for (const s of segs) await rm(s);
-      const out = 'rev_out.mp4';
+      const out = pre + 'rev_out.mp4';
       phase(0.30, 0.70);
       const ok = await reverseWhole(norm, out, audio);
       const data = ok ? await read(out) : null;
@@ -667,10 +734,10 @@ async function ffmpegReverseVideo(file: File, onLoad: ((p: number) => void)|null
 
     // 3) Reverse each segment (bounded memory). Each segment is an equal slice of
     //    the 30-92% band, so the bar advances steadily across the whole clip.
-    const revs = [];
+    const revs = revsMade;
     for (let i = 0; i < segs.length; i++) {
       if (aborted()) { for (const n of [...segs.slice(i), ...revs]) await rm(n); detachAll(); return null; }
-      const rev = 'rev_out_' + String(i).padStart(3, '0') + '.mp4';
+      const rev = pre + 'rev_out_' + String(i).padStart(3, '0') + '.mp4';
       phase(0.30 + 0.62 * (i / segs.length), 0.62 / segs.length);
       const ok = await reverseWhole(segs[i], rev, audio);
       await rm(segs[i]);
@@ -681,10 +748,10 @@ async function ffmpegReverseVideo(file: File, onLoad: ((p: number) => void)|null
 
     // 4) Concat the reversed segments in reverse order. Stream-copy first; if the
     //    per-segment encoder params differ enough to refuse a copy, re-encode.
-    const listName = 'rev_list.txt';
+    const listName = pre + 'rev_list.txt';
     const ordered = revs.slice().reverse();
     await ff.writeFile(listName, new TextEncoder().encode(ordered.map((n) => "file '" + n + "'").join('\n') + '\n'));
-    const out = 'rev_out.mp4';
+    const out = pre + 'rev_out.mp4';
     phase(0.92, 0.08);
     await exec(['-f', 'concat', '-safe', '0', '-i', listName, '-c', 'copy', '-y', out]);
     if (!await read(out)) {
@@ -700,6 +767,8 @@ async function ffmpegReverseVideo(file: File, onLoad: ((p: number) => void)|null
     return data ? new Blob([data.buffer || data], { type: 'video/mp4' }) : null;
   } catch (_) {
     detachAll();
+    // Don't leave this job's pieces in the shared filesystem.
+    for (const n of [src, pre + 'rev_norm.mp4', pre + 'rev_list.txt', pre + 'rev_out.mp4', ...segsMade, ...revsMade]) await rm(n);
     if (crashed) killFFmpeg();
     return null;
   }
@@ -718,11 +787,13 @@ async function ffmpegTranscodeToH264(file: File, onLoad: ((p: number) => void)|n
   const maxHeight = opts.maxHeight != null ? opts.maxHeight : 720;
   const maxFps = opts.maxFps != null ? opts.maxFps : 30;
   const preset = opts.preset || 'ultrafast';
+  if (signal && signal.aborted) return null;
   const ff = await loadFFmpeg(onLoad);
   if (signal && signal.aborted) return null;
   const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
-  const inName = 'conv_in', outName = 'conv_out.mp4';
-  try { await ff.writeFile(inName, await fetchFile(file)); } catch (_) { return null; }
+  const pre = ffJobPrefix();
+  const inName = pre + 'conv_in', outName = pre + 'conv_out.mp4';
+  try { await ff.writeFile(inName, await fetchFile(file)); } catch (_) { try { await ff.deleteFile(inName); } catch (_) {} return null; }
   const onProg = ({ progress }: { progress: number }) => { if (onEnc && isFinite(progress)) onEnc(Math.max(0, Math.min(1, progress))); };
   ff.on('progress', onProg);
   // "turbo" is faster than libx264's own fastest preset (ultrafast is already the
@@ -742,18 +813,24 @@ async function ffmpegTranscodeToH264(file: File, onLoad: ((p: number) => void)|n
   if (tune) vopts.push('-tune', tune);
   if (maxHeight > 0) vopts.push('-vf', 'scale=-2:2*trunc(min(' + maxHeight + '\\,ih)/2)');
   if (maxFps > 0) vopts.push('-r', String(maxFps));
+  let crashed = false;
   const run = async (args: any[]) => {
-    try { await ff.exec(args); } catch (_) {}
+    if (crashed || (signal && signal.aborted)) return null;
+    try { await ffExec(ff, args); } catch (_) { crashed = true; return null; }
     try { return await ff.readFile(outName); } catch (_) { return null; }
   };
-  let data = await run([...inOpts, '-i', inName, ...vopts, '-c:a', 'aac', '-movflags', '+faststart', '-y', outName]);
-  if (!data || !data.length) {
+  let data = null;
+  try {
+    data = await run([...inOpts, '-i', inName, ...vopts, '-c:a', 'aac', '-movflags', '+faststart', '-y', outName]);
+    if (!data || !data.length) {
+      try { await ff.deleteFile(outName); } catch (_) {}
+      data = await run([...inOpts, '-i', inName, ...vopts, '-an', '-movflags', '+faststart', '-y', outName]);
+    }
+  } finally {
+    try { ff.off('progress', onProg); } catch (_) {}
+    try { await ff.deleteFile(inName); } catch (_) {}
     try { await ff.deleteFile(outName); } catch (_) {}
-    data = await run([...inOpts, '-i', inName, ...vopts, '-an', '-movflags', '+faststart', '-y', outName]);
   }
-  ff.off('progress', onProg);
-  try { await ff.deleteFile(inName); } catch (_) {}
-  try { await ff.deleteFile(outName); } catch (_) {}
   if (!data || !data.length) return null;
   return new Blob([data.buffer || data], { type: 'video/mp4' });
 }
@@ -782,10 +859,12 @@ function buildReverseVideoCard(file: File, signal: AbortSignal) {
     wrap.style.display = '';
     let blob = null;
     try {
-      blob = await ffmpegReverseVideo(file,
-        (p: number) => { labelEl.textContent = 'loading ffmpeg'; setBar(p); },
-        (p: number) => { labelEl.textContent = 'reversing'; setBar(p); },
-        signal);
+      blob = await queueFFmpeg(
+        () => { btn.textContent = 'Reversing…'; return ffmpegReverseVideo(file,
+          (p: number) => { labelEl.textContent = 'loading ffmpeg'; setBar(p); },
+          (p: number) => { labelEl.textContent = 'reversing'; setBar(p); },
+          signal); },
+        () => { btn.textContent = 'Queued…'; labelEl.textContent = 'waiting for another FFmpeg job to finish…'; });
     } catch (_) { blob = null; }
     wrap.style.display = 'none';
     if (signal && signal.aborted) return;
@@ -849,11 +928,16 @@ function buildReverseVideoCard(file: File, signal: AbortSignal) {
 // the captured FFmpeg output so the caller can show WHY a remux didn't produce a
 // file instead of silently dropping to the unplayable card. Large inputs are
 // mounted via WORKERFS (read by seeking) rather than copied whole into WASM heap.
-async function ffmpegRemuxToMp4(file: File, signal: AbortSignal, rawKind: string, fps: number|null|undefined) {
+function ffmpegRemuxToMp4(file: File, signal: AbortSignal, rawKind: string, fps: number|null|undefined) {
+  return queueFFmpeg(() => ffmpegRemuxToMp4Job(file, signal, rawKind, fps));
+}
+async function ffmpegRemuxToMp4Job(file: File, signal: AbortSignal, rawKind: string, fps: number|null|undefined) {
+  if (signal && signal.aborted) return { blob: null, log: '' };
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return { blob: null, log: '' };
   const demuxer = rawKind === 'h265' ? 'hevc' : 'h264';
-  const outName = 'out.mp4';
+  const pre = ffJobPrefix();
+  const outName = pre + 'out.mp4';
   // -r before -i sets the INPUT frame rate the raw demuxer assumes.
   const rate = (fps! > 0 && fps! < 1000) ? ['-r', String(Number(fps!.toFixed(6)))] : [];
 
@@ -876,9 +960,9 @@ async function ffmpegRemuxToMp4(file: File, signal: AbortSignal, rawKind: string
     } else {
       try { await ff.deleteDir(MOUNT); } catch (_) {}
       const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
-      inName = 'in.' + (demuxer === 'hevc' ? 'h265' : 'h264');
-      await ff.writeFile(inName, await fetchFile(file));
+      inName = pre + 'in.' + (demuxer === 'hevc' ? 'h265' : 'h264');
       cleanup = async () => { try { await ff.deleteFile(inName); } catch (_) {} };
+      await ff.writeFile(inName, await fetchFile(file));
     }
 
     // Re-encode to H.264 - the last-resort path, also used up front for HEVC that
@@ -886,7 +970,7 @@ async function ffmpegRemuxToMp4(file: File, signal: AbortSignal, rawKind: string
     const reencode = async () => {
       try { await ff.deleteFile(outName); } catch (_) {}
       try {
-        await ff.exec(['-fflags', '+genpts', '-f', demuxer, ...rate, '-i', inName,
+        await ffExec(ff, ['-fflags', '+genpts', '-f', demuxer, ...rate, '-i', inName,
           '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
           '-movflags', '+faststart', outName]);
       } catch (_) {}
@@ -900,21 +984,22 @@ async function ffmpegRemuxToMp4(file: File, signal: AbortSignal, rawKind: string
     if (demuxer === 'hevc' && !canPlayHevc()) {
       data = await reencode();
     } else {
+      let crashed = false;
       try {
-        await ff.exec(['-fflags', '+genpts', '-f', demuxer, ...rate, '-i', inName, '-c', 'copy', '-movflags', '+faststart', outName]);
-      } catch (_) { /* exec may resolve with a non-zero code instead of throwing */ }
+        await ffExec(ff, ['-fflags', '+genpts', '-f', demuxer, ...rate, '-i', inName, '-c', 'copy', '-movflags', '+faststart', outName]);
+      } catch (_) { crashed = true; /* a clean failure resolves with a non-zero code; a rejection is a dead instance */ }
       try { data = await ff.readFile(outName); } catch (_) { data = null; }
-      if (!data || !data.length) {
+      if ((!data || !data.length) && !crashed && !(signal && signal.aborted)) {
         // Stream-copy can also fail on streams whose in-band SPS/PPS FFmpeg won't
         // lift into an MP4 sample-description as-is. Re-encode as a last resort.
         data = await reencode();
       }
     }
-    try { await ff.deleteFile(outName); } catch (_) {}
     if (!data || !data.length) return { blob: null, log };
     return { blob: new Blob([data.buffer || data], { type: 'video/mp4' }), log };
   } finally {
     try { if (ff.off) ff.off('log', onLog); } catch (_) {}
+    try { await ff.deleteFile(outName); } catch (_) {}
     await cleanup();
   }
 }
@@ -925,10 +1010,15 @@ async function ffmpegRemuxToMp4(file: File, signal: AbortSignal, rawKind: string
 // AC-3 or LPCM, which an MP4 can't carry for in-browser playback. +genpts repairs
 // the timestamps some camcorder TS files omit; faststart moves the moov atom to
 // the front. Returns { blob, log } like ffmpegRemuxToMp4 (blob null on failure).
-async function ffmpegRemuxTsToMp4(file: File, signal: AbortSignal) {
+function ffmpegRemuxTsToMp4(file: File, signal: AbortSignal) {
+  return queueFFmpeg(() => ffmpegRemuxTsToMp4Job(file, signal));
+}
+async function ffmpegRemuxTsToMp4Job(file: File, signal: AbortSignal) {
+  if (signal && signal.aborted) return { blob: null, log: '' };
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return { blob: null, log: '' };
-  const outName = 'out.mp4';
+  const pre = ffJobPrefix();
+  const outName = pre + 'out.mp4';
 
   let log = '';
   const onLog = ({ message }: { message: string }) => { log += message + '\n'; };
@@ -948,34 +1038,35 @@ async function ffmpegRemuxTsToMp4(file: File, signal: AbortSignal) {
     } else {
       try { await ff.deleteDir(MOUNT); } catch (_) {}
       const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
-      inName = 'in.ts';
-      await ff.writeFile(inName, await fetchFile(file));
+      inName = pre + 'in.ts';
       cleanup = async () => { try { await ff.deleteFile(inName); } catch (_) {} };
+      await ff.writeFile(inName, await fetchFile(file));
     }
 
     // Copy the (H.264) video, transcode the audio to AAC.
+    let crashed = false;
     try {
-      await ff.exec(['-fflags', '+genpts', '-i', inName, '-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart', outName]);
-    } catch (_) { /* exec may resolve with a non-zero code instead of throwing */ }
+      await ffExec(ff, ['-fflags', '+genpts', '-i', inName, '-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart', outName]);
+    } catch (_) { crashed = true; /* a clean failure resolves with a non-zero code; a rejection is a dead instance */ }
     let data = null;
     try { data = await ff.readFile(outName); } catch (_) { data = null; }
-    if (!data || !data.length) {
+    if ((!data || !data.length) && !crashed && !(signal && signal.aborted)) {
       // Video copy fails when the TS video isn't H.264 (e.g. MPEG-2 from an older
       // camcorder) or carries SPS/PPS FFmpeg won't lift as-is. Re-encode the video
       // too as a last resort - lossy, but it makes the clip play.
       try { await ff.deleteFile(outName); } catch (_) {}
       try {
-        await ff.exec(['-fflags', '+genpts', '-i', inName,
+        await ffExec(ff, ['-fflags', '+genpts', '-i', inName,
           '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
           '-c:a', 'aac', '-movflags', '+faststart', outName]);
       } catch (_) {}
       try { data = await ff.readFile(outName); } catch (_) { data = null; }
     }
-    try { await ff.deleteFile(outName); } catch (_) {}
     if (!data || !data.length) return { blob: null, log };
     return { blob: new Blob([data.buffer || data], { type: 'video/mp4' }), log };
   } finally {
     try { if (ff.off) ff.off('log', onLog); } catch (_) {}
+    try { await ff.deleteFile(outName); } catch (_) {}
     await cleanup();
   }
 }
@@ -1114,13 +1205,18 @@ async function planRawSegments(file: File, h265: boolean, signal: AbortSignal) {
 // prepended (so the chunk decodes even though it starts mid-file), stream-copied.
 // loaderLabel (optional): when set, the bottom loader bar shows that text while
 // this part is being read + remuxed (foreground parts only - not prefetches).
-async function remuxRawSegment(file: File, start: number|undefined, end: number|undefined, paramSets: Uint8Array, h265: boolean, signal: AbortSignal, loaderLabel: string|undefined, fps: number|null) {
+function remuxRawSegment(file: File, start: number|undefined, end: number|undefined, paramSets: Uint8Array, h265: boolean, signal: AbortSignal, loaderLabel: string|undefined, fps: number|null) {
+  return queueFFmpeg(() => remuxRawSegmentJob(file, start, end, paramSets, h265, signal, loaderLabel, fps));
+}
+async function remuxRawSegmentJob(file: File, start: number|undefined, end: number|undefined, paramSets: Uint8Array, h265: boolean, signal: AbortSignal, loaderLabel: string|undefined, fps: number|null) {
+  if (signal && signal.aborted) return null;
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return null;
   if (loaderLabel) showFfmpegLoader(loaderLabel, true);
   const demuxer = h265 ? 'hevc' : 'h264';
   const rate = (fps! > 0 && fps! < 1000) ? ['-r', String(Number(fps!.toFixed(6)))] : [];
-  const inName = 'seg.' + (h265 ? 'h265' : 'h264'), outName = 'seg.mp4';
+  const pre = ffJobPrefix();
+  const inName = pre + 'seg.' + (h265 ? 'h265' : 'h264'), outName = pre + 'seg.mp4';
   let blob = null;
   try {
     const body = new Uint8Array(await file.slice(start, end).arrayBuffer());
@@ -1133,9 +1229,9 @@ async function remuxRawSegment(file: File, start: number|undefined, end: number|
     // Chromium without hardware support) plays them black. Re-encode those segments
     // to H.264 - slower per part, but the only way the segmented player shows video.
     if (h265 && !canPlayHevc()) {
-      try { await ff.exec(['-fflags', '+genpts', '-f', demuxer, ...rate, '-i', inName, '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', outName]); } catch (_) {}
+      try { await ffExec(ff, ['-fflags', '+genpts', '-f', demuxer, ...rate, '-i', inName, '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', outName]); } catch (_) {}
     } else {
-      try { await ff.exec(['-fflags', '+genpts', '-f', demuxer, ...rate, '-i', inName, '-c', 'copy', '-movflags', '+faststart', outName]); } catch (_) {}
+      try { await ffExec(ff, ['-fflags', '+genpts', '-f', demuxer, ...rate, '-i', inName, '-c', 'copy', '-movflags', '+faststart', outName]); } catch (_) {}
     }
     let data = null;
     try { data = await ff.readFile(outName); } catch (_) { data = null; }
@@ -1399,9 +1495,15 @@ async function renderSegmentedRawVideo(file: File, header: any, resultsEl: HTMLE
 // decode. Prefers a WORKERFS mount so multi-GB files are read by seeking rather
 // than copied whole into WASM memory; falls back to an in-memory copy for
 // smaller files. Returns null if nothing usable could be extracted. Fully guarded.
-async function ffmpegFirstFrame(file: File, signal: AbortSignal) {
+function ffmpegFirstFrame(file: File, signal: AbortSignal) {
+  return queueFFmpeg(() => ffmpegFirstFrameJob(file, signal));
+}
+async function ffmpegFirstFrameJob(file: File, signal: AbortSignal) {
+  if (signal && signal.aborted) return null;
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return null;
+  const pre = ffJobPrefix();
+  const frameName = pre + 'anr_frame.jpg';
 
   const MOUNT = '/anrmnt';
   let input = null;
@@ -1422,28 +1524,29 @@ async function ffmpegFirstFrame(file: File, signal: AbortSignal) {
     } else {
       // Fallback: copy into MEMFS, but only when small enough to fit WASM memory.
       try { await ff.deleteDir(MOUNT); } catch (_) {}
-      if (file.size > 1_200 * 1024 * 1024) return null;
+      if (file.size > FFMPEG_MEMFS_MAX) return null;
       const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
-      await ff.writeFile('anr_input', await fetchFile(file));
-      input = 'anr_input';
-      cleanup = async () => { try { await ff.deleteFile('anr_input'); } catch (_) {} };
+      const inName = pre + 'anr_input';
+      cleanup = async () => { try { await ff.deleteFile(inName); } catch (_) {} };
+      await ff.writeFile(inName, await fetchFile(file));
+      input = inName;
     }
 
     if (signal && signal.aborted) return null;
     // Decode exactly one frame - the first - and stop. No -ss ladder, so a large
     // or hard-to-decode video isn't paying for repeated seeks and decodes.
     try {
-      await ff.exec(['-i', input, '-frames:v', '1', '-q:v', '3', '-y', 'anr_frame.jpg'], 45000);
+      await ffExec(ff, ['-i', input, '-frames:v', '1', '-q:v', '3', '-y', frameName], 45000);
     } catch (_) { return null; }
     let data = null;
-    try { data = await ff.readFile('anr_frame.jpg'); } catch (_) {}
-    try { await ff.deleteFile('anr_frame.jpg'); } catch (_) {}
+    try { data = await ff.readFile(frameName); } catch (_) {}
     if (!data || !data.length) return null;
     const blob = new Blob([data.buffer || data], { type: 'image/jpeg' });
     return { blob, time: 0 };
   } catch (_) {
     return null;
   } finally {
+    try { await ff.deleteFile(frameName); } catch (_) {}
     await cleanup();
   }
 }
@@ -1485,16 +1588,21 @@ function getAudioCtx() {
 function parseBoxes(view: DataView<any>, start: number, end: number) {
   const boxes = [];
   let pos = start;
+  end = Math.min(end, view.byteLength);
   while (pos + 8 <= end) {
     let size = view.getUint32(pos);
     const type = String.fromCharCode(view.getUint8(pos+4), view.getUint8(pos+5), view.getUint8(pos+6), view.getUint8(pos+7));
     if (size === 0) break;
-    if (size === 1 && pos + 16 <= end) {
+    let headerSize = 8;
+    if (size === 1) {
+      if (pos + 16 > end) break;
       size = Number(view.getBigUint64(pos + 8));
-      boxes.push({ type, offset: pos, size, headerSize: 16 });
-    } else {
-      boxes.push({ type, offset: pos, size, headerSize: 8 });
+      headerSize = 16;
     }
+    // A size smaller than its own header never advances (size=1 with a zero
+    // largesize looped forever) - treat it as the end of the box list.
+    if (!(size >= headerSize)) break;
+    boxes.push({ type, offset: pos, size, headerSize });
     pos += size;
   }
   return boxes;
@@ -1502,13 +1610,15 @@ function parseBoxes(view: DataView<any>, start: number, end: number) {
 
 function findAllBoxes(view: DataView<any>, start: number, end: number, type: string) {
   const result = [];
-  const stack = [{ s: start, e: end }];
+  const stack = [{ s: start, e: Math.min(end, view.byteLength) }];
   const containers = new Set(['moov','trak','mdia','minf','stbl','udta','edts','dinf','meta','ilst']);
   while (stack.length) {
     const { s, e } = stack.pop()!;
     for (const b of parseBoxes(view, s, e)) {
       if (b.type === type) result.push(b);
-      if (containers.has(b.type)) stack.push({ s: b.offset + b.headerSize, e: b.offset + b.size });
+      // Clamp each child range to its parent and the view, so a box claiming
+      // to run past either can't make parseBoxes read out of bounds.
+      if (containers.has(b.type)) stack.push({ s: b.offset + b.headerSize, e: Math.min(e, b.offset + b.size) });
     }
   }
   return result;
@@ -1600,12 +1710,13 @@ function extractPcmFromMp4(arrayBuffer: ArrayBuffer) {
     if (stcoBoxes.length) {
       const box = stcoBoxes[0];
       const d = box.offset + box.headerSize;
-      const count = view.getUint32(d + 4);
+      // Entry count bounded by what the box can actually hold.
+      const count = Math.min(view.getUint32(d + 4), Math.max(0, Math.floor((box.offset + box.size - d - 8) / 4)));
       for (let i = 0; i < count; i++) chunkOffsets.push(view.getUint32(d + 8 + i * 4));
     } else {
       const box = co64Boxes[0];
       const d = box.offset + box.headerSize;
-      const count = view.getUint32(d + 4);
+      const count = Math.min(view.getUint32(d + 4), Math.max(0, Math.floor((box.offset + box.size - d - 8) / 8)));
       for (let i = 0; i < count; i++) chunkOffsets.push(Number(view.getBigUint64(d + 8 + i * 8)));
     }
 
@@ -1645,11 +1756,17 @@ function extractPcmFromMp4(arrayBuffer: ArrayBuffer) {
     // length, so a longer take stuttered where a shorter one did not.
     const plan = [];
     let totalSamples = 0;
+    // Chunk offsets are file data: overlapping stco entries can name the same
+    // bytes thousands of times over. A genuine track can't hold more samples than
+    // the file has bytes for, so stop there - and at the absolute decode ceiling.
+    const sampleCap = Math.min(Math.floor(fileEnd / bytesPerSample), PCM_DECODE_SAMPLES_MAX);
     for (const offset of chunkOffsets) {
       const chunkBytes = samplesPerChunk * (chunkSampleSize || frameSize);
       if (offset + chunkBytes > fileEnd) break;
-      const n = Math.floor(Math.min(chunkBytes, fileEnd - offset) / bytesPerSample);
+      let n = Math.floor(Math.min(chunkBytes, fileEnd - offset) / bytesPerSample);
       if (n <= 0) continue;
+      if (totalSamples + n > sampleCap) n = sampleCap - totalSamples;
+      if (n <= 0) break;
       plan.push(offset, n);
       totalSamples += n;
     }
@@ -1781,9 +1898,10 @@ async function sniffMp4AudioCodec(file: File) {
 // size cap (the whole file must be read into memory to extract PCM).
 async function attachPcmAudioCompanion(file: File, playerCard: HTMLDivElement, signal: AbortSignal) {
   const ctx = curVctx();   // capture now: this runs fire-and-forget, resolving after renderVideo returns
-  const COMPANION_MAX_BYTES = 2 * 1024 * 1024 * 1024;   // 2 GB: cap the in-memory decode
   try {
-    if (!file || file.size > COMPANION_MAX_BYTES) return;
+    // Runs automatically, and reads the whole file (plus an FFmpeg copy of it on
+    // the fallback), so it stops at a device-tiered ceiling in limits.ts.
+    if (!file || file.size > PCM_COMPANION_MAX) return;
     const codec = await sniffMp4AudioCodec(file);
     if (!BROWSER_UNPLAYABLE_AUDIO.has(codec)) return;     // browser plays it natively
     if (signal && signal.aborted) return;
@@ -1799,6 +1917,31 @@ async function attachPcmAudioCompanion(file: File, playerCard: HTMLDivElement, s
     ctx.companion(companion);
     if (signal) signal.addEventListener('abort', () => { try { ctx.companion(null); URL.revokeObjectURL(wavUrl); } catch (_) {} });
   } catch (_) { /* best-effort: no companion, video just stays mute */ }
+}
+
+// "Analyse audio": decode the soundtrack for the Sound section. Web Audio and the
+// PCM walker both need the whole file in memory (twice, since decodeAudioData
+// detaches its buffer), so they only run up to VIDEO_AUDIO_DECODE_MAX; past it,
+// or when they fail, FFmpeg extracts the track - itself capped at the MEMFS
+// ceiling, since ffmpeg.wasm copies the whole file into its heap.
+async function decodeVideoAudio(file: File, audioStatus: HTMLElement, audioCard: HTMLDivElement): Promise<AudioBuffer> {
+  let audioBuf: AudioBuffer|null = null;
+  if (file.size <= VIDEO_AUDIO_DECODE_MAX) {
+    const ac = getAudioCtx();
+    const buf = await file.arrayBuffer();
+    try { audioBuf = await ac.decodeAudioData(buf.slice(0)); } catch (_) {
+      audioStatus.textContent = 'Trying PCM extraction…';
+      audioBuf = extractPcmFromMp4(buf);
+    }
+  }
+  if (!audioBuf) {
+    if (file.size > FFMPEG_MEMFS_MAX) {
+      throw new Error('this video is too large (' + fmtBytes(file.size) + ') to decode its audio in the browser');
+    }
+    audioStatus.textContent = file.size > VIDEO_AUDIO_DECODE_MAX ? 'Large video - extracting the audio with FFmpeg…' : 'Web Audio failed, using FFmpeg…';
+    audioBuf = await ffmpegExtractAudio(file, audioCard);
+  }
+  return audioBuf!;
 }
 
 // ---------- container detection from magic bytes ----------
@@ -2524,7 +2667,12 @@ async function renderMoovlessRecovery(file: File, header: any, det: any, results
 
   // Carve the whole mdat, prepend the parameter sets, wrap as a raw .h264/.h265
   // File and hand it to the normal raw-stream path (segmented player for big files).
+  // One carve per render: a second click (or a keyboard repeat on the focused
+  // button) used to start a second full pass over the mdat alongside the first.
+  let salvageStarted = false;
   async function startSalvage(paramSets: BlobPart, refInfo: any) {
+    if (salvageStarted) return;
+    salvageStarted = true;
     action.innerHTML = '';
     const useCodec = (refInfo && refInfo.codec) || codec;
     const lenSize = (refInfo && refInfo.lenSize) || 4;
@@ -2572,7 +2720,7 @@ async function renderMoovlessRecovery(file: File, header: any, det: any, results
   if (inband) {
     action.appendChild(el('p', {}, 'Codec setup (' + codecName + ') found inside the file - ready to salvage.'));
     const btn = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Salvage video');
-    btn.addEventListener('click', () => startSalvage(inband, { codec }));
+    btn.addEventListener('click', () => { btn.disabled = true; startSalvage(inband, { codec }); });
     action.appendChild(el('div', { class: 'anr-btn-row' }, [btn]));
     return;
   }
@@ -2609,7 +2757,7 @@ async function renderMoovlessRecovery(file: File, header: any, det: any, results
       + (rp.level ? '  ·  L' + (rp.level / 10).toFixed(1).replace(/\.0$/, '') : '');
     note.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' }, 'Borrowing ' + desc + ' from “' + ref.name + '”. For a clean result this must match the broken clip’s resolution and codec.'));
     const btn = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Salvage video');
-    btn.addEventListener('click', () => startSalvage(rp.paramSets, rp));
+    btn.addEventListener('click', () => { btn.disabled = true; startSalvage(rp.paramSets, rp); });
     note.appendChild(el('div', { class: 'anr-btn-row' }, [btn]));
   });
 }
@@ -2625,8 +2773,9 @@ async function renderUnplayableVideoInfo(file: File, header: any, resultsEl: HTM
   const ctx = curVctx();
   let tracks = null;
   try { tracks = await detectVideoTracks(file); } catch (_) {}
+  if (signal && signal.aborted) return;
   const v = tracks && tracks.video;
-  const isPro = !!(v && PRO_VIDEO_CODECS.has(v.codec));
+  const isPro =!!(v && PRO_VIDEO_CODECS.has(v.codec));
   const named = !!(v && v.codecName && v.codecName !== v.codec);
 
   const hiDepth = !!(v && v.bitDepth && v.bitDepth >= 10);
@@ -2690,6 +2839,7 @@ async function renderUnplayableVideoInfo(file: File, header: any, resultsEl: HTM
 
   // Sony gyro / IMU metadata (rtmd track) - shown even when the codec can't play.
   await appendSonyGyroCard(file, resultsEl);
+  if (signal && signal.aborted) return;
 
   // Telemetry (GoPro GPMF / CAMM / container GPS) and the Advanced container
   // structure card are read straight from the metadata boxes, so they work even
@@ -2819,8 +2969,10 @@ async function renderUnplayableVideoInfo(file: File, header: any, resultsEl: HTM
       if (!frame) { status.textContent = 'Could not extract a frame from this file.'; return; }
       status.remove();
       prevHint.remove();
+      const frameUrl = URL.createObjectURL(frame.blob);
+      if (signal) signal.addEventListener('abort', () => { try { URL.revokeObjectURL(frameUrl); } catch (_) {} }, { once: true });
       prevCard.appendChild(el('img', {
-        src: URL.createObjectURL(frame.blob),
+        src: frameUrl,
         alt: 'First frame of ' + file.name,
         style: 'max-width:100%; max-height:480px; display:block; border:1px solid var(--hairline); background:#0a0a0a;',
       }));
@@ -2841,10 +2993,9 @@ async function renderUnplayableVideoInfo(file: File, header: any, resultsEl: HTM
 
   // SHA-256 reads the whole file, so compute it automatically only for small
   // videos; for big ones put it behind a button so the page isn't held up.
-  const SHA_AUTO_MAX = 200 * 1024 * 1024;
-  if (file.size <= SHA_AUTO_MAX) {
+  if (file.size <= VIDEO_SHA_AUTO_MAX) {
     resultsEl.appendChild(integrityCard(file));
-  } else if (file.size <= 2 * 1024 * 1024 * 1024) {
+  } else if (file.size <= VIDEO_SHA_BUTTON_MAX) {
     const hashCard = el('div', { class: 'anr-card' });
     hashCard.appendChild(el('h3', {}, 'Integrity'));
     hashCard.appendChild(el('p', { class: 'anr-hint' }, 'SHA-256 reads the whole file (' + fmtBytes(file.size) + '), so it isn’t computed automatically for large videos.'));
@@ -2858,14 +3009,27 @@ async function renderUnplayableVideoInfo(file: File, header: any, resultsEl: HTM
   if (unplayableAdvCard && !(signal && signal.aborted)) resultsEl.appendChild(unplayableAdvCard);
 }
 
-async function detectFpsWithFfmpeg(file: File, onProgress?: ((p: number) => void)|null) {
+// The automatic FFmpeg frame-rate probe. Runs as a queued job, on the HEAD of the
+// file only (FFMPEG_FPS_PROBE_HEAD - the stream headers and the first seconds of
+// frames are all `-t 2` looks at), and skips itself when the file was swapped or
+// the caller gave up while it waited in the queue.
+async function detectFpsWithFfmpeg(file: File, onProgress: ((p: number) => void)|null, stale: () => boolean) {
+  if (stale()) return null;
   const ff = await loadFFmpeg(onProgress);
+  if (stale()) return null;
   const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
-  await ff.writeFile('probe', await fetchFile(file));
+  const name = ffJobPrefix() + 'probe';
   let log = '';
-  ff.on('log', ({ message }: { message: string }) => { log += message + '\n'; });
-  await ff.exec(['-i', 'probe', '-f', 'null', '-t', '2', '-']);
-  await ff.deleteFile('probe');
+  const onLog = ({ message }: { message: string }) => { log += message + '\n'; };
+  ff.on('log', onLog);
+  try {
+    const head = file.size > FFMPEG_FPS_PROBE_HEAD ? file.slice(0, FFMPEG_FPS_PROBE_HEAD) : file;
+    await ff.writeFile(name, await fetchFile(head));
+    await ffExec(ff, ['-i', name, '-f', 'null', '-t', '2', '-']);
+  } finally {
+    try { ff.off('log', onLog); } catch (_) {}
+    try { await ff.deleteFile(name); } catch (_) {}
+  }
   const m = log.match(/(\d+(?:\.\d+)?) fps/);
   if (m) return roundFps(parseFloat(m[1]));
   const tbr = log.match(/(\d+(?:\.\d+)?) tbr/);
@@ -2873,20 +3037,43 @@ async function detectFpsWithFfmpeg(file: File, onProgress?: ((p: number) => void
   return null;
 }
 
-async function detectFps(file: File, fpsCell?: HTMLTableCellElement|null|undefined) {
-  const containerFps = await detectFpsFromContainer(file);
+// One probe per file at a time: the File-info row and the frame stepper both ask
+// for the same file's rate, and used to start two probes on one shared name.
+const _fpsProbes = new WeakMap<File, { p: Promise<number|null>; stale: () => boolean }>();
+
+async function detectFps(file: File, fpsCell?: HTMLTableCellElement|null|undefined, signal?: AbortSignal|null) {
+  let containerFps = null;
+  try { containerFps = await detectFpsFromContainer(file); } catch (_) { containerFps = null; }
   if (containerFps) return containerFps;
+  if (signal && signal.aborted) return null;
+  // Share a probe that is still wanted; one whose render was torn down will
+  // skip itself, so a fresh render of the same file starts its own.
+  const pending = _fpsProbes.get(file);
+  if (pending && !pending.stale()) return pending.p;
   if (fpsCell) fpsCell.textContent = 'loading ffmpeg…';
-  try {
-    const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 30000));
-    const detect = detectFpsWithFfmpeg(file, (p: number) => {
-      const pct = Math.round(p * 100);
-      if (fpsCell) fpsCell.textContent = pct >= 100 ? 'initialising ffmpeg…' : 'loading ffmpeg… ' + pct + '%';
-    });
-    return await Promise.race([detect, timeout]);
-  } catch (_) {
-    return null;
-  }
+  let timedOut = false;
+  const stale = () => timedOut || !!(signal && signal.aborted);
+  let probe!: Promise<number|null>;
+  probe = (async () => {
+    let timer: ReturnType<typeof setTimeout>|undefined;
+    try {
+      const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => { timedOut = true; rej(new Error('timeout')); }, 30000); });
+      const detect = queueFFmpeg(() => detectFpsWithFfmpeg(file, (p: number) => {
+        const pct = Math.round(p * 100);
+        if (fpsCell && !stale()) fpsCell.textContent = pct >= 100 ? 'initialising ffmpeg…' : 'loading ffmpeg… ' + pct + '%';
+      }, stale));
+      detect.catch(() => {});   // the race below may have settled on the timeout
+      return await Promise.race([detect, timeout]);
+    } catch (_) {
+      return null;
+    } finally {
+      if (timer) clearTimeout(timer);
+      const cur = _fpsProbes.get(file);
+      if (cur && cur.p === probe) _fpsProbes.delete(file);
+    }
+  })();
+  _fpsProbes.set(file, { p: probe, stale });
+  return probe;
 }
 
 // ---------- scene change detection ----------
@@ -3240,6 +3427,7 @@ async function renderVisibleVideoFallback(file: File, url: string, header: any, 
     const tracks = await detectVideoTracks(file);
     appendTrackRows(tbl, tracks);
   } catch (_) {}
+  if (signal && signal.aborted) return true;   // superseded: nothing more to draw
   infoCard.appendChild(tbl);
   resultsEl.insertBefore(infoCard, playerCard);
 
@@ -3247,7 +3435,8 @@ async function renderVisibleVideoFallback(file: File, url: string, header: any, 
   let detectedFps = 30;
   const fpsCell = fpsRow.querySelector('td')!;
   let frameControls: any = null;
-  detectFps(file, fpsCell).then((fps) => {
+  detectFps(file, fpsCell, signal).then((fps) => {
+    if (signal && signal.aborted) return;
     fpsCell.textContent = fps != null ? fps + ' fps' : 'N/A';
     if (fps != null) { detectedFps = fps; if (frameControls) frameControls.refresh(); }
   });
@@ -3261,6 +3450,7 @@ async function renderVisibleVideoFallback(file: File, url: string, header: any, 
   // EXIF metadata
   let exif = null;
   try { if (window.exifr) exif = await window.exifr.parse(file, { tiff: true, exif: true, gps: true, xmp: true, mergeOutput: true, translateValues: true, translateKeys: true, reviveValues: true, sanitize: true, silentErrors: true }); } catch (_) {}
+  if (signal && signal.aborted) return true;
   if (exif) {
     const metaRows = [];
     if (exif.Make) metaRows.push(['Make', exif.Make]);
@@ -3280,6 +3470,7 @@ async function renderVisibleVideoFallback(file: File, url: string, header: any, 
 
   // Sony gyro / IMU metadata (rtmd track) - best-effort, only appears for Sony MP4/MOV.
   await appendSonyGyroCard(file, resultsEl);
+  if (signal && signal.aborted) return true;
 
   // Contact sheet
   if (vw && vh && isFinite(dur) && dur > 0) {
@@ -3405,17 +3596,7 @@ async function renderVisibleVideoFallback(file: File, url: string, header: any, 
     audioCard.appendChild(audioStatus);
     audioResultsEl.appendChild(audioCard);
     try {
-      const ac = getAudioCtx();
-      const buf = await file.arrayBuffer();
-      let audioBuf;
-      try { audioBuf = await ac.decodeAudioData(buf.slice(0)); } catch (_) {
-        audioStatus.textContent = 'Trying PCM extraction…';
-        audioBuf = extractPcmFromMp4(buf);
-      }
-      if (!audioBuf) {
-        audioStatus.textContent = 'Web Audio failed, using FFmpeg…';
-        audioBuf = await ffmpegExtractAudio(file, audioCard);
-      }
+      const audioBuf = await decodeVideoAudio(file, audioStatus, audioCard);
       audioStatus.remove();
       // Hand the decoded PCM to the real audio renderer so the Sound section here
       // is identical to a directly-dropped audio file - same cards, same order, and
@@ -3773,12 +3954,34 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
   // is only ever the compare view, so a panel is always the compare (full) case.
   const full = !inline || !!opts.compare;
   let renderSignal: AbortSignal;
+  let renderCtl: AbortController;
   if (inline) {
-    renderSignal = new AbortController().signal;
+    // Its own controller, so two compare panels never cancel each other. A caller
+    // that owns the panel's lifetime can pass opts.signal to tear it down (which
+    // is what revokes its object URLs and stops its probes).
+    renderCtl = new AbortController();
+    if (opts.signal) {
+      if (opts.signal.aborted) renderCtl.abort();
+      else opts.signal.addEventListener('abort', () => renderCtl.abort(), { once: true });
+    }
   } else {
     if (videoRenderAbort) videoRenderAbort.abort();
     videoRenderAbort = new AbortController();
-    renderSignal = videoRenderAbort.signal;
+    renderCtl = videoRenderAbort;
+  }
+  renderSignal = renderCtl.signal;
+  // Loading the next file (or leaving the page) runs the media stoppers. Without
+  // one here the previous video's probes, AVI source and FFmpeg job kept running
+  // after a PDF was dropped in its place, since only the next renderVideo aborted.
+  {
+    const stopper = () => {
+      try { renderCtl.abort(); } catch (_) {}
+      if (_ffmpegBusy) killFFmpeg();   // a job is running for a file that is gone
+    };
+    (window._anrMediaStoppers = window._anrMediaStoppers || new Set()).add(stopper);
+    renderSignal.addEventListener('abort', () => {
+      try { window._anrMediaStoppers.delete(stopper); } catch (_) {}
+    }, { once: true });
   }
   const localSlots: any = {};
   // Tag each sub-slot with its kind so the compare view can file the extracted
@@ -3832,6 +4035,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
   // Enrich with the authoring software recorded in the container (Matroska
   // WritingApp/MuxingApp, AVI ISFT). header is reused by every render path below.
   try { Object.assign(header, await readContainerSoftware(file, header.container)); } catch (_) { /* ignore */ }
+  if (renderSignal.aborted) return;
 
   // Broken / unfinalised MP4-MOV: an ftyp + mdat with no moov index. An interrupted
   // recording or an incomplete file copy leaves out the moov (cameras write it
@@ -3840,6 +4044,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
   if (!opts.recovered && /MP4|MOV|M4V|3GP|3G2|QuickTime/i.test(header.container || '')) {
     let moovless = null;
     try { moovless = await detectMoovlessMp4(fileRangeReader(file), file.size); } catch (_) {}
+    if (renderSignal.aborted) return;
     if (moovless && moovless.moovless) {
       return renderMoovlessRecovery(file, header, moovless, resultsEl, renderSignal);
     }
@@ -3869,14 +4074,14 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
     // The remux holds the whole input AND the whole output MP4 in WASM memory, so
     // very large streams can't fit (the 32-bit core caps out near ~2 GB). Above the
     // limit, split the stream at keyframes and play it part-by-part instead.
-    const REMUX_MAX = 1_400 * 1024 * 1024;
-    if (file.size > REMUX_MAX) {
+    if (file.size > FFMPEG_REMUX_MAX) {
       try {
         await renderSegmentedRawVideo(file, header, resultsEl, kind, renderSignal);
       } catch (e) {
         if (renderSignal.aborted) return;
         resultsEl.innerHTML = '';
         await renderUnplayableVideoInfo(file, header, resultsEl, renderSignal);
+        if (renderSignal.aborted) return;
         resultsEl.appendChild(el('div', { class: 'anr-card' }, [
           el('p', {}, 'This raw ' + kind + ' stream is ' + fmtBytes(file.size) + ' - too large to remux in one piece, and '
             + 'splitting it into parts failed (' + ((e && e.message) || e) + '). Open it in VLC, or wrap it with desktop ffmpeg: '
@@ -3932,8 +4137,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
     // The remux holds the input and the output MP4 in WASM memory together, so a
     // very large file can't fit the 32-bit core. Above the cap, go straight to the
     // unplayable card (with its "Convert" button and VLC tip).
-    const TS_REMUX_MAX = 1_400 * 1024 * 1024;
-    if (file.size > TS_REMUX_MAX) {
+    if (file.size > FFMPEG_REMUX_MAX) {
       resultsEl.innerHTML = '';
       await renderUnplayableVideoInfo(file, header, resultsEl, renderSignal);
       return;
@@ -3981,6 +4185,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
   try {
     if (/MP4|MOV|M4V|3GP|3G2|QuickTime|Matroska|WebM/i.test(header.container || '')) {
       const earlyTracks = await detectVideoTracks(file);
+      if (renderSignal.aborted) return;
       const ev = earlyTracks && earlyTracks.video;
       // HEVC inside Matroska plays in NO browser - the ones that can decode HEVC
       // won't demux MKV, and the ones that demux MKV only handle WebM codecs. The
@@ -3997,7 +4202,11 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
     }
   } catch (_) {}
 
+  if (renderSignal.aborted) return;
   const url = URL.createObjectURL(file);
+  // Released with the render: for a remuxed or converted proxy this URL pins the
+  // whole in-memory MP4 (up to ~1.4 GB) until it is revoked.
+  renderSignal.addEventListener('abort', () => { try { URL.revokeObjectURL(url); } catch (_) {} }, { once: true });
 
   // The probe is kept IN THE DOM (not display:none) so the browser gives it a
   // decode surface for off-screen frame capture - otherwise frames never paint
@@ -4022,12 +4231,25 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
     // broken / wrongly trips the unplayable banner). Skip it entirely and let our
     // own AVI parser render the frames + extracted audio (the catch block below).
     if (header.container === 'AVI') throw new Error('avi-use-parser');
-    await new Promise((resolve, reject) => {
-      probe.onloadeddata = resolve;
-      probe.onerror = () => reject(new Error('format not supported'));
-      setTimeout(() => reject(new Error('timeout')), 8000); // iOS can hang here; fall back to a visible player below
-      probe.src = url;
-    });
+    let probeTimer: ReturnType<typeof setTimeout>|undefined;
+    let onProbeAbort: (() => void)|null = null;
+    try {
+      await new Promise((resolve, reject) => {
+        probe.onloadeddata = resolve;
+        probe.onerror = () => reject(new Error('format not supported'));
+        probeTimer = setTimeout(() => reject(new Error('timeout')), 8000); // iOS can hang here; fall back to a visible player below
+        onProbeAbort = () => reject(new Error('aborted'));
+        renderSignal.addEventListener('abort', onProbeAbort, { once: true });
+        probe.src = url;
+      });
+    } finally {
+      // Detach everything, so a late load/error/timeout can't fire into a render
+      // that has moved on.
+      probe.onloadeddata = null; probe.onerror = null;
+      if (probeTimer) clearTimeout(probeTimer);
+      if (onProbeAbort) renderSignal.removeEventListener('abort', onProbeAbort);
+    }
+    if (renderSignal.aborted) throw new Error('aborted');
     // iOS/Safari renders a black frame for a video that has never played, so it
     // needs a brief muted play to get frame 0 on screen before we capture it.
     // Every other platform can draw frame 0 straight from `loadeddata`, so we
@@ -4043,8 +4265,11 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
       // frame, which never comes for a paused video - a needless 2s timeout.)
       await new Promise((r) => requestAnimationFrame(r));
     }
+    if (renderSignal.aborted) { probe.remove(); return; }
   } catch (_) {
     probe.remove();
+    // Superseded while probing: the containers now belong to the next file.
+    if (renderSignal.aborted) return;
     resultsEl.innerHTML = '';
     // Every route out of here - the AVI parser below, the visible-player fallback,
     // the unplayable card - ends the render without ever mounting a preview, so the
@@ -4056,6 +4281,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
 
     let avi = null;
     try { avi = await parseAviHeader(file); } catch (_) {}
+    if (renderSignal.aborted) return;
 
     if (avi) {
       resultsEl.appendChild(el('div', { class: 'anr-info' },
@@ -4106,12 +4332,14 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
       const src = aviData && aviData.source;
       const frameCount = src ? src.count : 0;
       if (src) renderSignal.addEventListener('abort', () => src.close());
+      if (renderSignal.aborted) { if (src) src.close(); return; }
 
       // MJPEG frame viewer. Only show it when the extracted chunks are genuine
       // JPEGs (SOI marker FF D8) - a non-MJPEG AVI (DV, etc.) yields raw chunks
       // that aren't displayable images, so skip the viewer and just show metadata.
       let firstFrame: ArrayBuffer | null = null;
       if (frameCount) { try { firstFrame = await src!.get(0); } catch (_) {} }
+      if (renderSignal.aborted) return;
       const framesAreJpeg = !!firstFrame && firstFrame.byteLength > 2 &&
         new Uint8Array(firstFrame.slice(0, 2))[0] === 0xFF &&
         new Uint8Array(firstFrame.slice(0, 2))[1] === 0xD8;
@@ -4474,7 +4702,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
     // Not an AVI we can decode - but the probe may simply have failed on iOS.
     // Try a real visible player before declaring the file unplayable.
     const shownFallback = await renderVisibleVideoFallback(file, url, header, resultsEl, renderSignal);
-    if (shownFallback) return;
+    if (shownFallback || renderSignal.aborted) return;
 
     // The browser genuinely can't decode this codec (ProRes, DNxHD, etc.). Show
     // the container/codec metadata and a clear explanation instead of a bare error,
@@ -4639,6 +4867,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
   // and guarded so it never affects fps/preview.
   let isoTracks = null;
   try { isoTracks = await detectVideoTracks(analysisFile); } catch (_) {}
+  if (renderSignal.aborted) return;
   // For a converted proxy (which may be downscaled), show the ORIGINAL stored
   // dimensions, not the decoded proxy frame size. For a normal file keep the
   // player's dimensions (they already reflect any rotation).
@@ -4674,13 +4903,14 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
 
   const fpsCell = fpsRow.querySelector('td')!;
   // Show the ORIGINAL file's frame rate in File info (the proxy may be fps-capped).
-  detectFps(analysisFile, fpsCell).then((fps) => {
+  detectFps(analysisFile, fpsCell, renderSignal).then((fps) => {
+    if (renderSignal.aborted) return;
     fpsCell.textContent = fps != null ? fps + ' fps' : 'N/A';
     if (analysisFile === file && fps != null) { detectedFps = fps; frameControls.refresh(); }
   });
   // Frame stepping runs on the playable file, so step at ITS actual frame rate.
   if (analysisFile !== file) {
-    detectFps(file).then((fps) => { if (fps != null) { detectedFps = fps; frameControls.refresh(); } });
+    detectFps(file, null, renderSignal).then((fps) => { if (fps != null && !renderSignal.aborted) { detectedFps = fps; frameControls.refresh(); } });
   }
 
   // ---- Metadata via exifr (of the original file) ----
@@ -4694,6 +4924,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
       });
     }
   } catch (_) {}
+  if (renderSignal.aborted) return;
 
   if (exif) {
     const metaRows = [];
@@ -4746,6 +4977,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
   // proxy has no rtmd track), but the Motion timeline's mini player mounts the
   // playable `file` so it still plays when the original codec can't decode here.
   await appendSonyGyroCard(analysisFile, resultsEl, file);
+  if (renderSignal.aborted) return;
 
   // GoPro GPMF / CAMM telemetry (GPS track + gyro/accelerometer) or a single
   // container GPS point - from the ORIGINAL file (FFmpeg strips the timed-metadata
@@ -4756,8 +4988,10 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
     // MAX_CHUNKS sequential slices. Yield first: the player and the metadata cards
     // are already on screen and the reader may be scrolling them.
     await yieldToMain();
+    if (renderSignal.aborted) return;
     const hasExifGps = !!(exif && exif.latitude != null && exif.longitude != null);
     try { await appendTelemetryCards(analysisFile, resultsEl, { hasExifGps, playFile: file }); } catch (_) {}
+    if (renderSignal.aborted) return;
   }
 
   // ---- Contact sheet / thumbnail grid ----
@@ -5034,19 +5268,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
     audioResultsEl.appendChild(audioCard);
 
     try {
-      const ac = getAudioCtx();
-      const buf = await file.arrayBuffer();
-      let audioBuf;
-      try {
-        audioBuf = await ac.decodeAudioData(buf.slice(0));
-      } catch (_) {
-        audioStatus.textContent = 'Trying PCM extraction…';
-        audioBuf = extractPcmFromMp4(buf);
-      }
-      if (!audioBuf) {
-        audioStatus.textContent = 'Web Audio failed, using FFmpeg…';
-        audioBuf = await ffmpegExtractAudio(file, audioCard);
-      }
+      const audioBuf = await decodeVideoAudio(file, audioStatus, audioCard);
 
       audioStatus.remove();
 

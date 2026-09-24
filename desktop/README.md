@@ -213,19 +213,35 @@ They refuse:
 - filters that load code or open a socket (`frei0r`, `ladspa`, `lv2`, `zmq`,
   `sendcmd`)
 - options that read more options from a file (`-/opt`, `-filter_script`)
-- inside any small text input: a concat list entry that is not a bare session
-  file, an `option` directive, or a playlist or manifest line with a path or URL.
-  The reverse in `video.ts` feeds `-f concat -safe 0` a list it wrote itself,
-  and that stays allowed.
+- inside any text input (`checkInputBytes()`): a concat list line that is not
+  `file '<bare session file>'`, a comment or `ffconcat version 1.0`; a playlist
+  or manifest line with a path or URL; any control, non-ASCII or lone `\r`
+  character in a list; a list larger than the 1 MiB peek; a NUL in a concat
+  list. The reverse in `video.ts` feeds `-f concat -safe 0` a list it wrote
+  itself, and that stays allowed.
+
+On top of that deny-list sits an **allow-list**: only the options, `-f`
+formats, filter graphs, codecs and file names the app actually emits pass,
+including the hardware rewrites (`-hwaccel`, the NVENC/QSV/AMF/VideoToolbox/
+MediaCodec quality options and presets) and the openh264 fallback. An unknown
+option is refused, and so are `-dump_attachment`, `-attach`,
+`-protocol_whitelist` and muxers that write extra files (`hls`, `dash`, `tee`,
+`image2`; `segment` only in the reverse's exact `rev_seg_%03d.mp4` shape).
+Outputs must be bare `.mp4`/`.wav`/`.jpg` names, never a Windows device name.
+`runJob()` checks the rewritten list too, since that is what spawns, and
+`safeName()` refuses the same names for writeFile/readFile.
 
 The checks run in the main process, never the page. A refused job resolves with
 code 1 and a log line, which `video.ts` treats as a clean failure. Never return
 -1, which it reads as a dead instance.
 
-`node desktop/tools/check-ffmpeg-args.mjs` runs every argument list in `src/`
-and every attack through the checks. Add a new ffmpeg call's shape there before
-you ship it. The Android shell has a Java port (`AnrFfmpegChecks.java`, tested
-by `AnrFfmpegChecksTest`) against the same vectors.
+`node desktop/tools/check-ffmpeg-args.mjs` runs every argument list in `src/`,
+every hardware rewrite of each, and every attack through the checks. **A new
+ffmpeg call must be added there, and to the allow-list in `ffmpeg-accel.mjs`,
+or it is refused.** The Android shell has a Java port (`AnrFfmpegChecks.java`,
+tested by `AnrFfmpegChecksTest`) against the same vectors. Both are ASCII-only
+by design (no `\s`, `\b`, `.`, `$` or case-insensitive flags): JavaScript,
+OpenJDK and Android's ICU regex engine read those differently.
 
 ### SharedArrayBuffer, so the on-device AI can use more than one core
 

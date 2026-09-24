@@ -346,10 +346,15 @@ function extractXmpText(bytes: Uint8Array) {
   for (let i = s; i < end; i++) out += String.fromCharCode(bytes[i]);
   return out;
 }
+// String.fromCodePoint throws a RangeError on anything past U+10FFFF (or NaN),
+// which would take the whole XMP panel down with it - substitute U+FFFD instead.
+function safeCodePoint(cp: number) {
+  return (Number.isInteger(cp) && cp >= 0 && cp <= 0x10FFFF) ? String.fromCodePoint(cp) : '�';
+}
 function xmlDecode(str: string) {
   return str.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, d: string|number) => String.fromCodePoint(+d)).replace(/&amp;/g, '&');
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h: string) => safeCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d: string|number) => safeCodePoint(+d)).replace(/&amp;/g, '&');
 }
 // Parse xmpMM:History (Lightroom/Photoshop edit log) plus a few provenance ids.
 export function parseXmpHistory(bytes: Uint8Array) {

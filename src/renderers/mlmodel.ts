@@ -312,8 +312,11 @@ async function renderSafetensors(file: File, resultsEl: HTMLElement) {
   catch (_) { resultsEl.appendChild(errorCard('The safetensors header is not readable JSON.')); return; }
 
   const tensors: OnnxTensor[] = [];
-  const dtypes: Record<string, number> = {};
-  const groups: Record<string, { n: number; params: number }> = {};
+  // Keys are tensor names and dtypes from the file, so the tallies have no
+  // prototype: a tensor called "__proto__" would otherwise write its counts onto
+  // Object.prototype and every object on the page would inherit them.
+  const dtypes: Record<string, number> = Object.create(null);
+  const groups: Record<string, { n: number; params: number }> = Object.create(null);
   let params = 0;
   for (const [name, t] of Object.entries<any>(meta)) {
     if (name === '__metadata__' || !t || !t.shape) continue;
@@ -401,24 +404,34 @@ async function renderGguf(file: File, resultsEl: HTMLElement) {
   const tensorCount = u64();
   const kvCount = u64();
 
-  const str = () => { const n = u64(); const s = new TextDecoder().decode(buf.subarray(p, p + n)); p += n; return s; };
+  const str = () => { const n = u64(); if (p + n > buf.length) throw new Error('string runs past the header'); const s = new TextDecoder().decode(buf.subarray(p, p + n)); p += n; return s; };
+  // Smallest encoding of each GGUF value type, so a declared array length can be
+  // checked against the bytes actually left before it is walked. A string is its
+  // 8-byte length at least; a nested array its 4-byte type and 8-byte count.
+  const GGUF_MIN_SIZE: Record<number, number> = { 0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1, 8: 8, 9: 12, 10: 8, 11: 8, 12: 8 };
   // GGUF value types 0-12. Arrays (9) carry an element type and a count; a
   // tokenizer vocabulary is one of these and runs to hundreds of thousands of
   // strings, so an array is summarised rather than materialised.
   const readValue = (type: number): string => {
     switch (type) {
-      case 0: return String(buf[p++]);
+      case 0: if (p >= buf.length) throw new Error('value runs past the header'); return String(buf[p++]);
       case 1: return String(dv.getInt8(p++));
       case 2: { const v = dv.getUint16(p, true); p += 2; return String(v); }
       case 3: { const v = dv.getInt16(p, true); p += 2; return String(v); }
       case 4: { const v = dv.getUint32(p, true); p += 4; return String(v); }
       case 5: { const v = dv.getInt32(p, true); p += 4; return String(v); }
       case 6: { const v = dv.getFloat32(p, true); p += 4; return String(Math.round(v * 1e6) / 1e6); }
-      case 7: return buf[p++] ? 'true' : 'false';
+      case 7: if (p >= buf.length) throw new Error('value runs past the header'); return buf[p++] ? 'true' : 'false';
       case 8: return str();
       case 9: {
         const elem = dv.getUint32(p, true); p += 4;
         const n = u64();
+        // An unknown element type would be read as zero bytes each, and a count
+        // larger than the bytes left can hold is corrupt: either one would spin
+        // through up to 2^64 iterations. Both end the walk instead.
+        const min = GGUF_MIN_SIZE[elem];
+        if (!min) throw new Error('unknown GGUF array element type ' + elem);
+        if (n * min > buf.length - p) throw new Error('array runs past the header');
         const preview: string[] = [];
         for (let i = 0; i < n; i++) {
           const v = readValue(elem);
@@ -429,7 +442,8 @@ async function renderGguf(file: File, resultsEl: HTMLElement) {
       case 10: return u64().toLocaleString();
       case 11: { const v = Number(dv.getBigInt64(p, true)); p += 8; return String(v); }
       case 12: { const v = dv.getFloat64(p, true); p += 8; return String(v); }
-      default: return '?';
+      // An unknown type has no known size, so nothing after it can be found.
+      default: throw new Error('unknown GGUF value type ' + type);
     }
   };
 
@@ -534,8 +548,67 @@ const PICKLE_DANGEROUS = /^(os|posix|nt|subprocess|sys|shutil|socket|pty|command
 // Read GLOBAL opcodes out of a pickle stream WITHOUT unpickling it. Two spellings
 // exist: the old `c module\nname\n`, and protocol 4's STACK_GLOBAL, which pushes
 // the two strings first and then names them with a single 0x93 byte.
+//
+// The primary reader is an opcode walk (the same one parsers-dev.ts's parsePickle
+// uses): every argument is skipped by its real encoding, so bytes inside a string
+// are never mistaken for opcodes, and STACK_GLOBAL is resolved from the two values
+// actually pushed before it - including memo GETs of strings pushed earlier, which
+// is how a pickle names the same module twice and which the byte back-scan below
+// cannot see. If the walk meets something it does not recognise before the
+// stream ends, the older pattern scans run as well, so a damaged pickle still
+// reports what it can.
+function pickleGlobalsWalk(b: Uint8Array, found: Set<string>) {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  let i = 0;
+  const line = () => {
+    let s = ''; while (i < b.length && b[i] !== 0x0a && s.length < 256) s += String.fromCharCode(b[i++]);
+    while (i < b.length && b[i] !== 0x0a) i++;
+    i++; return s;
+  };
+  const str = (n: number) => { const s = new TextDecoder('utf-8').decode(b.subarray(i, Math.min(b.length, i + Math.min(n, 256)))); i += n; return s; };
+  const u32 = () => { const v = dv.getUint32(i, true); i += 4; return v; };
+  const u64 = () => { const v = Number(dv.getBigUint64(i, true)); i += 8; return v; };
+  let prev: string | null = null, last: string | null = null;
+  const push = (v: string | null) => { prev = last; last = v; };
+  const memo = new Map<number, string | null>();
+  let memoNext = 0;
+  const FIXED: Record<number, number> = { 0x4a: 4, 0x4b: 1, 0x4d: 2, 0x47: 8, 0x82: 1, 0x83: 2, 0x84: 4 };
+  const NOARG = new Set([0x28, 0x30, 0x31, 0x32, 0x4e, 0x52, 0x5d, 0x61, 0x62, 0x64, 0x7d, 0x65, 0x6c, 0x29, 0x74,
+    0x73, 0x75, 0x6f, 0x81, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8f, 0x90, 0x91, 0x92, 0x97, 0x98]);
+  try {
+    while (i < b.length) {
+      const op = b[i++];
+      if (op === 0x63 || op === 0x69) { const mod = line(), name = line(); found.add(mod + '.' + name); push(null); }   // GLOBAL / INST
+      else if (op === 0x93) { if (prev != null && last != null) found.add(prev + '.' + last); push(null); }            // STACK_GLOBAL
+      else if (op === 0x2e) { if (b[i] !== 0x80) return true; prev = last = null; }   // STOP - a legacy torch file chains several
+      else if (op === 0x80) i++;                                        // PROTO
+      else if (op === 0x95) i += 8;                                     // FRAME
+      else if (op === 0x94) memo.set(memoNext++, last);                 // MEMOIZE
+      else if (op === 0x70) memo.set(parseInt(line(), 10), last);       // PUT
+      else if (op === 0x71) memo.set(b[i++], last);                     // BINPUT
+      else if (op === 0x72) memo.set(u32(), last);                      // LONG_BINPUT
+      else if (op === 0x67) push(memo.get(parseInt(line(), 10)) ?? null);   // GET
+      else if (op === 0x68) push(memo.get(b[i++]) ?? null);            // BINGET
+      else if (op === 0x6a) push(memo.get(u32()) ?? null);             // LONG_BINGET
+      else if (op === 0x8c || op === 0x55) push(str(b[i++]));          // SHORT_BINUNICODE / SHORT_BINSTRING
+      else if (op === 0x58 || op === 0x54) push(str(u32()));           // BINUNICODE / BINSTRING
+      else if (op === 0x8d) push(str(u64()));                          // BINUNICODE8
+      else if (op === 0x56 || op === 0x53) push(line().replace(/^'|'$/g, ''));   // UNICODE / STRING (text)
+      else if (op === 0x49 || op === 0x4c || op === 0x46 || op === 0x50) { line(); push(null); }   // INT/LONG/FLOAT/PERSID
+      else if (op === 0x43 || op === 0x8a) { i += 1 + b[i]; push(null); }        // SHORT_BINBYTES / LONG1
+      else if (op === 0x42 || op === 0x8b) { const n = u32(); i += n; push(null); }   // BINBYTES / LONG4
+      else if (op === 0x8e || op === 0x96) { const n = u64(); i += n; push(null); }   // BINBYTES8 / BYTEARRAY8
+      else if (FIXED[op] != null) { i += FIXED[op]; push(null); }
+      else if (NOARG.has(op)) push(null);
+      else return false;                                                // not a pickle opcode
+    }
+  } catch (_) { return false; }
+  return false;                                                         // ran out of bytes before STOP
+}
+
 function pickleGlobals(buf: Uint8Array) {
   const found = new Set<string>();
+  if (pickleGlobalsWalk(buf, found)) return [...found].sort();
   const dec = new TextDecoder('latin1');
   const text = dec.decode(buf);
   for (const m of text.matchAll(/c([A-Za-z_][\w.]{0,80})\n([A-Za-z_][\w.]{0,80})\n/g)) found.add(m[1] + '.' + m[2]);

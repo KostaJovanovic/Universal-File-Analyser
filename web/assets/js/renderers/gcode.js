@@ -2627,6 +2627,20 @@ export async function renderGcode(file, resultsEl, opts) {
                 : 'Rebuilt from the G-code toolpath, coloured by layer height. Beads are shown as centrelines because your browser lacks instanced rendering.'));
         viewCard.appendChild(viewer.wrap);
         if (viewer.ok) {
+            // Page-level listeners (outside-click, fullscreen, resize) are registered
+            // through this, so they all detach together the first time one fires after
+            // the card has left the page. Otherwise their closures would pin the parsed
+            // toolpath - hundreds of MB on a big print - for the rest of the session.
+            const pageAC = new AbortController();
+            const onPage = (target, type, fn) => {
+                target.addEventListener(type, (e) => {
+                    if (!viewCard.isConnected) {
+                        pageAC.abort();
+                        return;
+                    }
+                    fn(e);
+                }, { signal: pageAC.signal });
+            };
             // A caption under the canvas explains how to drive the view; every button and
             // slider then lives in one toolbar below it, grouped by job (display controls,
             // what is shown, then the two sliders) so the section reads as a single panel.
@@ -2695,7 +2709,7 @@ export async function renderGcode(file, resultsEl, opts) {
             aaBtn('Flatten distant beads', () => viewer.state.flatten, (v) => { viewer.state.flatten = v; viewer.markDirty(); });
             aaBtn('Translucent travel lines', () => viewer.state.translucentTravel, (v) => { viewer.state.translucentTravel = v; viewer.markDirty(); });
             qBtn.addEventListener('click', (e) => { e.stopPropagation(); qPanel.classList.toggle('is-hidden'); });
-            document.addEventListener('click', (e) => { if (!qWrap.contains(e.target))
+            onPage(document, 'click', (e) => { if (!qWrap.contains(e.target))
                 qPanel.classList.add('is-hidden'); });
             qWrap.appendChild(qBtn);
             qWrap.appendChild(qPanel);
@@ -3175,9 +3189,9 @@ export async function renderGcode(file, resultsEl, opts) {
                 openSpd();
             else
                 closeSpd(); });
-            document.addEventListener('click', (e) => { if (!spdWrap.contains(e.target) && !spdPanel.contains(e.target))
+            onPage(document, 'click', (e) => { if (!spdWrap.contains(e.target) && !spdPanel.contains(e.target))
                 closeSpd(); });
-            document.addEventListener('fullscreenchange', () => closeSpd()); // dock back when entering/leaving fullscreen
+            onPage(document, 'fullscreenchange', () => closeSpd()); // dock back when entering/leaving fullscreen
             spdWrap.appendChild(spdBtn);
             spdWrap.appendChild(spdPanel);
             // Default the whole job to a fixed 30s playback (real time stays available as a
@@ -3883,23 +3897,39 @@ export async function renderGcode(file, resultsEl, opts) {
                                 try {
                                     statTxt.textContent = 'Converting to MP4…';
                                     ffMod = await import('./video.js');
-                                    ff = await ffMod.loadFFmpeg();
-                                    const killOnCancel = () => { try {
-                                        ffMod.killFFmpeg();
-                                    }
-                                    catch (_) { } };
-                                    statCancel.addEventListener('click', killOnCancel);
-                                    onProg = (ev) => { const p = ev && ev.progress; if (p > 0 && p <= 1)
-                                        statTxt.textContent = 'Converting to MP4… ' + Math.round(p * 100) + '%'; };
-                                    if (ff.on)
-                                        ff.on('progress', onProg);
-                                    await ff.writeFile('clip.webm', new Uint8Array(target.buffer));
-                                    await ff.exec(['-i', 'clip.webm', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', 'clip.mp4']);
-                                    const out = await ff.readFile('clip.mp4');
-                                    await ff.deleteFile('clip.webm').catch(() => { });
-                                    await ff.deleteFile('clip.mp4').catch(() => { });
-                                    statCancel.removeEventListener('click', killOnCancel);
-                                    bytes = out.buffer || out;
+                                    // Join video's job queue: one shared instance, so this must not
+                                    // run on top of a remux/convert or collide with its files.
+                                    bytes = await ffMod.queueFFmpeg(async () => {
+                                        ff = await ffMod.loadFFmpeg();
+                                        const killOnCancel = () => { try {
+                                            ffMod.killFFmpeg();
+                                        }
+                                        catch (_) { } };
+                                        statCancel.addEventListener('click', killOnCancel);
+                                        onProg = (ev) => { const p = ev && ev.progress; if (p > 0 && p <= 1)
+                                            statTxt.textContent = 'Converting to MP4… ' + Math.round(p * 100) + '%'; };
+                                        if (ff.on)
+                                            ff.on('progress', onProg);
+                                        try {
+                                            await ff.writeFile('clip.webm', new Uint8Array(target.buffer));
+                                            const code = await ff.exec(['-i', 'clip.webm', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', 'clip.mp4']);
+                                            if (typeof code === 'number' && code !== 0)
+                                                throw new Error('ffmpeg exit ' + code);
+                                            const out = await ff.readFile('clip.mp4');
+                                            return out.buffer || out;
+                                        }
+                                        finally {
+                                            statCancel.removeEventListener('click', killOnCancel);
+                                            try {
+                                                await ff.deleteFile('clip.webm');
+                                            }
+                                            catch (_) { }
+                                            try {
+                                                await ff.deleteFile('clip.mp4');
+                                            }
+                                            catch (_) { }
+                                        }
+                                    });
                                 }
                                 catch (_) {
                                     ext = 'webm';
@@ -4165,7 +4195,7 @@ export async function renderGcode(file, resultsEl, opts) {
                 cam.style.bottom = fs ? (toolbar.offsetHeight + 12) + 'px' : '';
             };
             const camRO = window.ResizeObserver ? new ResizeObserver(liftCamBtns) : null;
-            document.addEventListener('fullscreenchange', () => {
+            onPage(document, 'fullscreenchange', () => {
                 const fs = document.fullscreenElement;
                 if (fs && viewer && fs === viewer.wrap) {
                     toolbar.classList.add('anr-gcode-toolbar--fs');
@@ -4188,7 +4218,7 @@ export async function renderGcode(file, resultsEl, opts) {
             });
             resultsEl.appendChild(viewCard);
             viewer.start();
-            window.addEventListener('resize', () => viewer.resize());
+            onPage(window, 'resize', () => viewer.resize());
         }
         else
             resultsEl.appendChild(viewCard);

@@ -582,6 +582,13 @@ export async function renderGeo(file, resultsEl) {
         resultsEl.appendChild(errorCard('Could not parse this ' + (ext.toUpperCase() || 'geo') + ' file.'));
         return;
     }
+    // GPX already drops unreadable points; KML and GeoJSON coordinates arrive as
+    // written. One NaN or Infinity would poison the bounds (Math.min/max return NaN,
+    // so the file reads as having no coordinates), the distance, and Leaflet, which
+    // throws on an invalid LatLng. Such points are left out here, once, for all three.
+    const okPt = (lat, lon) => isFinite(lat) && isFinite(lon);
+    g.lines = g.lines.map((l) => l.filter((p) => okPt(p[0], p[1]))).filter((l) => l.length);
+    g.markers = g.markers.filter((m) => okPt(m.lat, m.lon));
     // Distance over all polylines.
     let distance = 0;
     for (const line of g.lines)
@@ -740,6 +747,26 @@ export async function renderGeo(file, resultsEl) {
     }
     mapEl.innerHTML = '';
     const map = L.map(mapEl);
+    // Leaflet hangs resize/zoom handlers on window and document and keeps every
+    // layer (the whole track) reachable from them, so a map dropped from the page
+    // without map.remove() is never collected. The stopper runs before the results
+    // are cleared; once the map has really left, it is removed. A map stashed with
+    // the home page (window._anrHomeMain, put back on return) is kept, and the
+    // stopper re-armed, since the stopper set is cleared straight after it runs.
+    const mapStopper = () => {
+        setTimeout(() => {
+            const stashed = window._anrHomeMain && window._anrHomeMain.contains(mapEl);
+            if (mapEl.isConnected || stashed)
+                (window._anrMediaStoppers = window._anrMediaStoppers || new Set()).add(mapStopper);
+            else {
+                try {
+                    map.remove();
+                }
+                catch (_) { }
+            }
+        }, 0);
+    };
+    (window._anrMediaStoppers = window._anrMediaStoppers || new Set()).add(mapStopper);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
     // The plain track, its pace-coloured twin and the stop pins each live in their
     // own layer group so switching view is an add/remove rather than a rebuild.

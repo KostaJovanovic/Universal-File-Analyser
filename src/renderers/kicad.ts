@@ -1071,8 +1071,17 @@ function buildBoard3D(pcb: any, opts: any = {}) {
   const msaaBtn = el('button', { class: 'anr-btn anr-aa-btn', type: 'button', title: 'Hardware MSAA needs WebGL - available on the 3D model viewer, not this vector board' }, 'Hardware MSAA - n/a');
   msaaBtn.disabled = true;
   qPanel.appendChild(msaaBtn);
-  qBtn.addEventListener('click', (e) => { e.stopPropagation(); qPanel.classList.toggle('is-hidden'); });
-  document.addEventListener('click', (e) => { if (!qWrap.contains(e.target as Node)) qPanel.classList.add('is-hidden'); });
+  // The outside-click closer is on document only while the panel is open, so a
+  // board that has been replaced leaves no page listener pinning it. (This node
+  // can leave the page and come back from the mode cache, so tying the listener
+  // to detachment would lose it on the round trip.)
+  const onDocClick = (e: MouseEvent) => { if (!qWrap.contains(e.target as Node)) closeQ(); };
+  const closeQ = () => { qPanel.classList.add('is-hidden'); document.removeEventListener('click', onDocClick); };
+  qBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (qPanel.classList.toggle('is-hidden')) document.removeEventListener('click', onDocClick);
+    else document.addEventListener('click', onDocClick);
+  });
   qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
   bar.appendChild(flip); bar.appendChild(spinBtn); bar.appendChild(reset); bar.appendChild(qWrap);
   // The wheel only zooms once the scroll-zoom pill is armed (it starts off so the

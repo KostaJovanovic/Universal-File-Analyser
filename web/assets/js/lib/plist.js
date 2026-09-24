@@ -8,6 +8,14 @@
    Uint8Array) plus a `format` tag. Used by webloc, mobileconfig, provisioning
    profiles, iOS sprite atlases, game saves, and other Apple-ecosystem formats. */
 import { Reader } from '../core/binutil.js';
+// Set a dict key from the file. A key literally named "__proto__" is defined
+// as an ordinary own property instead of re-pointing the object's prototype.
+function setKey(o, k, v) {
+    if (k === '__proto__')
+        Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true });
+    else
+        o[k] = v;
+}
 // ---------- XML plist ----------
 function parseXmlPlist(text) {
     const doc = new DOMParser().parseFromString(text, 'application/xml');
@@ -23,7 +31,7 @@ function parseXmlPlist(text) {
                 const kids = Array.from(el.children);
                 for (let i = 0; i < kids.length; i += 2) {
                     if (kids[i] && kids[i].tagName === 'key')
-                        o[kids[i].textContent] = node(kids[i + 1]);
+                        setKey(o, kids[i].textContent, node(kids[i + 1]));
                 }
                 return o;
             }
@@ -51,11 +59,18 @@ function parseBinaryPlist(bytes) {
     const objRefSize = bytes[tStart + 7];
     const readBE = (off, size) => { let v = 0; for (let i = 0; i < size; i++)
         v = v * 256 + bytes[off + i]; return v; };
+    // Both widths are 1-8 bytes by the format. A width of 0 would defeat every
+    // "clamp to buffer" division below (and read every ref as object 0).
+    if (offsetSize < 1 || offsetSize > 8 || objRefSize < 1 || objRefSize > 8)
+        return null;
     const numObjects = readBE(tStart + 8, 8);
     const topObject = readBE(tStart + 16, 8);
     const offTableOff = readBE(tStart + 24, 8);
     if (numObjects > 5_000_000)
         return null; // sanity guard
+    // The offset table must fit before the trailer.
+    if (offTableOff + numObjects * offsetSize > tStart)
+        return null;
     const offsets = [];
     for (let i = 0; i < numObjects; i++)
         offsets.push(readBE(offTableOff + i * offsetSize, offsetSize));
@@ -71,7 +86,13 @@ function parseBinaryPlist(bytes) {
         if (memo.has(index))
             return memo.get(index);
         inProgress.add(index);
-        const result = build(index);
+        let result = null;
+        try {
+            result = build(index);
+        }
+        catch (_) {
+            result = null;
+        } // a read past the end is one bad object, not a failed file
         inProgress.delete(index);
         memo.set(index, result);
         return result;
@@ -80,14 +101,19 @@ function parseBinaryPlist(bytes) {
         let p = offsets[index];
         const marker = bytes[p++];
         const type = marker >> 4, info = marker & 0x0f;
+        // An element count, capped by the bytes left after it: every element
+        // occupies at least one byte (or one ref of objRefSize), so a count past
+        // that is a lie and would only spin the loops below.
         const count = () => {
             if (info !== 0x0f)
                 return info;
             const szMarker = bytes[p++];
             const n = 1 << (szMarker & 0x0f);
+            if (n > 8)
+                return 0;
             const v = readBE(p, n);
             p += n;
-            return v;
+            return Math.min(v, Math.max(0, bytes.length - p));
         };
         switch (type) {
             case 0x0:
@@ -136,7 +162,7 @@ function parseBinaryPlist(bytes) {
                 for (let i = 0; i < n; i++) {
                     const k = obj(readBE(p + i * objRefSize, objRefSize));
                     const v = obj(readBE(p + (n + i) * objRefSize, objRefSize));
-                    o[String(k)] = v;
+                    setKey(o, String(k), v);
                 }
                 return o;
             }

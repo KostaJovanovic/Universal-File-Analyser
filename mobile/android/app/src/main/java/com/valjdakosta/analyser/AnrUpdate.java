@@ -10,6 +10,7 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.SystemClock;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 import android.widget.Toast;
@@ -24,7 +25,10 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -58,6 +62,10 @@ import org.json.JSONObject;
  * itself refuses an APK signed with another key, so the signature check is
  * the platform's. Play Protect can still scan the new APK either way.
  *
+ * The download must start at github.com and every redirect must stay on a
+ * GitHub asset host (ASSET_HOSTS); it stops the moment it runs past the size
+ * the release gives. The footer button checks at most once a minute.
+ *
  * What a check sends: one HTTPS request to api.github.com. Nothing about any file.
  */
 // Public, because Android creates the nested InstallStatus receiver by name.
@@ -75,6 +83,15 @@ public final class AnrUpdate {
     private static final ExecutorService NET = Executors.newSingleThreadExecutor();
     /** True while a check or a download runs, so two can never overlap. */
     private static final AtomicBoolean BUSY = new AtomicBoolean(false);
+    /** The footer button, at most once a minute (checkNow). */
+    private static final long MANUAL_EVERY_MS = 60L * 1000;
+    private static long lastManual;
+    /** The download starts at github.com, which redirects to its asset host.
+     *  Every hop must stay on these. */
+    private static final String DOWNLOAD_HOST = "github.com";
+    private static final Set<String> ASSET_HOSTS = new HashSet<>(
+        Arrays.asList("github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com")
+    );
 
     private interface Progress {
         void at(int permille);
@@ -90,6 +107,16 @@ public final class AnrUpdate {
     /** The footer's "Check for updates" (AnrShell.checkUpdates): no six-hour
      *  wait, and it always answers - the update dialog, or a short message. */
     static void checkNow(Activity activity) {
+        // The page can call this as often as it likes (an XSS included); GitHub
+        // rate-limits unauthenticated API calls per address, so one a minute.
+        long now = SystemClock.elapsedRealtime();
+        synchronized (AnrUpdate.class) {
+            if (lastManual != 0 && now - lastManual < MANUAL_EVERY_MS) {
+                toast(activity, "Analyser checked for an update a moment ago. Try again in a minute.");
+                return;
+            }
+            lastManual = now;
+        }
         check(activity, true);
     }
 
@@ -185,9 +212,12 @@ public final class AnrUpdate {
 
     private static void download(Activity activity, JSONObject apk) {
         final String url = apk.optString("browser_download_url", "");
+        final long size = apk.optLong("size", 0);
         Matcher digest = DIGEST.matcher(apk.optString("digest", ""));
         // No digest, no install: the hash is what ties the file to the release.
-        if (!url.startsWith("https://") || !digest.matches() || !BUSY.compareAndSet(false, true)) return;
+        // The URL must be a github.com release download, and the size is known,
+        // so a download that runs past it stops there instead of filling the cache.
+        if (!onHost(url, DOWNLOAD_HOST) || size <= 0 || !digest.matches() || !BUSY.compareAndSet(false, true)) return;
         final String sha = digest.group(1);
 
         ProgressBar bar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
@@ -209,7 +239,7 @@ public final class AnrUpdate {
             File file = apkFile(app);
             String failed = null;
             try {
-                save(url, file, sha, cancelled, (permille) -> activity.runOnUiThread(() -> bar.setProgress(permille)));
+                save(url, size, file, sha, cancelled, (permille) -> activity.runOnUiThread(() -> bar.setProgress(permille)));
                 verify(app, file);
             } catch (Exception e) {
                 failed = "The update did not download. Analyser tries again later.";
@@ -237,13 +267,14 @@ public final class AnrUpdate {
         });
     }
 
-    /** Stream the APK to `file`, hashing as it goes. Throws on a cancel or a bad hash. */
-    private static void save(String url, File file, String sha, AtomicBoolean cancelled, Progress progress) throws Exception {
+    /** Stream the APK to `file`, hashing as it goes. Throws on a cancel, a bad
+     *  hash, or more bytes than the release says the asset has. */
+    private static void save(String url, long size, File file, String sha, AtomicBoolean cancelled, Progress progress) throws Exception {
         File dir = file.getParentFile();
         if (dir != null && !dir.isDirectory() && !dir.mkdirs()) throw new IOException("no cache folder");
-        HttpURLConnection c = open(url, null);
+        HttpURLConnection c = openDownload(url);
         try {
-            long total = c.getContentLengthLong();
+            long total = size;
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             try (InputStream in = c.getInputStream(); OutputStream out = new FileOutputStream(file)) {
                 byte[] buf = new byte[1 << 16];
@@ -252,6 +283,7 @@ public final class AnrUpdate {
                 int n;
                 while ((n = in.read(buf)) > 0) {
                     if (cancelled.get()) throw new IOException("cancelled");
+                    if (got + n > size) throw new IOException("the download is larger than the release says");
                     out.write(buf, 0, n);
                     digest.update(buf, 0, n);
                     got += n;
@@ -353,6 +385,46 @@ public final class AnrUpdate {
             throw new IOException("HTTP " + status);
         }
         return c;
+    }
+
+    /** The release download, following its redirects by hand so that EVERY hop
+     *  is checked: https, and a GitHub host (ASSET_HOSTS). */
+    private static HttpURLConnection openDownload(String url) throws IOException {
+        String at = url;
+        for (int hop = 0; hop < 5; hop++) {
+            if (!onAssetHost(at)) throw new IOException("the download left GitHub");
+            HttpURLConnection c = (HttpURLConnection) new URL(at).openConnection();
+            c.setInstanceFollowRedirects(false);
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(30000);
+            c.setRequestProperty("Cache-Control", "no-cache");
+            c.setRequestProperty("User-Agent", "Analyser-Android");
+            int status = c.getResponseCode();
+            if (status == HttpURLConnection.HTTP_OK) return c;
+            String next = c.getHeaderField("Location");
+            c.disconnect();
+            if (status < 300 || status > 399 || next == null) throw new IOException("HTTP " + status);
+            at = new URL(new URL(at), next).toString();
+        }
+        throw new IOException("too many redirects");
+    }
+
+    private static boolean onHost(String url, String host) {
+        try {
+            URL u = new URL(url);
+            return "https".equals(u.getProtocol()) && host.equalsIgnoreCase(u.getHost()) && (u.getPort() == -1 || u.getPort() == 443);
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private static boolean onAssetHost(String url) {
+        try {
+            URL u = new URL(url);
+            return "https".equals(u.getProtocol()) && ASSET_HOSTS.contains(u.getHost().toLowerCase(Locale.ROOT)) && (u.getPort() == -1 || u.getPort() == 443);
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     private static String installedName(Context app) {

@@ -663,7 +663,10 @@ export async function renderSonify(file: File, mountEl: HTMLElement, opts: any =
       'Sound analysis of the rendered audio - play it to scrub the picture in step.'));
     const analysisSlot = el('div');
     specSlot.appendChild(analysisSlot);
-    await renderAudio(wavFile, analysisSlot, { spectrogramFirst: true });
+    // inline: its own abort controller, so this never cancels the page's main
+    // audio render (the other compare panel, or a newly dropped file).
+    await renderAudio(wavFile, analysisSlot, { spectrogramFirst: true, inline: true, signal: opts.signal });
+    if (opts.signal && opts.signal.aborted) return;
     // renderAudio builds its own hidden <audio>; borrow it to drive the image playhead.
     audioEl = analysisSlot.querySelector('audio');
     if (audioEl) {
@@ -724,6 +727,8 @@ export async function renderSonify(file: File, mountEl: HTMLElement, opts: any =
 
       progBar.set(1);
       progLabel.textContent = 'Analysing sound...';
+      // The view may have been replaced while the synthesis ran.
+      if (opts.signal && opts.signal.aborted) return;
       // Run the site's full Sound analysis on the rendered audio.
       await buildOutput();
       status.textContent = `Done - ${o.duration}s, ${o.sampleRate} Hz, ${stereo ? 'stereo' : 'mono'}`;

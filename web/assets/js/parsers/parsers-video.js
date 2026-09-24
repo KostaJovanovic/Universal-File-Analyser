@@ -443,8 +443,11 @@ async function parseMxf(file) {
     if (base < 0)
         base = 0;
     // Operational Pattern label is registered; surface the OP byte (index 13 of key = kind).
-    const opByte = head[base + 13];
-    out['Partition'] = opByte === 0x02 ? 'Header (closed/complete)' : 'Header partition';
+    // Key byte 13 is the partition kind (02 = header), byte 14 its status:
+    // 01 open/incomplete, 02 closed/incomplete, 03 open/complete, 04 closed/complete.
+    const STATUS = { 1: 'open, incomplete', 2: 'closed, incomplete', 3: 'open, complete', 4: 'closed, complete' };
+    const status = STATUS[head[base + 14]];
+    out['Partition'] = status ? 'Header (' + status + ')' : 'Header partition';
     // Operational Pattern is stored later in the header metadata; do a cheap scan
     // for the OP UL family (06 0E 2B 34 04 01 01 ... 0D 01 02 01 ...).
     // Decode major/minor version from partition pack body if present.
@@ -1106,17 +1109,25 @@ async function parseH264(file) {
     br.bits(8); // constraint flags + reserved
     const levelIdc = br.bits(8);
     br.ue(); // sps id
-    let chroma = 1;
+    let chroma = 1, separatePlanes = 0;
     if ([100, 110, 122, 244, 44, 83, 86, 118, 128].includes(profileIdc)) {
         chroma = br.ue();
         if (chroma === 3)
-            br.bit();
+            separatePlanes = br.bit();
         br.ue();
         br.ue();
         br.bit();
-        if (br.bit()) {
+        if (br.bit()) { // seq_scaling_matrix_present_flag
             for (let i = 0; i < (chroma !== 3 ? 8 : 12); i++) {
-                if (br.bit()) { /* skip scaling list */ }
+                if (!br.bit())
+                    continue; // seq_scaling_list_present_flag[i]
+                // scaling_list(): delta-coded entries until nextScale hits 0.
+                let last = 8, next = 8;
+                for (let j = 0; j < (i < 6 ? 16 : 64); j++) {
+                    if (next !== 0)
+                        next = (last + br.se() + 256) % 256;
+                    last = next === 0 ? last : next;
+                }
             }
         }
     }
@@ -1147,8 +1158,13 @@ async function parseH264(file) {
         cropT = br.ue();
         cropB = br.ue();
     }
-    const width = wMbs * 16 - (cropL + cropR) * 2;
-    const height = (2 - frameMbsOnly) * hMapUnits * 16 - (cropT + cropB) * 2;
+    // Crop offsets are in chroma-sample units (1 for monochrome / separate planes),
+    // doubled vertically for interlaced (field) coding.
+    const arrayType = separatePlanes ? 0 : chroma;
+    const cropUnitX = arrayType === 0 || arrayType === 3 ? 1 : 2;
+    const cropUnitY = (arrayType === 1 ? 2 : 1) * (2 - frameMbsOnly);
+    const width = wMbs * 16 - (cropL + cropR) * cropUnitX;
+    const height = (2 - frameMbsOnly) * hMapUnits * 16 - (cropT + cropB) * cropUnitY;
     const chromaNames = ['monochrome', '4:2:0', '4:2:2', '4:4:4'];
     return {
         'Format': 'Raw H.264 / AVC stream (Annex B)',
@@ -1169,7 +1185,7 @@ async function parseH265(file) {
     const rbsp = stripEpb(buf.subarray(sps.start + 2, Math.min(sps.end, sps.start + 300)));
     const br = new BitReader(rbsp);
     br.bits(4); // sps_video_parameter_set_id
-    const maxSubLayers = br.bits(3);
+    const maxSubLayersM1 = br.bits(3); // sps_max_sub_layers_minus1
     br.bit(); // temporal_id_nesting
     // profile_tier_level
     br.bits(2); // general_profile_space
@@ -1180,14 +1196,14 @@ async function parseH265(file) {
     const levelIdc = br.bits(8);
     // sub-layer present flags
     const subProfile = [], subLevel = [];
-    for (let i = 0; i < maxSubLayers - 1; i++) {
+    for (let i = 0; i < maxSubLayersM1; i++) {
         subProfile.push(br.bit());
         subLevel.push(br.bit());
     }
-    if (maxSubLayers - 1 > 0)
-        for (let i = maxSubLayers - 1; i < 8; i++)
+    if (maxSubLayersM1 > 0)
+        for (let i = maxSubLayersM1; i < 8; i++)
             br.bits(2);
-    for (let i = 0; i < maxSubLayers - 1; i++) {
+    for (let i = 0; i < maxSubLayersM1; i++) {
         if (subProfile[i])
             br.bits(88);
         if (subLevel[i])
@@ -1264,20 +1280,39 @@ async function parseObu(file) {
             }
             else {
                 const timingInfo = sb.bit();
+                let decoderModel = 0, bufDelayLen = 0;
                 if (timingInfo) {
                     sb.bits(32);
-                    sb.bits(32);
-                    const eq = sb.bit();
-                    if (eq) { /* leb */ }
-                    sb.bit();
+                    sb.bits(32); // num_units_in_display_tick, time_scale
+                    if (sb.bit()) { // equal_picture_interval: uvlc num_ticks_per_picture_minus_1
+                        let lz = 0;
+                        while (lz < 32 && sb.bit() === 0)
+                            lz++;
+                        if (lz < 32)
+                            sb.bits(lz);
+                    }
+                    decoderModel = sb.bit(); // decoder_model_info_present_flag
+                    if (decoderModel) {
+                        bufDelayLen = sb.bits(5) + 1; // buffer_delay_length_minus_1
+                        sb.bits(32); // num_units_in_decoding_tick
+                        sb.bits(5);
+                        sb.bits(5); // buffer_removal_time / frame_presentation_time lengths
+                    }
                 }
-                sb.bit(); // initial_display_delay_present
+                const initDelay = sb.bit(); // initial_display_delay_present_flag
                 const opCnt = sb.bits(5) + 1;
                 for (let i = 0; i < opCnt; i++) {
                     sb.bits(12);
                     const lvl = sb.bits(5);
                     if (lvl > 7)
                         sb.bit();
+                    if (decoderModel && sb.bit()) {
+                        sb.bits(bufDelayLen);
+                        sb.bits(bufDelayLen);
+                        sb.bit();
+                    }
+                    if (initDelay && sb.bit())
+                        sb.bits(4);
                 }
             }
             const wBits = sb.bits(4) + 1;
@@ -1294,7 +1329,9 @@ async function parseObu(file) {
             };
         }
         pos = cur + size;
-        if (size <= 0)
+        // A size-0 OBU (the Temporal Delimiter that opens every stream) is legal:
+        // only an OBU with no size field runs to the end, so stop there.
+        if (!hasSize)
             break;
     }
     // Couldn't find a sequence header but magic-ish; return minimal.
@@ -1347,9 +1384,9 @@ async function parseMpegTs(file, ext) {
     const streamTypes = new Set();
     let scanned = 0;
     for (let o = off; o + pktSize <= buf.length && scanned < 4000; o += pktSize, scanned++) {
-        let p = o;
-        if (pktSize === 192)
-            p += 4;
+        // `off` already points at the sync byte (the M2TS 4-byte TP_extra header was
+        // skipped when aligning), so every packet starts at o.
+        const p = o;
         if (buf[p] !== 0x47)
             continue;
         const pid = ((buf[p + 1] & 0x1f) << 8) | buf[p + 2];
@@ -1542,9 +1579,9 @@ async function parseDpx(file) {
     const out = { 'Format': 'DPX (Digital Picture Exchange, SMPTE 268M)' };
     out['Byte order'] = be ? 'Big-endian (SDPX)' : 'Little-endian (XPDS)';
     try {
-        // Image element: pixelsPerLine @0x6C, linesPerElement @0x70 (in generic header).
-        const w = r.seek(0x6C).u32();
-        const h = r.seek(0x70).u32();
+        // Image information header starts at 768: pixelsPerLine @772, linesPerElement @776.
+        const w = r.seek(772).u32();
+        const h = r.seek(776).u32();
         if (w && h && w < 100000 && h < 100000)
             out['Resolution'] = w + ' x ' + h;
         const creator = ascii(head, 0xA0, 100).replace(/\0.*$/, '').trim();
@@ -1641,7 +1678,7 @@ export const PARSERS = {
     obu: wrap((c) => parseObu(c.file)),
     // MPEG PS/TS variants & PVR recordings
     m2p: wrap((c) => parseMpegPs(c.file, c.ext)),
-    h2v: wrap((c) => parseMpegPs(c.file, c.ext) || parseMpegTs(c.file, c.ext)),
+    h2v: wrap(async (c) => (await parseMpegPs(c.file, c.ext)) || parseMpegTs(c.file, c.ext)),
     m2t: wrap((c) => parseMpegTs(c.file, c.ext)),
     trp: wrap((c) => parseMpegTs(c.file, c.ext)),
     tp: wrap((c) => parseMpegTs(c.file, c.ext)),

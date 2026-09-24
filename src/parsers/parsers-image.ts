@@ -23,7 +23,8 @@
 import { el, row, fmtBytes, preBlock, loadScript, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, findBytes, latin1, hexByte } from '../core/binutil.js';
 import { buildEmbeddedImagesCard, rgbaToPngBlob, type EmbeddedImageItem } from '../renderers/embedded-images.js';
-import { SCAN_SMALL, PREVIEW_CARVE_MAX } from '../core/limits.js';
+import { SCAN_SMALL, PREVIEW_CARVE_MAX, PARSE_IMAGE_READ_MAX, PARSE_NETPBM_READ_MAX,
+  PARSE_TEXTURE_READ_MAX, PARSE_TEXT_MAX, PARSE_JP2_READ_MAX } from '../core/limits.js';
 import { decodeBcn } from '../lib/bcn.js';
 import { canvasFromRGBA } from './parser-util.js';
 import type { Row, ParseFn } from '../core/types.js';
@@ -31,7 +32,7 @@ import type { Row, ParseFn } from '../core/types.js';
 // ---------- shared helpers ----------
 
 
-async function readAll(file: File, cap = 32 * 1024 * 1024) {
+async function readAll(file: File, cap = PARSE_IMAGE_READ_MAX) {
   return await readSlice(file, 0, cap);
 }
 
@@ -86,8 +87,11 @@ async function parseTga(file: File) {
       const fr = new Reader(b, true); fr.seek(b.length - 26);
       const extOff = fr.u32();
       if (extOff && extOff + 495 <= b.length) {
-        const author = ascii(b, extOff + 41, 41).replace(/\0.*$/, '').trim();
-        const comment = ascii(b, extOff + 82, 80).replace(/\0.*$/, '').trim();
+        // Extension area: size u16, author 41 bytes at +2, comments 4 x 81 at +43,
+        // software ID 41 bytes at +426.
+        const author = ascii(b, extOff + 2, 41).replace(/\0.*$/, '').trim();
+        const comment = [0, 1, 2, 3].map(l => ascii(b, extOff + 43 + l * 81, 81).replace(/\0.*$/, '').trim())
+          .filter(Boolean).join(' ');
         const software = ascii(b, extOff + 426, 41).replace(/\0.*$/, '').trim();
         if (author) out['Author'] = author;
         if (software) out['Software'] = software;
@@ -100,7 +104,7 @@ async function parseTga(file: File) {
 
   // ---- decode ----
   try {
-    const preview = decodeTga(b, { idLen, colorMapType, cmapFirst, cmapLen, cmapDepth, width, height, pixelDepth, rle, grayscale, indexed, topToBottom, rightToLeft });
+    const preview = decodeTga(b, { idLen, colorMapType, cmapFirst, cmapLen, cmapDepth, width, height, pixelDepth, descriptor, rle, grayscale, indexed, topToBottom, rightToLeft });
     if (preview) out._previewNode = preview;
   } catch (_) {}
   return out;
@@ -108,12 +112,12 @@ async function parseTga(file: File) {
 
 function decodeTga(b: Uint8Array, h: any) {
   const { width, height, pixelDepth } = h;
-  const bpp = pixelDepth >> 3;          // bytes per stored pixel/index
+  const bpp = (pixelDepth + 7) >> 3;    // bytes per stored pixel/index (15-bit is 2 bytes)
   let off = 18 + h.idLen;
   // colour map
   let cmap = null;
   if (h.colorMapType === 1 && h.cmapLen) {
-    const cBpp = h.cmapDepth >> 3;
+    const cBpp = (h.cmapDepth + 7) >> 3;
     cmap = b.subarray(off, off + h.cmapLen * cBpp);
     off += h.cmapLen * cBpp;
   }
@@ -146,7 +150,7 @@ function decodeTga(b: Uint8Array, h: any) {
 
   const rgba = new Uint8ClampedArray(px * 4);
   const putPixel = (dst: number, r: number, g: number, bl: number, a: number) => { rgba[dst] = r; rgba[dst + 1] = g; rgba[dst + 2] = bl; rgba[dst + 3] = a; };
-  const cBpp = h.cmapDepth >> 3;
+  const cBpp = (h.cmapDepth + 7) >> 3;
 
   for (let i = 0; i < px; i++) {
     let r, g, bl, a = 255;
@@ -254,7 +258,7 @@ function decodeQoi(b: Uint8Array, width: number, height: number) {
 //                   Netpbm (P1-P6) + PAM (P7)
 // =====================================================================
 async function parseNetpbm(file: File) {
-  const b = await readAll(file, 48 * 1024 * 1024);
+  const b = await readAll(file, PARSE_NETPBM_READ_MAX);
   if (b.length < 3 || b[0] !== 0x50) return null;   // 'P'
   const t = b[1];
   if (t === 0x37) return parsePam(b);               // P7 = PAM
@@ -316,10 +320,19 @@ function decodeNetpbm(b: Uint8Array, pos: number, h: any) {
       while (p < b.length && b[p] >= 0x30 && b[p] <= 0x39) { v = v * 10 + (b[p] - 0x30); p++; got = true; }
       return got ? v : null;
     };
+    // P1 bits need no separator ("0110" is four pixels), so read one digit at a time.
+    const nextBit = () => {
+      for (;;) {
+        while (p < b.length && (b[p] === 0x20 || b[p] === 0x09 || b[p] === 0x0a || b[p] === 0x0d)) p++;
+        if (b[p] === 0x23) { while (p < b.length && b[p] !== 0x0a) p++; continue; }
+        if (p < b.length && (b[p] === 0x30 || b[p] === 0x31)) return b[p++] - 0x30;
+        return null;
+      }
+    };
     for (let i = 0; i < px; i++) {
       const d = i * 4;
       if (isBitmap) {
-        const v = nextInt();              // 1 = black
+        const v = nextBit();              // 1 = black
         const g = v === 1 ? 0 : 255;
         rgba[d] = rgba[d + 1] = rgba[d + 2] = g; rgba[d + 3] = 255;
       } else if (isGray) {
@@ -550,7 +563,7 @@ async function parseFarbfeld(file: File) {
 //                   WBMP (Wireless Bitmap)
 // =====================================================================
 async function parseWbmp(file: File) {
-  const b = await readAll(file, 8 * 1024 * 1024);
+  const b = await readAll(file, SCAN_SMALL);
   if (b.length < 4) return null;
   if (b[0] !== 0x00) return null;             // type 0 = B/W, no compression
   // fixed header field (b[1]) should be 0
@@ -593,7 +606,7 @@ async function parseWbmp(file: File) {
 //                   XBM (X BitMap, C source)
 // =====================================================================
 async function parseXbm(file: File) {
-  const text = await readText(file, 8 * 1024 * 1024);
+  const text = await readText(file, PARSE_TEXT_MAX);
   const wm = text.match(/#define\s+\w*_?width\s+(\d+)/i);
   const hm = text.match(/#define\s+\w*_?height\s+(\d+)/i);
   if (!wm || !hm || !/\{[\s\S]*0x[0-9a-f]/i.test(text)) return null;
@@ -637,7 +650,7 @@ async function parseXbm(file: File) {
 //                   XPM (X PixMap, C source)
 // =====================================================================
 async function parseXpm(file: File) {
-  const text = await readText(file, 8 * 1024 * 1024);
+  const text = await readText(file, PARSE_TEXT_MAX);
   if (!/XPM/.test(text) && !/static\s+char/.test(text)) return null;
   // Collect the quoted strings forming the data array.
   const strings = [];
@@ -736,7 +749,8 @@ async function parseSunRaster(file: File) {
           for (let x = 0; x < width; x++) {
             const d = (y * width + x) * 4;
             if (depth === 8) { const g = b[base + x]; rgba[d] = rgba[d + 1] = rgba[d + 2] = g; rgba[d + 3] = 255; }
-            else { const s = base + x * bpp; rgba[d] = b[s + 2]; rgba[d + 1] = b[s + 1]; rgba[d + 2] = b[s]; rgba[d + 3] = depth === 32 ? 255 : 255; } // BGR
+            else if (depth === 32) { const s = base + x * 4; rgba[d] = b[s + 3]; rgba[d + 1] = b[s + 2]; rgba[d + 2] = b[s + 1]; rgba[d + 3] = 255; } // XBGR
+            else { const s = base + x * bpp; rgba[d] = b[s + 2]; rgba[d + 1] = b[s + 1]; rgba[d + 2] = b[s]; rgba[d + 3] = 255; } // BGR
           }
         }
         const preview = canvasFromRGBA(rgba, width, height);
@@ -787,7 +801,10 @@ async function parseSgi(file: File) {
             for (let x = 0; x < xsize; x++) {
               const v = b[cbase + y * xsize + x] || 0;
               const d = ((ysize - 1 - y) * xsize + x) * 4;   // SGI is bottom-up
-              if (zsize === 1) { rgba[d] = rgba[d + 1] = rgba[d + 2] = v; rgba[d + 3] = 255; }
+              if (zsize <= 2) {                // 1 = gray, 2 = gray + alpha
+                if (ch === 0) { rgba[d] = rgba[d + 1] = rgba[d + 2] = v; rgba[d + 3] = 255; }
+                else rgba[d + 3] = v;
+              }
               else { rgba[d + ch] = v; if (zsize < 4) rgba[d + 3] = 255; }
             }
           }
@@ -835,7 +852,7 @@ async function parseHdr(file: File) {
 async function parseDds(file: File) {
   // Read enough to cover the header plus the first mip level of a large
   // texture (4 bpp BC across a 4K surface is ~8 MB); cap generously.
-  const b = await readAll(file, 64 * 1024 * 1024);
+  const b = await readAll(file, PARSE_TEXTURE_READ_MAX);
   if (ascii(b, 0, 4) !== 'DDS ') return null;
   const r = new Reader(b, true);
   r.seek(8);
@@ -896,7 +913,14 @@ async function parseDds(file: File) {
   try {
     if (kind && width > 0 && height > 0 && width <= 16384 && height <= 16384) {
       let rgba = null;
-      if (kind === 'rgba') {
+      if (kind === 'rgba' && compression === 'DX10') {
+        // A DX10 header leaves the legacy masks zero: the DXGI id fixes the layout.
+        // 28/29 = R8G8B8A8 (UNORM/sRGB), 87 = B8G8R8A8, 88 = B8G8R8X8 (no alpha).
+        const bgra = dxgi === 87 || dxgi === 88;
+        rgba = decodeDdsUncompressed(b, dataOff, width, height,
+          bgra ? 0x00ff0000 : 0x000000ff, 0x0000ff00, bgra ? 0x000000ff : 0x00ff0000,
+          dxgi === 88 ? 0 : 0xff000000);
+      } else if (kind === 'rgba') {
         rgba = decodeDdsUncompressed(b, dataOff, width, height, rMask, gMask, bMask, aMask);
       } else {
         rgba = decodeBcn(b, dataOff, width, height, kind);
@@ -959,9 +983,9 @@ function decodeDdsUncompressed(b: Uint8Array, off: number, width: number, height
   const chan = (mask: number) => {
     if (!mask) return null;
     let shift = 0; let m = mask;
-    while (!(m & 1)) { m >>= 1; shift++; }
+    while (!(m & 1)) { m >>>= 1; shift++; }
     let bitsCount = 0; let mm = m;
-    while (mm & 1) { mm >>= 1; bitsCount++; }
+    while (mm & 1) { mm >>>= 1; bitsCount++; }
     return { shift, max: (1 << bitsCount) - 1 };
   };
   const rc = chan(rMask), gc = chan(gMask), bc = chan(bMask), ac = chan(aMask);
@@ -1102,7 +1126,7 @@ async function parseJp2(file: File, ext: string) {
 async function decodeJp2Preview(file: File, out: Row) {
   try {
     const { decodeJ2K } = await import('../lib/openjpeg-loader.js');
-    const bytes = await readAll(file, 96 * 1024 * 1024);
+    const bytes = await readAll(file, PARSE_JP2_READ_MAX);
     const res = await decodeJ2K(bytes);
     if (res && res.rgba) {
       const preview = canvasFromRGBA(res.rgba, res.width, res.height);
@@ -1173,11 +1197,19 @@ function guidStr(b: Uint8Array, o: number) {
   const h = (i: number) => hexByte(b[o + i]);
   return (h(3) + h(2) + h(1) + h(0) + '-' + h(5) + h(4) + '-' + h(7) + h(6) + '-' + h(8) + h(9) + '-' + h(10) + h(11) + h(12) + h(13) + h(14) + h(15)).toUpperCase();
 }
-const JXR_PF: Record<string, string> = {
-  '24C3DD6F-034E-4E4C-BD3C-C7B524B6B12C': '24bpp BGR',
-  '57A37CAA-737C-4FE4-9B7A-3B71C7DBAFC5': '24bpp RGB',
-  '6FDDC324-4E03-4BFE-B185-3D77768DC908': '128bpp RGBA Float (HDR)',
-};
+// WIC pixel-format GUIDs share the prefix 6FDDC324-4E03-4BFE-B185-3D77768DC9xx;
+// only the last byte differs.
+const JXR_PF: Record<string, string> = Object.fromEntries(([
+  ['05', 'Black and white'], ['08', '8bpp Gray'], ['09', '16bpp BGR555'], ['0A', '16bpp BGR565'],
+  ['0B', '16bpp Gray'], ['0C', '24bpp BGR'], ['0D', '24bpp RGB'], ['0E', '32bpp BGR'],
+  ['0F', '32bpp BGRA'], ['10', '32bpp PBGRA'], ['11', '32bpp Gray Float'], ['12', '48bpp RGB Fixed Point'],
+  ['13', '16bpp Gray Fixed Point'], ['14', '32bpp BGR101010'], ['15', '48bpp RGB'], ['16', '64bpp RGBA'],
+  ['17', '64bpp PRGBA'], ['18', '96bpp RGB Fixed Point'], ['19', '128bpp RGBA Float (HDR)'],
+  ['1A', '128bpp PRGBA Float (HDR)'], ['1B', '128bpp RGB Float (HDR)'], ['1C', '32bpp CMYK'],
+  ['1D', '64bpp RGBA Fixed Point'], ['1E', '128bpp RGBA Fixed Point'], ['3A', '64bpp RGBA Half (HDR)'],
+  ['3B', '48bpp RGB Half (HDR)'], ['3D', '32bpp RGBE (HDR)'], ['3E', '16bpp Gray Half'],
+  ['3F', '32bpp Gray Fixed Point'], ['40', '64bpp RGB Fixed Point'], ['42', '64bpp RGB Half (HDR)'],
+] as [string, string][]).map(([k, v]) => ['6FDDC324-4E03-4BFE-B185-3D77768DC9' + k, v]));
 
 // =====================================================================
 //                   EPS / PostScript
@@ -1441,7 +1473,7 @@ async function parseMetafile(file: File, ext: string) {
     const nBytes = r.u32();
     const nRecords = r.u32();
     const nHandles = r.u16();
-    r.seek(72);
+    r.seek(60);                     // nDescription @60, offDescription @64
     const descLen = r.u32();
     const descOff = r.u32();
     const out: Row = {
@@ -1554,6 +1586,8 @@ async function parseAni(file: File) {
       const id = ascii(b, p, 4);
       const dv = new DataView(b.buffer, b.byteOffset);
       const sz = dv.getUint32(p + 4, true);
+      // INAM/IART live inside LIST/INFO: step into that list and walk its sub-chunks.
+      if (id === 'LIST' && ascii(b, p + 8, 4) === 'INFO') { p += 12; continue; }
       if (id === 'anih' && sz >= 36) {
         const nFrames = dv.getUint32(p + 8 + 4, true);
         const nSteps = dv.getUint32(p + 8 + 8, true);
@@ -1648,10 +1682,12 @@ async function parseLottie(file: File) {
   // _previewNode before this function's async work continues), then lazy-load
   // lottie-web and play. Any failure leaves the metadata rows untouched.
   try {
-    const aspect = (j.w && j.h) ? (j.h / j.w) : (9 / 16);
+    // Number()-coerce: w/h come from the untrusted JSON and land in a style string.
+    const cw = Number(j.w) > 0 ? Number(j.w) : 0, ch = Number(j.h) > 0 ? Number(j.h) : 0;
+    const aspect = (cw && ch) ? (ch / cw) : (9 / 16);
     const stage = el('div', {
       class: 'anr-lottie-stage',
-      style: 'width:100%;max-width:360px;aspect-ratio:' + (j.w || 16) + ' / ' + (j.h || 9) + ';margin:0 auto;background:repeating-conic-gradient(#0000 0% 25%, rgba(127,127,127,.12) 0% 50%) 0 0/16px 16px;border-radius:8px;overflow:hidden;',
+      style: 'width:100%;max-width:360px;aspect-ratio:' + (cw || 16) + ' / ' + (ch || 9) + ';margin:0 auto;background:repeating-conic-gradient(#0000 0% 25%, rgba(127,127,127,.12) 0% 50%) 0 0/16px 16px;overflow:hidden;',
     });
     // aspect-ratio fallback for older engines.
     if (!('aspectRatio' in stage.style) || stage.style.aspectRatio === '') {

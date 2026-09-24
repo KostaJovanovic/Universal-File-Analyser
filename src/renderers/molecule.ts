@@ -165,6 +165,11 @@ export async function renderMolecule(file: File, resultsEl: HTMLElement) {
   const host = el('div', { class: 'anr-mol-view' });
   host.appendChild(el('p', { class: 'anr-hint' }, 'Loading the 3D viewer…'));
   viewCard.appendChild(host);
+  // A record that fails to parse reports here, beside the canvas: clearing the
+  // host would delete the viewer's canvas and leave every later SDF record with
+  // nothing to draw into.
+  const parseErr = el('div', {});
+  viewCard.appendChild(parseErr);
   const legend = el('div', { class: 'anr-geo-legend' });
   viewCard.appendChild(legend);
   resultsEl.appendChild(viewCard);
@@ -237,8 +242,9 @@ export async function renderMolecule(file: File, resultsEl: HTMLElement) {
     viewer.removeAllModels();
     const src = records[index] + (fmt === 'sdf' ? '\n$$$$\n' : '');
     let model;
+    parseErr.innerHTML = '';
     try { model = viewer.addModel(src, fmt); }
-    catch (e) { host.innerHTML = ''; host.appendChild(errorCard('This structure could not be parsed.')); return; }
+    catch (e) { viewer.render(); parseErr.appendChild(errorCard('This structure could not be parsed.')); return; }
     atoms = model.selectedAtoms({}) || [];
     if (atoms.length > MOLECULE_ATOM_MAX) {
       // Past this the browser is drawing more geometry than it can turn round in
@@ -363,9 +369,34 @@ export async function renderMolecule(file: File, resultsEl: HTMLElement) {
   applyStyle();
 
   // A spinning viewer left running would keep a WebGL loop alive behind the next
-  // file, so it registers a stopper like any other player.
-  (window._anrMediaStoppers = window._anrMediaStoppers || new Set())
-    .add(() => { try { viewer.spin(false); } catch (_) {} });
+  // file, so it registers a stopper like any other player. The stopper runs just
+  // before the results are cleared; once the viewer has actually left the page it
+  // also drops its models and its WebGL context, which otherwise stays alive
+  // (holding the structure's geometry) and counts against the browser's small
+  // cap on live contexts until later viewers start failing.
+  const release = () => {
+    try { viewer.clear(); } catch (_) {}
+    const canvas = host.querySelector('canvas');
+    if (!canvas) return;
+    try {
+      const gl = (canvas.getContext('webgl2') || canvas.getContext('webgl')) as WebGLRenderingContext | null;
+      const lose = gl && gl.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();
+    } catch (_) {}
+  };
+  // Leaving home stashes the whole analysis (window._anrHomeMain) to put back
+  // verbatim on return, and runs the stoppers on the way out. A stashed viewer
+  // is kept and its stopper re-armed - the stopper set is cleared straight after
+  // it runs - so it is released later, when a new file really replaces it.
+  const stopper = () => {
+    try { viewer.spin(false); } catch (_) {}
+    setTimeout(() => {
+      const stashed = window._anrHomeMain && window._anrHomeMain.contains(host);
+      if (host.isConnected || stashed) (window._anrMediaStoppers = window._anrMediaStoppers || new Set()).add(stopper);
+      else release();
+    }, 0);
+  };
+  (window._anrMediaStoppers = window._anrMediaStoppers || new Set()).add(stopper);
 
   if (records.length > 1) {
     const strip = el('div', { class: 'anr-seg-strip' });

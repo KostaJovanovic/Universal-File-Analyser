@@ -27,6 +27,7 @@
 
    There is no public spec; this was reverse-engineered from real .drp files. */
 import { el, row, rowHelp, h3help, fmtBytes, integrityCard, loadScript } from '../core/util.js';
+import { TIMELINE_TICKS_MAX } from '../core/limits.js';
 const MAX_ENTRY = 64 * 1024 * 1024; // cap any single inflated XML we hold
 const STD_FPS = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60];
 const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
@@ -337,7 +338,9 @@ function parseTimeline(xml) {
         fps = bestD < 0.3 ? best : (Math.abs(Math.round(f) - f) < 0.02 ? Math.round(f) : 30);
     }
     return {
-        seqId, tracks, fps, startFrame, durFrames: endFrame - startFrame,
+        // A NaN or infinite span (a corrupt clip position) would poison the zoom
+        // maths; it reads as an empty timeline instead.
+        seqId, tracks, fps, startFrame, durFrames: isFinite(endFrame - startFrame) ? Math.max(0, endFrame - startFrame) : 0,
         clipCount: allClips.length, paths: [...paths], names: [...names],
     };
 }
@@ -406,8 +409,12 @@ function trackLanesSvg(tl, H, trackW, ppf) {
     // Grid every "nice" number of seconds, labelled as timecode.
     const STEPS_S = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800];
     const stepS = STEPS_S.find((s) => s * fps * ppf >= 64) || STEPS_S[STEPS_S.length - 1];
-    const stepF = Math.max(1, Math.round(stepS * fps));
-    for (let f = 0; f <= durFrames + 1; f += stepF) {
+    // The duration is the file's claim: the tick count is held to TIMELINE_TICKS_MAX
+    // (a wider step past that) so a timeline claiming billions of frames cannot
+    // build billions of grid lines.
+    const gridEnd = isFinite(durFrames) ? Math.max(0, durFrames + 1) : 0;
+    const stepF = Math.max(1, Math.round(stepS * fps) || 1, Math.ceil(gridEnd / TIMELINE_TICKS_MAX));
+    for (let f = 0; f <= gridEnd; f += stepF) {
         const gx = f * ppf;
         grid += `<line x1="${gx}" y1="${TOP}" x2="${gx}" y2="${bottom}" stroke="currentColor" stroke-width="1" opacity=".12"/>`;
         grid += `<text x="${gx + 3}" y="${bottom + 14}" fill="currentColor" font-size="9.5" opacity=".5">${tc(startFrame + f, fps)}</text>`;

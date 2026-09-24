@@ -125,8 +125,8 @@ function quantizeFrame(data) {
     return { indices, table, minCodeSize, transparentIndex };
 }
 // GIF-variant LZW: encode palette indices into packed byte codes. Mirrors the
-// decoder in gif-frames.js (code size grows when the dictionary reaches a power of
-// two; a clear code resets it at 4096). Returns an array of bytes.
+// decoder in gif-frames.js (code size grows when the decoder's dictionary reaches a
+// power of two; a clear code resets it at 4096). Returns an array of bytes.
 function lzwEncode(indices, minCodeSize) {
     const clearCode = 1 << minCodeSize;
     const eoiCode = clearCode + 1;
@@ -156,9 +156,14 @@ function lzwEncode(indices, minCodeSize) {
         }
         emit(prefix);
         if (next < 4096) {
-            dict.set(key, next++);
-            if (next === (1 << codeSize) && codeSize < 12)
+            // Grow BEFORE assigning, once the code about to be assigned no longer fits
+            // (omggif / giflib order). A decoder adds no entry for the first code after a
+            // clear, so it runs one entry behind the encoder; growing after assigning -
+            // when `next` has just reached 1 << codeSize - widens the codes one early,
+            // and every standard decoder then reads the stream as garbage.
+            if (next >= (1 << codeSize))
                 codeSize++;
+            dict.set(key, next++);
         }
         else {
             emit(clearCode);
@@ -169,6 +174,10 @@ function lzwEncode(indices, minCodeSize) {
         prefix = k;
     }
     emit(prefix);
+    // The decoder adds a dictionary entry on reading that last code, and widens its
+    // codes if the entry count reached 1 << codeSize - so EOI goes out at that width.
+    if (next < 4096 && next >= (1 << codeSize))
+        codeSize++;
     emit(eoiCode);
     if (curBits > 0)
         out.push(cur & 0xff);

@@ -11,16 +11,31 @@ import { inflate, ascii, latin1 } from '../core/binutil.js';
 import {
   buildViewerCard, startViewer, makeResult,
   buildGeoFromIndexed, geoStatsCard, meshIntegrityCard, renderPartsViewer,
-  splitBodiesIndexed, subTris, geoSpan, bodyParts, BODY_SPLIT_CAP,
+  splitBodiesIndexed, subTris, geoSpan, bodyParts, BODY_SPLIT_CAP, alignToKept,
 } from './stl.js';
 import { parseStepHeader } from './proprietary.js';
-import { EMBEDDED_IMAGES_MAX } from '../core/limits.js';
+import { EMBEDDED_IMAGES_MAX, DECOMP_ENTRY_MAX, DECOMP_OUTPUT_MAX, WALL_PARSE, GLTF_VISIT_MAX, MESH_FACE_VERTS_MAX } from '../core/limits.js';
 import { buildEmbeddedImagesCard, type EmbeddedImageItem } from './embedded-images.js';
 import { loadOcct } from '../lib/occt-loader.js';
 
 const FFLATE_URL = new URL('../../vendor/fflate.js', import.meta.url).href;
 let fflateLib: any = null;
 async function fflate() { if (!fflateLib) fflateLib = await import(FFLATE_URL); return fflateLib; }
+
+// unzipSync filter that also bounds what an entry may inflate to. A 3MF is a ZIP,
+// and a few KB of deflate can declare gigabytes: each entry is held to `perEntry`
+// by the size its central directory states, and the whole pass to
+// DECOMP_OUTPUT_MAX, so a bomb is skipped rather than allocated.
+function cappedFilter(match: (name: string) => boolean, perEntry: number) {
+  let total = 0;
+  return (f: { name: string; size: number; originalSize: number }) => {
+    if (!match(f.name)) return false;
+    const n = +f.originalSize || 0;
+    if (n > perEntry || total + n > DECOMP_OUTPUT_MAX) return false;
+    total += n;
+    return true;
+  };
+}
 
 export async function renderModel3d(file: File, resultsEl: HTMLElement) {
   const ext = (file.name.split('.').pop() || '').toLowerCase();
@@ -279,7 +294,10 @@ function expandTriColors3mf(cols: string|any[]) {
 
 // Slice out a single <object id="ID">…</object> block from a .model file's text.
 function extractObjectText(text: string, id: string) {
-  const re = new RegExp('<object\\b[^>]*\\bid="' + id + '"[\\s\\S]*?</object>', 'i');
+  // The id comes from the file: escaped, so a crafted one can neither match the
+  // wrong object nor turn the pattern into a backtracking bomb.
+  const safeId = String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('<object\\b[^>]*\\bid="' + safeId + '"[\\s\\S]*?</object>', 'i');
   const m = re.exec(text);
   return m ? m[0] : null;
 }
@@ -361,7 +379,7 @@ function resolvePart(model: any, files: Map<any,any>, mainText: string, objectid
   gatherObject(model, files, mainText, objectid, parseTransform(transform), acc, colors);
   if (!acc.tris.length) return null;
   const geo = buildGeoFromIndexed(acc.verts, acc.tris, '3MF');
-  if (acc.cols && acc.cols.length) geo.colors = expandTriColors3mf(acc.cols);
+  if (acc.cols && acc.cols.length) geo.colors = alignToKept(geo, expandTriColors3mf(acc.cols));
   return geo;
 }
 
@@ -370,7 +388,7 @@ function resolveWholeBuild(model: any, files: Map<any,any>, mainText: string, co
   for (const it of model.build) gatherObject(model, files, mainText, it.objectid, parseTransform(it.transform), acc, colors);
   if (!acc.tris.length) return null;
   const geo = buildGeoFromIndexed(acc.verts, acc.tris, '3MF');
-  if (acc.cols && acc.cols.length) geo.colors = expandTriColors3mf(acc.cols);
+  if (acc.cols && acc.cols.length) geo.colors = alignToKept(geo, expandTriColors3mf(acc.cols));
   return geo;
 }
 
@@ -424,7 +442,8 @@ function thumbRank(name: string) {
 function build3mfImagesCard(file: File, ffl: any, data: Uint8Array, resultsEl: HTMLElement) {
   let unzipped: Record<string, Uint8Array>;
   try {
-    unzipped = ffl.unzipSync(data, { filter: (f: any) => /\.(png|jpe?g)$/i.test(f.name) && f.size > 0 });
+    const pick = cappedFilter((n) => /\.(png|jpe?g)$/i.test(n), DECOMP_ENTRY_MAX);
+    unzipped = ffl.unzipSync(data, { filter: (f: any) => f.size > 0 && pick(f) });
   } catch (_) { return null; }
 
   const names = Object.keys(unzipped).filter((n) => unzipped[n] && unzipped[n].length);
@@ -464,7 +483,9 @@ async function render3mf(file: File, resultsEl: HTMLElement) {
     // Pull the geometry (.model) plus the slicer side-cars that carry colour: Bambu/Orca
     // keep the filament palette in project_settings.config and the per-object/part extruder
     // index in model_settings.config.
-    const unzipped = ffl.unzipSync(data, { filter: (f: any) => /\.model$/i.test(f.name) || /(?:model_settings|project_settings)\.config$/i.test(f.name) });
+    // A .model is the mesh as XML, so a detailed part legitimately runs past the
+    // single-entry ceiling; it is held to the whole-pass one instead.
+    const unzipped = ffl.unzipSync(data, { filter: cappedFilter((n) => /\.model$/i.test(n) || /(?:model_settings|project_settings)\.config$/i.test(n), DECOMP_OUTPUT_MAX) });
     files = new Map();
     const dec = new TextDecoder('utf-8');
     for (const [name, bytes] of Object.entries<Uint8Array>(unzipped)) files.set(name, dec.decode(bytes));
@@ -545,7 +566,7 @@ async function render3mfNoModel(file: File, resultsEl: HTMLElement, ffl: any, da
   // natural plate order - not just the largest.
   let gcodes: string|any[] = [];
   try {
-    const gz = ffl.unzipSync(data, { filter: (f: any) => /\.gco(de)?$/i.test(f.name) });
+    const gz = ffl.unzipSync(data, { filter: cappedFilter((n) => /\.gco(de)?$/i.test(n), DECOMP_OUTPUT_MAX) });
     gcodes = Object.keys(gz).filter((k) => gz[k] && gz[k].length)
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
       .map((k) => ({ name: k, short: k.split('/').pop(), bytes: gz[k] }));
@@ -789,15 +810,26 @@ function objMaterialPreviewColors(parsed: any) {
   return colors;
 }
 
+// A count declared in a mesh header, held to what the rest of the file could
+// actually hold. A header claiming two billion vertices over a 1 KB body would
+// otherwise push NaN until the tab runs out of memory.
+function clampCount(n: number, max: number) {
+  if (!(n > 0)) return 0;
+  return Math.min(Math.floor(n), Math.max(0, Math.floor(max)));
+}
+
 function parseOffMesh(text: string) {
   const toks = text.replace(/#[^\n]*/g, ' ').split(/\s+/).filter(Boolean);
   let i = 0;
   if (toks[0] && /OFF$/i.test(toks[0]) && !/^[-\d.]/.test(toks[0])) i++;   // 'OFF', 'COFF', 'NOFF'…
-  const nv = +toks[i++], nf = +toks[i++]; i++; /* ne */
+  const nvRaw = +toks[i++], nfRaw = +toks[i++]; i++; /* ne */
+  const nv = clampCount(nvRaw, (toks.length - i) / 3);
   const verts = [], tris = [];
   for (let v = 0; v < nv; v++) verts.push(+toks[i++], +toks[i++], +toks[i++]);
-  for (let f = 0; f < nf; f++) {
-    const n = +toks[i++]; const idx = [];
+  // Each face needs at least its count token.
+  const nf = clampCount(nfRaw, toks.length - i);
+  for (let f = 0; f < nf && i < toks.length; f++) {
+    const n = clampCount(+toks[i++], Math.min(MESH_FACE_VERTS_MAX, toks.length - i)); const idx = [];
     for (let k = 0; k < n; k++) idx.push(+toks[i++]);
     for (let k = 1; k + 1 < idx.length; k++) tris.push(idx[0], idx[k], idx[k + 1]);
   }
@@ -849,13 +881,15 @@ function parsePlyMesh(buf: ArrayBuffer) {
     const full = new TextDecoder('latin1').decode(bytes);
     const toks = full.slice(full.indexOf('\n', full.indexOf('end_header')) + 1).split(/\s+/).filter(Boolean);
     let ti = 0;
-    for (let v = 0; v < vEl.count; v++) {
+    const nv = clampCount(vEl.count, toks.length / Math.max(1, vEl.props.length));
+    for (let v = 0; v < nv; v++) {
       let x = 0, y = 0, z = 0;
       for (let pi = 0; pi < vEl.props.length; pi++) { const val = +toks[ti++]; if (pi === xi) x = val; else if (pi === yi) y = val; else if (pi === zi) z = val; }
       verts.push(x, y, z);
     }
-    if (fEl) for (let f = 0; f < fEl.count; f++) {
-      const n = +toks[ti++]; const idx = [];
+    const nf = fEl ? clampCount(fEl.count, toks.length - ti) : 0;
+    for (let f = 0; f < nf && ti < toks.length; f++) {
+      const n = clampCount(+toks[ti++], Math.min(MESH_FACE_VERTS_MAX, toks.length - ti)); const idx = [];
       for (let k = 0; k < n; k++) idx.push(+toks[ti++]);
       for (let k = 1; k + 1 < idx.length; k++) tris.push(idx[0], idx[k], idx[k + 1]);
     }
@@ -863,7 +897,9 @@ function parsePlyMesh(buf: ArrayBuffer) {
     const le = format !== 'binary_big_endian';
     const dv = new DataView(buf);
     let off = dataStart;
-    for (let v = 0; v < vEl.count; v++) {
+    const vRec = vEl.props.reduce((s: number, p: any) => s + (PLY_SIZE[p.type] || 4), 0);
+    const nv = clampCount(vEl.count, (buf.byteLength - off) / Math.max(1, vRec));
+    for (let v = 0; v < nv; v++) {
       let x = 0, y = 0, z = 0;
       for (let pi = 0; pi < vEl.props.length; pi++) {
         const p = vEl.props[pi];
@@ -872,10 +908,18 @@ function parsePlyMesh(buf: ArrayBuffer) {
       }
       verts.push(x, y, z);
     }
-    if (fEl) for (let f = 0; f < fEl.count; f++) {
-      for (const p of fEl.props) {
+    // Every face record is at least one byte (its list count), so the bytes left
+    // bound the face count; a list length is held to what can still be read.
+    const nf = fEl ? clampCount(fEl.count, buf.byteLength - off) : 0;
+    for (let f = 0; f < nf && off < buf.byteLength; f++) {
+      for (const p of fEl!.props) {
         if (p.isList) {
+          const vSize = PLY_SIZE[p.valType] || 4;
+          if (off + (PLY_SIZE[p.countType] || 1) > buf.byteLength) { off = buf.byteLength; break; }
           const n = plyRead(dv, off, p.countType, le); off += PLY_SIZE[p.countType] || 1;
+          // A list longer than any real polygon, or one running off the end, means
+          // the stream has lost its place: stop with the faces read so far.
+          if (!(n >= 0) || n > MESH_FACE_VERTS_MAX || off + n * vSize > buf.byteLength) { off = buf.byteLength; break; }
           const idx = [];
           for (let k = 0; k < n; k++) { idx.push(plyRead(dv, off, p.valType, le)); off += PLY_SIZE[p.valType] || 4; }
           for (let k = 1; k + 1 < idx.length; k++) tris.push(idx[0], idx[k], idx[k + 1]);
@@ -890,6 +934,10 @@ function parsePlyMesh(buf: ArrayBuffer) {
 async function renderMeshFile(file: File, resultsEl: HTMLElement, ext: string) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
+  if (file.size > WALL_PARSE) {
+    resultsEl.appendChild(errorCard('This ' + ext.toUpperCase() + ' is larger than ' + fmtBytes(WALL_PARSE) + ' and was not opened - the whole mesh has to be held in memory to draw it.'));
+    return;
+  }
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));
 
   let mesh, parsed = null;
@@ -940,15 +988,15 @@ async function renderObjColoured(file: File, resultsEl: HTMLElement, parsed: any
   if (!geo || !geo.count) { resultsEl.innerHTML = ''; resultsEl.appendChild(errorCard('No triangles found in this OBJ.')); return; }
 
   if (parsed.vertColors) {
-    geo.colors = objVertexColors(parsed);                  // embedded vertex colours win
+    geo.colors = alignToKept(geo, objVertexColors(parsed));   // embedded vertex colours win
   } else if (materials) {
     const cols = objMaterialColors(parsed, materials);
-    if (cols) geo.colors = cols;
-    if (texImage && parsed.hasVT) { geo.uvs = objUVs(parsed); geo.textureImage = texImage; }
+    if (cols) geo.colors = alignToKept(geo, cols);
+    if (texImage && parsed.hasVT) { geo.uvs = alignToKept(geo, objUVs(parsed)); geo.textureImage = texImage; }
   } else {
     // No .mtl yet: shade each material a distinct brightness so the groups read.
     const preview = objMaterialPreviewColors(parsed);
-    if (preview) geo.colors = preview;
+    if (preview) geo.colors = alignToKept(geo, preview);
   }
 
   resultsEl.innerHTML = '';
@@ -1105,15 +1153,28 @@ function readAccessor(json: any, buffers: any, idx: number) {
   const compSize = GLTF_COMP_SIZE[acc.componentType];
   const getName = GLTF_COMP[acc.componentType];
   if (!compSize || !getName) return null;
-  const bv = json.bufferViews[acc.bufferView];
+  const bv = json.bufferViews && json.bufferViews[acc.bufferView];
+  if (!bv) return null;
   const u8 = buffers[bv.buffer];
   if (!u8) return null;
-  const start = u8.byteOffset + (bv.byteOffset || 0) + (acc.byteOffset || 0);
-  const stride = bv.byteStride || numC * compSize;
+  // Every offset, length and count here is the file's claim. Check them against
+  // the real bytes BEFORE allocating: a count of 2^31 would otherwise be a
+  // multi-GB Float32Array, and an offset past the view reads another view's data
+  // (or throws half-way). The count is held to the elements the view can hold.
+  const bvOff = +(bv.byteOffset || 0), accOff = +(acc.byteOffset || 0);
+  const bvLen = +bv.byteLength;
+  if (!(bvOff >= 0) || !(accOff >= 0) || !(bvLen >= 0) || bvOff + bvLen > u8.byteLength) return null;
+  const elemSize = numC * compSize;
+  const stride = bv.byteStride || elemSize;
+  if (!(stride >= elemSize) || !Number.isInteger(stride)) return null;
+  const avail = bvLen - accOff;
+  if (avail < elemSize) return null;
+  const count = clampCount(+acc.count, Math.floor((avail - elemSize) / stride) + 1);
+  const start = u8.byteOffset + bvOff + accOff;
   const dv = new DataView(u8.buffer);
   const get = (o: number) => (dv as any)['get' + getName](o, true);
-  const out = new Float32Array(acc.count * numC);
-  for (let i = 0; i < acc.count; i++) {
+  const out = new Float32Array(count * numC);
+  for (let i = 0; i < count; i++) {
     const eo = start + i * stride;
     for (let c = 0; c < numC; c++) out[i * numC + c] = get(eo + c * compSize);
   }
@@ -1165,11 +1226,20 @@ function gltfToMesh(json: any, glbBin: Uint8Array|null|undefined) {
       for (let i = 0; i < n; i++) tris.push(base + i);
     }
   };
+  // The node graph is meant to be a forest, but nothing stops a file making a
+  // node its own ancestor (a stack overflow) or sharing children so the walk
+  // fans out exponentially. A node already on the current path is skipped, and
+  // the total instances drawn are held to GLTF_VISIT_MAX.
+  const onPath = new Set<string|number>();
+  let visits = 0;
   const visit = (ni: string|number, parent: any[]) => {
     const node = nodes[ni]; if (!node) return;
+    if (onPath.has(ni) || ++visits > GLTF_VISIT_MAX) return;
+    onPath.add(ni);
     const m = gltfMul(parent, gltfNodeMatrix(node));
     if (node.mesh != null && meshes[node.mesh]) for (const p of meshes[node.mesh].primitives || []) addPrim(p, m);
     for (const ch of node.children || []) visit(ch, m);
+    onPath.delete(ni);
   };
   const scene = json.scenes && json.scenes[json.scene || 0];
   const roots = scene ? scene.nodes : nodes.map((_: any, i: number) => i);
@@ -1208,6 +1278,10 @@ function gltfInfoCard(json: any, file: File, ext: string, mesh: any) {
 async function renderGltf(file: File, resultsEl: HTMLElement, ext: string) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
+  if (file.size > WALL_PARSE) {
+    resultsEl.appendChild(errorCard('This ' + ext.toUpperCase() + ' is larger than ' + fmtBytes(WALL_PARSE) + ' and was not opened - the whole scene has to be held in memory to draw it.'));
+    return;
+  }
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));
 
   let json, glbBin, mesh, geo;
@@ -1537,6 +1611,10 @@ async function parseFbx(buf: ArrayBuffer) {
 async function renderFbx(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
+  if (file.size > WALL_PARSE) {
+    resultsEl.appendChild(errorCard('This FBX is larger than ' + fmtBytes(WALL_PARSE) + ' and was not opened - the whole scene has to be held in memory to draw it.'));
+    return;
+  }
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));
 
   let mesh;

@@ -15,6 +15,7 @@
    read as XMP is handed back to the generic identifier so it is never worse off. */
 
 import { el, rowHelp, h3help, fmtBytes, integrityCard, errorCard, buildReadout, type ElChild } from '../core/util.js';
+import { XMP_READ_MAX } from '../core/limits.js';
 
 // ---- small value helpers -----------------------------------------------------
 const num = (v: string) => { const n = parseFloat(v); return isFinite(n) ? n : null; };
@@ -150,7 +151,7 @@ export async function renderXmp(file: File, resultsEl: HTMLElement) {
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));
 
   let text;
-  try { text = await file.slice(0, 8 * 1024 * 1024).text(); } catch (e) {
+  try { text = await file.slice(0, XMP_READ_MAX).text(); } catch (e) {
     resultsEl.innerHTML = ''; resultsEl.appendChild(errorCard('Could not read this file: ' + (e && e.message))); return;
   }
 

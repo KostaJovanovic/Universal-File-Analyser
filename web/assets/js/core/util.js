@@ -6,7 +6,9 @@ import { HASH_JS_MAX } from './limits.js';
 export const API_ORIGIN = '';
 export function el(tag, attrs = {}, children = []) {
     const e = document.createElement(tag);
-    for (const k in attrs) {
+    // Own keys only: a for-in would also walk anything a polluted Object.prototype
+    // carries and turn it into an attribute or listener on every element.
+    for (const k of Object.keys(attrs)) {
         if (k === 'class')
             e.className = attrs[k];
         else if (k === 'html')
@@ -174,7 +176,9 @@ function helpTh(label, helpText) {
 }
 export function row(label, value) {
     return el('tr', {}, [
-        helpTh(label, LABEL_HELP[label]),
+        // hasOwn: labels come from files (CSV headers, attachment names), and a plain
+        // lookup of 'constructor' or 'toString' would hand helpTh a Function.
+        helpTh(label, Object.hasOwn(LABEL_HELP, label) ? LABEL_HELP[label] : undefined),
         el('td', {}, value == null || value === '' ? '-' : String(value))
     ]);
 }
@@ -209,9 +213,16 @@ export async function desktopFile(f) {
     if (!stub || !stub._anrOpenUrl)
         return f;
     const res = await fetch(stub._anrOpenUrl);
+    // An expired or refused token answers with an error body - never analyse that
+    // as though it were the file.
+    if (!res.ok)
+        throw new Error('Could not open ' + stub.name + ' (' + res.status + ')');
     const blob = await res.blob();
     return new File([blob], stub.name, {
-        type: stub.type || blob.type || '',
+        // The type comes from the shell's payload (`mime`, carried on the stub). The
+        // Android shell serves every open as application/octet-stream, which says
+        // nothing, so that is never taken as the file's type.
+        type: stub.type || (blob.type === 'application/octet-stream' ? '' : blob.type) || '',
         lastModified: stub.lastModified || Date.now(),
     });
 }
@@ -672,23 +683,41 @@ export function attachViewCube(viewer) {
         viewer.markDirty();
     };
     const en = () => { drag = false; };
-    const onWinMove = (e) => mv(e.clientX, e.clientY);
-    const onWinUp = en;
-    box.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); dn(e.clientX, e.clientY); });
-    window.addEventListener('mousemove', onWinMove);
-    window.addEventListener('mouseup', onWinUp);
-    // These are window-level, so they outlive the viewer unless removed. Every
-    // STL/model/G-code viewer attaches a cube; without this each one leaks a
-    // permanent mousemove/mouseup handler across re-renders and SPA navigation.
-    // Drop them once the cube is detached from the DOM.
-    const cubeCleanup = new MutationObserver(() => {
-        if (!box.isConnected) {
-            window.removeEventListener('mousemove', onWinMove);
-            window.removeEventListener('mouseup', onWinUp);
-            cubeCleanup.disconnect();
+    // Mouse/pen drags follow the pointer through POINTER CAPTURE on the box rather
+    // than window-level listeners: nothing outlives the viewer, and nothing has to
+    // be re-armed when a stashed analysis is put back after an SPA round trip.
+    // Capture starts only once the press has really moved - a captured pointer's
+    // click lands on the box, not the hotspot, so a plain click stays uncaptured.
+    let capId = null;
+    box.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
+    box.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'touch')
+            return; // touch has its own handlers below
+        e.stopPropagation();
+        capId = e.pointerId;
+        dn(e.clientX, e.clientY);
+    });
+    box.addEventListener('pointermove', (e) => {
+        if (e.pointerType === 'touch' || !drag)
+            return;
+        if (!e.buttons) {
+            en();
+            return;
+        } // released outside the box before capture began
+        mv(e.clientX, e.clientY);
+        if (moved && capId != null && !box.hasPointerCapture(capId)) {
+            try {
+                box.setPointerCapture(capId);
+            }
+            catch { /* pointer already released */ }
         }
     });
-    cubeCleanup.observe(document.documentElement, { childList: true, subtree: true });
+    const endPointer = (e) => { if (e.pointerType !== 'touch') {
+        en();
+        capId = null;
+    } };
+    box.addEventListener('pointerup', endPointer);
+    box.addEventListener('pointercancel', endPointer);
     box.addEventListener('touchstart', (e) => { e.stopPropagation(); if (e.touches[0])
         dn(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
     box.addEventListener('touchmove', (e) => { if (e.touches[0]) {
@@ -724,14 +753,28 @@ export function attachViewCube(viewer) {
     box.addEventListener('mouseover', (e) => setHot(e.target.closest('.anr-viewcube-face, .anr-viewcube-edge, .anr-viewcube-corner')));
     box.addEventListener('mouseleave', () => setHot(null));
     // Keep the cube's orientation in lock-step with the camera.
+    // The loop ends when the viewer is detached; an SPA round trip can put the same
+    // viewer back later, so an IntersectionObserver re-arms it once the cube is on
+    // screen again.
+    let syncing = false;
     const sync = () => {
-        if (!wrap.isConnected)
+        if (!wrap.isConnected) {
+            syncing = false;
             return;
+        }
         const yd = state.yaw * R2D, pd = state.pitch * R2D;
         cube.style.transform = `rotateX(${-pd}deg) rotateY(${yd}deg)`;
         requestAnimationFrame(sync);
     };
-    requestAnimationFrame(sync);
+    const startSync = () => { if (!syncing) {
+        syncing = true;
+        requestAnimationFrame(sync);
+    } };
+    startSync();
+    new IntersectionObserver((entries) => {
+        if (entries.some((x) => x.isIntersecting))
+            startSync();
+    }).observe(box);
 }
 // Trigger a browser download of `blob` as `filename` via a throwaway <a>, then
 // revoke the object URL. One revoke policy for the many ad-hoc copies of this.

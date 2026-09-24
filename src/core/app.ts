@@ -1,4 +1,4 @@
-﻿/* Analyser - entry point
+/* Analyser - entry point
    - Boots photo + audio + video modules
    - Acts as the page-wide drop target (until the first file lands)
    - Classifies dropped files into photo / audio / video / unknown
@@ -44,7 +44,7 @@
    `npm run build` recompiles.
    ============================================================================ */
 
-const COMMIT_COUNT = 317;
+const COMMIT_COUNT = 318;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -182,7 +182,8 @@ async function resolveKind(file: File) {
   if (kind === 'photo' && fileExt(file.name) === 'raw') {
     try { if (await sniffSpiceRaw(file)) kind = 'spice'; } catch (_) {}
   }
-  const vr = VARIANT_REROUTE[fileExt(file.name)];
+  // hasOwn: the extension is file-controlled (`x.constructor`).
+  const vr = Object.hasOwn(VARIANT_REROUTE, fileExt(file.name)) ? VARIANT_REROUTE[fileExt(file.name)] : null;
   if (vr) {
     try {
       const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
@@ -398,6 +399,8 @@ function hasFiles(e: DragEvent) {
 }
 
 let _handleFile: ((file: File, opts?: any) => any) | null = null;
+// The latest boot's supersedeLoad(), for the once-wired window listeners (drop).
+let _supersedeLoad: (() => void) | null = null;
 let _scrollHandler: (() => void) | null = null;
 let _alignSoundNav: (() => void) | null = null;
 
@@ -740,6 +743,12 @@ type BootGuards = {
   _soundNavResizeWired?: boolean;
 };
 
+// Token for the load currently in flight. Cancelling marks it so the
+// (uncancellable) renderer's output is suppressed and the loader stays hidden.
+// Module scope, not per boot: a new load - on this boot or a later one after SPA
+// navigation - must be able to see, and supersede, the one before it.
+let _currentToken: { cancelled: boolean; settled?: boolean } | null = null;
+
 function boot() {
 
   // Fade out the boot splash (index.html only) now that the app's JS is running.
@@ -774,9 +783,21 @@ function boot() {
 
   let firstFileLoaded = false;
   let dragCounter = 0;
-  // Token for the load currently in flight. Cancelling marks it so the
-  // (uncancellable) renderer's output is suppressed and the loader stays hidden.
-  let _currentToken: { cancelled: boolean } | null = null;
+  // A load still in flight from the previous page belongs to a boot that is gone:
+  // left alone, its continuations would dock the header, set anr-has-file or
+  // append cards on whatever page this is now. Cancel it and take down its loader.
+  // The slot keeps a dead token rather than null: a cancelled load's finally
+  // scrubs the results only when the slot is null (see cancelLoad), and here its
+  // results may be the home page navigate.js has stashed for the way back.
+  if (_currentToken && !_currentToken.cancelled) {
+    const wasLive = !_currentToken.settled;
+    _currentToken.cancelled = true;
+    _currentToken = { cancelled: true };
+    if (wasLive) {
+      hideDropLoader();
+      document.body.classList.remove('anr-loading');
+    }
+  }
 
   // Reset the result containers, preview slots, and nav/section state back to
   // the pre-load layout. Shared by a fresh load and by cancelLoad().
@@ -901,6 +922,20 @@ function boot() {
     restoreQuickdrop();   // also ends the loading hold
   }
 
+  // A folder overview is rendered directly, not through handleFile, so it has to
+  // retire an in-flight file load itself - otherwise that load's finally appends
+  // its cards into the folder view and sets _anrRestore to the superseded file.
+  // Leaves a dead token in the slot so that finally does not scrub the overview.
+  function supersedeLoad() {
+    if (_currentToken && !_currentToken.cancelled && !_currentToken.settled) {
+      _currentToken.cancelled = true;
+      clearResultsUI();
+      // Its loading hold and out-of-sight staging would otherwise outlive it.
+      document.body.classList.remove('anr-loading', 'anr-staging');
+    }
+    _currentToken = { cancelled: true };
+  }
+
   async function handleFile(file: File, opts?: { force?: any; sidecarXmp?: any; sniffedExt?: string; [k: string]: any }) {
     if (!file) return;
     // opts carries either a forced type ({kind, ext}, from the sniff popup) or a
@@ -927,8 +962,16 @@ function boot() {
       if (fmtOv._backClose) fmtOv._backClose();
       else { fmtOv.hidden = true; document.body.style.overflow = ''; }
     }
-    const token = { cancelled: false };
+    const token: { cancelled: boolean; settled?: boolean } = { cancelled: false };
+    // A new load supersedes the one in flight: cancel it outright, so every one of
+    // its continuations stops at its next check instead of rendering over this one,
+    // re-counting stats or writing history. (Not cancelLoad(): that would also
+    // tear down the UI this load is about to use.)
+    if (_currentToken) _currentToken.cancelled = true;
     _currentToken = token;
+    // True once this load no longer owns the page - cancelled, or superseded by a
+    // newer load. Checked after every await below.
+    const stale = () => token.cancelled || _currentToken !== token;
     showDropLoader(file, () => cancelLoad(token), undefined, nested);
 
     clearResultsUI();
@@ -956,6 +999,7 @@ function boot() {
       if (revealed) return;
       revealed = true;
       clearTimeout(revealTimer);
+      document.removeEventListener('anr:reveal', reveal);
       if (token.cancelled || _currentToken !== token) return;   // a newer load or a cancel owns the page
       document.body.classList.add('anr-has-file');
       document.body.classList.remove('anr-staging');
@@ -967,6 +1011,10 @@ function boot() {
       document.body.classList.add('anr-staging');
       warmBarBlur();
       revealTimer = window.setTimeout(reveal, REVEAL_MAX_MS);
+      // A renderer that paints in stages (audio: File info, tags and cover art
+      // before its decode) dispatches anr:reveal once those are up, so the glide
+      // shows them then instead of after its slowest pass.
+      document.addEventListener('anr:reveal', reveal);
     } else {
       reveal();
     }
@@ -1001,7 +1049,7 @@ function boot() {
     }
 
     const readErr = await probeReadable(file);
-    if (token.cancelled) return;   // cancelled while probing - don't render
+    if (stale()) return;   // cancelled while probing - don't render
     if (readErr) {
       hideDropLoader();
       endHold();
@@ -1028,7 +1076,7 @@ function boot() {
     if (!force && kind === 'photo' && fileExt(file.name) === 'raw') {
       try {
         const isSpice = await sniffSpiceRaw(file);
-        if (token.cancelled) return;
+        if (stale()) return;
         if (isSpice) kind = 'spice';
       } catch (_) {}
     }
@@ -1037,11 +1085,11 @@ function boot() {
     // common variant's viewer, so sniff the bytes and divert a file that is really
     // the OTHER variant (a TypeScript .ts, a NetCDF .nc, ...) to a safe view rather
     // than the wrong heavy renderer. See VARIANT_REROUTE / detectVariant().
-    const _vr = !force && VARIANT_REROUTE[fileExt(file.name)];
+    const _vr = !force && Object.hasOwn(VARIANT_REROUTE, fileExt(file.name)) && VARIANT_REROUTE[fileExt(file.name)];
     if (_vr) {
       try {
         const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
-        if (token.cancelled) return;
+        if (stale()) return;
         let txt = ''; for (let i = 0; i < head.length; i++) txt += String.fromCharCode(head[i]);
         const vname = detectVariant(fileExt(file.name), head, txt);
         if (vname && vname !== _vr.primary) kind = _vr.to;
@@ -1058,7 +1106,7 @@ function boot() {
     // route a .bin differently from the main page.
     if (!force && (kind === 'unknown' || kind === 'extensionless' || SNIFF_FIRST.has(fileExt(file.name)))) {
       const r = await resolveByContent(file);
-      if (token.cancelled) return;
+      if (stale()) return;
       if (r.kind && r.kind !== 'unknown') {
         kind = r.kind;
         if (r.sniffedExt) sniffedExt = r.sniffedExt;
@@ -1079,11 +1127,11 @@ function boot() {
     if (!force) {
       try {
         const sniff = await sniffFileType(file);
-        if (token.cancelled) return;
+        if (stale()) return;
         sigCheck = await signatureCheck(file, sniff);
-        if (token.cancelled) return;
+        if (stale()) return;
         trailCheck = await trailingDataCheck(file, sniff);
-        if (token.cancelled) return;
+        if (stale()) return;
         const noExt = !fileExt(file.name);
         const zipFamily = new Set(['docx', 'xlsx', 'pptx', 'epub', 'zip', 'comic', 'odt', 'ods', 'odp', 'odg', 'hwpx', 'iwork']);
         const offerable = noExt || kind === 'unknown' || kind === 'proprietary'
@@ -1108,6 +1156,7 @@ function boot() {
         }
       } catch (_) {}
     }
+    if (stale()) return;   // a throw above skips the checks inside the try
 
     // Count this analysis (anonymous, extension-only). `kind` is final here and
     // the read probe already passed, so cloud-unavailable files - which return
@@ -1152,7 +1201,10 @@ function boot() {
     const extOverride = (force && force.ext) || sniffedExt;
     // Photo and video metadata both come from exifr; pull it in (once) before the
     // renderer runs so the global is ready by the time photo.js/video.js read it.
-    if (kind === 'photo' || kind === 'video') await ensureExifr();
+    if (kind === 'photo' || kind === 'video') {
+      await ensureExifr();
+      if (stale()) return;
+    }
     let renderPromise;
     if ((kind === 'proprietary' || kind === 'comic') && extOverride) {
       renderPromise = route.render(file, resultsByName[results], extOverride);
@@ -1162,65 +1214,9 @@ function boot() {
       renderPromise = route.render(file, resultsByName[results]);
     }
 
-    // Bring the analysis into view. On the home page the header has docked and the
-    // drop area has gone, so the analysis starts at the top of the page: scroll
-    // there (a nested load opened from further down a folder view would otherwise
-    // leave the reader below it). Elsewhere (/samples) scroll to the section the
-    // result landed in, right under the nav (each target carries
-    // scroll-margin-top). Content above the target can arrive asynchronously, so
-    // scroll now for responsiveness and re-assert once the renderer settles
-    // (below) - unless the user has grabbed the scroll in the meantime.
+    // No autoscroll here: the dock glide and the reveal animation bring the
+    // analysis into view themselves.
     const resultEl = resultsByName[results];
-    const autoScrollSec = document.documentElement.dataset.page === 'home' ? document.documentElement
-      : resultEl ? (resultEl.closest('.section') || resultEl)
-      : null;
-    let userTookScroll = false;
-    let stopScrollWatch = () => {};
-    // Our own smooth scrollIntoView also fires 'scroll', so bracket each
-    // programmatic scroll with a short window; any 'scroll' outside it is the user.
-    let progScrollUntil = 0;
-    const doAutoScroll = () => {
-      progScrollUntil = performance.now() + 1200;
-      autoScrollSec!.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    };
-    if (autoScrollSec) {
-      const onUserScroll = () => { userTookScroll = true; };
-      // wheel / touch-drag / arrow & page keys are always the user.
-      window.addEventListener('wheel', onUserScroll, { passive: true });
-      window.addEventListener('touchmove', onUserScroll, { passive: true });
-      window.addEventListener('keydown', onUserScroll);
-      // Also catch scrollbar drags / momentum (which fire only 'scroll'), as long
-      // as they land outside a programmatic-scroll window - this covers scrolling
-      // away during a slow audio decode before the section is even ready.
-      const onScroll = () => { if (performance.now() > progScrollUntil) userTookScroll = true; };
-      stopScrollWatch = () => {
-        window.removeEventListener('wheel', onUserScroll);
-        window.removeEventListener('touchmove', onUserScroll);
-        window.removeEventListener('keydown', onUserScroll);
-        window.removeEventListener('scroll', onScroll);
-      };
-      requestAnimationFrame(() => {
-        if (userTookScroll) return;
-        // Same guard as every other continuation in here. A backgrounded tab does
-        // not run rAF at all, so this can still be queued long after the load was
-        // cancelled or superseded - at which point stopScrollWatch() has already
-        // run, and the listener added below would never be taken off again (and it
-        // would scroll to an analysis the user abandoned).
-        if (token.cancelled || _currentToken !== token) return;
-        doAutoScroll();
-        // Only NOW start treating a bare 'scroll' as the user. A plain scroll event
-        // is not proof of intent: handleFile has just hidden the page-drop overlay
-        // and swapped the three dropzones for "Analyse next file?", which shortens
-        // the document - and if the reader was near the bottom of it (the footer,
-        // the offline-use block) the browser clamps the scroll position to the new
-        // height and fires 'scroll' for that. Armed from the start, that clamp read
-        // as "the user took over" before the first autoscroll had even run, and the
-        // drop silently left them wherever they were. Nothing above this line can
-        // move the page, so anything after it is either our own smooth scroll
-        // (inside the window) or genuinely them.
-        window.addEventListener('scroll', onScroll, { passive: true });
-      });
-    }
 
     // Windows executables/DLLs/screensavers carry their app icon in the PE
     // resource section. Pull it out and offer it to the photo tools as a prompt
@@ -1238,7 +1234,8 @@ function boot() {
           'Analyse icon', async (host) => {
             await ensureExifr();
             markAnalysed('photo');
-            renderPhoto(iconFile, host,
+            // Returned, so the prompt's own .finally waits for the render.
+            return renderPhoto(iconFile, host,
               { sourceNote: (isScr ? 'Screensaver icon extracted from ' : 'Application icon extracted from ')
                 + (file.name || (isScr ? 'the screensaver' : 'the executable')) + '.' });
           });
@@ -1261,12 +1258,14 @@ function boot() {
       if (token.cancelled) {
         // A cancelled renderer may have appended output after cancelLoad cleared
         // the UI. Scrub it - but only if no newer load has since taken over
-        // (cancelLoad nulls _currentToken; a fresh load sets it non-null).
-        stopScrollWatch();
+        // (cancelLoad nulls _currentToken; a fresh load sets it non-null, and a
+        // boot after SPA navigation parks a dead token there, since these results
+        // may be the stashed home page).
         if (_currentToken === null) clearResultsUI();
         return;
       }
-      if (_currentToken !== token) { stopScrollWatch(); return; }   // superseded
+      if (_currentToken !== token) return;   // superseded
+      token.settled = true;   // finished: a folder open now replaces it, nothing to retire
       hideDropLoader();
       endHold();
       // If the renderer threw, lead the analysis with a plain error card so the
@@ -1309,18 +1308,6 @@ function boot() {
       // The analysis is complete, cards and all: if it was built out of sight, the
       // glide shows it now (a no-op if the REVEAL_MAX_MS net got there first).
       reveal();
-      // Everything above the media section (the Photo/Sound "Analyse" cards) and
-      // its player are in place now, so re-assert the scroll - the early one
-      // landed too high before they pushed it down. Two rAFs let the final layout
-      // settle first; keep watching for a user takeover until that last scroll.
-      if (autoScrollSec && !userTookScroll) {
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          if (!userTookScroll) autoScrollSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          stopScrollWatch();
-        }));
-      } else {
-        stopScrollWatch();
-      }
       if (suggestion) {
         showTypeSuggestion(suggestion, () => handleFile(file, { kind: suggestion.kind, ext: suggestion.ext }));
       }
@@ -1374,6 +1361,7 @@ function boot() {
     });
   }
   _handleFile = handleFile;
+  _supersedeLoad = supersedeLoad;
   setReanalyse(handleFile);   // forensics.js "Analyse appended data" button
   window._anrHandleFile = handleFile;
   // Expose the (extension/MIME-based) classifier so the folder "can it open?" scan
@@ -1406,6 +1394,8 @@ window._anrReadableText = isReadableText;
   // #unknownResults via renderers/compare.js. All of this stays inert on any page
   // without the compare zones (the wiring guards on them).
   let _cmpA: File | null = null, _cmpB: File | null = null, _cmpBusy = false, _cmpAgain = false;
+  // Files already counted toward the analysed tally (see handleCompare).
+  const _cmpCounted = new WeakSet<File>();
   // Auto-run once both files are present - and again if either is swapped while a
   // comparison is still rendering. Runs are serialised so two never interleave in
   // the shared results container.
@@ -1462,7 +1452,11 @@ window._anrReadableText = isReadableText;
     // increment each - a comparison analyses two files, so it counts as two, the
     // same recordAnalysed() the single-file path uses. `supported` mirrors
     // handleFile: resolved kind !== 'unknown'.
+    // Each File once: swapping one side re-runs the comparison, and the side that
+    // did not change was already counted on the earlier run.
     for (const f of [_cmpA, _cmpB]) {
+      if (_cmpCounted.has(f)) continue;
+      _cmpCounted.add(f);
       try { const k = await resolveKind(f); recordAnalysed(fileExt(f.name), k !== 'unknown'); }
       catch (_) { recordAnalysed(fileExt(f.name), false); }
     }
@@ -1759,6 +1753,7 @@ window._anrReadableText = isReadableText;
         }
         const ur = $('unknownResults');
         if (ur) {
+          if (_supersedeLoad) _supersedeLoad();
           resetNav(); renderFolder(folderFiles, ur); enterLoadedUI();
           recordFolderHistory(folderFiles);
           // Match the file-drop behaviour: bring the overview up under the nav bar.
@@ -1948,12 +1943,31 @@ window._anrReadableText = isReadableText;
     window.addEventListener('paste', (e) => {
       const items = e.clipboardData && e.clipboardData.items;
       if (!items) return;
+      // The FIRST pasted file only - one analysis per paste, as for a drop (a
+      // handleFile per file rendered them over one another).
+      let file: File | null = null;
       for (const item of items) {
-        if (item.kind === 'file') {
-          const file = item.getAsFile();
-          if (file && _handleFile) _handleFile(file);
-        }
+        if (item.kind === 'file') { file = item.getAsFile(); if (file) break; }
       }
+      if (!file) return;
+      // Same routing rules as the drop handler: /compare takes files only through
+      // its A/B zones, and a page without the result panels (or /samples, whose
+      // runs are sandboxed demos) hands the file to the home page to analyse.
+      if (onComparePage()) return;
+      const onSamples = /\/samples(\.html)?\/?$/.test(location.pathname);
+      if (!$('photoResults') || onSamples) {
+        window._anrPendingFile = file;
+        const home = new URL('/', location.href).href;
+        if (location.href !== home) {
+          const link = document.createElement('a');
+          link.href = '/';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+        }
+        return;
+      }
+      if (_handleFile) _handleFile(file);
     });
 
     // Header letter FX is initialised per-navigation by setupHeaderFx() (imported from effects.js).
@@ -2111,6 +2125,7 @@ window._anrReadableText = isReadableText;
         // the navigation IS the handling, and && / || would skip it.
         const away = goHome();
         if (away || !unknownResults) { window._anrPendingFolder = entries; return; }
+        supersedeLoad();
         resetNav();
         renderFolder(entries, unknownResults);
         recordFolderHistory(entries);
@@ -2162,6 +2177,7 @@ window._anrReadableText = isReadableText;
     handleFile(r.file, { kind: r.kind, ext: r.ext, sidecarXmp: r.sidecarXmp, restore: true });
   }
   if (window._anrPendingFolder && unknownResults) {
+    supersedeLoad();   // e.g. the _anrRestore replay just above
     resetNav();
     renderFolder(window._anrPendingFolder, unknownResults);
     recordFolderHistory(window._anrPendingFolder);

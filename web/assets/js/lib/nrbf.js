@@ -11,6 +11,7 @@
    Returns { ok, root, rootClass, classes, objectCount } or { ok:false, error }.
    Everything is bounds-checked and capped so a malformed or hostile stream fails
    to null rather than hanging or exhausting memory. Pure - no DOM, no globals. */
+import { NRBF_ELEMENT_MAX } from '../core/limits.js';
 // RecordTypeEnum
 const REC = {
     Header: 0, ClassWithId: 1, SystemClassWithMembers: 2, ClassWithMembers: 3,
@@ -21,6 +22,7 @@ const REC = {
 };
 const MAX_OBJECTS = 200000; // graph-size guard
 const MAX_ARRAY = 5000000; // per-array element guard
+// NRBF_ELEMENT_MAX (limits.js) is the stream-wide guard on top of both.
 class Reader {
     b;
     p;
@@ -104,11 +106,16 @@ export function parseNrbf(bytes) {
         const pendingRefs = []; // {set(val)} closures to resolve after the pass
         const classNames = [];
         let count = 0;
-        const register = (id, val) => { if (id) {
-            objects.set(id, val);
-            if (++count > MAX_OBJECTS)
-                throw new Error('object graph too large');
-        } return val; };
+        // Every value materialised - objects, array slots, and each null of a
+        // compact null run - is spent from one budget for the whole stream, so a
+        // run-length record repeated many times cannot expand without limit.
+        let elements = 0;
+        const spend = (n) => { elements += n; if (elements > NRBF_ELEMENT_MAX)
+            throw new Error('object graph too large'); };
+        // Objects with id 0 are never stored in the map but still count.
+        const register = (id, val) => { if (++count > MAX_OBJECTS)
+            throw new Error('object graph too large'); spend(1); if (id)
+            objects.set(id, val); return val; };
         // Read the AdditionalInfo that follows a member's BinaryTypeEnum.
         function readAdditional(bt) {
             if (bt === 0 || bt === 7)
@@ -222,6 +229,7 @@ export function parseNrbf(bytes) {
                 const peek = r.b[r.p];
                 if (peek === REC.ObjectNull) {
                     r.u8();
+                    spend(1);
                     arr.push(null);
                     i++;
                     continue;
@@ -229,6 +237,7 @@ export function parseNrbf(bytes) {
                 if (peek === REC.ObjectNullMultiple256) {
                     r.u8();
                     const c = r.u8();
+                    spend(Math.min(c, length - i));
                     for (let k = 0; k < c && i < length; k++, i++)
                         arr.push(null);
                     continue;
@@ -236,10 +245,12 @@ export function parseNrbf(bytes) {
                 if (peek === REC.ObjectNullMultiple) {
                     r.u8();
                     const c = r.i32();
+                    spend(Math.max(0, Math.min(c, length - i)));
                     for (let k = 0; k < c && i < length; k++, i++)
                         arr.push(null);
                     continue;
                 }
+                spend(1);
                 const idx = arr.length;
                 const v = readEl();
                 if (v && typeof v === 'object' && v.__ref) {
@@ -297,6 +308,7 @@ export function parseNrbf(bytes) {
                     const pt = r.u8();
                     if (length < 0 || length > MAX_ARRAY)
                         throw new Error('absurd array length');
+                    spend(length);
                     const arr = [];
                     for (let i = 0; i < length; i++)
                         arr.push(readPrimitive(pt));

@@ -13,7 +13,7 @@ import { convertHeic, extractRawPreview, convertWithImageMagick, demosaicRaw, ex
 import { ascii, latin1, utf8, inflate, findBytes, hexByte, hexBytes } from '../core/binutil.js';
 import { decodeGifFrames } from './gif-frames.js';
 import { decodeWebpFrames } from './webp-frames.js';
-import { ANIM_PIXEL_BUDGET, CGBI_REPAIR_MAX } from '../core/limits.js';
+import { ANIM_PIXEL_BUDGET, CGBI_REPAIR_MAX, SCAN_SMALL, OCR_CANVAS_MAX_PX, CANVAS_EDGE_MAX, LSB_PLANE_MAX_PX, PNG_TEXT_INFLATE_MAX, IMAGE_CONTAINER_PEEK, GIF_FRAMES_FILE_MAX } from '../core/limits.js';
 import { isCgbiPng, cgbiToPngBlob } from '../lib/cgbi.js';
 import { encodeAnimatedGif } from './gif-encode.js';
 import { buildIcoImagesCard } from './ico.js';
@@ -166,6 +166,10 @@ async function renderPhotoRecovery(file: File, bytes: Uint8Array<ArrayBuffer>, d
     if (signal.aborted) return;
     const url = URL.createObjectURL(recoveredFile);
     const ok = await imageDecodes(url);
+    if (signal.aborted) { URL.revokeObjectURL(url); return; }
+    // The preview, lightbox and download link share this URL while the salvage view
+    // is up; the next file (or "Run full analysis") aborts the signal and frees it.
+    signal.addEventListener('abort', () => URL.revokeObjectURL(url), { once: true });
     out.appendChild(el('p', {}, note));
     if (ok) {
       out.appendChild(el('img', {
@@ -337,8 +341,10 @@ async function renderPhotoRecovery(file: File, bytes: Uint8Array<ArrayBuffer>, d
       const jpg = await convertHeic(f);
       await present(jpg, note + ' Converted the recovered tiles to JPEG; any lost region appears blank.');
     } catch (e) {
+      if (signal.aborted) return;
       out.appendChild(el('p', { class: 'anr-hint' }, 'Could not decode this HEIC even after repair (' + ((e && e.message) || e) + ') - it may be too damaged, or its front-stored metadata was lost. The repaired file below may still open in a desktop viewer.'));
       const url = URL.createObjectURL(f);
+      signal.addEventListener('abort', () => URL.revokeObjectURL(url), { once: true });
       out.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:10px;' }, [el('a', { class: 'anr-btn', href: url, download: f.name }, 'Download repaired file')]));
     }
     return;
@@ -980,19 +986,26 @@ async function detectLiveVideo(file: File) {
   // Full scan only when markers say this really is a live/motion still - the clip's
   // ftyp can sit megabytes deep, so a tail-only scan would miss it.
   if (/MotionPhoto|MicroVideo|ContentIdentifier|com\.apple\.quicktime|GContainer/i.test(xmp)) {
+    // Walked in SCAN_SMALL windows rather than one whole-file read, so a large
+    // still with a motion marker never pulls its full size into memory at once.
+    // Windows overlap by 12 bytes so a box head straddling a seam is still seen.
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      let from = 0;
-      for (;;) {
-        const ft = findBytes(bytes, [0x66, 0x74, 0x79, 0x70], from); // "ftyp"
-        if (ft < 4) break;
-        const start = ft - 4;
-        const brand = ascii(bytes, ft + 4, 4);
-        const boxSz = (bytes[start] << 24) | (bytes[start + 1] << 16) | (bytes[start + 2] << 8) | bytes[start + 3];
-        if (VIDEO_BRANDS.includes(brand) && boxSz >= 8 && boxSz <= 4096) {
-          return { start, kind: /qt/i.test(brand) ? 'Live Photo (embedded video)' : 'Motion Photo', brand };
+      const OVERLAP = 12;
+      for (let base = 0; base < size; base += SCAN_SMALL - OVERLAP) {
+        const bytes = new Uint8Array(await file.slice(base, Math.min(size, base + SCAN_SMALL)).arrayBuffer());
+        let from = 4;
+        for (;;) {
+          const ft = findBytes(bytes, [0x66, 0x74, 0x79, 0x70], from); // "ftyp"
+          if (ft < 4 || ft + 8 > bytes.length) break;
+          const start = ft - 4;
+          const brand = ascii(bytes, ft + 4, 4);
+          const boxSz = (bytes[start] << 24) | (bytes[start + 1] << 16) | (bytes[start + 2] << 8) | bytes[start + 3];
+          if (VIDEO_BRANDS.includes(brand) && boxSz >= 8 && boxSz <= 4096) {
+            return { start: base + start, kind: /qt/i.test(brand) ? 'Live Photo (embedded video)' : 'Motion Photo', brand };
+          }
+          from = ft + 4;
         }
-        from = ft + 4;
+        if (base + SCAN_SMALL >= size) break;
       }
     } catch (_) {}
   }
@@ -1640,7 +1653,12 @@ async function makeMap(container: HTMLDivElement, lat: number, lon: number, labe
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
-  L.marker([lat, lon]).addTo(map).bindPopup(label || (lat.toFixed(5) + ', ' + lon.toFixed(5))).openPopup();
+  // Leaflet sets a STRING popup as innerHTML, and the label is the file name - a
+  // zip entry called `<img src=x onerror=...>.jpg` would run script. A DOM node
+  // is inserted as-is, so the name only ever lands as text.
+  const popup = document.createElement('span');
+  popup.textContent = label || (lat.toFixed(5) + ', ' + lon.toFixed(5));
+  L.marker([lat, lon]).addTo(map).bindPopup(popup).openPopup();
   // Force resize after attach (Leaflet quirk inside flex layouts)
   setTimeout(() => map.invalidateSize(), 50);
 }
@@ -1649,7 +1667,11 @@ async function makeMap(container: HTMLDivElement, lat: number, lon: number, labe
 function prepareOcrCanvas(img: Drawable) {
   const MIN_DIM = 2000;
   let w = img.naturalWidth, h = img.naturalHeight;
-  const scale = Math.max(1, MIN_DIM / Math.min(w, h));
+  // Upscale toward MIN_DIM on the short side, but never past the pixel budget or
+  // the canvas edge limit (a thin strip would otherwise ask for a giant canvas).
+  const scale = Math.min(Math.max(1, MIN_DIM / Math.min(w, h)),
+    Math.sqrt(OCR_CANVAS_MAX_PX / Math.max(1, w * h)),
+    CANVAS_EDGE_MAX / Math.max(w, h));
   w = Math.round(w * scale);
   h = Math.round(h * scale);
   const cv = document.createElement('canvas');
@@ -1837,17 +1859,26 @@ function renderLsbPlanes(img: Drawable, container: HTMLDivElement) {
   let currentBit = 0;
   const bitLabel = (b: number) => 'bit ' + b + (b === 0 ? ' (LSB)' : (b === 7 ? ' (MSB)' : ''));
 
-  // Full-resolution planes are built lazily on lightbox open, cached per bit.
+  // Full-resolution planes are built lazily on lightbox open. Only the bit plane on
+  // show is kept: each one is three full-size PNG data URLs, and caching all eight
+  // on a large photo held gigabytes. Past LSB_PLANE_MAX_PX the "full" view is a
+  // nearest-neighbour sample (no smoothing, so every shown pixel is a real pixel's
+  // bit rather than a blend) instead of the whole sensor.
+  const fullScale = Math.min(1, Math.sqrt(LSB_PLANE_MAX_PX / Math.max(1, img.naturalWidth * img.naturalHeight)));
+  const fullW = Math.max(1, Math.floor(img.naturalWidth * fullScale));
+  const fullH = Math.max(1, Math.floor(img.naturalHeight * fullScale));
   const fullByBit: any = {};
   function ensureFullRes(bit: number) {
     if (fullByBit[bit]) return fullByBit[bit];
+    for (const k of Object.keys(fullByBit)) delete fullByBit[k];
     const fullCv = document.createElement('canvas');
-    fullCv.width = img.naturalWidth; fullCv.height = img.naturalHeight;
+    fullCv.width = fullW; fullCv.height = fullH;
     const fCtx = fullCv.getContext('2d', { willReadFrequently: true })!;
-    fCtx.drawImage(img, 0, 0);
-    const fullData = fCtx.getImageData(0, 0, img.naturalWidth, img.naturalHeight).data;
+    fCtx.imageSmoothingEnabled = false;
+    fCtx.drawImage(img, 0, 0, fullW, fullH);
+    const fullData = fCtx.getImageData(0, 0, fullW, fullH).data;
     fullByBit[bit] = channels.map((ch) =>
-      makeLsbPlane(fullData, img.naturalWidth, img.naturalHeight, ch.offset, bit).toDataURL('image/png'));
+      makeLsbPlane(fullData, fullW, fullH, ch.offset, bit).toDataURL('image/png'));
     return fullByBit[bit];
   }
 
@@ -1885,7 +1916,8 @@ function renderLsbPlanes(img: Drawable, container: HTMLDivElement) {
       const srcs = ensureFullRes(currentBit);
       lbImg.src = srcs[idx];
       lbImg.onload = () => sizeWrap(lbWrap, img.naturalWidth, img.naturalHeight);
-      meta.textContent = ch.label + ' ' + bitLabel(currentBit) + '  (' + img.naturalWidth + ' × ' + img.naturalHeight + ')';
+      meta.textContent = ch.label + ' ' + bitLabel(currentBit) + '  (' + fullW + ' × ' + fullH
+        + (fullScale < 1 ? ', sampled from ' + img.naturalWidth + ' × ' + img.naturalHeight : '') + ')';
       prevBtn.style.visibility = idx > 0 ? 'visible' : 'hidden';
       nextBtn.style.visibility = idx < channels.length - 1 ? 'visible' : 'hidden';
       label.textContent = ch.label + ' (' + (idx + 1) + '/' + channels.length + ')';
@@ -2474,9 +2506,11 @@ function parseGifContainer(bytes: Uint8Array) {
       pos++;
     } else if (b === 0x21) {                                 // extension
       const label = bytes[pos + 1];
+      // Bounds-checked: the head slice (or a truncated file) can end mid-block,
+      // and a DataView read past the end throws and loses the whole card.
       if (label === 0xF9) {                                  // graphic control
-        totalDelay += dv.getUint16(pos + 4, true);
-      } else if (label === 0xFF && ascii(bytes, pos + 3, 8) === 'NETSCAPE') {
+        if (pos + 6 <= bytes.length) totalDelay += dv.getUint16(pos + 4, true);
+      } else if (label === 0xFF && pos + 18 <= bytes.length && ascii(bytes, pos + 3, 8) === 'NETSCAPE') {
         loop = dv.getUint16(pos + 16, true);
       }
       pos += 2;
@@ -2501,6 +2535,7 @@ function parseWebpContainer(bytes: Uint8Array) {
   } else if (fourcc === 'VP8L') {
     rows.push(['WebP', 'lossless (VP8L)']);
   } else if (fourcc === 'VP8X') {
+    if (bytes.length < 30) return null;                      // truncated VP8X header
     rows.push(['WebP', 'extended (VP8X)']);
     const flags = bytes[20];
     const feat = [];
@@ -2520,7 +2555,7 @@ function parseWebpContainer(bytes: Uint8Array) {
       while (pos + 8 <= bytes.length) {
         const cc = ascii(bytes, pos, 4);
         const sz = dv.getUint32(pos + 4, true);
-        if (cc === 'ANIM') loop = dv.getUint16(pos + 8 + 4, true);
+        if (cc === 'ANIM') { if (pos + 14 <= bytes.length) loop = dv.getUint16(pos + 8 + 4, true); }
         else if (cc === 'ANMF') frames++;
         pos += 8 + sz + (sz & 1);
       }
@@ -2536,8 +2571,9 @@ function parseWebpContainer(bytes: Uint8Array) {
 function parseBmpContainer(bytes: Uint8Array) {
   const rows = [];
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.length < 46) return null;                        // truncated: the reads below run to byte 46
   const headerSize = dv.getUint32(14, true);
-  if (headerSize < 40 || bytes.length < 38) return null;     // not BITMAPINFOHEADER
+  if (headerSize < 40) return null;                          // not BITMAPINFOHEADER
   const w = dv.getInt32(18, true), h = dv.getInt32(22, true);
   const bpp = dv.getUint16(28, true);
   const compression = dv.getUint32(30, true);
@@ -2555,7 +2591,7 @@ function parseBmpContainer(bytes: Uint8Array) {
 async function peekImageContainer(file: File) {
   // A 4 MiB head covers every container header and any reasonable text/prompt
   // chunk; AI prompts in PNG sit near the front, before the IDAT pixel data.
-  const SLICE = 4 * 1024 * 1024;
+  const SLICE = IMAGE_CONTAINER_PEEK;
   const buf = await (file.size > SLICE ? file.slice(0, SLICE) : file).arrayBuffer();
   const bytes = new Uint8Array(buf);
   if (bytes.length < 16) return null;
@@ -2580,8 +2616,10 @@ async function peekImageContainer(file: File) {
     for (const t of parsed.text) {
       if (t.value == null && t.deflate) {
         // zlib stream → try 'deflate' (zlib-wrapped) then 'deflate-raw'.
-        let out = await inflate(t.deflate, 'deflate');
-        if (!out) out = await inflate(t.deflate, 'deflate-raw');
+        // Capped: a text chunk is metadata, so an output past PNG_TEXT_INFLATE_MAX
+        // is a deflate bomb and is dropped (null) rather than inflated whole.
+        let out = await inflate(t.deflate, 'deflate', PNG_TEXT_INFLATE_MAX);
+        if (!out) out = await inflate(t.deflate, 'deflate-raw', PNG_TEXT_INFLATE_MAX);
         t.value = out ? utf8(out) : null;
       }
     }
@@ -2674,7 +2712,12 @@ export function revealPhotoSection() {
 // markup matches video.ts's "Analyse audio" prompt, which the compare merge
 // recognises by its .anr-btn--cta button. Returns null on a page with no Photo
 // area (the compare view), so the caller can fall back to rendering inline.
-export function mountPhotoPrompt(title: string, text: string, label: string, run: (host: HTMLElement) => void) {
+// `run` should return the render's promise (`(host) => renderPhoto(...)`): the
+// card and the fade class are held until it settles. Several prompts can open
+// into the same section, so .is-opening is reference-counted per section and only
+// the last one to settle (plus the fade tail) takes it off.
+const _photoPromptOpen = new WeakMap<Element, number>();
+export function mountPhotoPrompt(title: string, text: string, label: string, run: (host: HTMLElement) => unknown) {
   const host = revealPhotoSection();
   if (!host) return null;
   const card = el('div', { class: 'anr-card anr-prompt-card' });
@@ -2693,13 +2736,22 @@ export function mountPhotoPrompt(title: string, text: string, label: string, run
     // .is-opening fades in what the render inserts (analyser.css). It stays past
     // the settle long enough for the last card's 220ms fade to finish - dropping
     // it mid-fade would cancel the transition and snap the card in.
-    if (sec) sec.classList.add('is-opening');
+    if (sec) {
+      _photoPromptOpen.set(sec, (_photoPromptOpen.get(sec) || 0) + 1);
+      sec.classList.add('is-opening');
+    }
     (sec || host).scrollIntoView({ behavior: 'smooth', block: 'start' });
-    Promise.resolve(run(host)).catch(() => {}).finally(() => {
+    // The executor form also turns a synchronous throw from run() into a rejection,
+    // so the card and the class are always cleaned up.
+    new Promise((resolve) => resolve(run(host))).catch(() => {}).finally(() => {
       card.remove();
-      if (sec) setTimeout(() => sec.classList.remove('is-opening'), 260);
+      if (sec) setTimeout(() => {
+        const left = (_photoPromptOpen.get(sec) || 1) - 1;
+        _photoPromptOpen.set(sec, left);
+        if (left <= 0) sec.classList.remove('is-opening');
+      }, 260);
     });
-  });
+  }, { once: true });
   return card;
 }
 
@@ -2990,6 +3042,9 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   // Swap an iOS CgBI PNG for a real one before anything reads the bytes, so the
   // whole analysis below runs on a file the browser can actually decode.
   const cgbiRepaired = await repairCgbiFile(file);
+  // Superseded while awaiting: a newer file owns resultsEl and the photo slots
+  // now, so every long await below re-checks before writing anything.
+  if (renderSignal.aborted) return;
   if (cgbiRepaired) file = cgbiRepaired;
 
   // Inline mode (e.g. embedded cover art analysed inside the audio section):
@@ -3030,6 +3085,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   try {
     imgInfo = await loadImageFromFile(file);
   } catch (e) {
+    if (renderSignal.aborted) return;
     const ext = fileExt(file.name);
     if (HEIC_EXTS.has(ext)) {
       resultsEl.innerHTML = '';
@@ -3038,6 +3094,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
         convertedFile = await convertHeic(file);
         imgInfo = await loadImageFromFile(convertedFile);
       } catch (e2) {
+        if (renderSignal.aborted) return;
         resultsEl.innerHTML = '';
         // A truncated HEIC/HEIF keeps a decodable image (metadata sits at the front)
         // - route to salvage, which clamps the over-large mdat box and re-decodes
@@ -3045,6 +3102,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
         // HEIC still shows the plain conversion error.
         if (!opts.salvaged) {
           let hb = null; try { hb = new Uint8Array(await file.arrayBuffer()); } catch (_) {}
+          if (renderSignal.aborted) return;
           let hd = null; if (hb) { try { hd = diagnoseImage(hb); } catch (_) {} }
           if (hd && !hd.healthy && (hd.format === 'heif' || hd.format === 'avif')) {
             return renderPhotoRecovery(file, hb!, hd, resultsEl, renderSignal);
@@ -3064,6 +3122,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
           convertedFile = await demosaicRaw(file, resultsEl);
           imgInfo = await loadImageFromFile(convertedFile);
         } catch (eD) {
+          if (renderSignal.aborted) return;
           // Even a full decode failed - show metadata + a banner, not an error.
           resultsEl.innerHTML = '';
           await renderUndisplayableImage(file, ext, resultsEl, rawUndecodableBanner());
@@ -3080,17 +3139,20 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
             convertedFile = await extractX3fPreview(file);
             imgInfo = await loadImageFromFile(convertedFile);
           } catch (_) { /* fall through to the generic RAW chain */ }
+          if (renderSignal.aborted) return;
         }
         if (!imgInfo) try {
           convertedFile = await convertWithImageMagick(file, resultsEl);
           imgInfo = await loadImageFromFile(convertedFile);
         } catch (_) {
+          if (renderSignal.aborted) return;
           resultsEl.innerHTML = '';
           resultsEl.appendChild(el('div', { class: 'anr-info' }, 'Full decode failed - using embedded preview…'));
           try {
             convertedFile = await extractRawPreview(file);
             imgInfo = await loadImageFromFile(convertedFile);
           } catch (e3) {
+            if (renderSignal.aborted) return;
             // No embedded preview either. Reconstruct from the sensor data with
             // libraw - the same full decode the manual button uses. Heavyweight,
             // but it's the only way older/compact RAWs (CRW, MRW, ORF, DCR, MOS,
@@ -3102,6 +3164,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
               imgInfo = await loadImageFromFile(convertedFile);
               fullDecode = true;
             } catch (eD) {
+              if (renderSignal.aborted) return;
               // Nothing could produce pixels - metadata + banner, never an error.
               resultsEl.innerHTML = '';
               await renderUndisplayableImage(file, ext, resultsEl, rawUndecodableBanner());
@@ -3121,6 +3184,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
       // permission lost), regardless of the exact DOMException name/message.
       let unreadable = false, fileBytes = null;
       try { fileBytes = new Uint8Array(await file.arrayBuffer()); } catch (re) { unreadable = true; }
+      if (renderSignal.aborted) return;
       // Broken / truncated / corrupt image the browser refused to paint: if the
       // bytes show a recognisable-but-damaged image (or embedded images inside an
       // unrecognised blob), offer to salvage it rather than dropping to the bare
@@ -3178,6 +3242,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
           convertedFile = await convertWithImageMagick(file, resultsEl, 'decoding JPEG XL');
           imgInfo = await loadImageFromFile(convertedFile);
         } catch (_) {
+          if (renderSignal.aborted) return;
           resultsEl.innerHTML = '';
           await renderUndisplayableImage(file, ext, resultsEl);
           return;
@@ -3192,6 +3257,8 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
     }
   }
   const { img, url } = imgInfo;
+  // Superseded during the decode/convert: the object URL has no other owner yet.
+  if (renderSignal.aborted) { URL.revokeObjectURL(url); return; }
 
   // The browser can decode a corrupt JPEG "successfully" - a desynced scan is painted
   // as a genuine top strip over garbage (or comes back near-empty), so it reaches here
@@ -3205,7 +3272,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
       && /^(jpg|jpeg|jpe|jfif)$/.test(fileExt(file.name)) && browserCanvasSuspicious(img)) {
     let bytes = null, dec = null;
     try { bytes = new Uint8Array(await file.arrayBuffer()); } catch (_) {}
-    if (renderSignal.aborted) return;
+    if (renderSignal.aborted) { URL.revokeObjectURL(url); return; }
     if (bytes) { try { dec = decodeJpegPartial(bytes); } catch (_) {} }
     if (dec && dec.corrupt) {
       URL.revokeObjectURL(url);
@@ -3232,6 +3299,10 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   } catch (e) {
     console.warn('exifr error:', e);
   }
+  if (renderSignal.aborted) { URL.revokeObjectURL(url); return; }
+  // The preview/lightbox/download all use this URL for as long as the analysis is
+  // on screen; it is released when the next file (or a RAW mode switch) takes over.
+  renderSignal.addEventListener('abort', () => URL.revokeObjectURL(url), { once: true });
 
   // For RAW files the on-screen picture is the JPEG preview embedded in the RAW,
   // which is usually smaller than the sensor's real output. So the *reported*
@@ -3425,6 +3496,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   resultsEl.appendChild(developContainer);
   if (opts && opts.sidecarXmp) {
     try { showDevelop(await opts.sidecarXmp.text(), opts.sidecarXmp.name); } catch (_) {}
+    if (renderSignal.aborted) return;
   }
 
   // ---- Basic info ----
@@ -3551,9 +3623,11 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   // let you step through it. Decode the frames ourselves and offer the same
   // transport the AVI viewer does (play / scrub / Prev / Next / grab / analyse).
   // Only in the main photo section - skipped for inline cover-art renders.
-  if (full && (fileExt(file.name) === 'gif' || file.type === 'image/gif') && file.size <= 200 * 1024 * 1024) {
+  if (full && (fileExt(file.name) === 'gif' || file.type === 'image/gif') && file.size <= GIF_FRAMES_FILE_MAX) {
     try {
-      const source = decodeGifFrames(await file.arrayBuffer(), ANIM_PIXEL_BUDGET);
+      const gifBuf = await file.arrayBuffer();
+      if (renderSignal.aborted) return;
+      const source = decodeGifFrames(gifBuf, ANIM_PIXEL_BUDGET);
       if (source && source.count > 1) {
         resultsEl.appendChild(buildFrameViewerCard(file, source, resultsEl, renderSignal));
         resultsEl.appendChild(buildReverseAnimationCard(file, source, resultsEl, renderSignal));
@@ -3562,6 +3636,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   } else if (full && (fileExt(file.name) === 'webp' || file.type === 'image/webp')) {
     try {
       const source = await decodeWebpFrames(file, ANIM_PIXEL_BUDGET);
+      if (renderSignal.aborted) { try { if (source) source.close(); } catch (_) {} return; }
       if (source && source.count > 1) {
         resultsEl.appendChild(buildFrameViewerCard(file, source, resultsEl, renderSignal, { kindLabel: 'animated WebP' }));
         resultsEl.appendChild(buildReverseAnimationCard(file, source, resultsEl, renderSignal, { kindLabel: 'animated WebP' }));
@@ -3594,6 +3669,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
       && (RAW_EXTS.has(sExt) || /^jpe?g$/.test(sExt) || file.type === 'image/jpeg')) {
     try { const sc = readShutterCount(await file.arrayBuffer(), sMake); if (sc) exif.ShutterCount = sc; } catch (_) {}
   }
+  if (renderSignal.aborted) return;
   // Mean luminance of the decoded pixels, feeding the optics EV-vs-brightness note.
   let meanLuma = null;
   try {
@@ -3632,6 +3708,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   // breathe first - by this point several cards are on screen and the reader may
   // already be scrolling through them.
   await yieldToMain();
+  if (renderSignal.aborted) return;
   if (full) {
     const c2paManifests = await readC2pa(file).catch(() => null);
     try {
@@ -3656,7 +3733,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
       const thumbBytes = await exifr.thumbnail(file).catch(() => null);
       if (thumbBytes && thumbBytes.byteLength) {
         const tDim = await decodeImageDims(new Blob([thumbBytes], { type: 'image/jpeg' }));
-        if (tDim && tDim.w && tDim.h) {
+        if (tDim && tDim.w && tDim.h && !renderSignal.aborted) {
           const longShort = (a: number, b: number) => Math.max(a, b) / Math.min(a, b);
           const mainAR = longShort(w, h);
           const thumbAR = longShort(tDim.w, tDim.h);
@@ -3759,7 +3836,8 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
     // -- Quantization fingerprint --
     let qBytes = null;
     try { qBytes = new Uint8Array(await file.arrayBuffer()); } catch (_) {}
-    const qz = qBytes ? analyzeJpegQuantization(qBytes) : null;
+    if (renderSignal.aborted) return;
+    const qz =qBytes ? analyzeJpegQuantization(qBytes) : null;
     if (qz) {
       fCard.appendChild(el('div', { class: 'anr-readout-section' }, 'Quantization fingerprint'));
       const qt = el('table', { class: 'anr-readout' });
@@ -3848,6 +3926,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   // the photo analysis, and nothing is appended when there's nothing to show.
   try {
     const container = await peekImageContainer(file);
+    if (renderSignal.aborted) return;
     if (container) resultsEl.appendChild(buildContainerCard(container));
   } catch (e) {
     console.warn('container peek failed:', e);
@@ -3866,6 +3945,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
       resultsEl.appendChild(card);
     }
   } catch (e) { /* never break the rest of the analysis */ }
+  if (renderSignal.aborted) return;
 
   // ---- GPS ----
   // Number.isFinite (not `!= null`) so NaN/undefined coordinates are rejected -
@@ -3946,7 +4026,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
   const qrPlaceholder = el('div');
   resultsEl.appendChild(qrPlaceholder);
   detectCodes(img).then((codes) => {
-    if (!codes.length) { qrPlaceholder.remove(); return; }
+    if (!codes.length || renderSignal.aborted) { qrPlaceholder.remove(); return; }
     const qrCard = el('div', { class: 'anr-card' });
     qrCard.appendChild(el('h3', {}, codes.length === 1 ? 'Code detected' : codes.length + ' codes detected'));
     const qt = el('table', { class: 'anr-readout' });
@@ -4004,6 +4084,7 @@ export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any 
     await yieldToMain();
     let advBytes = null;
     try { advBytes = new Uint8Array(await file.arrayBuffer()); } catch (_) {}
+    if (renderSignal.aborted) return;
     if (advBytes) try {
       // Edit history: XMP xmpMM:History timeline + Photoshop IPTC-digest check.
       const xh = parseXmpHistory(advBytes);

@@ -51,8 +51,6 @@ declare global {
     /** True in a portable copy: everything stored sits beside the executable,
         so the host machine keeps nothing. */
     portable: boolean;
-    /** Where this copy keeps its data (offline cache, history, window state). */
-    dataDir: string;
     /** Real total RAM in GB from os.totalmem(), which navigator.deviceMemory
         clamps at 8. Read by core/limits.ts for the device tier. */
     memoryGB: number;

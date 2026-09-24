@@ -15,6 +15,7 @@
 
    Pure and DOM-free: takes a Uint8Array, returns { width, height, data (RGBA),
    rows } or null, so it runs under a Node test harness against real images. */
+import { SALVAGE_MAX_EDGE, SALVAGE_MAX_PIXELS } from '../core/limits.js';
 // Natural-order position of each coefficient in zig-zag sequence.
 const ZIG = [
     0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5,
@@ -443,8 +444,10 @@ export function decodeJpegPartial(bytes, allowThumb = true) {
     if (!H || !H.frame || !H.scan.length)
         return bail();
     const { width, height, comps } = H.frame;
-    if (!width || !height || width > 20000 || height > 20000)
+    if (!width || !height || width > SALVAGE_MAX_EDGE || height > SALVAGE_MAX_EDGE)
         return bail();
+    if (width * height > SALVAGE_MAX_PIXELS)
+        return bail(); // too big to decode here - try the thumbnail
     let maxH = 1, maxV = 1;
     for (const c of comps) {
         if (c.h > maxH)

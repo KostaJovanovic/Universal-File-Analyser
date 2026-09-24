@@ -61,7 +61,9 @@ export function normalizeArchive(entries) {
 // ---------- breakdown ----------
 export function buildCategoryBreakdown(items) {
     const byCategory = {};
-    const byExt = {};
+    // Prototype-free: an extension is attacker-chosen text (`a.__proto__`), and on
+    // a plain object that key would hit Object.prototype instead of a bucket.
+    const byExt = Object.create(null);
     for (const cat of CATEGORIES)
         byCategory[cat] = { count: 0, size: 0 };
     for (const item of items) {

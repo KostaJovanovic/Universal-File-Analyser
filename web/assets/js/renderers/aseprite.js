@@ -17,7 +17,7 @@
    apart by magic before routing here, so this module can assume Aseprite. */
 import { el, row, fmtBytes, h3help, downloadBlob, inlineLoader } from '../core/util.js';
 import { Reader, inflate } from '../core/binutil.js';
-import { PREVIEW_EDGE } from '../core/limits.js';
+import { PREVIEW_EDGE, ANIM_PIXEL_BUDGET, ASE_CEL_PIXEL_BUDGET, CANVAS_EDGE_MAX } from '../core/limits.js';
 const MAGIC = 0xA5E0;
 const FRAME_MAGIC = 0xF1FA;
 const DEPTH_NAME = {
@@ -108,8 +108,11 @@ export async function parseAseprite(bytes) {
     const doc = {
         width, height, depth, transparentIndex,
         layers: [], frames: [], tags: [],
-        palette: new Uint8ClampedArray(256 * 4), colorCount,
+        palette: new Uint8ClampedArray(256 * 4), colorCount, celsSkipped: 0,
     };
+    // Decoded cel pixels held so far, against ASE_CEL_PIXEL_BUDGET.
+    let celPixels = 0;
+    const bpp = depth === 32 ? 4 : depth === 16 ? 2 : 1;
     // A file with no palette chunk (RGBA sprites usually have none) still needs a
     // sane default, so opaque black rather than transparent nothing.
     for (let i = 0; i < 256; i++)
@@ -165,17 +168,28 @@ export async function parseAseprite(bytes) {
                 else if (celType === 0 || celType === 2) {
                     const w = r.u16(), h = r.u16();
                     if (w > 0 && h > 0 && w <= 65535 && h <= 65535) {
-                        let px = r.bytes_(Math.max(0, dataEnd - r.pos));
-                        if (celType === 2) {
-                            try {
-                                px = await inflate(px, 'deflate');
-                            }
-                            catch (_) {
-                                px = null;
-                            }
+                        if (celPixels + w * h > ASE_CEL_PIXEL_BUDGET) {
+                            // Past the budget: keep the cel's place (so links resolve to "empty")
+                            // but decode nothing.
+                            doc.celsSkipped++;
+                            frame.cels.push({ layer, x, y, opacity, w, h, rgba: null, linkFrame: -1 });
                         }
-                        const rgba = px ? celToRgba(px, w, h, doc) : null;
-                        frame.cels.push({ layer, x, y, opacity, w, h, rgba, linkFrame: -1 });
+                        else {
+                            let px = r.bytes_(Math.max(0, dataEnd - r.pos));
+                            if (celType === 2) {
+                                // A cel inflates to exactly w*h*bpp bytes; never let it run past that.
+                                try {
+                                    px = await inflate(px, 'deflate', w * h * bpp, { partial: true });
+                                }
+                                catch (_) {
+                                    px = null;
+                                }
+                            }
+                            const rgba = px ? celToRgba(px, w, h, doc) : null;
+                            if (rgba)
+                                celPixels += w * h;
+                            frame.cels.push({ layer, x, y, opacity, w, h, rgba, linkFrame: -1 });
+                        }
                     }
                 }
                 // celType 3 is a compressed tilemap - tileset rendering is not supported,
@@ -344,6 +358,102 @@ function rgbaToCanvas(rgba, w, h) {
     cv.getContext('2d').putImageData(new ImageData(data, w, h), 0, 0);
     return cv;
 }
+// The frame view + transport card. Returns show/stop so the tag buttons can drive it.
+function mountPlayer(sprite, file, resultsEl) {
+    const frameCount = sprite.frames.length;
+    // Frames are composited on demand (a frame depends only on the cels, never on
+    // the frame before it), and the most recent ones are kept in a small LRU sized
+    // by ANIM_PIXEL_BUDGET - so a long sprite never holds W*H*4 x frames at once.
+    const cacheMax = Math.max(1, Math.floor(ANIM_PIXEL_BUDGET / (sprite.width * sprite.height)));
+    const cache = new Map();
+    const frameAt = (i) => {
+        let f = cache.get(i);
+        if (f) {
+            cache.delete(i);
+            cache.set(i, f);
+            return f;
+        }
+        f = compositeFrame(sprite, i);
+        cache.set(i, f);
+        while (cache.size > cacheMax)
+            cache.delete(cache.keys().next().value);
+        return f;
+    };
+    const scale = pixelScale(sprite.width, sprite.height);
+    const card = el('div', { class: 'anr-card' });
+    const [spriteH, spriteHelp] = h3help('Sprite', 'Every frame is composited from the layer stack: Aseprite stores only the cels that changed, plus links back to earlier frames, so a frame is assembled rather than stored whole.');
+    card.appendChild(spriteH);
+    card.appendChild(spriteHelp);
+    const canvas = rgbaToCanvas(frameAt(0), sprite.width, sprite.height);
+    canvas.style.width = (sprite.width * scale) + 'px';
+    canvas.style.maxWidth = '100%';
+    canvas.style.height = 'auto';
+    canvas.style.imageRendering = 'pixelated';
+    const stage = el('div', {
+        style: 'display:inline-block; border:1px solid var(--hairline); ' +
+            'background:repeating-conic-gradient(#7a7a7a 0% 25%, #9a9a9a 0% 50%) 50% / 16px 16px;',
+    }, [canvas]);
+    card.appendChild(stage);
+    const ctx = canvas.getContext('2d');
+    let current = 0;
+    const label = el('span', { class: 'anr-hint' }, '');
+    function show(i) {
+        current = ((i % frameCount) + frameCount) % frameCount;
+        const rgba = frameAt(current);
+        const data = new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length);
+        ctx.putImageData(new ImageData(data, sprite.width, sprite.height), 0, 0);
+        label.textContent = 'Frame ' + (current + 1) + ' / ' + frameCount +
+            ' · ' + sprite.frames[current].duration + ' ms';
+    }
+    show(0);
+    // Playback runs on a per-frame timeout rather than one interval, because each
+    // frame carries its own duration - a fixed frame rate would play it wrong.
+    let timer = null;
+    const playBtn = el('button', { type: 'button', class: 'anr-btn' }, '▶ Play');
+    const stop = () => { if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+    } playBtn.textContent = '▶ Play'; };
+    // The loop must end with the view: a new file tears the results down, and the
+    // stopper (plus the isConnected check, for any other teardown) stops it there.
+    const stopper = () => { stop(); cache.clear(); };
+    (window._anrMediaStoppers = window._anrMediaStoppers || new Set()).add(stopper);
+    const tick = () => {
+        if (!canvas.isConnected) {
+            stopper();
+            try {
+                window._anrMediaStoppers.delete(stopper);
+            }
+            catch (_) { }
+            return;
+        }
+        show(current + 1);
+        timer = window.setTimeout(tick, Math.max(10, sprite.frames[current].duration));
+    };
+    playBtn.addEventListener('click', () => {
+        if (timer !== null) {
+            stop();
+            return;
+        }
+        playBtn.textContent = '❚❚ Pause';
+        timer = window.setTimeout(tick, Math.max(10, sprite.frames[current].duration));
+    });
+    const controls = el('div', { style: 'display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px;' }, [
+        el('button', { type: 'button', class: 'anr-btn', onclick: () => { stop(); show(current - 1); } }, '← Prev'),
+        frameCount > 1 ? playBtn : el('span'),
+        el('button', { type: 'button', class: 'anr-btn', onclick: () => { stop(); show(current + 1); } }, 'Next →'),
+        el('button', { type: 'button', class: 'anr-btn', onclick: () => {
+                canvas.toBlob((b) => {
+                    if (b)
+                        downloadBlob((file.name || 'sprite').replace(/\.[^.]+$/, '') + '_frame_' + (current + 1) + '.png', b);
+                }, 'image/png');
+            } }, 'Save frame (PNG)'),
+        label,
+    ]);
+    card.appendChild(controls);
+    resultsEl.appendChild(card);
+    return { show, stop };
+}
 /** Render an Aseprite sprite: composited frame view with a transport that
     honours each frame's own duration, the layer tree, and the animation tags. */
 export async function renderAseprite(file, resultsEl) {
@@ -362,78 +472,28 @@ export async function renderAseprite(file, resultsEl) {
         return;
     }
     const sprite = doc;
-    // Composite every frame once up front, so the transport is instant afterwards.
-    const frames = sprite.frames.map((_, i) => compositeFrame(sprite, i));
-    const scale = pixelScale(sprite.width, sprite.height);
-    const card = el('div', { class: 'anr-card' });
-    const [spriteH, spriteHelp] = h3help('Sprite', 'Every frame is composited from the layer stack: Aseprite stores only the cels that changed, plus links back to earlier frames, so a frame is assembled rather than stored whole.');
-    card.appendChild(spriteH);
-    card.appendChild(spriteHelp);
-    const canvas = rgbaToCanvas(frames[0], sprite.width, sprite.height);
-    canvas.style.width = (sprite.width * scale) + 'px';
-    canvas.style.maxWidth = '100%';
-    canvas.style.height = 'auto';
-    canvas.style.imageRendering = 'pixelated';
-    const stage = el('div', {
-        style: 'display:inline-block; border:1px solid var(--hairline); ' +
-            'background:repeating-conic-gradient(#7a7a7a 0% 25%, #9a9a9a 0% 50%) 50% / 16px 16px;',
-    }, [canvas]);
-    card.appendChild(stage);
-    const ctx = canvas.getContext('2d');
-    let current = 0;
-    const label = el('span', { class: 'anr-hint' }, '');
-    function show(i) {
-        current = ((i % frames.length) + frames.length) % frames.length;
-        const rgba = frames[current];
-        const data = new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length);
-        ctx.putImageData(new ImageData(data, sprite.width, sprite.height), 0, 0);
-        label.textContent = 'Frame ' + (current + 1) + ' / ' + frames.length +
-            ' · ' + sprite.frames[current].duration + ' ms';
+    const frameCount = sprite.frames.length;
+    // One composited frame is W*H*4 bytes; a canvas past the browser's edge limit or
+    // a single frame past the whole animation budget is described, not drawn.
+    const drawable = sprite.width <= CANVAS_EDGE_MAX && sprite.height <= CANVAS_EDGE_MAX &&
+        sprite.width * sprite.height <= ANIM_PIXEL_BUDGET;
+    const player = drawable ? mountPlayer(sprite, file, resultsEl) : null;
+    if (!drawable) {
+        resultsEl.appendChild(el('div', { class: 'anr-info' }, 'The ' + sprite.width + ' × ' + sprite.height + ' px canvas is too large to composite on this device, so the sprite is described below but not drawn.'));
     }
-    show(0);
-    // Playback runs on a per-frame timeout rather than one interval, because each
-    // frame carries its own duration - a fixed frame rate would play it wrong.
-    let timer = null;
-    const playBtn = el('button', { type: 'button', class: 'anr-btn' }, '▶ Play');
-    const stop = () => { if (timer !== null) {
-        clearTimeout(timer);
-        timer = null;
-    } playBtn.textContent = '▶ Play'; };
-    const tick = () => {
-        show(current + 1);
-        timer = window.setTimeout(tick, Math.max(10, sprite.frames[current].duration));
-    };
-    playBtn.addEventListener('click', () => {
-        if (timer !== null) {
-            stop();
-            return;
-        }
-        playBtn.textContent = '❚❚ Pause';
-        timer = window.setTimeout(tick, Math.max(10, sprite.frames[current].duration));
-    });
-    const controls = el('div', { style: 'display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px;' }, [
-        el('button', { type: 'button', class: 'anr-btn', onclick: () => { stop(); show(current - 1); } }, '← Prev'),
-        frames.length > 1 ? playBtn : el('span'),
-        el('button', { type: 'button', class: 'anr-btn', onclick: () => { stop(); show(current + 1); } }, 'Next →'),
-        el('button', { type: 'button', class: 'anr-btn', onclick: () => {
-                canvas.toBlob((b) => {
-                    if (b)
-                        downloadBlob((file.name || 'sprite').replace(/\.[^.]+$/, '') + '_frame_' + (current + 1) + '.png', b);
-                }, 'image/png');
-            } }, 'Save frame (PNG)'),
-        label,
-    ]);
-    card.appendChild(controls);
-    resultsEl.appendChild(card);
+    if (sprite.celsSkipped) {
+        resultsEl.appendChild(el('div', { class: 'anr-info' }, sprite.celsSkipped + ' cel' + (sprite.celsSkipped === 1 ? ' was' : 's were') +
+            ' left undecoded - the sprite holds more pixel data than is decoded here on this device, so parts of some frames are missing.'));
+    }
     // ---- details ----
     const info = el('div', { class: 'anr-card' });
     info.appendChild(el('h3', {}, 'Details'));
     const tbl = el('table', { class: 'anr-table' });
     tbl.appendChild(row('Canvas', sprite.width + ' × ' + sprite.height + ' px'));
     tbl.appendChild(row('Colour depth', DEPTH_NAME[sprite.depth] || (sprite.depth + ' bpp')));
-    tbl.appendChild(row('Frames', frames.length));
+    tbl.appendChild(row('Frames', frameCount));
     const totalMs = sprite.frames.reduce((s, f) => s + f.duration, 0);
-    if (frames.length > 1)
+    if (frameCount > 1)
         tbl.appendChild(row('Total duration', (totalMs / 1000).toFixed(2) + ' s'));
     const groups = sprite.layers.filter((l) => l.group).length;
     tbl.appendChild(row('Layers', (sprite.layers.length - groups) + (groups ? ' (+' + groups + ' groups)' : '')));
@@ -478,11 +538,11 @@ export async function renderAseprite(file, resultsEl) {
         });
         tc.appendChild(tt);
         // With more than one tag, offer a jump button per tag.
-        if (sprite.tags.length > 1) {
+        if (player && sprite.tags.length > 1) {
             const jump = el('div', { style: 'display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;' });
             sprite.tags.forEach((t) => {
                 jump.appendChild(el('button', { type: 'button', class: 'anr-btn',
-                    onclick: () => { stop(); show(t.from); } }, t.name));
+                    onclick: () => { player.stop(); player.show(t.from); } }, t.name));
             });
             tc.appendChild(jump);
         }

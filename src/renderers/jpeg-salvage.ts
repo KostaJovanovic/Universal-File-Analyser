@@ -16,6 +16,8 @@
    Pure and DOM-free: takes a Uint8Array, returns { width, height, data (RGBA),
    rows } or null, so it runs under a Node test harness against real images. */
 
+import { SALVAGE_MAX_EDGE, SALVAGE_MAX_PIXELS } from '../core/limits.js';
+
 /** One frame component (Y / Cb / Cr). parseHeader fills the SOF fields; the
  *  decode loop then hangs its per-component decode state off the same object. */
 interface JpegComp {
@@ -328,7 +330,8 @@ export function decodeJpegPartial(bytes: Uint8Array, allowThumb = true): Partial
   const H = parseHeader(bytes);
   if (!H || !H.frame || !H.scan.length) return bail();
   const { width, height, comps } = H.frame;
-  if (!width || !height || width > 20000 || height > 20000) return bail();
+  if (!width || !height || width > SALVAGE_MAX_EDGE || height > SALVAGE_MAX_EDGE) return bail();
+  if (width * height > SALVAGE_MAX_PIXELS) return bail();   // too big to decode here - try the thumbnail
   let maxH = 1, maxV = 1;
   for (const c of comps) { if (c.h > maxH) maxH = c.h; if (c.v > maxV) maxV = c.v; }
   const mcuW = 8 * maxH, mcuH = 8 * maxV;

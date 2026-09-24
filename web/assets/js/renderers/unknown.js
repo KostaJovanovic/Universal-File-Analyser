@@ -7,18 +7,20 @@
    below it), and `binary` for a .bin - a recognised container that happens to
    name no format, so the byte-level readout it already produces IS the analysis
    rather than a fallback. */
-import { SCAN_MED, SCAN_LARGE } from '../core/limits.js';
+import { SCAN_MED, SCAN_LARGE, JSON_STATS_NODES_MAX } from '../core/limits.js';
 import { EXT_VARIANTS, detectVariant } from '../core/formats.js';
 import { el, row, rowHelp, h3help, fmtBytes, fileExt, errorCard } from '../core/util.js';
 import { entropyProfile, hexBytes } from '../core/binutil.js';
 import { buildOsintCard } from '../core/osint.js';
 import { carveImages, repairJpeg, ensureJpegHuffman } from './photo-recover.js';
 import { createCarveGallery } from './carve-gallery.js';
+// Quotes are escaped too, so the result is safe in an attribute as well as in
+// text - one escaper for both, no trap for a future attribute use.
 function esc(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function escAttr(s) {
-    return esc(s).replace(/"/g, '&quot;');
+    return esc(s);
 }
 /**
  * Best-effort format identification from the first ~128 bytes of a file.
@@ -134,28 +136,39 @@ function utf16Kind(b) {
     }
     return null;
 }
+// Array lengths listed in the readout; the rest are counted, not listed.
+const JSON_ARRAYS_LISTED = 50;
+// One shared accumulator and an explicit stack: no per-level array copies (the
+// old concat-per-child was quadratic in the number of arrays), no recursion
+// for a deeply nested file to overflow, and the walk stops after
+// JSON_STATS_NODES_MAX values with `partial` set.
 function jsonStats(val, depth) {
-    let keys = 0, maxD = depth, arrays = [];
-    if (val && typeof val === 'object' && !Array.isArray(val)) {
-        const ks = Object.keys(val);
-        keys += ks.length;
-        for (const k of ks) {
-            const s = jsonStats(val[k], depth + 1);
-            keys += s.keys;
-            maxD = Math.max(maxD, s.maxDepth);
-            arrays = arrays.concat(s.arrays);
+    let keys = 0, maxD = depth, arrayCount = 0, nodes = 0, partial = false;
+    const arrays = [];
+    const stack = [[val, depth]];
+    while (stack.length) {
+        if (++nodes > JSON_STATS_NODES_MAX) {
+            partial = true;
+            break;
+        }
+        const [v, d] = stack.pop();
+        if (d > maxD)
+            maxD = d;
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+            const ks = Object.keys(v);
+            keys += ks.length;
+            for (let i = ks.length - 1; i >= 0; i--)
+                stack.push([v[ks[i]], d + 1]);
+        }
+        else if (Array.isArray(v)) {
+            arrayCount++;
+            if (arrays.length < JSON_ARRAYS_LISTED)
+                arrays.push(v.length);
+            for (let i = v.length - 1; i >= 0; i--)
+                stack.push([v[i], d + 1]);
         }
     }
-    else if (Array.isArray(val)) {
-        arrays.push(val.length);
-        for (const item of val) {
-            const s = jsonStats(item, depth + 1);
-            keys += s.keys;
-            maxD = Math.max(maxD, s.maxDepth);
-            arrays = arrays.concat(s.arrays);
-        }
-    }
-    return { keys, maxDepth: maxD, arrays };
+    return { keys, maxDepth: maxD, arrays, arrayCount, partial };
 }
 function highlightJson(val, indent) {
     const sp = '  '.repeat(indent);
@@ -433,8 +446,12 @@ export async function renderUnknown(file, resultsEl, opts) {
                 const jsTbl = el('table', { class: 'anr-readout' });
                 jsTbl.appendChild(rowHelp('Total keys', stats.keys.toLocaleString(), 'How many named fields the file holds in total. JSON stores data as name-and-value pairs; this counts every name, including those tucked inside others.'));
                 jsTbl.appendChild(rowHelp('Max depth', stats.maxDepth, 'How many levels deep the data is boxed - the most times you have to open one group inside another to reach the innermost value.'));
-                if (stats.arrays.length > 0) {
-                    jsTbl.appendChild(rowHelp('Arrays', stats.arrays.length + ' (lengths: ' + stats.arrays.join(', ') + ')', 'How many lists the file contains, with the number of items in each. An array is JSON’s word for a list of values.'));
+                if (stats.arrayCount > 0) {
+                    const more = stats.arrayCount > stats.arrays.length ? ', …' : '';
+                    jsTbl.appendChild(rowHelp('Arrays', stats.arrayCount.toLocaleString() + (stats.partial ? '+' : '') + ' (lengths: ' + stats.arrays.join(', ') + more + ')', 'How many lists the file contains, with the number of items in each. An array is JSON’s word for a list of values.'));
+                }
+                if (stats.partial) {
+                    jsTbl.appendChild(row('Note', 'Very large structure - counts cover the first ' + JSON_STATS_NODES_MAX.toLocaleString() + ' values only'));
                 }
                 card.appendChild(jsTbl);
                 const jsonPre = el('pre', { class: 'anr-ocr-text anr-pre-scroll', html: highlightJson(parsed, 0) });

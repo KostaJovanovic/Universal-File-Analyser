@@ -12,6 +12,7 @@
    animation plays in full. Returns null (page falls back to the native animated
    <img>) when the WebP isn't animated or ImageDecoder is unavailable (older Safari).
    No DOM helpers imported. */
+import { WEBP_ANIM_FILE_MAX } from '../core/limits.js';
 // Parse the WebP RIFF container far enough to describe the animation without
 // decoding pixels. Returns { animated, loop, hasAlpha, width, height,
 // durationsMs:number[] } or null if the bytes aren't a WebP. Frame durations and
@@ -37,9 +38,11 @@ function parseWebpAnim(bytes) {
     while (pos + 8 <= bytes.length) {
         const cc = ascii(pos, 4);
         const sz = dv.getUint32(pos + 4, true);
-        if (cc === 'ANIM')
-            loop = dv.getUint16(pos + 8 + 4, true);
-        else if (cc === 'ANMF') {
+        if (cc === 'ANIM') {
+            if (pos + 8 + 6 <= bytes.length)
+                loop = dv.getUint16(pos + 8 + 4, true);
+        }
+        else if (cc === 'ANMF' && pos + 8 + 15 <= bytes.length) {
             // ANMF payload: x(3) y(3) width(3) height(3) duration(3) ... -> duration at +12.
             const dur = u24(pos + 8 + 12);
             durationsMs.push(dur > 0 ? dur : 100);
@@ -56,10 +59,14 @@ function parseWebpAnim(bytes) {
 export async function decodeWebpFrames(file, budget = 120e6) {
     if (typeof window === 'undefined' || typeof window.ImageDecoder === 'undefined')
         return null;
-    if (file.size > 200 * 1024 * 1024)
+    if (file.size > WEBP_ANIM_FILE_MAX)
         return null;
+    // The whole file is in memory anyway (ImageDecoder needs it), so walk the chunk
+    // headers across all of it - the walk hops chunk to chunk reading 8-byte headers
+    // and each ANMF's 16-byte frame header, never the pixel payloads, so it is cheap.
+    // (It used to stop at the first 1 MiB, giving every later frame the 100 ms default.)
     const buf = await file.arrayBuffer();
-    const info = parseWebpAnim(new Uint8Array(buf, 0, Math.min(buf.byteLength, 1 << 20)));
+    const info = parseWebpAnim(new Uint8Array(buf));
     if (!info || !info.animated || !info.width || !info.height)
         return null;
     let dec;

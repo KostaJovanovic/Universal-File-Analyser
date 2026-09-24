@@ -111,7 +111,9 @@ The local server of Capacitor serves `index.html` for every path without an
 extension, so `/about` would show the home page. Its `RouteProcessor` hook does
 not help: Capacitor only ever calls it with the fixed string `/index.html`. So
 `AnrShell` installs `AnrWebViewClient`, which asks `AnrRouter` for the asset and
-hands Capacitor a request with the routed URL.
+hands Capacitor a request with the routed URL. A routed asset that really has
+no extension (a vendor `LICENSE`) would still get `index.html` from Capacitor,
+so `AnrWebViewClient` reads that one from the assets itself, as `text/plain`.
 
 `AnrRouter` is a third port of `serve.py`'s `_route()`, after
 `desktop/router.mjs`. `serve.py` stays the spec, with the same two deliberate
@@ -146,10 +148,15 @@ bridge:
   `window.anrBytes`. It takes `ArrayBuffer` chunks directly, on a WebView with
   `WEB_MESSAGE_ARRAY_BUFFER`. On an older WebView it takes base64 chunks of at
   most 4 MB. Native acknowledges every message, and the page waits for each
-  acknowledgement, so one chunk at most is in flight.
+  acknowledgement, so one chunk at most is in flight. Native refuses a chunk
+  over 4 MB, a transfer with no size or one over 8 GB or the free space, and
+  more than 8 staged saves (4 GB) at once; a staged save left for 30 minutes
+  is deleted.
 - **Native to page:** a plain GET. `/__anr/ff/<session>/<name>` streams an
   ffmpeg output from disk, and `/__anr/open/<token>` streams a file that
-  another app handed in.
+  another app handed in. Both answer `application/octet-stream` with
+  `X-Content-Type-Options: nosniff`, so nothing renders at the app origin; the
+  real type of an opened file travels in the open payload.
 
 `sw.js` skips `/__anr/*`, so these bytes never land in a cache.
 
@@ -172,7 +179,10 @@ site without a CORS check. So do not enable `CapacitorHttp` as a shortcut.
   type. The app shows in the chooser, but it is never the default unless the
   user picks "Always". `AnrShell.deliver()` turns the intent into the same
   open payload as the desktop, with a `/__anr/open/<token>` URL, and `app.ts`
-  handles it exactly as it does on the desktop. It accepts `content://` only.
+  handles it exactly as it does on the desktop. It accepts `content://` only,
+  and never a URI from this app's own provider. The name, size and type are
+  read off the main thread, since a slow provider in another app would
+  otherwise freeze the launch.
 - **The file chooser** comes from Capacitor, and multiple selection works. There is
   no folder picker yet.
 - **Saving:** the bytes stage through `AnrBytes`, then `AnrShell.save()` opens
@@ -256,8 +266,21 @@ plugin takes only what it needs:
   checks on every job.
 - The byte channel: registered for the app origin only, and names are
   flattened.
-- `/_capacitor_file_/` and `/_capacitor_content_/` answer 404. Nothing here
-  uses them, and they would give any page script a file reader.
+- `/_capacitor_file_/` and `/_capacitor_content_/` answer 404, on any scheme
+  and host. Nothing here uses them, and they would give any page script a
+  file reader.
+- Navigation: `AnrWebViewClient.shouldOverrideUrlLoading` keeps the app origin
+  in the WebView, opens `http`, `https` and `mailto` in another app only from a
+  tap, and blocks every other scheme (`intent:`, `market:`, ...).
+- "Open with" refuses a `content://` URI from the app's own FileProvider, and
+  that provider shares only the camera photo folder (`res/xml/file_paths.xml`).
+- The ffmpeg list check reads a list input whole or refuses it: a concat list
+  or playlist over 1 MB, or one with a NUL byte, does not run. At most 16
+  ffmpeg sessions are open at once, and a name with a control character is
+  refused.
+- No backup and no device transfer (`allowBackup="false"` plus
+  `res/xml/data_extraction_rules.xml`), so the "Recently analysed" list never
+  leaves the phone.
 - No general-purpose Capacitor plugins are installed.
 
 ## Releases and updates
@@ -286,7 +309,9 @@ holds a URL, and only the workflow sets one (`-PanrUpdateFeed`): the GitHub API
 address of the latest release. The release holds no update file. At start-up,
 at most once every six hours, the updater reads that API answer. A newer tag
 than the installed `versionName` asks the user first. **Update** downloads the
-asset named `Analyser-android-<version>.apk` into the cache, with a progress bar. Then
+asset named `Analyser-android-<version>.apk` into the cache, with a progress bar
+(from `github.com`, every redirect checked against GitHub's asset hosts, and
+stopped the moment it runs past the size the release gives). Then
 the updater checks it against the SHA-256 digest that GitHub gives for the
 asset, checks the package name and that the `versionCode` is higher, and writes
 the APK into a `PackageInstaller` session. On Android 12 and later the session
@@ -297,6 +322,7 @@ Android still wants a yes, the session reports `STATUS_PENDING_USER_ACTION` to
 confirm screen. Sessions need `REQUEST_INSTALL_PACKAGES`. Android checks the
 signature itself, and Play Protect can still scan the new APK. The FileProvider
 stays for Capacitor, which uses it for photos taken through a file input.
+The footer's "Check for updates" answers at most once a minute.
 `AnrUpdateTest` covers the version comparison.
 
 A Google Play build must not pass the feed, and must drop

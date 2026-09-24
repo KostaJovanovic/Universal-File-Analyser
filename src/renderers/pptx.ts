@@ -263,7 +263,7 @@ export async function renderPptx(file: File, resultsEl: HTMLElement) {
             if (bytes) {
               const ext = (imgPath.match(/\.(\w+)$/) || [, 'png'])[1];
               const mime = 'image/' + (ext === 'jpg' ? 'jpeg' : ext);
-              const blob = new Blob([bytes], { type: mime });
+              const blob = new Blob([bytes as BlobPart], { type: mime });
               const img = blobImg(blob, { class: 'anr-pptx-img', title: 'Open the slide, then click to analyse as a photo', style: 'cursor: pointer;' });
               img.addEventListener('click', (e) => {
                 // In a thumbnail, let the click bubble up to open the lightbox;
@@ -271,7 +271,7 @@ export async function renderPptx(file: File, resultsEl: HTMLElement) {
                 if (!slideBox.classList.contains('anr-pptx-lightboxed')) return;
                 e.stopPropagation();
                 if (slideBox._anrLightboxClose) slideBox._anrLightboxClose();   // close the lightbox first
-                if (window._anrHandleFile) window._anrHandleFile(new File([bytes], 'slide-image.' + ext, { type: mime }), { nested: true });
+                if (window._anrHandleFile) window._anrHandleFile(new File([bytes as BlobPart], 'slide-image.' + ext, { type: mime }), { nested: true });
               });
               slideBox.appendChild(img);
             }

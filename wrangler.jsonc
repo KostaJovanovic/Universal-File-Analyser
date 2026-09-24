@@ -30,7 +30,15 @@
   "name": "analyser",
   "main": "worker/index.js",
   "compatibility_date": "2026-06-03",
-  "observability": { "enabled": true },
+  // The site is served only on its custom domains. Without these, the whole site
+  // (and the stats API) would also answer on analyser.<account>.workers.dev and
+  // per-version preview URLs, with no canonical redirect.
+  "workers_dev": false,
+  "preview_urls": false,
+  // Workers Logs stay on for errors and console output, but per-request
+  // invocation logs (URL, headers, client metadata for every page view) are off:
+  // the privacy page promises no request logging beyond the anonymous counters.
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
   "assets": {
     "directory": "web",
     // Named binding so the Worker can hand non-/api requests back to the assets
@@ -62,8 +70,10 @@
       "database_id": "a891d19c-83cf-49cd-a251-9e457413bcc7"
     }
   ],
-  // Rate-limit binding: at most 15 /api/analysed writes per 60s per (hashed) IP,
-  // so a scripted loop can't inflate the file counter. period must be 10 or 60.
+  // Rate-limit binding: at most 15 requests per 60s per key, so a scripted loop
+  // can't inflate the counters. The Worker keys it per endpoint (/api/visit,
+  // /api/analysed, /api/score) + hashed IP (IPv6: the /64), so each endpoint has
+  // its own bucket. period must be 10 or 60.
   "unsafe": {
     "bindings": [
       {

@@ -96,6 +96,8 @@ export async function renderIwork(file, resultsEl) {
             const bytes = await zip.bytes(pdfEntry.name);
             if (!bytes)
                 throw new Error('preview unreadable');
+            // renderPdf opens it with isEvalSupported: false like any other PDF, so a
+            // crafted Preview.pdf gets the same CVE-2024-4367 protection.
             const previewFile = new File([bytes], file.name.replace(/\.[^.]+$/, '') + ' (preview).pdf', { type: 'application/pdf' });
             await renderPdf(previewFile, host);
             return;

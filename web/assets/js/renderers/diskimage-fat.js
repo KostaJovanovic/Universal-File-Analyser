@@ -207,10 +207,14 @@ export function parseFatVolume(img, partStart) {
     // the browser parses the tree from a small prefix, then reads file contents out
     // of the full image once it has it. See readFileBytes below.
     const geom = { partStart, bps, spc, reserved, numFats, fatSize, rootEntries, firstDataSector, bytesPerCluster, fatStart, type, maxClusters };
+    // A FAT directory holds at most 65,536 32-byte entries (2 MB), so a directory
+    // chain longer than that many clusters is corrupt - reading it would only
+    // allocate from a runaway chain.
+    const dirMaxClusters = Math.min(maxClusters, Math.ceil(65536 * 32 / bytesPerCluster));
     // Gather a cluster chain's raw bytes (directories are small; a cap keeps a
-    // corrupt chain bounded).
+    // corrupt chain bounded). The buffer is sized to what the image can supply.
     function clustersToBytes(clusters) {
-        const out = new Uint8Array(clusters.length * bytesPerCluster);
+        const out = new Uint8Array(Math.min(clusters.length * bytesPerCluster, img.length));
         let off = 0;
         for (const cl of clusters) {
             const start = clusterOffset(cl);
@@ -220,6 +224,8 @@ export function parseFatVolume(img, partStart) {
             }
             if (start + bytesPerCluster > img.length)
                 st.short = true;
+            if (off + bytesPerCluster > out.length)
+                break;
             const slice = img.subarray(start, Math.min(start + bytesPerCluster, img.length));
             out.set(slice, off);
             off += bytesPerCluster;
@@ -229,7 +235,7 @@ export function parseFatVolume(img, partStart) {
     // Root directory bytes: a fixed region on FAT12/16, a cluster chain on FAT32.
     let rootRaw;
     if (isFat32) {
-        rootRaw = clustersToBytes(chain(img, fatStart, type, rootCluster, maxClusters, st));
+        rootRaw = clustersToBytes(chain(img, fatStart, type, rootCluster, dirMaxClusters, st));
     }
     else {
         const rootStart = partStart + (reserved + numFats * fatSize) * bps;
@@ -266,7 +272,7 @@ export function parseFatVolume(img, partStart) {
                 continue; // loop / bad-pointer guard
             visitedDirs.add(d.startCl);
             dirCount++;
-            const sub = clustersToBytes(chain(img, fatStart, type, d.startCl, maxClusters, st));
+            const sub = clustersToBytes(chain(img, fatStart, type, d.startCl, dirMaxClusters, st));
             walk(sub, path ? path + '/' + d.name : d.name, depth + 1);
         }
     }
@@ -281,10 +287,21 @@ export function parseFatVolume(img, partStart) {
     // Free space: count zero (unallocated) entries across the valid cluster range.
     // Counted off the FAT only, which sits at the front of the volume - so this
     // stays correct on a prefix, and flags a short read if the FAT is cut off.
+    // Bounded twice: by the entries the FAT region actually holds (countOfClusters
+    // comes from a 32-bit sector count and can claim ~4 billion clusters), and by
+    // the buffer - the first entry past its end sets the short flag and stops.
+    const fatBytes = fatSize * bps;
+    const fatEntries = type === 'FAT12' ? Math.floor(fatBytes * 2 / 3) : type === 'FAT16' ? Math.floor(fatBytes / 2) : Math.floor(fatBytes / 4);
+    const lastCl = Math.min(countOfClusters + 2, fatEntries);
+    const stFree = { short: false };
     let freeClusters = 0;
-    for (let cl = 2; cl < countOfClusters + 2; cl++) {
-        if (nextCluster(img, fatStart, type, cl, st) === 0)
+    for (let cl = 2; cl < lastCl; cl++) {
+        if (nextCluster(img, fatStart, type, cl, stFree) === 0)
             freeClusters++;
+        if (stFree.short) {
+            st.short = true;
+            break;
+        }
     }
     return {
         type, oem, volumeLabel, bytesPerCluster,
@@ -308,7 +325,11 @@ export function readFileBytes(img, geom, startCl, size) {
     const { partStart, bps, spc, firstDataSector, bytesPerCluster, fatStart, type, maxClusters } = geom;
     const need = Math.ceil(size / bytesPerCluster) + 1;
     const clusters = chain(img, fatStart, type, startCl, Math.min(need, maxClusters));
-    const out = new Uint8Array(size);
+    // The directory's 32-bit size is only a claim: allocate no more than the
+    // chain covers and the image holds, so a lying size cannot throw a RangeError.
+    const avail = Math.min(size, clusters.length * bytesPerCluster, img.length);
+    const out = new Uint8Array(avail);
+    size = avail;
     let off = 0;
     for (const cl of clusters) {
         if (off >= size)

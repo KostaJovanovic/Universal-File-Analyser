@@ -123,7 +123,7 @@ async function renderProcreate(file: File, zip: ZipHandle, resultsEl: HTMLElemen
   const thumb = largestMatch(zip, /thumbnail[^/]*\.png$/i) || largestMatch(zip, /\.png$/i);
   if (thumb) {
     const bytes = await zip.bytes(thumb.name).catch(() => null);
-    if (bytes) { appendPreview(resultsEl, bytes, 'png', 'Preview'); return; }
+    if (bytes) { appendPreview(resultsEl, bytes as Uint8Array<ArrayBuffer>, 'png', 'Preview'); return; }
   }
   resultsEl.appendChild(el('div', { class: 'anr-info' }, 'This Procreate file has no embedded thumbnail, so only its metadata is shown.'));
   resultsEl.appendChild(integrityCard(file));

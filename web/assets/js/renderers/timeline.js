@@ -40,9 +40,11 @@ function rationalSeconds(v) {
     if (typeof v === 'number')
         return v;
     const s = String(v).trim().replace(/s$/, '');
+    // "1e308/1e-308s" divides to Infinity; a non-finite time is no time at all.
     if (s.indexOf('/') !== -1) {
         const [a, b] = s.split('/').map(Number);
-        return b ? a / b : 0;
+        const q = b ? a / b : 0;
+        return isFinite(q) ? q : 0;
     }
     const n = Number(s);
     return isFinite(n) ? n : 0;
@@ -201,18 +203,21 @@ function parseFcpxml(text) {
 }
 // ---------- visual renderer ----------
 const TICK_TARGET = 8; // aim for ~8 ruler ticks
+const TICK_MAX = 48; // never more than this, whatever length the file claims
 function niceStep(span) {
     const raw = span / TICK_TARGET;
     const steps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
     for (const s of steps)
         if (s >= raw)
             return s;
-    return 3600;
+    // Longer than a day or so: widen past an hour rather than drawing thousands of
+    // ticks (a crafted duration of 1e300 s made the ruler loop never end).
+    return Math.max(3600, span / TICK_MAX);
 }
 function buildTimelineCard(model) {
     const card = el('div', { class: 'anr-card' });
     card.appendChild(el('h3', {}, 'Timeline'));
-    const dur = model.duration || 1;
+    const dur = (isFinite(model.duration) && model.duration > 0) ? model.duration : 1;
     const ruler = el('div', { class: 'anr-tl-ruler' });
     const step = niceStep(dur);
     for (let t = 0; t <= dur + 0.001; t += step) {

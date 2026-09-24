@@ -1,24 +1,50 @@
 /* Analyser - archive module
-   Lazy-loads fflate from CDN to inspect ZIP archives without full extraction.
+   Reads a ZIP's central directory and unpacks single entries on demand by
+   their local-header offset (inflation shared with zip.js, capped per entry),
+   so the archive is never unpacked whole.
    Uses the shared folder/archive modules for treemap, breakdown, and tree. */
 import { el, row, rowHelp, h3help, fmtBytes, buildFileTree, isUnreadableError, cloudFileWarning, errorCard, integrityCard, loadScript, asciiBar } from '../core/util.js';
 import { normalizeArchive, renderBreakdownCards, renderViewToggle, categorizeExt } from './folder-archive-shared.js';
 import { ARCHIVE_EXTS } from '../core/formats.js';
-import { WALL_INDEX } from '../core/limits.js';
+import { WALL_INDEX, DECOMP_ENTRY_MAX, DECOMP_OUTPUT_MAX, LIST_ENTRIES_MAX } from '../core/limits.js';
+import { inflateZipData } from './zip.js';
 import { extractArchive } from '../lib/libarchive-loader.js';
 import { gunzip } from '../core/binutil.js';
 import { xzDecompress } from '../lib/xz-loader.js';
 import { unlz4, unlzw } from '../lib/legacy-decompress.js';
 import { lzmaDecompress } from '../lib/lzma-loader.js';
-const FFLATE_URL = new URL('../../vendor/fflate.js', import.meta.url).href;
-let fflateLib = null;
-async function loadFflate() {
-    if (fflateLib)
-        return fflateLib;
-    fflateLib = await import(FFLATE_URL);
-    return fflateLib;
-}
 // ---------- ZIP parsing via central directory ----------
+// Code page 437, bytes 0x80-0xFF - the encoding APPNOTE assigns to a ZIP name
+// whose general-purpose bit 11 (UTF-8) is clear.
+const CP437_HIGH = 'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ';
+const utf8Strict = new TextDecoder('utf-8', { fatal: true });
+const utf8Loose = new TextDecoder();
+// Decode an entry name. Bit 11 set means UTF-8. With it clear the spec says
+// CP437, but plenty of tools (macOS Archive Utility, many Linux zips) write
+// UTF-8 without setting the flag, so a name that is valid UTF-8 is read as
+// such and only the rest falls back to CP437. Entries are extracted by their
+// local-header offset, never by this name, so the display choice cannot make
+// an entry unopenable.
+function decodeZipName(raw, flags) {
+    if (flags & 0x0800)
+        return utf8Loose.decode(raw);
+    let ascii = true;
+    for (let i = 0; i < raw.length; i++)
+        if (raw[i] > 0x7F) {
+            ascii = false;
+            break;
+        }
+    if (ascii)
+        return String.fromCharCode.apply(null, Array.from(raw));
+    try {
+        return utf8Strict.decode(raw);
+    }
+    catch (_) { /* not UTF-8 */ }
+    let s = '';
+    for (let i = 0; i < raw.length; i++)
+        s += raw[i] < 0x80 ? String.fromCharCode(raw[i]) : CP437_HIGH[raw[i] - 0x80];
+    return s;
+}
 function parseZipEntries(buf) {
     const view = new DataView(buf);
     const bytes = new Uint8Array(buf);
@@ -42,7 +68,6 @@ function parseZipEntries(buf) {
         return entries;
     const cdEnd = Math.min(cdOffset + cdSize, bytes.length);
     let pos = cdOffset;
-    const decoder = new TextDecoder();
     // Each central-directory header is a fixed 46-byte record plus variable
     // name/extra/comment fields; require the fixed part to fit before reading it.
     for (let i = 0; i < entryCount && pos + 46 <= cdEnd; i++) {
@@ -54,32 +79,129 @@ function parseZipEntries(buf) {
         const modTime = view.getUint16(pos + 12, true);
         const modDate = view.getUint16(pos + 14, true);
         const crc = view.getUint32(pos + 16, true);
-        const compSize = view.getUint32(pos + 20, true);
-        const uncompSize = view.getUint32(pos + 24, true);
+        let compSize = view.getUint32(pos + 20, true);
+        let uncompSize = view.getUint32(pos + 24, true);
         const nameLen = view.getUint16(pos + 28, true);
         const extraLen = view.getUint16(pos + 30, true);
         const commentLen = view.getUint16(pos + 32, true);
-        const name = decoder.decode(bytes.slice(pos + 46, pos + 46 + nameLen));
+        let lho = view.getUint32(pos + 42, true);
+        const name = decodeZipName(bytes.subarray(pos + 46, Math.min(pos + 46 + nameLen, cdEnd)), flags);
         const isDir = name.endsWith('/');
         // Scan the extra field for a Zip64 extended-information record (id 0x0001).
+        // It carries, in order, the 64-bit value of each field whose 32-bit slot
+        // holds the 0xFFFFFFFF sentinel.
         let zip64 = false;
         {
             let ep = pos + 46 + nameLen;
-            const extraEnd = ep + extraLen;
+            const extraEnd = Math.min(ep + extraLen, cdEnd);
             while (ep + 4 <= extraEnd) {
                 const id = view.getUint16(ep, true);
                 const sz = view.getUint16(ep + 2, true);
                 if (id === 0x0001) {
                     zip64 = true;
+                    let zp = ep + 4;
+                    const zEnd = Math.min(ep + 4 + sz, extraEnd);
+                    const next = () => { if (zp + 8 > zEnd)
+                        return -1; const v = view.getUint32(zp, true) + view.getUint32(zp + 4, true) * 0x100000000; zp += 8; return v; };
+                    if (uncompSize === 0xFFFFFFFF) {
+                        const v = next();
+                        if (v >= 0)
+                            uncompSize = v;
+                    }
+                    if (compSize === 0xFFFFFFFF) {
+                        const v = next();
+                        if (v >= 0)
+                            compSize = v;
+                    }
+                    if (lho === 0xFFFFFFFF) {
+                        const v = next();
+                        if (v >= 0)
+                            lho = v;
+                    }
                     break;
                 }
                 ep += 4 + sz;
             }
         }
-        entries.push({ name, compSize, uncompSize, compMethod, crc, isDir, flags, versionMadeBy, modTime, modDate, zip64 });
+        entries.push({ name, compSize, uncompSize, compMethod, crc, isDir, flags, versionMadeBy, modTime, modDate, zip64, lho, index: i });
         pos += 46 + nameLen + extraLen + commentLen;
     }
     return entries;
+}
+// Read one entry's data straight from its local header (the central-directory
+// offset), so an entry is found by position rather than by name - duplicate or
+// oddly encoded names still open the right bytes. Inflation stops at `maxOut`,
+// and an entry whose declared size is already past it is refused unread.
+// Returns null for an encrypted, unsupported, corrupt or over-cap entry.
+async function readZipEntry(buf, e, maxOut) {
+    if (!e || e.isDir || isEncrypted(e))
+        return null;
+    if (e.uncompSize > maxOut)
+        return null;
+    const bytes = new Uint8Array(buf);
+    const lho = e.lho;
+    if (typeof lho !== 'number' || lho + 30 > bytes.length)
+        return null;
+    const view = new DataView(buf);
+    if (view.getUint32(lho, true) !== 0x04034b50)
+        return null;
+    const ds = lho + 30 + view.getUint16(lho + 26, true) + view.getUint16(lho + 28, true);
+    if (ds + e.compSize > bytes.length)
+        return null;
+    return inflateZipData(bytes.subarray(ds, ds + e.compSize), e.compMethod, maxOut);
+}
+// True when a blob starts with a ZIP signature (local header or an empty
+// archive's EOCD) - the only thing renderArchive can read.
+async function isZipBlob(f) {
+    try {
+        const h = new Uint8Array(await f.slice(0, 4).arrayBuffer());
+        return h[0] === 0x50 && h[1] === 0x4B && ((h[2] === 0x03 && h[3] === 0x04) || (h[2] === 0x05 && h[3] === 0x06));
+    }
+    catch (_) {
+        return false;
+    }
+}
+// Build the nested object buildFileTree() walks from a flat entry list. Entry
+// paths are attacker-chosen text, so every directory node is prototype-free
+// (`__proto__/x` must be a folder, never a write to Object.prototype) and
+// directories are recognised by identity (dirNodes), not by the absence of a
+// `name` field. Two entries with the same path - legal in a ZIP - both stay
+// listed, the later one suffixed " (2)".
+function buildEntryTree(entries, isDirEntry) {
+    const dirNodes = new WeakSet();
+    const fileNodes = new WeakSet();
+    const mkDir = () => { const d = Object.create(null); dirNodes.add(d); return d; };
+    const tree = mkDir();
+    const dupes = new Map();
+    for (const entry of entries) {
+        const parts = String(entry.name).split('/').filter((p) => p);
+        let node = tree;
+        const dirEntry = isDirEntry(entry);
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            if (i === parts.length - 1 && !dirEntry) {
+                let key = part;
+                if (node[key] !== undefined) {
+                    const full = parts.join('/');
+                    let n = dupes.get(full) || 1;
+                    const dot = part.lastIndexOf('.');
+                    do {
+                        n++;
+                        key = dot > 0 ? `${part.slice(0, dot)} (${n})${part.slice(dot)}` : `${part} (${n})`;
+                    } while (node[key] !== undefined);
+                    dupes.set(full, n);
+                }
+                node[key] = entry;
+                fileNodes.add(entry);
+            }
+            else {
+                if (!dirNodes.has(node[part]))
+                    node[part] = mkDir();
+                node = node[part];
+            }
+        }
+    }
+    return { tree, dirNodes, fileNodes };
 }
 // ---------- MIME guess for extracted files ----------
 const MIME_MAP = {
@@ -208,28 +330,26 @@ function buildTimeHistogram(stamps, min, max) {
     return el('div', {}, [el('div', { class: 'anr-hint', style: 'margin:10px 0 4px;' }, 'Timestamp distribution (earliest → latest)'), hist]);
 }
 // Decompress each verifiable entry, recompute its CRC-32, and compare to the
-// value stored in the central directory. Bulk-decompress once, falling back to a
-// per-entry pass so one bad stream can't void the whole run.
+// value stored in the central directory. One entry at a time, each read by its
+// own offset and dropped before the next, so peak memory is one entry rather
+// than the whole unpacked archive. Entries declared (or found) larger than
+// DECOMP_ENTRY_MAX are skipped and counted, never inflated.
 async function verifyArchiveCrcs(buf, verifiable) {
-    const ffl = await loadFflate();
-    const data = new Uint8Array(buf);
     await new Promise((r) => setTimeout(r, 0)); // let the progress bar paint first
-    let decoded = null;
-    try {
-        decoded = ffl.unzipSync(data);
-    }
-    catch (_) {
-        decoded = null;
-    }
-    let pass = 0, fail = 0, skipped = 0;
+    let pass = 0, fail = 0, skipped = 0, tooLarge = 0;
     const mismatches = [];
+    let lastYield = performance.now();
     for (const e of verifiable) {
-        let content = decoded ? decoded[e.name] : null;
-        if (!content) {
-            try {
-                content = ffl.unzipSync(data, { filter: (f) => f.name === e.name })[e.name];
-            }
-            catch (_) { }
+        if (e.compMethod !== 0 && e.uncompSize > DECOMP_ENTRY_MAX) {
+            tooLarge++;
+            continue;
+        }
+        let content = null;
+        try {
+            content = await readZipEntry(buf, e, Math.max(DECOMP_ENTRY_MAX, e.compMethod === 0 ? e.compSize : 0));
+        }
+        catch (_) {
+            content = null;
         }
         if (!content) {
             skipped++;
@@ -241,8 +361,12 @@ async function verifyArchiveCrcs(buf, verifiable) {
             fail++;
             mismatches.push(e.name);
         }
+        if (performance.now() - lastYield > 50) {
+            await new Promise((r) => setTimeout(r, 0));
+            lastYield = performance.now();
+        }
     }
-    return { pass, fail, skipped, mismatches };
+    return { pass, fail, skipped, tooLarge, mismatches };
 }
 // Build the "Timing & integrity" card: timestamp summary + flags + histogram, and
 // an on-demand CRC verification control. Returns null when there's nothing to show.
@@ -295,7 +419,7 @@ function buildArchiveForensics(buf, fileEntries) {
             bar.stop();
             out.textContent = '';
             const t = el('table', { class: 'anr-readout' });
-            t.appendChild(row('Result', `${res.pass} passed, ${res.fail} failed${res.skipped ? `, ${res.skipped} unreadable` : ''}`));
+            t.appendChild(row('Result', `${res.pass} passed, ${res.fail} failed${res.skipped ? `, ${res.skipped} unreadable` : ''}${res.tooLarge ? `, ${res.tooLarge} too large to check here` : ''}`));
             if (res.fail) {
                 const sample = res.mismatches.slice(0, 8).join(', ') + (res.mismatches.length > 8 ? `, …(+${res.mismatches.length - 8} more)` : '');
                 t.appendChild(rowHelp('⚠ CRC mismatches', sample, 'A CRC-32 is a short check number worked out from a file’s contents, like a fingerprint. Re-checking these files gives a different number from the one saved in the archive, so their data is damaged or was changed after the archive was made.'));
@@ -480,27 +604,30 @@ export async function renderArchive(file, resultsEl, opts = {}) {
             console.warn('ZIP forensics failed:', e);
     }
     // --- Extract a file from the archive (for click-to-analyse) ---
-    async function extractFile(entryName) {
-        const ffl = await loadFflate();
-        const data = new Uint8Array(buf);
-        const unzipped = ffl.unzipSync(data, { filter: (f) => f.name === entryName });
-        const content = unzipped[entryName];
-        if (!content)
+    // A user-chosen entry may be large, so it gets the general output ceiling (or
+    // its own stored size, for an entry kept uncompressed); a bomb still stops at
+    // DECOMP_OUTPUT_MAX.
+    async function extractFile(entry) {
+        const cap = Math.max(DECOMP_OUTPUT_MAX, entry.compMethod === 0 ? entry.compSize : 0);
+        const content = await readZipEntry(buf, entry, cap);
+        if (!content) {
+            if (!isEncrypted(entry) && entry.uncompSize > cap) {
+                resultsEl.insertBefore(errorCard(`"${entry.name}" unpacks to ${fmtBytes(entry.uncompSize)}, past the ${fmtBytes(cap)} the browser can safely unpack. It was not opened.`), resultsEl.firstChild);
+            }
             return null;
-        const ext = extOf(entryName);
-        const fileName = entryName.split('/').pop() || entryName;
+        }
+        const ext = extOf(entry.name);
+        const fileName = entry.name.split('/').pop() || entry.name;
         return new File([content], fileName, { type: guessMime(ext) });
     }
-    // Batch-extract a set of entries into [{ path, file }] for the EDA project views.
-    async function extractFiles(names) {
-        const ffl = await loadFflate();
-        const set = new Set(names);
-        const unzipped = ffl.unzipSync(new Uint8Array(buf), { filter: (f) => set.has(f.name) });
+    // Batch-extract a set of entries into [{ path, file }] for the EDA project
+    // views. Automatic, so each entry is held to DECOMP_ENTRY_MAX.
+    async function extractFiles(list) {
         const out = [];
-        for (const name of names) {
-            const content = unzipped[name];
+        for (const e of list) {
+            const content = await readZipEntry(buf, e, DECOMP_ENTRY_MAX);
             if (content)
-                out.push({ path: name, file: new File([content], name.split('/').pop() || name, { type: 'application/octet-stream' }) });
+                out.push({ path: e.name, file: new File([content], e.name.split('/').pop() || e.name, { type: 'application/octet-stream' }) });
         }
         return out;
     }
@@ -511,23 +638,22 @@ export async function renderArchive(file, resultsEl, opts = {}) {
     if (!embedded)
         detectEdaProject();
     function detectEdaProject() {
-        const names = fileEntries.map((e) => e.name);
         const ALT_RE = /\.(prjpcb|prjpcbstructure|schdoc|schlib|pcbdoc|pcblib|epw|schdocpreview|pcbdocpreview)$/i;
         const ALT_DOC_RE = /\.(schdoc|schlib|pcbdoc|pcblib|prjpcb)$/i;
         const KI_RE = /(\.kicad_(pcb|sch|sym|mod|pro|prl)$|\.wbk$|(^|\/)(fp-lib-table|sym-lib-table|fp-info-cache)$)/i;
         const KI_DOC_RE = /\.kicad_(pcb|sch|pro)$/i;
-        const altNames = names.filter((n) => ALT_RE.test(n));
-        const kiNames = names.filter((n) => KI_RE.test(n));
+        const altEntries = fileEntries.filter((e) => ALT_RE.test(e.name));
+        const kiEntries = fileEntries.filter((e) => KI_RE.test(e.name));
         const folderLabel = (file.name || 'archive').replace(/\.[^.]+$/, '');
-        if (altNames.some((n) => ALT_DOC_RE.test(n)) && altNames.length >= 2)
-            loadProjectView('./altium.js', 'buildAltiumProjectCard', altNames, folderLabel, 'Altium');
-        if (kiNames.some((n) => KI_DOC_RE.test(n)) && kiNames.length >= 2)
-            loadProjectView('./kicad.js', 'buildKicadProjectCard', kiNames, folderLabel, 'KiCad');
+        if (altEntries.some((e) => ALT_DOC_RE.test(e.name)) && altEntries.length >= 2)
+            loadProjectView('./altium.js', 'buildAltiumProjectCard', altEntries, folderLabel, 'Altium');
+        if (kiEntries.some((e) => KI_DOC_RE.test(e.name)) && kiEntries.length >= 2)
+            loadProjectView('./kicad.js', 'buildKicadProjectCard', kiEntries, folderLabel, 'KiCad');
     }
-    function loadProjectView(mod, fn, names, label, kind) {
+    function loadProjectView(mod, fn, list, label, kind) {
         const slot = el('div', { class: 'anr-card' }, el('div', { class: 'anr-info' }, `Building combined ${kind} project view…`));
         resultsEl.insertBefore(slot, resultsEl.firstChild);
-        Promise.all([import(mod), extractFiles(names)])
+        Promise.all([import(mod), extractFiles(list)])
             .then(([m, fileList]) => m[fn](fileList, label))
             .then((cardEl) => { slot.replaceWith(cardEl); })
             .catch(() => { slot.remove(); });
@@ -543,61 +669,35 @@ export async function renderArchive(file, resultsEl, opts = {}) {
             return;
         window._anrPushNav(containerLabel, () => { resultsEl.hidden = false; renderArchive(file, resultsEl); });
     }
-    // --- Click-to-analyse handler (treemap) ---
-    function onFileClick(item) {
-        if (!item || !item.entry)
-            return;
-        const ext = extOf(item.entry.name);
-        extractFile(item.entry.name).then(f => {
-            if (!f)
-                return;
-            pushBack();
-            if (ARCHIVE_EXTS.has(ext))
-                renderArchive(f, resultsEl);
-            else if (window._anrHandleFile)
-                window._anrHandleFile(f, { nested: true });
-        });
-    }
-    // --- Click handler for tree view (receives key, value from buildFileTree) ---
-    // We need an entry lookup by name
-    const entryByName = {};
-    for (const e of entries)
-        entryByName[e.name] = e;
-    function onTreeFileClick(key, val) {
-        const entry = val && val.name ? val : null;
+    // --- Click-to-analyse (treemap + tree) ---
+    // Only a real PK container is re-rendered here (renderArchive reads ZIP
+    // only); a nested .rar/.7z/.tar/.gz goes through the main pipeline, whose
+    // resolveKind routes it to the right viewer.
+    function openEntry(entry) {
         if (!entry)
             return;
         const ext = extOf(entry.name);
-        extractFile(entry.name).then(f => {
+        extractFile(entry).then(async (f) => {
             if (!f)
                 return;
             pushBack();
-            if (ARCHIVE_EXTS.has(ext))
+            if (ARCHIVE_EXTS.has(ext) && await isZipBlob(f))
                 renderArchive(f, resultsEl);
             else if (window._anrHandleFile)
                 window._anrHandleFile(f, { nested: true });
         });
     }
-    // --- Build tree object ---
-    const tree = {};
-    for (const entry of entries) {
-        const parts = entry.name.split('/').filter((p) => p);
-        let node = tree;
-        for (let i = 0; i < parts.length; i++) {
-            const part = parts[i];
-            if (i === parts.length - 1 && !entry.isDir) {
-                node[part] = entry;
-            }
-            else {
-                if (!node[part] || typeof node[part] !== 'object' || node[part].name) {
-                    node[part] = {};
-                }
-                node = node[part];
-            }
-        }
+    function onFileClick(item) {
+        if (item && item.entry)
+            openEntry(item.entry);
     }
+    function onTreeFileClick(_key, val) {
+        if (val && fileNodes.has(val))
+            openEntry(val);
+    }
+    const { tree, dirNodes, fileNodes } = buildEntryTree(entries, (e) => !!e.isDir);
     renderViewToggle(resultsEl, items, tree, {
-        isDir: (v) => v && typeof v === 'object' && !v.name,
+        isDir: (v) => dirNodes.has(v),
         fileSize: (v) => (v && v.uncompSize) || 0,
         copyPath: (_key, entry) => entry && entry.name,
         onFileClick: onTreeFileClick
@@ -623,7 +723,6 @@ export async function renderArchive(file, resultsEl, opts = {}) {
             class: 'anr-hint',
             style: 'margin: 0 0 8px; font-size: 12px;'
         }, `${previewable.length} small text file(s) can be previewed.`));
-        let ffl = null;
         for (const entry of previewable.slice(0, 20)) {
             const details = el('details', {});
             let summaryMeta = '';
@@ -654,13 +753,9 @@ export async function renderArchive(file, resultsEl, opts = {}) {
                 loaded = true;
                 pre.textContent = 'Decompressing…';
                 try {
-                    if (!ffl)
-                        ffl = await loadFflate();
-                    const data = new Uint8Array(buf);
-                    const unzipped = ffl.unzipSync(data, {
-                        filter: (f) => f.name === entry.name
-                    });
-                    const content = unzipped[entry.name];
+                    // Declared small (filtered above), but the header can lie - the read
+                    // still stops at DECOMP_ENTRY_MAX.
+                    const content = await readZipEntry(buf, entry, DECOMP_ENTRY_MAX);
                     if (content) {
                         pre.textContent = new TextDecoder().decode(content);
                     }
@@ -705,6 +800,7 @@ async function renderLibarchive(file, resultsEl, opts) {
     const fileEntries = (handle.entries || []).filter((e) => e && e.name && !e.name.endsWith('/'));
     resultsEl.innerHTML = '';
     if (!fileEntries.length) {
+        handle.close(); // nothing to extract - release its worker
         resultsEl.appendChild(errorCard('No files found inside this archive.'));
         return;
     }
@@ -727,23 +823,9 @@ export function renderHandleTree(handle, fileEntries, file, resultsEl, opts) {
         row('Archive size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`),
     ];
     renderBreakdownCards(items, resultsEl, summaryRows);
-    // Build the nested tree object (leaf = the libarchive entry, branch = plain {}).
-    const tree = {};
-    for (const e of fileEntries) {
-        const parts = e.name.split('/').filter((p) => p);
-        let node = tree;
-        for (let i = 0; i < parts.length; i++) {
-            const part = parts[i];
-            if (i === parts.length - 1) {
-                node[part] = e;
-            }
-            else {
-                if (!node[part] || typeof node[part] !== 'object' || node[part].name)
-                    node[part] = {};
-                node = node[part];
-            }
-        }
-    }
+    // Build the nested tree object (leaf = the libarchive entry, branch = a
+    // prototype-free node tracked in dirNodes).
+    const { tree, dirNodes, fileNodes } = buildEntryTree(fileEntries, () => false);
     async function openEntry(entry) {
         try {
             const bytes = await entry.getBytes();
@@ -759,10 +841,10 @@ export function renderHandleTree(handle, fileEntries, file, resultsEl, opts) {
     }
     const onFileClick = (item) => { if (item && item.entry)
         openEntry(item.entry); };
-    const onTreeFileClick = (_key, val) => { if (val && val.name)
+    const onTreeFileClick = (_key, val) => { if (val && fileNodes.has(val))
         openEntry(val); };
     renderViewToggle(resultsEl, items, tree, {
-        isDir: (v) => v && typeof v === 'object' && !v.name,
+        isDir: (v) => dirNodes.has(v),
         fileSize: (v) => (v && v.size) || 0,
         copyPath: (_key, entry) => entry && entry.name,
         onFileClick: onTreeFileClick,
@@ -776,6 +858,8 @@ export function renderHandleTree(handle, fileEntries, file, resultsEl, opts) {
 // treemap and click-to-analyse UI. Members are COFF .obj objects (and, in an
 // import library, short-import stubs), so opening one lands on identification.
 async function extractAr(file) {
+    if (file.size > WALL_INDEX)
+        throw new Error('This library is ' + fmtBytes(file.size) + ' - too large to browse in the browser.');
     const b = new Uint8Array(await file.arrayBuffer());
     const MAGIC = [0x21, 0x3c, 0x61, 0x72, 0x63, 0x68, 0x3e, 0x0a]; // !<arch>\n
     if (b.length < 8 || MAGIC.some((c, i) => b[i] !== c))
@@ -787,7 +871,14 @@ async function extractAr(file) {
     while (pos + 60 <= b.length) {
         if (b[pos + 58] !== 0x60 || b[pos + 59] !== 0x0a)
             break; // member header ends with "`\n"
-        const size = parseInt(field(pos + 48, 10).trim(), 10) || 0;
+        // Decimal digits only: a negative size would move the cursor backwards and
+        // re-read the same header forever. A size past the end is clamped.
+        const sizeStr = field(pos + 48, 10).trim();
+        if (!/^\d*$/.test(sizeStr))
+            break;
+        const size = Math.min(parseInt(sizeStr, 10) || 0, b.length - (pos + 60));
+        if (raw.length >= LIST_ENTRIES_MAX)
+            break;
         raw.push({ name16: field(pos, 16), size, dataStart: pos + 60 });
         pos = pos + 60 + size + (size & 1); // members are 2-byte aligned
     }
@@ -865,20 +956,27 @@ async function renderArEmbedded(file, resultsEl, opts) {
 // inner filename, or null if the codec has no in-browser decoder (bzip2) or the
 // magic is unknown. The tar/tarball case never reaches here - libarchive handles
 // it directly (it bundles the gzip/xz/zstd/bzip2 read filters).
+//
+// Every codec's output is capped at DECOMP_OUTPUT_MAX (a small bomb returns
+// null, not a crashed tab), and the input itself must fit WALL_INDEX before it
+// is read into memory.
 async function decompressStream(file) {
+    if (file.size > WALL_INDEX)
+        return null;
     const head = new Uint8Array(await file.slice(0, 13).arrayBuffer());
     const is = (sig) => sig.every((v, i) => head[i] === v);
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    // gzip streams straight off the Blob - no whole-file copy first.
     if (is([0x1F, 0x8B]))
-        return { data: await gunzip(bytes), codec: 'gzip', drop: /\.(gz|tgz)$/i };
+        return { data: await gunzip(file, DECOMP_OUTPUT_MAX), codec: 'gzip', drop: /\.(gz|tgz)$/i };
+    const bytes = new Uint8Array(await file.arrayBuffer());
     if (is([0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]))
         return { data: await xzDecompress(bytes), codec: 'xz', drop: /\.(xz|txz)$/i };
     if (is([0x28, 0xB5, 0x2F, 0xFD])) {
-        if (!(window.fzstd && window.fzstd.decompress))
+        if (!(window.fzstd && window.fzstd.Decompress))
             await loadScript('assets/vendor/fzstd.js');
-        if (!(window.fzstd && window.fzstd.decompress))
+        if (!(window.fzstd && window.fzstd.Decompress))
             return null;
-        return { data: window.fzstd.decompress(bytes), codec: 'zstd', drop: /\.(zst|tzst)$/i };
+        return { data: await inflateZipData(bytes, 93, DECOMP_OUTPUT_MAX), codec: 'zstd', drop: /\.(zst|tzst)$/i };
     }
     if (is([0x04, 0x22, 0x4D, 0x18])) {
         const d = unlz4(bytes);
@@ -915,6 +1013,8 @@ async function renderCompressedEmbedded(file, container, label) {
         renderHandleTree(handle, fileEntries, file, container, { label });
         return;
     }
+    if (handle)
+        handle.close(); // unused - release its worker
     // Single compressed stream: decompress and offer the file inside.
     let res = null;
     try {
@@ -925,7 +1025,9 @@ async function renderCompressedEmbedded(file, container, label) {
     if (!res || !res.data) {
         container.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;font-size:12px;' }, /bzip2|bz2/i.test(label)
             ? 'Single bzip2-compressed file. In-browser bzip2 decompression is not available, so only the identification above is shown.'
-            : 'This compressed file could not be decompressed in the browser.'));
+            : (file.size > WALL_INDEX
+                ? 'This compressed file is ' + fmtBytes(file.size) + ' - too large to decompress in the browser.'
+                : 'This compressed file could not be decompressed in the browser, or it unpacks to more than ' + fmtBytes(DECOMP_OUTPUT_MAX) + '.')));
         return;
     }
     const innerName = (file.name || 'file').replace(res.drop, '') || 'decompressed';
