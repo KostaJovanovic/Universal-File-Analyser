@@ -718,6 +718,15 @@ function ensurePanelWindow() {
     maximizable: false,
     fullscreenable: false,
     skipTaskbar: true,
+    /* No open animation. Every open is a show(), and the OS animates that for a
+       window it takes for an ordinary one - Windows through the caption the
+       thick frame adds, KDE and GNOME by scaling it up from nothing - so a menu
+       swelled out of the bar instead of just being there. thickFrame is Windows
+       only (it also drops the OS shadow, which the hairline border stands in
+       for anyway), and a toolbar window is one the Linux compositors leave
+       alone. */
+    thickFrame: false,
+    ...(process.platform === 'linux' ? { type: 'toolbar' } : {}),
     backgroundColor: '#00000000',
     width: 220,
     height: 100,
@@ -746,7 +755,14 @@ ipcMain.on('anr:menu-open', (e, req) => {
   const model = menuModel(actions);
   const menu = model.find((m) => m.id === id);
   if (!menu) return;
-  if (id === panelClosedId && Date.now() - panelClosedAt < 250) { panelClosedId = ''; return; }
+  if (id === panelClosedId && Date.now() - panelClosedAt < 250) {
+    panelClosedId = '';
+    /* The bar marked the title open before it asked, so it has to hear that the
+       answer was no. Without this it kept the title lit over a menu that was not
+       there, and its next click "closed" that menu and did nothing visible. */
+    mainWindow.webContents.send('anr:menu-closed');
+    return;
+  }
   panelMenuId = id;
   const win = ensurePanelWindow();
   const at = { x: Math.round(Number(req.x) || 0), y: Math.round(Number(req.y) || 0) };
@@ -846,7 +862,8 @@ ipcMain.on('anr:chrome-ready', (e) => {
 /* Back and forward, from the bar's own arrows. */
 ipcMain.on('anr:chrome-nav', (e, dir) => {
   if (!fromChrome(e)) return;
-  actions.view(dir === 'forward' ? 'forward' : 'back');
+  // The bar's arrows, and its wordmark, which reloads the app.
+  actions.view(dir === 'forward' || dir === 'reload' ? dir : 'back');
 });
 
 /* What the window is currently showing, named. The app sends the file it just

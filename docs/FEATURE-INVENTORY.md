@@ -84,7 +84,7 @@ there in Phase D.
 ## docs/features/video.md
 
 - [x] video.js - Prev frame / Next frame - step through video frames - video.md
-- [x] video.js - Analyse frame / Analyse in Photo section - analyses the current frame as a photo - video.md
+- [x] video.js - Analyse frame / Analyse as a photo - analyses the current frame as a photo - video.md
 - [x] video.js - Download audio (WAV) - downloads extracted audio track - video.md
 - [x] video.js - Analyse audio - runs extracted audio through the audio analyser - video.md
 - [x] video.js - Analyse photo - runs current frame through the photo analyser - video.md

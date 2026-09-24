@@ -64,6 +64,8 @@ contextBridge.exposeInMainWorld('anrChrome', {
    *  arrows are the only pointer route back. */
   back: () => ipcRenderer.send('anr:chrome-nav', 'back'),
   forward: () => ipcRenderer.send('anr:chrome-nav', 'forward'),
+  /** Reload the APP - the wordmark's click. The bar itself stays put. */
+  reload: () => ipcRenderer.send('anr:chrome-nav', 'reload'),
 
   /** Register the window-state sink, and replay what is already known. */
   onState(cb) {

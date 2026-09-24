@@ -44,7 +44,7 @@
    `npm run build` recompiles.
    ============================================================================ */
 
-const COMMIT_COUNT = 315;
+const COMMIT_COUNT = 316;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -83,7 +83,7 @@ import { setupHeaderFx, setupSectionFx, setupFooterFx } from './effects.js';
 import { setupStatsPage } from './stats-page.js';
 import { sniffFileType, resolveByContent, isReadableText } from './file-sniff.js';
 import { signatureCheck, signatureCard, trailingDataCheck, trailingCard, findIntegrityCard, setReanalyse } from './forensics.js';
-import { anrConfirm, showDropLoader, hideDropLoader, setDropLoaderLabel, showTypeSuggestion, hideTypeSuggestion, showLinkConfirm } from './overlays.js';
+import { showDropLoader, hideDropLoader, setDropLoaderLabel, showTypeSuggestion, hideTypeSuggestion, showLinkConfirm } from './overlays.js';
 import { setupPatchTldr } from './patch-tldr.js';
 import { setupOfflineTiers } from './offline-tiers.js';
 import { setupFormatOverlay } from './format-overlay.js';
@@ -400,6 +400,136 @@ function hasFiles(e: DragEvent) {
 let _handleFile: ((file: File, opts?: any) => any) | null = null;
 let _scrollHandler: (() => void) | null = null;
 let _alignSoundNav: (() => void) | null = null;
+let _barObs: ResizeObserver | null = null;
+
+/* ----- the header fold -----
+   Dropping a file folds the home header down to a slim sticky bar, and "Analyse
+   next file?" unfolds it again. Both directions are ANIMATED here rather than in
+   analyser.css, because the two states are different layouts - the full header
+   is a stack, the folded one a single row - and a layout-mode change has no
+   intermediate values for a CSS transition to walk through. So: measure, flip
+   the class, measure again, and play the difference back (FLIP).
+
+   ONLY THE WORDMARK TRAVELS. It is transformed from where it was, at the size
+   it was, to where it now is - one continuous object through the fold, which is
+   what makes the two states read as the same header. Everything else fades out
+   where it stood and fades back in where it now stands, whether it is leaving
+   (the kicker, the description, the meta rail) or merely moving (the byline, the
+   page chips). Fading is also the only option for the leavers: they are
+   display:none the instant the class lands, so each is cloned, the clone pinned
+   over the spot the original just left, and that is what fades. The clones are
+   inert and self-removing. */
+const FOLD_MS = 460;
+const FOLD_OUT_MS = 190;    // the old state going
+const FOLD_IN_DELAY = 170;  // then the new state arriving, just behind it
+const FOLD_IN_MS = 270;
+const FOLD_EASE = 'cubic-bezier(0.4, 0, 0.1, 1)';
+// Travels: transformed into place, and scaled, since its size is part of the
+// difference between the two headers.
+const FOLD_MOVES = ['.site-title'];
+// Faded out and back in. Some of these are in one state only, some in both.
+const FOLD_FADES = ['.site-kicker', '.site-sub', '.site-meta', '.site-byline', '.site-mark-nav'];
+// What a clone has to be told, because the fold changes it on the original and
+// the clone is only made once the new rules are already in force.
+const FOLD_GHOST_PROPS = ['font-size', 'line-height', 'font-weight', 'letter-spacing'] as const;
+
+const foldReduced = () => document.documentElement.getAttribute('data-a11y') === 'on'
+  || !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+function foldHeader(flip: () => void) {
+  const header = document.querySelector<HTMLElement>('.site-header');
+  // Only the home page folds, and only when there is motion to spend and an
+  // engine to spend it with. Everything else is the plain state swap.
+  if (!header || document.documentElement.dataset.page !== 'home'
+      || foldReduced() || typeof header.animate !== 'function') { flip(); return; }
+
+  // A drop made further down the page folds a header that is scrolled off the
+  // top, and the folded one is sticky at y=0 - so the "before" position can be
+  // hundreds of pixels above the window. Flying in from there is not an
+  // animation anyone asked for, so anything that was off-screen just appears.
+  const onScreen = (r: DOMRect) => r.bottom > 0 && r.top < window.innerHeight;
+  const shown = (n: HTMLElement) => n.getClientRects().length > 0;
+  const moves = FOLD_MOVES.map(s => header.querySelector<HTMLElement>(s)).filter(Boolean) as HTMLElement[];
+  const fades = FOLD_FADES.map(s => header.querySelector<HTMLElement>(s)).filter(Boolean) as HTMLElement[];
+  const before = new Map<HTMLElement, DOMRect>();
+  // The type each fading element wore BEFORE the fold, for its clone to wear
+  // after it. The byline is the one that needs this - it shrinks from a size
+  // derived from --t-mega to 12px - but taking the set for all of them costs
+  // nothing and stops the next size change here from being a silent bug.
+  const beforeType = new Map<HTMLElement, string>();
+  for (const n of moves.concat(fades)) {
+    if (!shown(n)) continue;
+    const r = n.getBoundingClientRect();
+    if (!onScreen(r)) continue;
+    before.set(n, r);
+    if (fades.indexOf(n) !== -1) {
+      const cs = getComputedStyle(n);
+      beforeType.set(n, FOLD_GHOST_PROPS.map(p => p + ':' + cs.getPropertyValue(p) + ';').join(''));
+    }
+  }
+
+  flip();
+
+  const headerAfter = header.getBoundingClientRect();
+  for (const n of moves) {
+    const a = before.get(n);
+    if (!a || !shown(n)) continue;
+    const b = n.getBoundingClientRect();
+    if (!a.height || !b.height) continue;
+    // The wordmark shrinks with its font-size, so scale it by that ratio.
+    // Scaling from the top-left corner is what makes the translate below the
+    // corner's own.
+    const scale = a.height / b.height;
+    n.style.transformOrigin = 'left top';
+    const anim = n.animate(
+      [{ transform: `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${scale})` },
+       { transform: 'none' }],
+      { duration: FOLD_MS, easing: FOLD_EASE }
+    );
+    const done = () => { n.style.transformOrigin = ''; };
+    anim.finished.then(done, done);
+  }
+  for (const n of fades) {
+    const a = before.get(n);
+    const here = shown(n);
+    const b = here ? n.getBoundingClientRect() : null;
+    // Where it did not budge - the meta rail on a fold that changes nothing about
+    // it, an unfold that puts it back exactly where it was - there is nothing to
+    // cover, so leave it alone rather than blinking it.
+    const still = !!(a && b && Math.abs(a.left - b.left) < 1 && Math.abs(a.top - b.top) < 1
+      && Math.abs(a.height - b.height) < 1);
+    if (still) continue;
+
+    // Out: a copy pinned over the spot the original just left. It has to be a
+    // copy because the original may already be display:none, and because it has
+    // already taken the new state's type. The header is sticky by now, so the
+    // offsets below are against its own box.
+    if (a) {
+      const ghost = n.cloneNode(true) as HTMLElement;
+      ghost.setAttribute('aria-hidden', 'true');
+      // The clone carries the original's class, so a rule that hides the original
+      // hides it too; the inline display is what overrules that, and it has to be
+      // a real value rather than the original's computed one, which may now read
+      // "none". Placed and sized explicitly, so block serves whatever it was in
+      // flow. The type comes from the snapshot taken before the flip.
+      ghost.style.cssText = 'position:absolute;margin:0;pointer-events:none;display:block;'
+        + 'left:' + (a.left - headerAfter.left) + 'px;'
+        + 'top:' + (a.top - headerAfter.top) + 'px;'
+        + 'width:' + a.width + 'px;height:' + a.height + 'px;'
+        + (beforeType.get(n) || '');
+      header.appendChild(ghost);
+      const out = ghost.animate([{ opacity: 1 }, { opacity: 0 }],
+        { duration: FOLD_OUT_MS, easing: 'ease-out', fill: 'forwards' });
+      out.finished.then(() => ghost.remove(), () => ghost.remove());
+    }
+    // In: the real element, just behind it. fill:'backwards' is what holds it at
+    // zero through the delay instead of letting it flash in first.
+    if (here) {
+      n.animate([{ opacity: 0 }, { opacity: 1 }],
+        { duration: FOLD_IN_MS, delay: a ? FOLD_IN_DELAY : 0, easing: 'ease-out', fill: 'backwards' });
+    }
+  }
+}
 
 
 
@@ -459,6 +589,25 @@ function boot() {
   const unknownResults = $('unknownResults');
   const pageDropEl     = $('pageDrop');
 
+  // The home-page marker. data-page is set again on every navigation:
+  // navigate.js keeps <html> and <body>, and body.anr-has-file outlives a move
+  // to another page, so the folded-header rules key on this and not on the body
+  // class alone.
+  const rootEl = document.documentElement;
+  if (document.getElementById('heroDrop')) rootEl.dataset.page = 'home';
+  else delete rootEl.dataset.page;
+  // Everything the folded header sticks above offsets by its real height, which
+  // moves with the width, the zoom and the fold itself. Measure it live into
+  // --hdr-h (analyser.css reads it as --stick-top).
+  if (_barObs) { _barObs.disconnect(); _barObs = null; }
+  const headerEl = document.querySelector('.site-header');
+  if (headerEl && typeof ResizeObserver !== 'undefined') {
+    _barObs = new ResizeObserver(() => {
+      rootEl.style.setProperty('--hdr-h', headerEl.getBoundingClientRect().height + 'px');
+    });
+    _barObs.observe(headerEl);
+  }
+
   let firstFileLoaded = false;
   let dragCounter = 0;
   // Token for the load currently in flight. Cancelling marks it so the
@@ -500,11 +649,6 @@ function boot() {
       const sec = $(id);
       if (sec) sec.classList.remove('is-analysed');
     });
-
-    // Clear nav indicators and re-enable the media nav links (a fresh load
-    // re-disables them if the new file isn't photo/audio/video - see handleFile).
-    document.querySelectorAll('.nav-link.has-data').forEach(link => link.classList.remove('has-data'));
-    document.querySelectorAll('.nav-link.is-disabled').forEach(link => link.classList.remove('is-disabled'));
 
     // Hide the "About .EXT files" footer link until the next analysis fills it.
     const guideCta = $<HTMLAnchorElement>('formatGuideCta');
@@ -551,23 +695,20 @@ function boot() {
   function showAnalyseNext() {
     const grid = document.querySelector<HTMLElement>('.quickdrop');
     const btn = $('analyseNext');
-    const jump = $('scrollToData');
     const exp = $('exportData');
     if (grid) grid.hidden = true;
     if (btn) btn.hidden = false;
-    if (jump) jump.hidden = false;
     if (exp) exp.hidden = false;
   }
   function restoreQuickdrop() {
     const grid = document.querySelector<HTMLElement>('.quickdrop');
     const btn = $('analyseNext');
-    const jump = $('scrollToData');
     const exp = $('exportData');
     if (grid) grid.hidden = false;
     if (btn) btn.hidden = true;
-    if (jump) jump.hidden = true;
     if (exp) exp.hidden = true;
-    document.body.classList.remove('anr-has-file');   // un-invert the nav back to normal
+    // Unfold the header back to its full self, the same animation in reverse.
+    foldHeader(() => document.body.classList.remove('anr-has-file'));
   }
 
   // Folder/zip overviews are rendered directly (not via handleFile), so they must
@@ -577,35 +718,15 @@ function boot() {
   // overview.
   function enterLoadedUI() {
     firstFileLoaded = true;
-    document.body.classList.add('anr-has-file');
+    foldHeader(() => document.body.classList.add('anr-has-file'));
     if (pageDropEl) pageDropEl.hidden = true;
     showAnalyseNext();
-    // A folder/ZIP overview is not itself photo/audio/video, so collapse the three
-    // numbered media explainer sections (01/02/03) and grey out their nav links -
-    // exactly what handleFile does for any non-media file. They reappear when a
-    // file picked FROM the overview is analysed and turns out to be media.
-    ['photo', 'audio', 'video'].forEach((id) => { const sec = $(id); if (sec) sec.hidden = true; });
-    ['#photo', '#audio', '#video'].forEach((href) => {
-      const link = document.querySelector('.site-nav a[href="' + href + '"]');
-      if (link) link.classList.add('is-disabled');
-    });
-    document.body.classList.remove('anr-nav-live');
+    // The overview renders into #unknownResults, so that leads the result stack.
+    const stack = document.getElementById('anrStack');
+    if (stack && unknownResults.parentNode === stack) stack.prepend(unknownResults);
   }
 
-  // Jump to the first analysed section. Results elements are hidden+emptied until
-  // a renderer populates them, so the first visible .anr-results with children is
-  // the first section with data (document order: unknown, photo, audio, video).
-  function scrollToFirstData() {
-    for (const res of document.querySelectorAll<HTMLElement>('.anr-results')) {
-      if (!res.hidden && res.childElementCount > 0) {
-        (res.closest('.section') || res).scrollIntoView({ behavior: 'smooth', block: 'start' });
-        return;
-      }
-    }
-  }
-
-  // Stop the in-flight load: drop its results and restore the empty page state
-  // (the three analysis sections are explainer sections - visible by default).
+  // Stop the in-flight load: drop its results and restore the empty page state.
   function cancelLoad(token: { cancelled: boolean } | null) {
     if (!token || token.cancelled) return;
     token.cancelled = true;
@@ -613,7 +734,6 @@ function boot() {
     clearResultsUI();
     resetNav();
     restoreQuickdrop();
-    ['photo', 'audio', 'video'].forEach((id) => { const sec = $(id); if (sec) sec.hidden = false; });
   }
 
   async function handleFile(file: File, opts?: { force?: any; sidecarXmp?: any; sniffedExt?: string; [k: string]: any }) {
@@ -649,7 +769,7 @@ function boot() {
     clearResultsUI();
 
     firstFileLoaded = true;
-    document.body.classList.add('anr-has-file');   // flips the primary nav to its inverted colours
+    foldHeader(() => document.body.classList.add('anr-has-file'));   // folds the header to its slim bar
     if (pageDropEl) pageDropEl.hidden = true;
     showAnalyseNext();
 
@@ -801,59 +921,9 @@ function boot() {
       renderHistoryPanel();
     }
 
-    const navMap: Record<string, string> = { photo: '#photo', audio: '#audio', video: '#video' };
-    const href = navMap[kind];
-    if (href) {
-      const link = document.querySelector<HTMLElement>('.site-nav a[href="' + href + '"]');
-      if (link) {
-        link.classList.remove('is-flash');
-        void link.offsetWidth;
-        link.classList.add('is-flash');
-      }
-    }
-
-    function markNav(selector: string) {
-      const el = document.querySelector<HTMLElement>('.site-nav a[href="' + selector + '"]');
-      if (el) el.classList.add('has-data');
-    }
-
     // Mobile only (gated by CSS): flag a section as having analysed a file, which
     // moves its heading up into the numbered card and hides the lede.
     function markAnalysed(id: string) { const sec = $(id); if (sec) sec.classList.add('is-analysed'); }
-
-    const sectionPhoto = $('photo');
-    const sectionAudio = $('audio');
-    const sectionVideo = $('video');
-    const mediaSections = [sectionPhoto, sectionAudio, sectionVideo];
-    const isMedia = kind === 'photo' || kind === 'audio' || kind === 'video';
-    if (isMedia) {
-      mediaSections.forEach(s => { if (s) s.hidden = false; });
-    } else {
-      const ext = fileExt(file.name);
-      const keepPhoto = ext === 'exe' || ext === 'dll' || ext === 'scr';
-      if (sectionPhoto) sectionPhoto.hidden = !keepPhoto;
-      if (sectionAudio) sectionAudio.hidden = true;
-      if (sectionVideo) sectionVideo.hidden = true;
-    }
-
-    // The Photo/Sound/Video nav links only make sense when their section is on the
-    // page. Grey out + disable any whose section is now hidden (a non-media file
-    // hides them); Home and Search are separate controls and always stay live.
-    const navPairs: [string, HTMLElement][] = [['#photo', sectionPhoto], ['#audio', sectionAudio], ['#video', sectionVideo]];
-    navPairs.forEach(([href, sec]) => {
-      const link = document.querySelector('.site-nav a[href="' + href + '"]');
-      if (link) link.classList.toggle('is-disabled', !sec || !!sec.hidden);
-    });
-
-    // Only flip the nav to its inverted palette when at least one section link is
-    // still live. If every link is greyed out (a non-media file with no section on
-    // the page) the inverted bar would just be a wall of dimmed text, so leave it
-    // in its normal colours - the invert is gated on body.anr-nav-live in CSS.
-    const anyNavLive = ['#photo', '#audio', '#video'].some((href) => {
-      const link = document.querySelector('.site-nav a[href="' + href + '"]');
-      return link && !link.classList.contains('is-disabled');
-    });
-    document.body.classList.toggle('anr-nav-live', anyNavLive);
 
     const route = ROUTES[kind as Kind] || ROUTES.unknown;
     // Most routes render into the generic #unknownResults block, so 'unknown' is
@@ -862,8 +932,21 @@ function boot() {
     const resultsByName: Record<string, HTMLElement> = {
       photo: photoResults, audio: audioResults, video: videoResults, unknown: unknownResults,
     };
-    (route.nav || []).forEach(markNav);
     (route.analysed || []).forEach(markAnalysed);
+
+    // Put the primary analysis at the front of the result stack (the home page and
+    // /samples). The areas behind it hold only opt-in prompt boxes - Analyse
+    // audio, Sonify, a cover, an icon - so they read as the foot of the analysis.
+    // The nodes are MOVED rather than reordered in CSS, so the DOM order is the
+    // order on screen, and the section dividers, search's hit order and the export
+    // all follow it. clearResultsUI() emptied them above, so nothing live moves.
+    const stack = document.getElementById('anrStack');
+    if (stack) {
+      const primary = results === 'unknown' ? unknownResults : $(results);
+      for (const node of new Set([primary, unknownResults, $('photo'), $('audio'), $('video')])) {
+        if (node && node.parentNode === stack) stack.appendChild(node);
+      }
+    }
     const extOverride = (force && force.ext) || sniffedExt;
     // Photo and video metadata both come from exifr; pull it in (once) before the
     // renderer runs so the global is ready by the time photo.js/video.js read it.
@@ -877,24 +960,16 @@ function boot() {
       renderPromise = route.render(file, resultsByName[results]);
     }
 
-    // Autoscroll straight to the media section so the player/analysis is in view
-    // the moment a video or audio file is dropped. The catch: content that lands
-    // ABOVE it - the Photo/Sound "Analyse" cards - and the section's own player
-    // are appended asynchronously, so a single early scroll lands too high (it
-    // "misses" by whatever appears above afterwards). So we scroll now for
-    // responsiveness and re-assert once the renderer settles (below) - unless the
-    // user has grabbed the scroll themselves in the meantime.
-    // Autoscroll the analysed section into view, right under the nav bar (each
-    // target carries scroll-margin-top: --nav-offset). The three media kinds each
-    // scroll to their own numbered section - photo to 01, audio to 02, video to 03.
-    // Every OTHER kind - documents, archives, EDA projects, the unknown/hex view -
-    // scrolls to wherever its result lands (the generic #unknownResults block or its
-    // section), so the analysis is in view the moment the file is dropped instead of
-    // leaving the user up at the dropzones.
+    // Bring the analysis into view. On the home page the header has just collapsed
+    // and the drop area has gone, so the analysis starts at the top of the page:
+    // scroll there (a drop made further down, over the footer, would otherwise
+    // leave the reader below it). Elsewhere (/samples) scroll to the section the
+    // result landed in, right under the nav (each target carries
+    // scroll-margin-top). Content above the target can arrive asynchronously, so
+    // scroll now for responsiveness and re-assert once the renderer settles
+    // (below) - unless the user has grabbed the scroll in the meantime.
     const resultEl = resultsByName[results];
-    const autoScrollSec = kind === 'video' ? sectionVideo
-      : kind === 'audio' ? sectionAudio
-      : kind === 'photo' ? sectionPhoto
+    const autoScrollSec = document.documentElement.dataset.page === 'home' ? document.documentElement
       : resultEl ? (resultEl.closest('.section') || resultEl)
       : null;
     let userTookScroll = false;
@@ -946,22 +1021,25 @@ function boot() {
     }
 
     // Windows executables/DLLs/screensavers carry their app icon in the PE
-    // resource section. Pull it out and analyse it as a photo (the Photo section
-    // is kept visible above for exe/dll/scr). A screensaver (.scr) is just a
-    // renamed PE, so this is the preview of what the screensaver ships as its
-    // icon. Best-effort and fully async - never blocks the render.
+    // resource section. Pull it out and offer it to the photo tools as a prompt
+    // box at the foot of the analysis - it is analysed only on a click. A
+    // screensaver (.scr) is just a renamed PE, so this is the icon it ships with.
+    // Best-effort and fully async - never blocks the render.
     if (kind === 'proprietary' && /\.(exe|dll|scr)$/i.test(file.name) && photoResults) {
       const isScr = /\.scr$/i.test(file.name);
       extractPeIcon(file).then(async (iconFile) => {
         if (!iconFile || token.cancelled || _currentToken !== token) return;
-        await ensureExifr();
+        const { renderPhoto, mountPhotoPrompt } = await import('../renderers/photo.js');
         if (token.cancelled || _currentToken !== token) return;
-        photoResults.hidden = false;
-        markAnalysed('photo');
-        const { renderPhoto } = await import('../renderers/photo.js');
-        renderPhoto(iconFile, photoResults,
-          { sourceNote: (isScr ? 'Screensaver icon extracted from ' : 'Application icon extracted from ')
-            + (file.name || (isScr ? 'the screensaver' : 'the executable')) + '.' });
+        mountPhotoPrompt(isScr ? 'Screensaver icon' : 'Application icon',
+          'The icon stored inside this program. Analyse it with the photo tools - size, colours and the rest.',
+          'Analyse icon', async (host) => {
+            await ensureExifr();
+            markAnalysed('photo');
+            renderPhoto(iconFile, host,
+              { sourceNote: (isScr ? 'Screensaver icon extracted from ' : 'Application icon extracted from ')
+                + (file.name || (isScr ? 'the screensaver' : 'the executable')) + '.' });
+          });
       }).catch(() => {});
     }
 
@@ -1108,11 +1186,6 @@ window._anrReadableText = isReadableText;
     analyseNextBtn._wired = true;
     analyseNextBtn.addEventListener('click', () => location.reload());
   }
-  const scrollToDataBtn = $('scrollToData');
-  if (scrollToDataBtn && !scrollToDataBtn._wired) {
-    scrollToDataBtn._wired = true;
-    scrollToDataBtn.addEventListener('click', scrollToFirstData);
-  }
   wireExportButton();
 
   // ----- Compare two files (the /compare page) -----
@@ -1239,45 +1312,6 @@ window._anrReadableText = isReadableText;
       });
     }
 
-    // ----- Mobile: tap a section card to upload (with confirm) -----
-    // On touch devices, tapping a section's description card (its number +
-    // heading + lede, or the heading once it's been moved up after analysis)
-    // offers to open a file picker for that section's type. A Swiss-style modal
-    // confirms first so a stray tap while scrolling doesn't pop the picker. The
-    // top dropzones are deliberately left alone (instant on tap).
-    // The photo dropzone handles both photos and videos, so the photo and video
-    // sections share photoInput (image/* + video/*).
-    if (window.matchMedia('(pointer: coarse)').matches) {
-      const sectionUploads = [
-        { id: 'photo', input: 'photoInput', prompt: 'Open a photo or video to analyse?' },
-        { id: 'audio', input: 'audioInput', prompt: 'Open a sound file to analyse?' },
-        { id: 'video', input: 'photoInput', prompt: 'Open a photo or video to analyse?' }
-      ];
-      for (const s of sectionUploads) {
-        const section = $(s.id);
-        const input = $(s.input);
-        if (!section || !input) continue;
-
-        // Mirror the heading into the numbered meta card. It stays hidden until
-        // the section has analysed a file (see the .section-meta-head CSS), then
-        // takes the place of the original head + lede on mobile. Created once.
-        const meta = section.querySelector('.section-meta');
-        const head = section.querySelector('.section-head');
-        if (meta && head && !meta.querySelector('.section-meta-head')) {
-          const clone = el('p', { class: 'section-meta-head' }, head.textContent);
-          const kicker = meta.querySelector('.section-kicker');
-          if (kicker) kicker.after(clone); else meta.appendChild(clone);
-        }
-
-        // Only the description text opens the picker - never the results/controls
-        // below it, which stay interactive.
-        section.addEventListener('click', (e) => {
-          if (!(e.target as HTMLElement).closest('.section-head, .section-lede, .section-meta-head, .section-num, .section-kicker')) return;
-          anrConfirm(s.prompt).then((ok) => { if (ok) input.click(); });
-        });
-        section.classList.add('is-tappable');
-      }
-    }
   }
 
   // ----- "Analyse any file" CTA on the per-format landing pages -----

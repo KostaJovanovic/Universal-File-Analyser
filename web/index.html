@@ -180,6 +180,14 @@
         <a href="/samples" class="header-btn">Samples</a>
         <a href="https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest" class="header-btn header-btn-app" target="_blank" rel="noopener">Get App</a>
         <button type="button" class="header-btn header-btn-share"><svg class="header-btn-ico" viewBox="0 0 50 50" fill="currentColor" aria-hidden="true" focusable="false"><path d="M15 30c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 20c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 40c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M19.007 25.885l12.88 6.44-.895 1.788-12.88-6.44z"/><path d="M30.993 15.885l.894 1.79-12.88 6.438-.894-1.79z"/></svg>Share</button>
+        <!-- Metadata search. It lived in the primary nav the redesign removed, so
+             it sits at the right end of the page chips now - hidden until a file
+             is loaded (body.anr-has-file), which is also when the header has
+             folded to its slim bar. Ids and classes are search.js's. -->
+        <div class="nav-search" id="navSearchWrap">
+          <button type="button" class="nav-search-btn" id="navSearchBtn" aria-label="Search"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6.5" cy="6.5" r="5"/><line x1="10" y1="10" x2="14" y2="14"/></svg></button>
+          <input type="text" id="navSearch" class="nav-search-input" placeholder="Search" autocomplete="off" spellcheck="false">
+        </div>
       </nav>
     </div>
     <div class="site-meta">
@@ -194,16 +202,6 @@
     </div>
   </div>
 </header>
-
-<nav class="site-nav" aria-label="Primary">
-  <a href="#photo" class="nav-link"><span class="nav-num">01</span><span>Photo</span></a>
-  <a href="#audio" class="nav-link"><span class="nav-num">02</span><span>Sound</span></a>
-  <a href="#video" class="nav-link"><span class="nav-num">03</span><span>Video</span></a>
-  <div class="nav-search" id="navSearchWrap">
-    <button type="button" class="nav-search-btn" id="navSearchBtn" aria-label="Search"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6.5" cy="6.5" r="5"/><line x1="10" y1="10" x2="14" y2="14"/></svg></button>
-    <input type="text" id="navSearch" class="nav-search-input" placeholder="Search" autocomplete="off" spellcheck="false">
-  </div>
-</nav>
 
 <main class="site-main">
 
@@ -276,11 +274,13 @@
     </div>
   </section>
 
+  <!-- Once a file is loaded: the two action chips, in the centred row that has
+       always sat here. (Search is in the header's chip row - see .site-mark-nav
+       above.) Both are hidden until body.anr-has-file. -->
   <div class="analyse-actions">
     <button type="button" id="exportData" class="export-data" hidden>Export data</button>
     <button type="button" id="analyseNext" class="analyse-next" hidden>Analyse next file?</button>
   </div>
-  <button type="button" id="scrollToData" class="scroll-to-data" hidden aria-label="Scroll to the analysis"></button>
 
   <div id="fmtOverlay" class="fmt-overlay" hidden>
     <div class="fmt-overlay-inner">
@@ -301,56 +301,46 @@
 
   <button type="button" id="anrBackBar" class="anr-back-bar" hidden><span class="anr-back-arrow" aria-hidden="true">&larr;</span> Back to <span class="anr-back-label"></span></button>
 
-  <div id="unknownResults" class="anr-results anr-unknown-results" hidden></div>
+  <!-- The result stack. handleFile() (app.js) moves the primary analysis to the
+       front on every load, so the areas behind it - which hold only opt-in prompt
+       boxes (Analyse audio, Sonify, a cover, an icon) - read as the foot of the
+       analysis. A section shows only while it holds a result (MAIN PAGE REDESIGN
+       in analyser.css). Keep every id: the renderers find their targets by them. -->
+  <div class="anr-stack" id="anrStack">
+    <div id="unknownResults" class="anr-results anr-unknown-results" hidden></div>
 
-  <section id="photo" class="section">
-    <div class="grid">
-      <aside class="section-meta">
-        <span class="section-num">01</span>
-        <span class="section-kicker">Photo</span>
-        <div id="photoPreview"  class="section-meta-slot section-meta-preview-slot"></div>
-        <div id="photoHistSlot" class="section-meta-slot"></div>
-        <div id="photoOcrSlot"  class="section-meta-slot"></div>
-      </aside>
-      <div class="section-content">
-        <h2 class="section-head">See every byte of metadata a camera left behind.</h2>
-        <p class="section-lede">EXIF, IPTC, XMP, ICC. Dimensions, exact aspect ratio, RGB histogram, dominant palette, GPS map, on-device OCR.</p>
-
-        <div id="photoResults" class="anr-results" hidden></div>
+    <section id="photo" class="section">
+      <div class="grid">
+        <aside class="section-meta">
+          <div id="photoPreview"  class="section-meta-slot section-meta-preview-slot"></div>
+          <div id="photoHistSlot" class="section-meta-slot"></div>
+          <div id="photoOcrSlot"  class="section-meta-slot"></div>
+        </aside>
+        <div class="section-content">
+          <div id="photoResults" class="anr-results" hidden></div>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <section id="audio" class="section">
-    <div class="grid">
-      <aside class="section-meta">
-        <span class="section-num">02</span>
-        <span class="section-kicker">Sound</span>
-      </aside>
-      <div class="section-content">
-        <h2 class="section-head">Inspect the spectrum of any audio source.</h2>
-        <p class="section-lede">Open a file, record from the mic, or visualise it live. Linear or logarithmic axis, adjustable FFT size and window, choice of colourmap, save as PNG, fullscreen.</p>
-
-        <div id="audioResults" class="anr-results" hidden></div>
+    <section id="audio" class="section">
+      <div class="grid">
+        <div class="section-content">
+          <div id="audioResults" class="anr-results" hidden></div>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <section id="video" class="section">
-    <div class="grid">
-      <aside class="section-meta">
-        <span class="section-num">03</span>
-        <span class="section-kicker">Video</span>
-        <div id="videoPreview" class="section-meta-slot section-meta-preview-slot"></div>
-      </aside>
-      <div class="section-content">
-        <h2 class="section-head">Decode every frame and frequency in a video.</h2>
-        <p class="section-lede">Container and codec detection, resolution, frame rate, bitrate. Capture any frame for full photo analysis. Extract the audio track for waveform and spectrogram.</p>
-
-        <div id="videoResults" class="anr-results" hidden></div>
+    <section id="video" class="section">
+      <div class="grid">
+        <aside class="section-meta">
+          <div id="videoPreview" class="section-meta-slot section-meta-preview-slot"></div>
+        </aside>
+        <div class="section-content">
+          <div id="videoResults" class="anr-results" hidden></div>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
+  </div>
 
   <!-- Post-analysis link to the analysed extension's own /formats guide page.
        Filled + revealed by handleFile() in app.js; hidden while no file is

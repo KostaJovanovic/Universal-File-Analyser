@@ -394,7 +394,9 @@ the audio file.
 **How to reach it.** Automatic - built in `audio-codec.js`'s
 `extractCoverArt()`/`readAudioTags()`.
 
-**Notes / limits.** No controls - a readout/preview only.
+**Notes / limits.** The tags are a readout. Embedded cover art also gets an
+**Analyse cover art** box at the end of the analysis, which opens the picture
+in the photo tools.
 
 ### ADTS-to-M4A wrapping
 

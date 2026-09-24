@@ -210,9 +210,11 @@ function build() {
   bar.id = 'anrTitlebar';
   bar.className = 'anr-titlebar';
 
-  const brand = document.createElement('div');
-  brand.className = 'anr-tb-brand';
-  brand.textContent = 'Analyser';
+  /* The wordmark reloads the app, the way a site's logo is always a way back
+     to a clean start. A button, so it opts out of the drag region like every
+     other control on the bar. */
+  const brand = button('anr-tb-brand', 'Reload Analyser', 'Analyser');
+  brand.addEventListener('click', () => chrome.reload());
 
   menuBarEl = document.createElement('div');
   menuBarEl.className = 'anr-tb-menubar';

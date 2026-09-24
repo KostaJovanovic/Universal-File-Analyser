@@ -19,7 +19,11 @@ type SearchState = typeof initSearch & {
 };
 
     if ((initSearch as SearchState)._resize) { window.removeEventListener('resize', (initSearch as SearchState)._resize); (initSearch as SearchState)._resize = null; }
-    const nav = searchWrap.closest('nav')!;
+    // What sizes the square buttons: the primary nav bar on pages that have one,
+    // and on the home page - where the search is one chip at the end of the
+    // header's chip row - the search box itself, so the squares match the chips
+    // around it rather than the whole header.
+    const nav = searchWrap.closest('.site-nav') || searchWrap;
     let debounceTimer: number|undefined;
     let matches: any[] = [];
     let matchIdx = -1;
@@ -40,6 +44,9 @@ type SearchState = typeof initSearch & {
     searchWrap.appendChild(nextBtn);
 
     function sizeSearch() {
+      // The home page's search box is display:none until a file is loaded, and a
+      // zero here would shrink the buttons to nothing - keep the CSS size then.
+      if (!nav.clientHeight) return;
       const h = nav.clientHeight + 'px';
       searchBtn!.style.width = h;
       prevBtn.style.width = h;
@@ -452,6 +459,9 @@ type SearchState = typeof initSearch & {
         mobileInput.value = searchInput.value;
         requestAnimationFrame(() => mobileInput.focus());
       } else {
+        // The arrows are display:none until now, so this is the first moment they
+        // can be measured and squared off - at boot the whole box was hidden.
+        sizeSearch();
         searchWrap!.classList.add('is-open');
         searchInput.focus();
       }

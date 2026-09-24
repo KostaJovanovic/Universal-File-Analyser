@@ -153,18 +153,22 @@ export async function renderEpub(file: File, resultsEl: HTMLElement) {
     if (bytes) {
       const mime = manifest[coverId].type || 'image/jpeg';
       const ext = (mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
-      // A slim pointer here; the cover is analysed in the dedicated Photo section.
+      // A slim pointer here. On a page with a Photo area the cover is offered there
+      // as a prompt box at the foot of the analysis; the compare view has none, so
+      // it is analysed inline below.
+      const hasPhotoArea = !!document.getElementById('photoResults');
       const labelCard = el('div', { class: 'anr-card' });
       labelCard.appendChild(el('h3', {}, 'Cover'));
       labelCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' },
-        'Analysed in the Photo section below.'));
+        hasPhotoArea ? 'The Cover box at the end of the analysis opens it in the photo tools.' : 'Analysed below.'));
       resultsEl.appendChild(labelCard);
       const note = 'Cover image from ' + (file.name || 'this e-book') + '.';
       const coverFile = new File([bytes], 'cover.' + ext, { type: mime });
       import('./photo.js')
-        .then(({ renderPhoto, revealPhotoSection }) => {
-          const photoResults = revealPhotoSection();
-          if (photoResults) { renderPhoto(coverFile, photoResults, { sourceNote: note }); return; }
+        .then(({ renderPhoto, mountPhotoPrompt }) => {
+          if (mountPhotoPrompt('Cover',
+            'This e-book carries a cover picture. Analyse it with the photo tools - colours, dimensions, EXIF and the rest.',
+            'Analyse cover', (host) => { renderPhoto(coverFile, host, { sourceNote: note }); })) return;
           // No Photo section on this page (the compare view): render into a local
           // slot tagged anr-cmp-sub-photo, which the compare merge files under the
           // Photo section - otherwise the cover analysis vanishes with the section.

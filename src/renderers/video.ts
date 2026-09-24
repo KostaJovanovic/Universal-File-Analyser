@@ -257,7 +257,9 @@ function buildFrameControls(playerEl: Drawable, getFps: () => number|null|undefi
 function mountAudioAnalyseButton(audioResultsEl: HTMLElement, run: () => void) {
   const ctx = curVctx();
   audioResultsEl.hidden = false;
-  const card = el('div', { class: 'anr-card' });
+  // anr-prompt-card is what the home page's result stack keys on to strip the
+  // section chrome around an offer and pair two of them into one row.
+  const card = el('div', { class: 'anr-card anr-prompt-card' });
   card.appendChild(el('h3', {}, 'Audio track'));
   card.appendChild(el('p', { class: 'anr-info' },
     'This video carries an embedded sound track. Extract it for a player, waveform, spectrogram and level stats.'));
@@ -265,7 +267,12 @@ function mountAudioAnalyseButton(audioResultsEl: HTMLElement, run: () => void) {
   card.appendChild(btn);
   audioResultsEl.appendChild(card);
   btn.addEventListener('click', () => {
-    card.remove();
+    // Emptied, not removed: the home page only draws a section that holds a
+    // result, so taking the card away before the decode has produced anything
+    // would hide the section - and the scroll below would have nothing to land
+    // on. It goes once run() settles.
+    card.innerHTML = '';
+    card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' }, 'Extracting the audio track…'));
     // Scroll to the top of the whole Sound section (heading + lede), not the
     // results container, which sits below them - landing on the container alone
     // scrolls past the heading and looks like it jumped to the section's middle.
@@ -278,7 +285,7 @@ function mountAudioAnalyseButton(audioResultsEl: HTMLElement, run: () => void) {
     // Show the bottom loading popup while the (heavy) decode + spectrogram runs.
     const loader = window._anrLoader;
     if (loader) loader.show('Analysing audio…');
-    Promise.resolve(run()).catch(() => {}).finally(() => { if (loader) loader.hide(); });
+    Promise.resolve(run()).catch(() => {}).finally(() => { card.remove(); if (loader) loader.hide(); });
   });
 }
 
@@ -288,7 +295,7 @@ function mountAudioAnalyseButton(audioResultsEl: HTMLElement, run: () => void) {
 function mountPhotoAnalyseButton(photoResultsEl: HTMLElement, run: () => void) {
   const ctx = curVctx();
   photoResultsEl.hidden = false;
-  const card = el('div', { class: 'anr-card' });
+  const card = el('div', { class: 'anr-card anr-prompt-card' });
   card.appendChild(el('h3', {}, 'Frame analysis'));
   card.appendChild(el('p', { class: 'anr-info' },
     'Pull the current video frame into the photo tools for colours, dimensions, EXIF and the rest.'));
@@ -296,9 +303,11 @@ function mountPhotoAnalyseButton(photoResultsEl: HTMLElement, run: () => void) {
   card.appendChild(btn);
   photoResultsEl.appendChild(card);
   btn.addEventListener('click', () => {
-    card.remove();
+    // Held until the frame renders - see mountAudioAnalyseButton above.
+    card.innerHTML = '';
+    card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' }, 'Analysing the frame…'));
     ctx.afterPhoto();
-    Promise.resolve(run()).catch(() => {});
+    Promise.resolve(run()).catch(() => {}).finally(() => { card.remove(); });
   });
 }
 
@@ -2810,7 +2819,7 @@ async function renderUnplayableVideoInfo(file: File, header: any, resultsEl: HTM
         const pr = ctx.inline ? ctx.photoTarget() : revealPhotoSection();
         renderPhoto(frameFile, pr!, ctx.photoOpts({ sourceNote: 'First frame extracted from ' + file.name + ' (the video itself can’t be decoded in the browser).' }));
         ctx.afterPhoto();
-      } }, 'Analyse in Photo section');
+      } }, 'Analyse as a photo');
       prevCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [analyseBtn]));
     } catch (_) {
       status.textContent = 'Could not extract a frame from this file.';

@@ -144,8 +144,9 @@ touches some part of this path:
    too, since they pull the heaviest dependency chains. The row shape and the
    renderer contract are defined at the `ROUTES` table itself (`core/app.js`,
    ~line 218): a row is `{ render }`, and only photo/audio/video need the full
-   `{ render, results, nav, analysed }` (they target their own page sections and
-   light their own nav links) — everything else defaults into `#unknownResults`.
+   `{ render, results, nav, analysed }` (they target their own areas of the
+   result stack `#anrStack`, which `handleFile` reorders so the analysed kind
+   leads) — everything else defaults into `#unknownResults`.
    The renderer's own export is `renderX(file, resultsEl)`, async, drawing into
    the element it is handed.
 4. **`renderFileExtras()`** wraps the shared cards *around* whatever the renderer

@@ -704,17 +704,17 @@ body:not(:has(.site-nav)) .site-header::after { margin-top: clamp(28px, 4vw, 48p
 .header-btn:hover { background: var(--fg); color: var(--bg); }
 button.header-btn { cursor: pointer; line-height: 1; }
 
-/* The Samples nav chip is accented red (not the default ink/grey) to draw the
-   eye to the live demos; hover fills red to match the site's accent language. */
-.header-btn[href="/samples"] { color: var(--accent); border-color: var(--accent); }
-.header-btn[href="/samples"]:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+/* The Samples nav chip rests like every other chip; hover fills red to match
+   the site's accent language. */
+.header-btn[href="/samples"]:hover { background: var(--accent); color: var(--accent-fg); }
 
-/* The Get App chip (between Samples and Share) is green, from --go: the colour
-   of the Online dot in the meta rail, darkened on the light theme so the text
-   stays readable. It links to the latest GitHub release. popups.ts removes it
-   inside the desktop and Android apps. */
-.header-btn-app { color: var(--go); border-color: var(--go); }
-.header-btn-app:hover { background: var(--go); border-color: var(--go); color: var(--go-fg); }
+/* The Get App chip (between Samples and Share) has green text, from --go: the
+   colour of the Online dot in the meta rail, darkened on the light theme so the
+   text stays readable. The outline stays the shared hairline. It links to the
+   latest GitHub release. popups.ts removes it inside the desktop and Android
+   apps. */
+.header-btn-app { color: var(--go); }
+.header-btn-app:hover { background: var(--go); color: var(--go-fg); }
 
 /* Current-page nav chip: a persistent "you are here" fill (the inverted hover
    state, made permanent) so the button for the page you're on always reads as
@@ -723,7 +723,7 @@ button.header-btn { cursor: pointer; line-height: 1; }
    one differs - which is what keeps the nav stable page to page. */
 .header-btn[aria-current="page"] { background: var(--fg); color: var(--bg); cursor: default; }
 .header-btn[href="/samples"][aria-current="page"],
-.header-btn[href="/samples"][aria-current="page"]:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.header-btn[href="/samples"][aria-current="page"]:hover { background: var(--accent); color: var(--accent-fg); }
 
 /* The "I'm feeling lucky" cell in the per-format .site-nav bar is a <button>;
    strip the native chrome so it sits in the grid exactly like the <a> nav-links
@@ -1113,7 +1113,8 @@ body.anr-has-file .nav-search { display: flex; }
 /* ---------- SECTIONS ---------- */
 .section {
   padding: var(--pad-y) 0 0;
-  scroll-margin-top: var(--nav-offset);
+  /* --stick-top is the home page's sticky offset (MAIN PAGE REDESIGN block). */
+  scroll-margin-top: var(--stick-top, var(--nav-offset));
   max-width: 1440px;
   margin: 0 auto;
 }
@@ -1124,7 +1125,7 @@ body.anr-has-file .nav-search { display: flex; }
      containing block is the grid, so it stays put until the section ends, then
      scrolls away with it. Reset to static on mobile (see ≤900px override). */
   position: sticky;
-  top: calc(var(--nav-offset) + 16px);
+  top: calc(var(--stick-top, var(--nav-offset)) + 16px);
   padding-top: 4px;
   background: var(--bg);
   padding: 24px;
@@ -2340,7 +2341,7 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 :root[data-theme="dark"] .anr-tl-clip.is-audio { background: #2a2a2a; }
 
 /* ---------- RESULTS / CARDS ---------- */
-.anr-results { margin: 0; scroll-margin-top: var(--nav-offset); }
+.anr-results { margin: 0; scroll-margin-top: var(--stick-top, var(--nav-offset)); }
 
 .anr-card {
   margin: 0 0 56px;
@@ -5405,30 +5406,6 @@ body:has(.quickdrop-hero) .footer-nav-btn { display: none; }
   text-decoration: none;
   margin: calc(var(--pad-y) / 2) auto;
 }
-/* Square down-arrow under "Analyse next file?" - jumps to the first analysed
-   section. Same Swiss idiom as .analyse-next (square, hairline, invert hover). */
-.scroll-to-data {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  margin: 0 auto 22px;
-  font-size: 1.2em;
-  line-height: 1;
-  color: var(--fg);
-  background: var(--bg);
-  border: 1px solid var(--fg);
-  border-radius: 0;
-  cursor: pointer;
-  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
-}
-.scroll-to-data::after { content: '\2193'; transition: transform 0.18s ease; }
-.scroll-to-data:hover { background: var(--fg); color: var(--bg); }
-.scroll-to-data:hover::after { transform: translateY(3px); }
-.scroll-to-data:active { transform: translateY(1px); }
-.scroll-to-data[hidden] { display: none; }
-
 /* Drill-down Back bar: shown when a nested file (from a folder/zip/archive tree)
    is being analysed, it steps back one container level. Sticky so it stays in
    view as the user scrolls through whichever section the nested file landed in. */
@@ -6819,7 +6796,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   max-width: 1440px;
   margin: 0 auto;
   background: var(--bg);
-  scroll-margin-top: var(--nav-offset);
+  scroll-margin-top: var(--stick-top, var(--nav-offset));
 }
 .anr-unknown-dump {
   font-family: var(--font-mono);
@@ -9894,6 +9871,259 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
 .sample-pop-desc { color: var(--muted); }
 
 /* =========================================================
+   MAIN PAGE REDESIGN  (redesign-main-page branch)
+   =========================================================
+   The home page has no Photo / Sound / Video band and no section chrome. Its
+   three media sections sit in one result stack (#anrStack) with the generic
+   #unknownResults block, and handleFile() (app.ts) moves the primary analysis to
+   the front of it on every load. The areas behind it hold only the opt-in
+   prompt boxes (Analyse audio, Sonify, a cover, an icon), so they read as the
+   foot of the analysis. /samples shares the stack but keeps its section chrome.
+
+   After a drop the header folds down to a slim sticky bar - see "the collapsed
+   header" below. The result actions stay where they always were: the centred
+   chip row under the dropzones (.analyse-actions), which now carries the search
+   box too. */
+
+/* A section shows only while it holds a visible, non-empty result. Results
+   arrive asynchronously (a cover box lands once photo.js has loaded), which is
+   why this is :has() rather than a hidden flag that handleFile sets once. */
+.anr-stack > .section:not(:has(.anr-results:not([hidden]):not(:empty))) { display: none; }
+
+/* The divider band goes ABOVE every section but the first child, instead of
+   after each one, so it always sits between two visible areas and never lands
+   against the footer, whatever order the stack is in. */
+.anr-stack > .section { padding: 0 0 var(--pad-y); }
+.anr-stack > .section:first-child { padding-top: var(--pad-y); }
+.anr-stack > .section::after { display: none; }
+.anr-stack > .section:not(:first-child)::before {
+  content: '';
+  display: block;
+  height: var(--rule-band-h);
+  margin-bottom: var(--pad-y);
+  background: var(--bg);
+  border-top: var(--bd-hairline);
+  border-bottom: var(--bd-hairline);
+}
+
+/* Home: the photo and video asides hold only the sticky preview, histogram and
+   OCR slots, and the Sound area has no aside at all. With nothing to put in that
+   left gutter - an empty aside, or none - the analysis takes the full width
+   rather than sitting in the right two thirds of an empty page. Where a preview
+   HAS landed the aside stays and the content keeps its column. */
+html[data-page="home"] .anr-stack .section-meta:not(:has(.section-meta-slot:not(:empty))) { display: none; }
+html[data-page="home"] .anr-stack > .section:not(:has(.section-meta-slot:not(:empty))) .section-content {
+  grid-column: 1 / -1;
+}
+
+/* ---- the prompt boxes ----
+   "Audio track", "Frame analysis", "Cover art", "Application icon": a section
+   holding nothing but one of these is not an analysis, it is an offer. A full
+   section each - a divider band, --pad-y above and below - costs two of them
+   more of the page than the analysis they hang off, so they lose the chrome and
+   share a row beneath it.
+
+   That is what the two-column grid is for: everything else spans both columns,
+   a prompt box takes one, and auto-placement pairs the next one beside it. The
+   column gap is the two boxes' own --pad-x edges meeting, so their outer edges
+   stay flush with the analysis above. */
+html[data-page="home"] .anr-stack {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+html[data-page="home"] .anr-stack > * { grid-column: 1 / -1; }
+html[data-page="home"] .anr-stack > .section:has(.anr-results > .anr-prompt-card:only-child) {
+  grid-column: span 1;
+  padding: 32px 0 0;
+}
+html[data-page="home"] .anr-stack > .section:has(.anr-results > .anr-prompt-card:only-child)::before {
+  display: none;
+}
+/* The card is the whole section now, so it drops the 56px tail every result card
+   carries for the next one, and the frame around it tightens. */
+.anr-prompt-card { margin: 0; }
+html[data-page="home"] .anr-stack > .section:has(.anr-results > .anr-prompt-card:only-child) .section-content {
+  padding: 22px;
+}
+
+/* The drill-down Back bar pins under whatever the home page keeps stuck. */
+html[data-page="home"] .anr-back-bar { top: var(--stick-top, 0px); }
+
+/* ---- the collapsed header ----
+   After a drop the header folds: "A 01 - 03", the description and the meta rail
+   (version, analysed count, status, Links, and the two toggles) fade out, the
+   wordmark shrinks, and what is left - "Analyser by valjdakosta" and the page
+   chips - sits in one slim sticky row.
+
+   THE FOLD IS ANIMATED BY JS, not by a transition here: foldHeader() in app.ts
+   measures both states and plays the difference. CSS cannot interpolate it on
+   its own, because the full header is a stack and the collapsed one is a single
+   row, and a layout-mode change has no in-between states. So this block
+   describes only the end state, and nothing in it transitions - a transition on
+   the same properties would fight that animation. Reduced motion (or Clear
+   view) skips the animation and this becomes a plain state swap.
+
+   Keyed on the home page (data-page, set by boot) because body.anr-has-file
+   outlives an SPA move to another page, whose header must stay whole. */
+html[data-page="home"] body.anr-has-file .site-header {
+  position: -webkit-sticky;
+  position: sticky;
+  top: 0;
+  z-index: 24;
+  padding: 0;
+  border-bottom: var(--bd-hairline);
+}
+/* The page shows THROUGH the bar: the column hairlines html::before/::after
+   draw, the page's own fill, and whatever of the analysis is passing underneath.
+   An opaque --bg would paint all of that out. The blur keeps the chips legible
+   over a busy card; where backdrop-filter is unsupported the fill goes opaque
+   instead, since translucent-with-no-blur is unreadable over a hex dump. */
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  html[data-page="home"] body.anr-has-file .site-header {
+    background: color-mix(in srgb, var(--bg) 68%, transparent);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    backdrop-filter: blur(14px) saturate(1.4);
+  }
+}
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  html[data-page="home"] body.anr-has-file .site-header { background: var(--bg); }
+}
+html[data-page="home"] body.anr-has-file .site-header::after { display: none; }
+html[data-page="home"] body.anr-has-file .site-header .grid {
+  display: flex;
+  align-items: center;
+  /* Tall enough for the two-line wordmark below, and no taller. */
+  min-height: 62px;
+}
+/* The wordmark keeps the lockup it has in the full header - the byline tucked
+   under the title, not beside it - so this is a two-row grid with the chips
+   filling the second column beside it. A flex row cannot hold that shape: the
+   title and the byline are siblings of the nav, not wrapped in a block of their
+   own. */
+html[data-page="home"] body.anr-has-file .site-mark {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 28px;
+  row-gap: 2px;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+html[data-page="home"] body.anr-has-file .site-title {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 28px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+/* Its own size, not the full header's: the base rule sizes the byline off
+   --t-mega, which the folded wordmark no longer uses, so it would stay huge.
+   The weight and tracking are the full header's, so the pair reads the same. */
+html[data-page="home"] body.anr-has-file .site-byline {
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+/* The three that go. They are still measured before the fold (app.ts clones them
+   to fade them out in place), so display:none is what they land in, not what
+   they animate through. */
+html[data-page="home"] body.anr-has-file .site-kicker,
+html[data-page="home"] body.anr-has-file .site-sub,
+html[data-page="home"] body.anr-has-file .site-meta { display: none; }
+/* One non-wrapping run of chips. Too many for the width and it scrolls sideways
+   rather than growing the bar a second row. */
+html[data-page="home"] body.anr-has-file .site-mark-nav {
+  /* Beside the wordmark, spanning both its rows, vertically centred against it. */
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  margin: 0;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+html[data-page="home"] body.anr-has-file .site-mark-nav::-webkit-scrollbar { display: none; }
+html[data-page="home"] body.anr-has-file .site-mark-nav > * { flex: none; }
+/* Narrow: the same lockup, a size down, so the bar costs less of a short screen. */
+@media (max-width: 700px) {
+  html[data-page="home"] body.anr-has-file .site-header .grid { min-height: 54px; }
+  html[data-page="home"] body.anr-has-file .site-mark { column-gap: 16px; }
+  html[data-page="home"] body.anr-has-file .site-title { font-size: 22px; }
+  html[data-page="home"] body.anr-has-file .site-byline { font-size: 11px; }
+}
+
+/* The band the two action chips sit in, between the folded header and the first
+   result. It is centred and it is HALF the page's usual rhythm: a full --pad-y
+   each side of a 46px chip row, plus the chips' own 22px margins, was more air
+   than the analysis under it earns. All three halve together so the row stays in
+   the middle of whatever is left. Gated on a loaded file: the chips are hidden
+   before that and the row must collapse to nothing. */
+html[data-page="home"] body.anr-has-file .analyse-actions { padding-top: calc(var(--pad-y) / 2); }
+html[data-page="home"] body.anr-has-file .analyse-actions .analyse-next,
+html[data-page="home"] body.anr-has-file .analyse-actions .export-data { margin: 11px 0; }
+html[data-page="home"] body.anr-has-file .anr-stack > .section:first-child {
+  padding-top: calc(var(--pad-y) / 2);
+}
+
+/* ---- the search chip in the header ----
+   The search moved into the page-chip row when the redesign removed the primary
+   nav, and sits at its right end. .nav-search and its input/arrows draw from six
+   --nav-* variables, because that chrome used to sit on the inverted nav bar;
+   here it sits on the header, so they resolve to the header's own colours. It is
+   display:none until a file is loaded (see .nav-search), by which time the
+   header has folded - so this is sized against the folded bar's chips. */
+.site-mark-nav {
+  --nav-bg:   var(--bg);
+  --nav-fg:   var(--fg);
+  --nav-line: var(--hairline);
+  --nav-seam: var(--hairline);
+  --nav-soft: var(--surface);
+  --nav-dim:  var(--muted);
+}
+/* margin-left:auto pins it to the right end of the row, whatever chips precede
+   it. The rest is .header-btn's box, so it reads as one more chip. */
+.site-mark-nav .nav-search {
+  margin-left: auto;
+  align-items: stretch;
+  border: var(--bd-hairline);
+  background: var(--surface);
+}
+.site-mark-nav .nav-search-btn {
+  width: 26px;
+  height: auto;
+  padding: 0;
+  opacity: 0.75;
+  color: var(--fg);
+}
+/* The 15px glyph the nav bar wanted is taller than the chips' 11px type, and a
+   chip that outgrows its neighbours makes the whole bar taller. */
+.site-mark-nav .nav-search-btn svg { width: 11px; height: 11px; }
+.site-mark-nav .nav-search.is-open .nav-search-input {
+  width: 150px;
+  padding: 2px 8px;
+  border: 0;
+  border-left: var(--bd-hairline);
+  border-right: var(--bd-hairline);
+}
+/* Same reason as the glyph: the nav bar's 18px arrows would be the tallest thing
+   in the row and would grow the bar the moment search opened. */
+.site-mark-nav .nav-search.is-open .nav-search-arrow { font-size: 13px; }
+
+/* The sticky offset the home page's own chrome imposes: the collapsed header,
+   whose real height (--hdr-h, measured by a ResizeObserver in boot) follows the
+   width and the zoom. The sections, the result blocks, the sticky asides and the
+   Back bar all offset by it. Set on the BODY, not <html>: the header is only
+   sticky once a file is loaded, and before that --hdr-h is the full tall
+   header, which as a scroll-margin would push every target far down the page. */
+html[data-page="home"] body.anr-has-file { --stick-top: var(--hdr-h, 0px); }
+
+/* =========================================================
    DESKTOP WINDOW CHROME  (Electron shell only)
    =========================================================
    The desktop window is frameless off macOS and draws its own title bar
@@ -10011,6 +10241,11 @@ html.anr-desktop:not(.anr-win-focused) .anr-tb-file,
 .anr-tb-btn svg { display: block; }
 
 .anr-tb-btn[disabled] { opacity: 0.35; cursor: default; pointer-events: none; }
+
+/* The wordmark is a button too - it reloads the app - but it keeps its own
+   weight and spacing, and as the first thing on the bar it has no rule on its
+   left. `font: inherit` above would otherwise reset the weight. */
+.anr-tb-btn.anr-tb-brand { border-left: 0; padding: 0 14px 0 12px; font-weight: 600; }
 
 /* ---- the menu bar ----
    Drawn rather than popped from the OS, so it is the site's type and hairlines.

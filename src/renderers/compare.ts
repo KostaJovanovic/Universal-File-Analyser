@@ -535,9 +535,18 @@ export async function renderCompare(fileA: File, fileB: File, resultsEl: HTMLEle
 
   resultsEl.appendChild(merged);
 
-  // Staging nodes we needed have been moved into `merged`; drop the shells.
-  stagingA.remove();
-  stagingB.remove();
+  // The staging nodes we needed have been moved into `merged`, so the shells are
+  // empty - but they STAY IN THE DOM, and must. renderAudio() treats an inline
+  // render's mount going disconnected as "this panel was thrown away" and aborts
+  // its controller (audio.js, the MutationObserver near the top). That controller
+  // owns every listener registered with { signal }, including the play/pause/
+  // seeked handlers that drive the waveform and spectrogram playheads - so
+  // removing these shells silently killed both playheads here while playback
+  // itself carried on. They are position:absolute at -99999px and empty, so they
+  // cost nothing, and the next comparison's resultsEl.innerHTML = '' clears them
+  // along with everything else - which is when that teardown SHOULD fire.
+  stagingA.hidden = true;
+  stagingB.hidden = true;
 
   // Fill in the full hash set (CRC-32/MD5/SHA-1/SHA-512) for the Integrity card,
   // and authoritatively re-tag the deferred SHA-256 row now the real result is known.

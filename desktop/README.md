@@ -539,7 +539,18 @@ The rest:
     back - a 220x100 panel whatever the menu.
   - `blur` on that window is the whole of "click outside to close", and
     `pushState` counts the panel's focus as the main window's, or the bar
-    recedes exactly while a menu is being used.
+    recedes exactly while a menu is being used. That blur also means a click
+    on the open menu's own title closes it BEFORE the title's click handler
+    runs, so main ignores a re-open of the menu that just closed - and it must
+    then send `anr:menu-closed`, because the bar marked the title open before
+    it asked. Without that reply the title stayed lit over no menu, and the
+    next click did nothing.
+  - It opens with no animation: `thickFrame: false` (Windows) and
+    `type: 'toolbar'` (Linux). Each open is a `show()`, and the OS animates
+    that for an ordinary window, so the menu scaled up out of nothing.
+- **The wordmark reloads the app** (`anr:chrome-nav` with `'reload'`, the same
+  channel as the arrows). It is an `.anr-tb-btn`, so it opts out of the drag
+  region.
 - **Minimise, maximise and close have no native affordance left.** They go
   through `anr:win`, which checks the sender. Main pushes `anr:win-state` on
   maximize, unmaximize, full screen and focus, because the bar has to redraw for

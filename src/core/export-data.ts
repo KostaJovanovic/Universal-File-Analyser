@@ -37,10 +37,10 @@ const TEXT_CAP = 5000;
 
 // The result containers the renderers populate, plus the section-meta asides that
 // hold a section's visuals (photo preview / histogram / OCR, video preview). Each
-// becomes one titled section in the export, in this order, when it has content.
+// becomes one titled section in the export, in page order, when it has content.
 function exportRoots() {
   const byId = (id: string) => document.getElementById(id);
-  return [
+  const roots = [
     { title: 'File',  main: byId('unknownResults'), extras: [] },
     // leadExtras render BEFORE the main results - the photo preview leads the
     // section so the image itself sits at the top of the export, not the bottom.
@@ -50,6 +50,10 @@ function exportRoots() {
     { title: 'Sound', main: byId('audioResults'), extras: [] },
     { title: 'Video', main: byId('videoResults'), extras: [byId('videoPreview')] },
   ];
+  // The home page puts the primary analysis first (handleFile moves it to the
+  // front of the result stack), so follow the page's own order.
+  return roots.sort((a, b) => (!a.main || !b.main) ? 0
+    : (a.main.compareDocumentPosition(b.main) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1);
 }
 
 const isVisible = (node: HTMLElement|null) => !!node && !node.hidden && node.childElementCount > 0
