@@ -43,7 +43,7 @@
    on every build, so an edit there is silently lost. src/ edits do nothing until
    `npm run build` recompiles.
    ============================================================================ */
-const COMMIT_COUNT = 316;
+const COMMIT_COUNT = 317;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -414,131 +414,332 @@ function hasFiles(e) {
 let _handleFile = null;
 let _scrollHandler = null;
 let _alignSoundNav = null;
-let _barObs = null;
-/* ----- the header fold -----
-   Dropping a file folds the home header down to a slim sticky bar, and "Analyse
-   next file?" unfolds it again. Both directions are ANIMATED here rather than in
-   analyser.css, because the two states are different layouts - the full header
-   is a stack, the folded one a single row - and a layout-mode change has no
-   intermediate values for a CSS transition to walk through. So: measure, flip
-   the class, measure again, and play the difference back (FLIP).
+/* ----- the docked bar -----
+   Dropping a file docks the home header as a slim bar at the top edge, for as
+   long as a file is loaded. The way there is a scroll, played rather than
+   scrolled: the full header and the page under it glide up together, as if the
+   page had been scrolled to the analysis, until only the header's foot is left
+   - and over the second half of it the bar drops in from the top edge, landing
+   on the same frame the glide stops. The window's scroll position never moves.
 
-   ONLY THE WORDMARK TRAVELS. It is transformed from where it was, at the size
-   it was, to where it now is - one continuous object through the fold, which is
-   what makes the two states read as the same header. Everything else fades out
-   where it stood and fades back in where it now stands, whether it is leaving
-   (the kicker, the description, the meta rail) or merely moving (the byline, the
-   page chips). Fading is also the only option for the leavers: they are
-   display:none the instant the class lands, so each is cloned, the clone pinned
-   over the spot the original just left, and that is what fades. The clones are
-   inert and self-removing. */
-const FOLD_MS = 460;
-const FOLD_OUT_MS = 190; // the old state going
-const FOLD_IN_DELAY = 170; // then the new state arriving, just behind it
-const FOLD_IN_MS = 270;
-const FOLD_EASE = 'cubic-bezier(0.4, 0, 0.1, 1)';
-// Travels: transformed into place, and scaled, since its size is part of the
-// difference between the two headers.
-const FOLD_MOVES = ['.site-title'];
-// Faded out and back in. Some of these are in one state only, some in both.
-const FOLD_FADES = ['.site-kicker', '.site-sub', '.site-meta', '.site-byline', '.site-mark-nav'];
-// What a clone has to be told, because the fold changes it on the original and
-// the clone is only made once the new rules are already in force.
-const FOLD_GHOST_PROPS = ['font-size', 'line-height', 'font-weight', 'letter-spacing'];
-const foldReduced = () => document.documentElement.getAttribute('data-a11y') === 'on'
+   The header docks as the SAME element, so search, Share and the rest keep
+   their wiring - but during the glide it is still the full header, rising, so
+   the bar that drops in over it is a copy: the header cloned and given .is-bar
+   (analyser.css styles the bar off that class for this reason), inert, with no
+   ids. Its slide is delayed so it ends with the glide, on the same clock.
+
+   The glide is transforms on the real header and the real <main>. Only when it
+   has finished does anything change in layout: the header leaves the flow as
+   the bar - exactly where the copy has just landed, which then goes - and
+   #siteHeaderSpacer takes the bar's height, which puts <main> exactly where the
+   glide left it, so the transforms come off with nothing moving. What is still
+   showing of the full header at that moment is its foot, under the bar: empty
+   padding, and the divider band (.site-header::after), which fades out as it
+   rises - gone by 60% of the way, so it never reaches the top edge.
+
+   The glide starts from the top of the page: a drop made further down (over
+   the footer) jumps there first, then glides. Only reduced motion or Clear view
+   dock without it.
+
+   The motion must have the main thread to itself, or it stutters - measured in
+   Firefox, three things took it:
+   - The analysis. So the first drop analyses BEFORE the motion: the result is
+     built out of sight (body.anr-staging, handleFile) while the dropzones and
+     the loader stay up, and the glide is what reveals it. <main> fades in as it
+     rises, which also covers the dropzones giving way to the result. It waits
+     for the whole analysis, however long - a glide over a live decode froze for
+     700ms, and revealing a slow result with no motion at all was worse.
+   - The result's first paint (~100ms for a PDF), which is why the glide first
+     shows it at 1% for two frames (.anr-prepaint), before anything moves.
+   - The bar's backdrop blur, whose first paint on a page cost ~180ms (8ms
+     without it). warmBarBlur() paints it once at the drop - so that cost lands
+     in the analysis, where the page is busy anyway. */
+const DOCK_MS = 400;
+const DOCK_EASE = 'cubic-bezier(0.45, 0, 0.2, 1)'; // a scroll's shape: eases in, settles long
+// The bar drops in over the glide's last 55%: from the moment the page is 45%
+// of the way up, measured along the glide's own curve - see the ghost below.
+const BAR_FROM = 0.45;
+// A safety net, not a budget: a first drop's result is revealed when its
+// analysis settles, however long that takes. This only catches a renderer whose
+// promise never settles, so the page cannot sit behind the dropzones forever.
+const REVEAL_MAX_MS = 8000;
+let _dockAnims = [];
+let _barGhost = null; // the bar copy dropping in during the glide
+let _blurWarm = false;
+const dockReduced = () => document.documentElement.getAttribute('data-a11y') === 'on'
     || !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-function foldHeader(flip) {
-    const header = document.querySelector('.site-header');
-    // Only the home page folds, and only when there is motion to spend and an
-    // engine to spend it with. Everything else is the plain state swap.
-    if (!header || document.documentElement.dataset.page !== 'home'
-        || foldReduced() || typeof header.animate !== 'function') {
-        flip();
+function stopDockAnims() {
+    for (const a of _dockAnims)
+        a.cancel();
+    _dockAnims = [];
+    if (_barGhost) {
+        _barGhost.remove();
+        _barGhost = null;
+    }
+}
+// Header and body together: .is-bar styles the header as the bar, anr-docked
+// gives it its room (the spacer) and the page its sticky offset.
+function setDocked(header, on) {
+    if (!on)
+        setBarMenu(header, false, false); // the menu is the bar's; whole, the header shows every chip
+    if (header)
+        header.classList.toggle('is-bar', on);
+    document.body.classList.toggle('anr-docked', on);
+}
+// The bar's page menu, on a narrow screen (analyser.css: the chips fold into a
+// Menu chip under 900px). Opening unrolls the chip panel down from the bar's
+// foot; closing rolls it back up, and only then takes it out of the layout.
+let _menuAnim = null;
+function setBarMenu(header, open, animate = true) {
+    if (!header)
+        return;
+    const nav = header.querySelector('.site-mark-nav');
+    const btn = header.querySelector('.bar-menu-btn');
+    if (_menuAnim) {
+        _menuAnim.cancel();
+        _menuAnim = null;
+    }
+    if (btn)
+        btn.setAttribute('aria-expanded', String(open));
+    if (open)
+        header.classList.add('is-menu-open');
+    if (!animate || !nav || dockReduced() || typeof nav.animate !== 'function') {
+        if (!open)
+            header.classList.remove('is-menu-open');
         return;
     }
-    // A drop made further down the page folds a header that is scrolled off the
-    // top, and the folded one is sticky at y=0 - so the "before" position can be
-    // hundreds of pixels above the window. Flying in from there is not an
-    // animation anyone asked for, so anything that was off-screen just appears.
-    const onScreen = (r) => r.bottom > 0 && r.top < window.innerHeight;
-    const shown = (n) => n.getClientRects().length > 0;
-    const moves = FOLD_MOVES.map(s => header.querySelector(s)).filter(Boolean);
-    const fades = FOLD_FADES.map(s => header.querySelector(s)).filter(Boolean);
-    const before = new Map();
-    // The type each fading element wore BEFORE the fold, for its clone to wear
-    // after it. The byline is the one that needs this - it shrinks from a size
-    // derived from --t-mega to 12px - but taking the set for all of them costs
-    // nothing and stops the next size change here from being a silent bug.
-    const beforeType = new Map();
-    for (const n of moves.concat(fades)) {
-        if (!shown(n))
-            continue;
-        const r = n.getBoundingClientRect();
-        if (!onScreen(r))
-            continue;
-        before.set(n, r);
-        if (fades.indexOf(n) !== -1) {
-            const cs = getComputedStyle(n);
-            beforeType.set(n, FOLD_GHOST_PROPS.map(p => p + ':' + cs.getPropertyValue(p) + ';').join(''));
-        }
+    const shut = 'inset(0 0 100% 0)', full = 'inset(0 0 0 0)';
+    _menuAnim = nav.animate([{ clipPath: open ? shut : full }, { clipPath: open ? full : shut }], open ? { duration: 220, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' } : { duration: 160, easing: 'ease-in' });
+    if (!open)
+        _menuAnim.finished.then(() => { header.classList.remove('is-menu-open'); _menuAnim = null; }, () => { });
+}
+// The same filter as the docked bar (analyser.css), where the bar will be and
+// at its size - a 2px speck warmed only part of it - but at 1% opacity, for long
+// enough to be painted. Once per page load is enough.
+function warmBarBlur() {
+    if (_blurWarm)
+        return;
+    _blurWarm = true;
+    const strip = document.createElement('div');
+    strip.setAttribute('aria-hidden', 'true');
+    strip.style.cssText = 'position:fixed;top:0;left:0;right:0;height:var(--bar-h, 62px);'
+        + 'opacity:0.01;pointer-events:none;'
+        + '-webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);';
+    document.body.appendChild(strip);
+    setTimeout(() => strip.remove(), 400);
+}
+function dockHeader() {
+    const body = document.body;
+    const header = document.querySelector('.site-header');
+    const main = document.querySelector('.site-main');
+    if (body.classList.contains('anr-docked') || _dockAnims.length || body.classList.contains('anr-prepaint')
+        || document.documentElement.dataset.page !== 'home' || !header || !main)
+        return;
+    const dock = () => {
+        stopDockAnims(); // the copy goes as the real bar takes its place
+        setDocked(header, true);
+    };
+    // From further down the page, back to the top first - the glide is the page
+    // leaving the top, so that is where it has to start.
+    window.scrollTo(0, 0);
+    if (dockReduced() || typeof header.animate !== 'function') {
+        dock();
+        return;
     }
-    flip();
-    const headerAfter = header.getBoundingClientRect();
-    for (const n of moves) {
-        const a = before.get(n);
-        if (!a || !shown(n))
-            continue;
-        const b = n.getBoundingClientRect();
-        if (!a.height || !b.height)
-            continue;
-        // The wordmark shrinks with its font-size, so scale it by that ratio.
-        // Scaling from the top-left corner is what makes the translate below the
-        // corner's own.
-        const scale = a.height / b.height;
-        n.style.transformOrigin = 'left top';
-        const anim = n.animate([{ transform: `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${scale})` },
-            { transform: 'none' }], { duration: FOLD_MS, easing: FOLD_EASE });
-        const done = () => { n.style.transformOrigin = ''; };
-        anim.finished.then(done, done);
+    // Far enough to leave exactly the bar's height of the header showing - the
+    // height of the spacer that replaces it (analyser.css: --bar-h plus its hairline).
+    const barH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar-h')) || 62;
+    const up = 'translateY(' + (-(header.offsetHeight - (barH + 1))) + 'px)';
+    const opts = { duration: DOCK_MS, easing: DOCK_EASE, fill: 'forwards' };
+    // Two frames at 1% first, so the result's first paint happens before anything
+    // moves; the glide then starts it from 0.
+    body.classList.add('anr-prepaint');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        body.classList.remove('anr-prepaint');
+        if (!body.classList.contains('anr-has-file'))
+            return; // cancelled meanwhile
+        _dockAnims = [
+            header.animate([{ transform: 'none' }, { transform: up }], opts),
+            // The divider band at the header's foot fades as it rises, and is gone
+            // before it nears the top. It lands display:none once docked, so the
+            // held 0 never shows; a cancelled glide drops it and the band is back.
+            header.animate([{ opacity: 1 }, { opacity: 0, offset: 0.6 }, { opacity: 0 }], { ...opts, pseudoElement: '::after' }),
+            // The result rises with it and fades in over the first half of the way.
+            main.animate([{ transform: 'none', opacity: 0 }, { opacity: 1, offset: 0.5 }, { transform: up, opacity: 1 }], opts),
+        ];
+        // The bar dropping in over the glide: a copy of the header, as the bar. It
+        // runs on the glide's own clock AND curve - the keyframe offsets are read
+        // against the eased progress - so from BAR_FROM on it moves in step with the
+        // page, slows as the page slows, and stops on the same frame. With a curve
+        // of its own it reached its place visibly before the page did.
+        const ghost = header.cloneNode(true);
+        ghost.classList.add('is-bar', 'is-bar-ghost');
+        ghost.setAttribute('aria-hidden', 'true');
+        ghost.setAttribute('inert', '');
+        ghost.removeAttribute('id');
+        ghost.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+        header.after(ghost);
+        _barGhost = ghost;
+        _dockAnims.push(ghost.animate([
+            { transform: 'translateY(-100%)' },
+            { transform: 'translateY(-100%)', offset: BAR_FROM },
+            { transform: 'none' },
+        ], opts));
+        // Rejects when undockHeader cancels it midway - and then it must not dock.
+        _dockAnims[0].finished.then(dock, () => { });
+    }));
+}
+function undockHeader() {
+    stopDockAnims();
+    setDocked(document.querySelector('.site-header'), false);
+    document.body.classList.remove('anr-prepaint');
+}
+/* "Analyse next file?": the dock played back, then done() (the reload). The
+   analysis fades out where it stands; behind that the page goes back to the top
+   and reset() swaps in the empty page, dropzones and all. Then the header glides
+   back down - the bar rising away in step, the band returning - and the
+   dropzones come down with it, fading in. Its last frame is the fresh page, so
+   the reload that follows changes nothing on screen. */
+const RETURN_FADE_MS = 160;
+let _returning = false;
+function returnHeader(reset, done) {
+    const body = document.body;
+    const header = document.querySelector('.site-header');
+    const main = document.querySelector('.site-main');
+    if (_returning)
+        return;
+    if (dockReduced() || !header || !main || typeof header.animate !== 'function'
+        || document.documentElement.dataset.page !== 'home' || !body.classList.contains('anr-has-file')) {
+        done();
+        return;
     }
-    for (const n of fades) {
-        const a = before.get(n);
-        const here = shown(n);
-        const b = here ? n.getBoundingClientRect() : null;
-        // Where it did not budge - the meta rail on a fold that changes nothing about
-        // it, an unfold that puts it back exactly where it was - there is nothing to
-        // cover, so leave it alone rather than blinking it.
-        const still = !!(a && b && Math.abs(a.left - b.left) < 1 && Math.abs(a.top - b.top) < 1
-            && Math.abs(a.height - b.height) < 1);
-        if (still)
-            continue;
-        // Out: a copy pinned over the spot the original just left. It has to be a
-        // copy because the original may already be display:none, and because it has
-        // already taken the new state's type. The header is sticky by now, so the
-        // offsets below are against its own box.
-        if (a) {
-            const ghost = n.cloneNode(true);
-            ghost.setAttribute('aria-hidden', 'true');
-            // The clone carries the original's class, so a rule that hides the original
-            // hides it too; the inline display is what overrules that, and it has to be
-            // a real value rather than the original's computed one, which may now read
-            // "none". Placed and sized explicitly, so block serves whatever it was in
-            // flow. The type comes from the snapshot taken before the flip.
-            ghost.style.cssText = 'position:absolute;margin:0;pointer-events:none;display:block;'
-                + 'left:' + (a.left - headerAfter.left) + 'px;'
-                + 'top:' + (a.top - headerAfter.top) + 'px;'
-                + 'width:' + a.width + 'px;height:' + a.height + 'px;'
-                + (beforeType.get(n) || '');
-            header.appendChild(ghost);
-            const out = ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: FOLD_OUT_MS, easing: 'ease-out', fill: 'forwards' });
-            out.finished.then(() => ghost.remove(), () => ghost.remove());
-        }
-        // In: the real element, just behind it. fill:'backwards' is what holds it at
-        // zero through the delay instead of letting it flash in first.
-        if (here) {
-            n.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FOLD_IN_MS, delay: a ? FOLD_IN_DELAY : 0, easing: 'ease-out', fill: 'backwards' });
-        }
+    _returning = true;
+    setBarMenu(header, false, false); // the copy below is of the bar, menu shut
+    // Mid-glide: land it first, so the way back starts from the bar.
+    if (!body.classList.contains('anr-docked')) {
+        stopDockAnims();
+        body.classList.remove('anr-prepaint');
+        setDocked(header, true);
     }
+    const below = [main, document.querySelector('.site-footer')].filter(Boolean);
+    const fades = below.map((n) => n.animate([{ opacity: 1 }, { opacity: 0 }], { duration: RETURN_FADE_MS, easing: 'ease-out', fill: 'forwards' }));
+    fades[0].finished.then(() => {
+        // The bar as it stands, to rise away while the real header comes down.
+        const ghost = header.cloneNode(true);
+        ghost.classList.add('is-bar-ghost');
+        ghost.setAttribute('aria-hidden', 'true');
+        ghost.setAttribute('inert', '');
+        ghost.removeAttribute('id');
+        ghost.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+        window.scrollTo(0, 0);
+        reset(); // undocks the header too
+        header.after(ghost);
+        _barGhost = ghost;
+        const barH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar-h')) || 62;
+        const up = 'translateY(' + (-(header.offsetHeight - (barH + 1))) + 'px)';
+        const opts = { duration: DOCK_MS, easing: DOCK_EASE, fill: 'forwards' };
+        _dockAnims = [
+            header.animate([{ transform: up }, { transform: 'none' }], opts),
+            header.animate([{ opacity: 0 }, { opacity: 0, offset: 1 - 0.6 }, { opacity: 1 }], { ...opts, pseudoElement: '::after' }),
+            ...below.map((n) => n.animate([{ transform: up, opacity: 0 }, { opacity: 1, offset: 0.5 }, { transform: 'none', opacity: 1 }], opts)),
+            ghost.animate([
+                { transform: 'none' },
+                { transform: 'translateY(-100%)', offset: 1 - BAR_FROM },
+                { transform: 'translateY(-100%)' },
+            ], opts),
+        ];
+        for (const f of fades)
+            f.cancel(); // the glide holds them at 0 from here
+        // Held on the first frame for two frames, as the dock is, so the swapped-in
+        // page paints before anything moves.
+        for (const a of _dockAnims)
+            a.pause();
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            for (const a of _dockAnims)
+                a.play();
+            _dockAnims[0].finished.then(done, () => { });
+        }));
+    }, () => { });
+}
+/* The page scrollbar on a touch screen. Phones ignore ::-webkit-scrollbar on the
+   page and draw their own - a grey rounded overlay on Android, next to nothing on
+   iOS - so there the native one is hidden (html.anr-own-sb, analyser.css
+   SCROLLBARS) and this draws the site's: a square thumb at the right edge that
+   shows while the page moves and fades a moment after it stops. While it shows
+   it can be grabbed, to cross a long analysis in one drag. A pointer with hover
+   keeps the native scrollbar, which the stylesheet already styles. */
+const TOUCH_SB_IDLE_MS = 900;
+function mountTouchScrollbar() {
+    if (!window.matchMedia || !window.matchMedia('(hover: none) and (pointer: coarse)').matches)
+        return;
+    const root = document.documentElement;
+    const bar = document.createElement('div');
+    bar.className = 'anr-touch-sb';
+    bar.setAttribute('aria-hidden', 'true');
+    const thumb = document.createElement('div');
+    thumb.className = 'anr-touch-sb-thumb';
+    bar.appendChild(thumb);
+    document.body.appendChild(bar);
+    root.classList.add('anr-own-sb');
+    let raf = 0, idle = 0, dragging = false;
+    let travel = 0, range = 0, startY = 0, startScroll = 0;
+    // Sized and placed from scratch on every show: the page grows as an analysis
+    // renders, so a length measured once goes stale.
+    const place = () => {
+        const view = window.innerHeight;
+        range = root.scrollHeight - view;
+        if (range <= 1)
+            return false;
+        const h = Math.max(40, Math.round(view * view / root.scrollHeight));
+        travel = view - h;
+        thumb.style.height = h + 'px';
+        thumb.style.transform = 'translateY(' + Math.round(travel * Math.min(1, Math.max(0, window.scrollY / range))) + 'px)';
+        return true;
+    };
+    const show = () => {
+        if (raf)
+            return;
+        raf = requestAnimationFrame(() => {
+            raf = 0;
+            clearTimeout(idle);
+            if (!place()) {
+                bar.classList.remove('is-on');
+                return;
+            }
+            bar.classList.add('is-on');
+            if (!dragging)
+                idle = window.setTimeout(() => bar.classList.remove('is-on'), TOUCH_SB_IDLE_MS);
+        });
+    };
+    window.addEventListener('scroll', show, { passive: true });
+    window.addEventListener('resize', show);
+    thumb.addEventListener('pointerdown', (e) => {
+        if (!bar.classList.contains('is-on') || travel <= 0)
+            return;
+        e.preventDefault();
+        dragging = true;
+        clearTimeout(idle);
+        startY = e.clientY;
+        startScroll = window.scrollY;
+        thumb.setPointerCapture(e.pointerId);
+        bar.classList.add('is-dragging');
+    });
+    thumb.addEventListener('pointermove', (e) => {
+        if (!dragging)
+            return;
+        // 'instant': a smooth scroll-behavior anywhere up the cascade would make
+        // the page trail the finger.
+        window.scrollTo({ top: startScroll + (e.clientY - startY) * range / travel, behavior: 'instant' });
+    });
+    const release = () => {
+        if (!dragging)
+            return;
+        dragging = false;
+        bar.classList.remove('is-dragging');
+        show();
+    };
+    thumb.addEventListener('pointerup', release);
+    thumb.addEventListener('pointercancel', release);
 }
 // Changelog "tl;dr" digest (PATCH_DIGEST + setupPatchTldr) lives in
 // ./patch-tldr.js - imported at the top of this file.
@@ -584,27 +785,19 @@ function boot() {
     const pageDropEl = $('pageDrop');
     // The home-page marker. data-page is set again on every navigation:
     // navigate.js keeps <html> and <body>, and body.anr-has-file outlives a move
-    // to another page, so the folded-header rules key on this and not on the body
+    // to another page, so the docked-bar rules key on this and not on the body
     // class alone.
     const rootEl = document.documentElement;
     if (document.getElementById('heroDrop'))
         rootEl.dataset.page = 'home';
     else
         delete rootEl.dataset.page;
-    // Everything the folded header sticks above offsets by its real height, which
-    // moves with the width, the zoom and the fold itself. Measure it live into
-    // --hdr-h (analyser.css reads it as --stick-top).
-    if (_barObs) {
-        _barObs.disconnect();
-        _barObs = null;
-    }
-    const headerEl = document.querySelector('.site-header');
-    if (headerEl && typeof ResizeObserver !== 'undefined') {
-        _barObs = new ResizeObserver(() => {
-            rootEl.style.setProperty('--hdr-h', headerEl.getBoundingClientRect().height + 'px');
-        });
-        _barObs.observe(headerEl);
-    }
+    // Back home with an analysis still on it (navigate.js restores it): the bar
+    // is simply there. Anywhere else, or with nothing loaded, the header is whole.
+    stopDockAnims();
+    document.body.classList.remove('anr-prepaint', 'anr-staging');
+    const restored = rootEl.dataset.page === 'home' && document.body.classList.contains('anr-has-file');
+    setDocked(document.querySelector('.site-header'), restored);
     let firstFileLoaded = false;
     let dragCounter = 0;
     // Token for the load currently in flight. Cancelling marks it so the
@@ -728,8 +921,8 @@ function boot() {
             btn.hidden = true;
         if (exp)
             exp.hidden = true;
-        // Unfold the header back to its full self, the same animation in reverse.
-        foldHeader(() => document.body.classList.remove('anr-has-file'));
+        document.body.classList.remove('anr-has-file', 'anr-loading', 'anr-staging');
+        undockHeader(); // no file, no bar - the header is whole again
     }
     // Folder/zip overviews are rendered directly (not via handleFile), so they must
     // run the same "a file is loaded" UI transition handleFile does: hide the three
@@ -738,7 +931,7 @@ function boot() {
     // overview.
     function enterLoadedUI() {
         firstFileLoaded = true;
-        foldHeader(() => document.body.classList.add('anr-has-file'));
+        document.body.classList.add('anr-has-file');
         if (pageDropEl)
             pageDropEl.hidden = true;
         showAnalyseNext();
@@ -746,6 +939,7 @@ function boot() {
         const stack = document.getElementById('anrStack');
         if (stack && unknownResults.parentNode === stack)
             stack.prepend(unknownResults);
+        dockHeader();
     }
     // Stop the in-flight load: drop its results and restore the empty page state.
     function cancelLoad(token) {
@@ -756,7 +950,7 @@ function boot() {
             _currentToken = null;
         clearResultsUI();
         resetNav();
-        restoreQuickdrop();
+        restoreQuickdrop(); // also ends the loading hold
     }
     async function handleFile(file, opts) {
         if (!file)
@@ -795,10 +989,46 @@ function boot() {
         showDropLoader(file, () => cancelLoad(token), undefined, nested);
         clearResultsUI();
         firstFileLoaded = true;
-        foldHeader(() => document.body.classList.add('anr-has-file')); // folds the header to its slim bar
-        if (pageDropEl)
-            pageDropEl.hidden = true;
-        showAnalyseNext();
+        // The first card is behind the probe, the sniffs and a lazy import, and the
+        // stack is empty until then - which would lift the footer up under the chips
+        // and throw it back down when the card lands. anr-loading holds the stack open
+        // meanwhile (analyser.css). It is taken off wherever this load hides its drop
+        // loader, or by cancelLoad.
+        document.body.classList.add('anr-loading');
+        const endHold = () => document.body.classList.remove('anr-loading');
+        // reveal(): swap the dropzones for the chips and the result, and dock the
+        // header. On the FIRST drop on the home page the analysis runs before that,
+        // out of sight (anr-staging) with the dropzones and the loader still up, and
+        // the dock's glide is what reveals it - so the motion never shares the main
+        // thread with the decode, which stuttered it (see dockHeader). It waits for
+        // the renderer to settle, however long - the loader shows the progress - with
+        // REVEAL_MAX_MS only as a net for one that never does. Everywhere else (a nested load, /samples) there is no
+        // glide to protect, and it reveals at once.
+        const staging = rootEl.dataset.page === 'home' && !document.body.classList.contains('anr-docked');
+        let revealed = false;
+        let revealTimer = 0;
+        const reveal = () => {
+            if (revealed)
+                return;
+            revealed = true;
+            clearTimeout(revealTimer);
+            if (token.cancelled || _currentToken !== token)
+                return; // a newer load or a cancel owns the page
+            document.body.classList.add('anr-has-file');
+            document.body.classList.remove('anr-staging');
+            if (pageDropEl)
+                pageDropEl.hidden = true;
+            showAnalyseNext();
+            dockHeader();
+        };
+        if (staging) {
+            document.body.classList.add('anr-staging');
+            warmBarBlur();
+            revealTimer = window.setTimeout(reveal, REVEAL_MAX_MS);
+        }
+        else {
+            reveal();
+        }
         // Desktop: name the file in the window's own title bar and taskbar entry.
         // Only the top-level file - a drill-down into an archive keeps naming the
         // archive, which is what the Back bar says too. Absent in a browser.
@@ -817,12 +1047,14 @@ function boot() {
         // explain plainly. (Not counted in stats/history: it isn't a real analysis.)
         if (file.size === 0) {
             hideDropLoader();
+            endHold();
             unknownResults.hidden = false;
             unknownResults.innerHTML = '';
             const card = el('div', { class: 'anr-card' });
             card.appendChild(el('h3', {}, 'Empty file'));
             card.appendChild(emptyFileWarning(file));
             unknownResults.appendChild(card);
+            reveal();
             return;
         }
         const readErr = await probeReadable(file);
@@ -830,12 +1062,14 @@ function boot() {
             return; // cancelled while probing - don't render
         if (readErr) {
             hideDropLoader();
+            endHold();
             unknownResults.hidden = false;
             unknownResults.innerHTML = '';
             const card = el('div', { class: 'anr-card' });
             card.appendChild(el('h3', {}, 'File unavailable'));
             card.appendChild(cloudFileWarning(file));
             unknownResults.appendChild(card);
+            reveal();
             showSuggestPopup(fileExt(file.name)); // couldn't load - nudge to suggest the format
             return;
         }
@@ -995,9 +1229,9 @@ function boot() {
         else {
             renderPromise = route.render(file, resultsByName[results]);
         }
-        // Bring the analysis into view. On the home page the header has just collapsed
-        // and the drop area has gone, so the analysis starts at the top of the page:
-        // scroll there (a drop made further down, over the footer, would otherwise
+        // Bring the analysis into view. On the home page the header has docked and the
+        // drop area has gone, so the analysis starts at the top of the page: scroll
+        // there (a nested load opened from further down a folder view would otherwise
         // leave the reader below it). Elsewhere (/samples) scroll to the section the
         // result landed in, right under the nav (each target carries
         // scroll-margin-top). Content above the target can arrive asynchronously, so
@@ -1105,6 +1339,7 @@ function boot() {
                 return;
             } // superseded
             hideDropLoader();
+            endHold();
             // If the renderer threw, lead the analysis with a plain error card so the
             // failure is visible (the Integrity card below still gives the fingerprint).
             if (renderFailed && resultEl) {
@@ -1144,6 +1379,9 @@ function boot() {
                 else
                     resultEl.appendChild(tCard);
             }
+            // The analysis is complete, cards and all: if it was built out of sight, the
+            // glide shows it now (a no-op if the REVEAL_MAX_MS net got there first).
+            reveal();
             // Everything above the media section (the Photo/Sound "Analyse" cards) and
             // its player are in place now, so re-assert the scroll - the early one
             // landed too high before they pushed it down. Two rAFs let the final layout
@@ -1224,11 +1462,16 @@ function boot() {
     // opens: the content resolver (magic/text/git/CSV) and the readable-text test.
     window._anrResolveContent = resolveByContent;
     window._anrReadableText = isReadableText;
-    // "Analyse next file?" (shown once a file is loaded) reloads to a clean page.
+    // "Analyse next file?" (shown once a file is loaded) reloads to a clean page -
+    // after the header has glided back down to it (returnHeader).
     const analyseNextBtn = $('analyseNext');
     if (analyseNextBtn && !analyseNextBtn._wired) {
         analyseNextBtn._wired = true;
-        analyseNextBtn.addEventListener('click', () => location.reload());
+        analyseNextBtn.addEventListener('click', () => returnHeader(() => {
+            clearResultsUI();
+            resetNav();
+            restoreQuickdrop();
+        }, () => location.reload()));
     }
     wireExportButton();
     // ----- Compare two files (the /compare page) -----
@@ -1528,6 +1771,42 @@ function boot() {
     }
     // ----- Page-level drag/drop (window listeners added once) -----
     if (!boot._once) {
+        mountTouchScrollbar();
+        // The bar's Menu chip (setBarMenu). Delegated, because an SPA move swaps the
+        // header's markup. Any click shuts an open menu - a chip, which has done its
+        // job, or anywhere outside - except in the search, which is typed into.
+        document.addEventListener('click', (e) => {
+            const header = document.querySelector('.site-header');
+            const t = e.target;
+            if (!header || !t || !t.closest)
+                return;
+            if (t.closest('.bar-menu-btn')) {
+                setBarMenu(header, !header.classList.contains('is-menu-open'));
+                return;
+            }
+            if (header.classList.contains('is-menu-open') && !t.closest('.nav-search'))
+                setBarMenu(header, false);
+        });
+        document.addEventListener('keydown', (e) => {
+            const header = document.querySelector('.site-header');
+            if (e.key === 'Escape' && header && header.classList.contains('is-menu-open'))
+                setBarMenu(header, false);
+        });
+        // The bar's Home chip, over an analysis: back to the empty page the way
+        // Analyse next goes, glide and all, rather than a bare load of "/". Capture
+        // phase, so it claims the click before navigate.js sees the link.
+        document.addEventListener('click', (e) => {
+            const t = e.target;
+            if (!t || !t.closest || !t.closest('.bar-home'))
+                return;
+            if (document.documentElement.dataset.page !== 'home' || !document.body.classList.contains('anr-has-file'))
+                return;
+            const next = $('analyseNext');
+            if (!next)
+                return;
+            e.preventDefault();
+            next.click();
+        }, true);
         let dragCounter = 0;
         // The /compare page: its two zones (A/B) are the real targets, so the
         // page-level drop handling is skipped entirely - no full-page overlay to
@@ -1571,6 +1850,11 @@ function boot() {
             const drop = $('pageDrop');
             if (drop)
                 drop.hidden = true;
+            // A dropped folder renders its overview directly and docks straight after,
+            // with no analysis phase for handleFile to warm the bar's blur in - so warm
+            // it here, for every drop (see dockHeader).
+            if (document.documentElement.dataset.page === 'home')
+                warmBarBlur();
             // The /samples page can render inline (it has the result containers), but a
             // dropped file is the user's own - it must NOT be treated as a sandboxed demo
             // sample. Route it to the home page so it analyses (and counts) like any real

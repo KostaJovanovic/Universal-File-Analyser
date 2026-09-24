@@ -2689,8 +2689,16 @@ export function mountPhotoPrompt(title: string, text: string, label: string, run
     // section out from under the scroll below. It goes once run() settles.
     card.innerHTML = '';
     card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' }, 'Analysing…'));
-    (host.closest('.section') || host).scrollIntoView({ behavior: 'smooth', block: 'start' });
-    Promise.resolve(run(host)).catch(() => {}).finally(() => { card.remove(); });
+    const sec = host.closest('.section');
+    // .is-opening fades in what the render inserts (analyser.css). It stays past
+    // the settle long enough for the last card's 220ms fade to finish - dropping
+    // it mid-fade would cancel the transition and snap the card in.
+    if (sec) sec.classList.add('is-opening');
+    (sec || host).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    Promise.resolve(run(host)).catch(() => {}).finally(() => {
+      card.remove();
+      if (sec) setTimeout(() => sec.classList.remove('is-opening'), 260);
+    });
   });
   return card;
 }

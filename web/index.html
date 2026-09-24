@@ -171,6 +171,16 @@
       <h1 class="site-title">Analyser</h1>
       <p class="site-byline">by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
       <p class="site-sub">Photos, sound, video, PDFs, documents, archives - and almost any other file. Fully local; nothing you drop ever leaves your browser.</p>
+      <!-- The docked bar's lead on a narrow screen, where the chips below fold
+           into the Menu (setBarMenu in app.js): Menu, then the two chips kept
+           out of it. Home goes back to the empty page the way Analyse next
+           does; Get App is removed inside the apps with the other one
+           (popups.js). Hidden everywhere else. -->
+      <div class="bar-lead">
+        <button type="button" class="header-btn bar-menu-btn" aria-expanded="false" aria-label="Pages menu">Menu</button>
+        <a href="/" class="header-btn bar-home">Home</a>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser/releases/latest" class="header-btn header-btn-app" target="_blank" rel="noopener">Get App</a>
+      </div>
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn" aria-current="page">Home</a>
         <a href="/about" class="header-btn">About</a>
@@ -202,6 +212,9 @@
     </div>
   </div>
 </header>
+<!-- The docked bar's height in the flow, once the header has become the slim bar
+     (dockHeader in app.js), so the analysis starts just under the bar. -->
+<div id="siteHeaderSpacer" class="site-header-spacer" aria-hidden="true"></div>
 
 <main class="site-main">
 

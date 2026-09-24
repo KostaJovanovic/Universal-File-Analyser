@@ -172,6 +172,48 @@ body {
   html { scrollbar-width: thin; scrollbar-color: var(--muted) var(--bg); }
 }
 
+/* Touch screens: none of the above reaches the page's scrollbar there - a phone
+   draws its own overlay - so mountTouchScrollbar() (app.ts) hides it and draws
+   this one instead. The class lands only when that has run, so without the
+   script the phone keeps its own. The thumb is the desktop one's 5px bar, square
+   and --muted; it shows while the page moves (.is-on) and goes accent while
+   dragged, as the desktop thumb does when held. Its box is 22px wide - a finger's
+   worth - with the bar drawn at its right edge, and it only takes touches while
+   it shows, so a hidden one never steals a swipe from the edge of a card. */
+html.anr-own-sb { scrollbar-width: none; }
+html.anr-own-sb::-webkit-scrollbar { display: none; }
+.anr-touch-sb {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 22px;
+  z-index: 40;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-base) ease;
+}
+.anr-touch-sb.is-on { opacity: 1; transition-duration: var(--dur-fast); }
+.anr-touch-sb-thumb {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 100%;
+  touch-action: none;
+}
+.anr-touch-sb.is-on .anr-touch-sb-thumb { pointer-events: auto; }
+.anr-touch-sb-thumb::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 3px;
+  width: 5px;
+  background: var(--muted);
+  transition: background-color var(--dur-fast) ease;
+}
+.anr-touch-sb.is-dragging .anr-touch-sb-thumb::before { background: var(--accent); }
+
 /* Faint drifting grid backdrop. NOTE: on high-refresh-rate displays a recent
    Firefox/WebRender regression pixel-snaps this slow axis-aligned drift, so it can
    look choppy in Firefox (Chrome/Safari stay smooth). It is NOT a site bug - 2.0
@@ -9878,7 +9920,9 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
    #unknownResults block, and handleFile() (app.ts) moves the primary analysis to
    the front of it on every load. The areas behind it hold only the opt-in
    prompt boxes (Analyse audio, Sonify, a cover, an icon), so they read as the
-   foot of the analysis. /samples shares the stack but keeps its section chrome.
+   foot of the analysis. #unknownResults draws the Sound area's frame, so every
+   kind lands in the same box. /samples shares the stack but keeps its section
+   chrome.
 
    After a drop the header folds down to a slim sticky bar - see "the collapsed
    header" below. The result actions stay where they always were: the centred
@@ -9916,6 +9960,31 @@ html[data-page="home"] .anr-stack > .section:not(:has(.section-meta-slot:not(:em
   grid-column: 1 / -1;
 }
 
+/* Home: the generic result block (#unknownResults - every kind that is not
+   photo, audio or video) draws the same frame as the Sound area, which has no
+   aside: one bordered box across the full width, set in by the grid's --pad-x
+   gutter, 32px inside, --pad-y below. It is not a .section, so it builds that
+   .section > .grid > .section-content frame on itself. */
+html[data-page="home"] .anr-unknown-results:not([hidden]) {
+  justify-self: center;
+  width: calc(min(100%, 1440px) - 2 * var(--pad-x));
+  margin: 0 0 var(--pad-y);
+  padding: 32px;
+  border: var(--bd-hairline);
+}
+/* The same half-rhythm gap under the chips as a leading .section (below). */
+html[data-page="home"] body.anr-has-file .anr-stack > .anr-unknown-results:first-child {
+  margin-top: calc(var(--pad-y) / 2);
+}
+@media (max-width: 700px) {
+  /* The mobile .section .grid gutter and .section-content inner padding. */
+  html[data-page="home"] .anr-unknown-results:not([hidden]) {
+    width: calc(100% - 28px);
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
+
 /* ---- the prompt boxes ----
    "Audio track", "Frame analysis", "Cover art", "Application icon": a section
    holding nothing but one of these is not an analysis, it is an offer. A full
@@ -9950,78 +10019,93 @@ html[data-page="home"] .anr-stack > .section:has(.anr-results > .anr-prompt-card
 /* The drill-down Back bar pins under whatever the home page keeps stuck. */
 html[data-page="home"] .anr-back-bar { top: var(--stick-top, 0px); }
 
-/* ---- the collapsed header ----
-   After a drop the header folds: "A 01 - 03", the description and the meta rail
-   (version, analysed count, status, Links, and the two toggles) fade out, the
-   wordmark shrinks, and what is left - "Analyser by valjdakosta" and the page
-   chips - sits in one slim sticky row.
+/* ---- the docked bar ----
+   Nothing folds on a drop. dockHeader() in app.ts glides the whole header and
+   the page under it up, as if the page were being scrolled to the analysis,
+   while the bar drops in from the top edge over it - landing on the same frame
+   the glide ends. Then the header itself becomes the bar (.is-bar, with
+   body.anr-docked), fixed to the top edge for as long as a file is loaded.
+   "A 01 - 03", the description and the meta rail go; "Analyser by valjdakosta"
+   and the page chips stay, in one row. #siteHeaderSpacer takes the bar's height
+   in the flow, so the analysis starts just under it - exactly where the glide
+   left <main>.
 
-   THE FOLD IS ANIMATED BY JS, not by a transition here: foldHeader() in app.ts
-   measures both states and plays the difference. CSS cannot interpolate it on
-   its own, because the full header is a stack and the collapsed one is a single
-   row, and a layout-mode change has no in-between states. So this block
-   describes only the end state, and nothing in it transitions - a transition on
-   the same properties would fight that animation. Reduced motion (or Clear
-   view) skips the animation and this becomes a plain state swap.
+   The bar is styled by a class on the HEADER, not on the body, because during
+   the glide there are two: the real header, still whole and rising, and a copy
+   wearing .is-bar that drops in over it (.is-bar-ghost). They meet at the end,
+   the real one turns into the bar where the copy is, and the copy goes.
 
-   Keyed on the home page (data-page, set by boot) because body.anr-has-file
-   outlives an SPA move to another page, whose header must stay whole. */
-html[data-page="home"] body.anr-has-file .site-header {
-  position: -webkit-sticky;
-  position: sticky;
+   --bar-h is the bar's height, which the glide's distance and the spacer both
+   follow (plus the bar's 1px hairline).
+
+   Keyed on the home page (data-page, set by boot) because body classes outlive
+   an SPA move to another page, whose header must stay whole. */
+html[data-page="home"] { --bar-h: 62px; }
+@media (max-width: 700px) { html[data-page="home"] { --bar-h: 54px; } }
+html[data-page="home"] .site-header.is-bar {
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 24;
   padding: 0;
   border-bottom: var(--bd-hairline);
 }
+/* The spacer: the bar's height in the flow. Nothing is drawn in it - the
+   header's divider band fades out during the glide (dockHeader in app.ts), so
+   there is no band left at the top for it to stand in for. */
+html[data-page="home"] body.anr-docked #siteHeaderSpacer { height: calc(var(--bar-h) + 1px); }
+/* The glide's first two frames: the result painted at 1%, so its first paint
+   is over before anything moves (dockHeader in app.ts). */
+html[data-page="home"] body.anr-prepaint .site-main { opacity: 0.01; }
 /* The page shows THROUGH the bar: the column hairlines html::before/::after
    draw, the page's own fill, and whatever of the analysis is passing underneath.
    An opaque --bg would paint all of that out. The blur keeps the chips legible
    over a busy card; where backdrop-filter is unsupported the fill goes opaque
    instead, since translucent-with-no-blur is unreadable over a hex dump. */
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  html[data-page="home"] body.anr-has-file .site-header {
+  html[data-page="home"] .site-header.is-bar {
     background: color-mix(in srgb, var(--bg) 68%, transparent);
     -webkit-backdrop-filter: blur(14px) saturate(1.4);
     backdrop-filter: blur(14px) saturate(1.4);
   }
 }
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  html[data-page="home"] body.anr-has-file .site-header { background: var(--bg); }
+  html[data-page="home"] .site-header.is-bar { background: var(--bg); }
 }
-html[data-page="home"] body.anr-has-file .site-header::after { display: none; }
-html[data-page="home"] body.anr-has-file .site-header .grid {
+html[data-page="home"] .site-header.is-bar::after { display: none; }
+html[data-page="home"] .site-header.is-bar .grid {
   display: flex;
   align-items: center;
   /* Tall enough for the two-line wordmark below, and no taller. */
-  min-height: 62px;
+  min-height: var(--bar-h);
 }
 /* The wordmark keeps the lockup it has in the full header - the byline tucked
-   under the title, not beside it - so this is a two-row grid with the chips
-   filling the second column beside it. A flex row cannot hold that shape: the
-   title and the byline are siblings of the nav, not wrapped in a block of their
-   own. */
-html[data-page="home"] body.anr-has-file .site-mark {
+   under the title, not beside it - so this is a two-row grid, the chips filling
+   the first column and the wordmark sitting in the second, at the bar's right
+   end. A flex row cannot hold that shape: the title and the byline are siblings
+   of the nav, not wrapped in a block of their own. */
+html[data-page="home"] .site-header.is-bar .site-mark {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   column-gap: 28px;
   row-gap: 2px;
   align-items: center;
   flex: 1 1 auto;
   min-width: 0;
 }
-html[data-page="home"] body.anr-has-file .site-title {
-  grid-column: 1;
+html[data-page="home"] .site-header.is-bar .site-title {
+  grid-column: 2;
   grid-row: 1;
   font-size: 28px;
   line-height: 1;
   letter-spacing: -0.03em;
 }
 /* Its own size, not the full header's: the base rule sizes the byline off
-   --t-mega, which the folded wordmark no longer uses, so it would stay huge.
+   --t-mega, which the bar's wordmark no longer uses, so it would stay huge.
    The weight and tracking are the full header's, so the pair reads the same. */
-html[data-page="home"] body.anr-has-file .site-byline {
-  grid-column: 1;
+html[data-page="home"] .site-header.is-bar .site-byline {
+  grid-column: 2;
   grid-row: 2;
   margin: 0;
   padding: 0;
@@ -10029,36 +10113,113 @@ html[data-page="home"] body.anr-has-file .site-byline {
   line-height: 1;
   letter-spacing: -0.02em;
 }
-/* The three that go. They are still measured before the fold (app.ts clones them
-   to fade them out in place), so display:none is what they land in, not what
-   they animate through. */
-html[data-page="home"] body.anr-has-file .site-kicker,
-html[data-page="home"] body.anr-has-file .site-sub,
-html[data-page="home"] body.anr-has-file .site-meta { display: none; }
-/* One non-wrapping run of chips. Too many for the width and it scrolls sideways
-   rather than growing the bar a second row. */
-html[data-page="home"] body.anr-has-file .site-mark-nav {
-  /* Beside the wordmark, spanning both its rows, vertically centred against it. */
-  grid-column: 2;
+/* The three the bar has no room for. They are off-screen with the rest of the
+   full header by the time it docks, so nothing is seen to go. */
+html[data-page="home"] .site-header.is-bar .site-kicker,
+html[data-page="home"] .site-header.is-bar .site-sub,
+html[data-page="home"] .site-header.is-bar .site-meta { display: none; }
+/* One run of chips, on a screen wide enough to hold it. */
+html[data-page="home"] .site-header.is-bar .site-mark-nav {
+  /* Left of the wordmark, spanning both its rows, vertically centred against it. */
+  grid-column: 1;
   grid-row: 1 / span 2;
   align-self: center;
   margin: 0;
   min-width: 0;
   flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
-html[data-page="home"] body.anr-has-file .site-mark-nav::-webkit-scrollbar { display: none; }
-html[data-page="home"] body.anr-has-file .site-mark-nav > * { flex: none; }
+html[data-page="home"] .site-header.is-bar .site-mark-nav > * { flex: none; }
+
+/* The Menu chip and the two beside it. Only the bar on a narrow screen shows
+   them (below). */
+.bar-lead { display: none; }
+
+/* Narrow: the chips fold into a Menu chip. A phone holds four of the nine on
+   one line; a row that scrolled sideways gave no sign the other five were
+   there, and wrapping them into the bar made a tall, ragged bar out of a slim
+   one. The menu opens a panel hung from the bar's foot (setBarMenu in app.ts
+   unrolls it with clip-path), laid over the page rather than pushing it, so the
+   bar - and the spacer and sticky offsets sized to it - never change height.
+   Home and Get App stay out on the bar beside it (.bar-lead), and out of the
+   panel. Its chips sit in a grid of equal cells; the search takes a row of its
+   own, so its input has room to open. The panel is opaque: the bar's backdrop
+   blur cannot reach through to the page from inside the bar, and translucent
+   with no blur is unreadable over a card. */
+@media (max-width: 900px) {
+  html[data-page="home"] .site-header.is-bar .bar-lead {
+    display: flex;
+    gap: 6px;
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    justify-self: start;
+    align-self: center;
+    min-width: 0;
+  }
+  html[data-page="home"] .site-header.is-bar .bar-lead > .header-btn { flex: none; padding: 7px 12px; }
+  html[data-page="home"] .site-header.is-bar .site-mark-nav > .header-btn[href="/"],
+  html[data-page="home"] .site-header.is-bar .site-mark-nav > .header-btn-app { display: none; }
+  html[data-page="home"] .site-header.is-bar .bar-menu-btn[aria-expanded="true"] { background: var(--fg); color: var(--bg); }
+  html[data-page="home"] .site-header.is-bar .site-mark-nav { display: none; }
+  html[data-page="home"] .site-header.is-bar.is-menu-open .site-mark-nav {
+    display: grid;
+    /* The six left, in rows that come out even: one row of six on a tablet,
+       three and three on a phone (below). Counted, not auto-fit: the search
+       row's span to the last line keeps an empty auto-fit track alive, and the
+       chips would stop short of the right edge. */
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 6px;
+    position: absolute;
+    /* Under the bar's hairline, not over it. */
+    top: calc(100% + 1px);
+    left: 0;
+    right: 0;
+    padding: 12px var(--pad-x) 14px;
+    background: var(--bg);
+    border-bottom: var(--bd-hairline);
+  }
+  html[data-page="home"] .site-header.is-bar.is-menu-open .site-mark-nav > .header-btn {
+    justify-content: center;
+    padding: 9px 4px;
+  }
+  @media (max-width: 700px) {
+    html[data-page="home"] .site-header.is-bar.is-menu-open .site-mark-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  /* The smallest phones: three chips and the wordmark only just share 280px, so
+     all of it steps down a little rather than the chips running into the title. */
+  @media (max-width: 380px) {
+    html[data-page="home"] .site-header.is-bar .site-mark { column-gap: 10px; }
+    html[data-page="home"] .site-header.is-bar .bar-lead { gap: 4px; }
+    html[data-page="home"] .site-header.is-bar .bar-lead > .header-btn { padding: 7px 7px; letter-spacing: 0.04em; }
+    html[data-page="home"] .site-header.is-bar .site-title { font-size: 19px; }
+    html[data-page="home"] .site-header.is-bar .site-byline { font-size: 10px; }
+  }
+  html[data-page="home"] .site-header.is-bar.is-menu-open .site-mark-nav > .nav-search {
+    grid-column: 1 / -1;
+    margin-left: 0;
+    min-height: 32px;
+  }
+  /* The whole row is the button, not just the glyph at its left end - a row
+     that looks like a field is tapped anywhere along it. */
+  html[data-page="home"] .site-header.is-bar.is-menu-open .site-mark-nav .nav-search-btn {
+    flex: 1 1 auto;
+    width: auto;
+    justify-content: flex-start;
+    padding: 0 10px;
+  }
+  html[data-page="home"] .site-header.is-bar.is-menu-open .nav-search.is-open .nav-search-input {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+}
 /* Narrow: the same lockup, a size down, so the bar costs less of a short screen. */
 @media (max-width: 700px) {
-  html[data-page="home"] body.anr-has-file .site-header .grid { min-height: 54px; }
-  html[data-page="home"] body.anr-has-file .site-mark { column-gap: 16px; }
-  html[data-page="home"] body.anr-has-file .site-title { font-size: 22px; }
-  html[data-page="home"] body.anr-has-file .site-byline { font-size: 11px; }
+  html[data-page="home"] .site-header.is-bar .site-mark { column-gap: 16px; }
+  html[data-page="home"] .site-header.is-bar .site-title { font-size: 22px; }
+  html[data-page="home"] .site-header.is-bar .site-byline { font-size: 11px; }
 }
 
-/* The band the two action chips sit in, between the folded header and the first
+/* The band the two action chips sit in, between the header and the first
    result. It is centred and it is HALF the page's usual rhythm: a full --pad-y
    each side of a 46px chip row, plus the chips' own 22px margins, was more air
    than the analysis under it earns. All three halve together so the row stays in
@@ -10070,14 +10231,56 @@ html[data-page="home"] body.anr-has-file .analyse-actions .export-data { margin:
 html[data-page="home"] body.anr-has-file .anr-stack > .section:first-child {
   padding-top: calc(var(--pad-y) / 2);
 }
+/* A load in flight (body.anr-loading, handleFile in app.ts): the dropzones have
+   gone, but nothing has rendered yet. An empty stack is zero tall, so the footer
+   would ride up under the chips for those frames and be thrown back down by the
+   first card. Held a screen tall instead, the footer stays out of sight until
+   the analysis is there to push it. */
+html[data-page="home"] body.anr-loading .anr-stack { min-height: 100vh; }
+/* The first drop's result, built out of sight (body.anr-staging, handleFile in
+   app.ts) while the dropzones and the loader stay up - the header's glide
+   reveals it. visibility, not display: the renderers still lay out and measure
+   (canvas widths, the sticky preview) exactly as they will be seen. */
+html[data-page="home"] body.anr-staging .anr-stack { visibility: hidden; }
+/* Nearly every renderer opens with a status line - 'Reading "<name>"…',
+   'Decoding "<name>"...' - alone in its results block until the first card
+   replaces it. Under the old section headings it read as part of them; here it
+   is the only thing in an empty page, so a fast render flashed the file name for
+   a few frames. It waits half a second before fading in: a fast render replaces
+   it unseen, a slow one (the DWG engine download, a long decode) still gets its
+   message. The drop loader names the file meanwhile. */
+html[data-page="home"] .anr-stack .anr-results > .anr-info:only-child {
+  animation: anr-fade-in var(--dur-base) ease 0.5s both;
+}
+
+/* An offer taken up: the photo/audio prompt box's click marks its section
+   .is-opening (photo.ts mountPhotoPrompt, video.ts) until the render settles.
+   The section jumps from a half-width cell to the full row as the analysis lands,
+   which no transition can walk through, so the analysis fades in instead - what
+   was inserted while the class was on, nothing already there. */
+html[data-page="home"] .anr-stack > .section.is-opening .anr-results > *,
+html[data-page="home"] .anr-stack > .section.is-opening .section-meta-slot > * {
+  transition: opacity 220ms ease-out;
+}
+@starting-style {
+  html[data-page="home"] .anr-stack > .section.is-opening .anr-results > *,
+  html[data-page="home"] .anr-stack > .section.is-opening .section-meta-slot > * { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-page="home"] .anr-stack > .section.is-opening .anr-results > *,
+  html[data-page="home"] .anr-stack > .section.is-opening .section-meta-slot > * {
+    transition-duration: var(--dur-fast);
+  }
+}
 
 /* ---- the search chip in the header ----
    The search moved into the page-chip row when the redesign removed the primary
    nav, and sits at its right end. .nav-search and its input/arrows draw from six
    --nav-* variables, because that chrome used to sit on the inverted nav bar;
    here it sits on the header, so they resolve to the header's own colours. It is
-   display:none until a file is loaded (see .nav-search), by which time the
-   header has folded - so this is sized against the folded bar's chips. */
+   display:none until a file is loaded (see .nav-search), and then shows in the
+   full header's chip row and the docked bar's alike - so it is sized against
+   the chips, whose box both share. */
 .site-mark-nav {
   --nav-bg:   var(--bg);
   --nav-fg:   var(--fg);
@@ -10115,13 +10318,11 @@ html[data-page="home"] body.anr-has-file .anr-stack > .section:first-child {
    in the row and would grow the bar the moment search opened. */
 .site-mark-nav .nav-search.is-open .nav-search-arrow { font-size: 13px; }
 
-/* The sticky offset the home page's own chrome imposes: the collapsed header,
-   whose real height (--hdr-h, measured by a ResizeObserver in boot) follows the
-   width and the zoom. The sections, the result blocks, the sticky asides and the
-   Back bar all offset by it. Set on the BODY, not <html>: the header is only
-   sticky once a file is loaded, and before that --hdr-h is the full tall
-   header, which as a scroll-margin would push every target far down the page. */
-html[data-page="home"] body.anr-has-file { --stick-top: var(--hdr-h, 0px); }
+/* The sticky offset the home page's own chrome imposes: the docked bar (plus its
+   hairline). The sections, the result blocks, the sticky asides and the Back bar
+   all offset by it. Keyed on a loaded file rather than on the bar being docked,
+   so it holds through the quarter second the glide takes to dock it. */
+html[data-page="home"] body.anr-has-file { --stick-top: calc(var(--bar-h) + 1px); }
 
 /* =========================================================
    DESKTOP WINDOW CHROME  (Electron shell only)

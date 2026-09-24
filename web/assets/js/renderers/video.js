@@ -291,6 +291,10 @@ function mountAudioAnalyseButton(audioResultsEl, run) {
         // on. It goes once run() settles.
         card.innerHTML = '';
         card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' }, 'Extracting the audio track…'));
+        // Fades in what the decode inserts - see mountPhotoPrompt in photo.ts.
+        const sec = audioResultsEl.closest('.section');
+        if (sec)
+            sec.classList.add('is-opening');
         // Scroll to the top of the whole Sound section (heading + lede), not the
         // results container, which sits below them - landing on the container alone
         // scrolls past the heading and looks like it jumped to the section's middle.
@@ -304,8 +308,13 @@ function mountAudioAnalyseButton(audioResultsEl, run) {
         const loader = window._anrLoader;
         if (loader)
             loader.show('Analysing audio…');
-        Promise.resolve(run()).catch(() => { }).finally(() => { card.remove(); if (loader)
-            loader.hide(); });
+        Promise.resolve(run()).catch(() => { }).finally(() => {
+            card.remove();
+            if (loader)
+                loader.hide();
+            if (sec)
+                setTimeout(() => sec.classList.remove('is-opening'), 260);
+        });
     });
 }
 // Photo counterpart of mountAudioAnalyseButton: a video frame is no longer pushed
@@ -324,8 +333,15 @@ function mountPhotoAnalyseButton(photoResultsEl, run) {
         // Held until the frame renders - see mountAudioAnalyseButton above.
         card.innerHTML = '';
         card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' }, 'Analysing the frame…'));
+        const sec = photoResultsEl.closest('.section');
+        if (sec)
+            sec.classList.add('is-opening');
         ctx.afterPhoto();
-        Promise.resolve(run()).catch(() => { }).finally(() => { card.remove(); });
+        Promise.resolve(run()).catch(() => { }).finally(() => {
+            card.remove();
+            if (sec)
+                setTimeout(() => sec.classList.remove('is-opening'), 260);
+        });
     });
 }
 // ---------- progress-tracked fetch ----------

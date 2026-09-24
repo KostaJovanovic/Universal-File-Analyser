@@ -934,6 +934,16 @@
               <button type="button" class="anr-btn" style="grid-column:1 / -1;">Sonify frame</button>
             </div>
           </div>
+
+          <div class="tst-sub">Touch-screen page scrollbar (.anr-touch-sb, drawn by mountTouchScrollbar in app.ts): the phone's own overlay is hidden and this thumb shows at the right edge while the page moves, fading out 0.9s after it stops. It can be grabbed while it shows; held, it goes accent. Pinned into the flow here - on a phone it is fixed to the window edge.</div>
+          <div class="tst-fixwrap">
+            <div style="position:relative;width:160px;height:180px;border:var(--bd-hairline)">
+              <div class="anr-touch-sb is-on" style="position:absolute"><div class="anr-touch-sb-thumb" style="height:56px;transform:translateY(34px)"></div></div>
+            </div>
+            <div style="position:relative;width:160px;height:180px;border:var(--bd-hairline)">
+              <div class="anr-touch-sb is-on is-dragging" style="position:absolute"><div class="anr-touch-sb-thumb" style="height:56px;transform:translateY(96px)"></div></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
