@@ -25,6 +25,17 @@ it's ready". Make the code change the user asked for and stop. The user runs
 `save.bat` themselves; patch notes are written only on direct request. This
 overrides any default tendency to wrap up a task by committing or changelogging.
 
+## Committing
+
+When the user *does* ask for a commit, **`save.bat` is the only way to commit -
+never run `git commit` or `git push` directly** (it does the version bump, build
+and generators a plain commit would skip; see Commands). From a terminal,
+`save.bat quick "message"` commits and pushes with no menu or prompts;
+`save.bat quick-commit "message"` commits without pushing. Run it from PowerShell: `.\save.bat quick "message"`. Not from Git Bash, which cannot start a .bat from a path with spaces and puts its Unix `find` ahead of the Windows one the script uses. Both exit non-zero on any failure, and a
+rejected push just fails - never pull, merge or force-push around it without
+asking. Never add `Co-Authored-By`, "Generated with Claude Code", or any other
+Claude/AI attribution to commit messages or PR descriptions.
+
 ## Commands
 
 > **The app JS is TypeScript now. Edit `src/`, never `web/assets/js/`.**
@@ -94,8 +105,9 @@ stale relative to `src/`. Type errors are reported loudly but don't block.
   `git add . && git commit && git push origin main`. `save.bat commit` commits
   without pushing; `save.bat --force` force-pushes. `save.bat release` (menu
   option 1) is a save that, after its push, starts the Release apps workflow
-  through `gh`, so the apps get a new GitHub release. Don't hand-edit
-  `COMMIT_COUNT` or commit around this script.
+  through `gh`, so the apps get a new GitHub release. `save.bat quick "msg"` /
+  `save.bat quick-commit "msg"` are the non-interactive save / commit (see
+  Committing). Don't hand-edit `COMMIT_COUNT` or commit around this script.
   It also runs every generator first, in this order: `prerender-samples`,
   `prerender-formats`, `prerender-format-pages`, `stamp-counts`, `stamp-footer`,
   `stamp-head`, `prerender-testpage`, `build-docs-html`. Anything those scripts

@@ -10,6 +10,13 @@
 # Force LF so a Windows checkout can't reintroduce the carriage returns.
 .assetsignore text eol=lf
 
+# The one exception: Windows batch files are checked out CRLF. cmd's goto and
+# call :label scan the file by byte offset, and on an LF file that scan can land
+# mid-line - save.bat's `goto save` did, and ran "save.bat again." out of an echo.
+# The repo still stores them LF; only the working copy differs.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
 # Known-binary assets: never apply text/eol conversion. Belt-and-braces on top
 # of text=auto's own binary detection so nothing here is ever mangled.
 *.woff2 binary

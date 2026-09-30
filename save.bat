@@ -1,10 +1,29 @@
 @echo off
+rem save.bat - version bump + build + commit + push. No argument opens the menu.
+rem   save.bat save | --force | release       add + commit + push
+rem   save.bat commit | --commit | --no-push  add + commit, no push
+rem   save.bat push | pull | backup | samples
+rem   save.bat quick "message"         the save above with no menu, no prompts
+rem                                    and no pause: commits, pushes origin/<branch>
+rem   save.bat quick-commit "message"  the same, without the push
+rem Quick mode takes the safe default at every question: no stats backup, no
+rem pull/merge, never a force push - a rejected push just fails. An empty
+rem message falls back to v<version>, as the interactive prompt does. The exit
+rem code is 0 only when everything it set out to do worked, so it can be chained.
+rem
+rem The quick message is captured HERE, before delayed expansion is switched on:
+rem with it on, every "!" in the message would be eaten. It is only ever read
+rem back as $env:QMSG inside PowerShell and committed with -F, never re-expanded
+rem by cmd, so "!", percent signs and paired quotes in it survive.
+setlocal disabledelayedexpansion
+set "QMSG=%~2"
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 set FORCE_MODE=0
 set COMMIT_ONLY=0
 set RELEASE_MODE=0
+set "QUICK=0"
 set ACTION=%~1
 
 rem Quoted `set "VAR=1"` on purpose: an unquoted `set VAR=1 & ...` stores "1 "
@@ -14,6 +33,10 @@ if /i "%ACTION%"=="commit"    (set "COMMIT_ONLY=1" & set "ACTION=save")
 if /i "%ACTION%"=="--commit"  (set "COMMIT_ONLY=1" & set "ACTION=save")
 if /i "%ACTION%"=="--no-push" (set "COMMIT_ONLY=1" & set "ACTION=save")
 if /i "%ACTION%"=="release"   (set "RELEASE_MODE=1" & set "ACTION=save")
+if /i "%ACTION%"=="quick"        (set "QUICK=1" & set "ACTION=save")
+if /i "%ACTION%"=="quick-commit" (set "QUICK=1" & set "COMMIT_ONLY=1" & set "ACTION=save")
+rem Quick mode must never hang on a credential prompt in the terminal either.
+if "%QUICK%"=="1" set "GIT_TERMINAL_PROMPT=0"
 if /i "%ACTION%"=="save"   goto save
 if /i "%ACTION%"=="commit" goto save
 if /i "%ACTION%"=="push"    goto push
@@ -173,20 +196,20 @@ echo         only these do:
 echo.
 findstr /R /C:"error TS1[0-9][0-9][0-9]:" "%TEMP%\anr-tsc-all.log"
 call :restorebump
-pause
+if not "%QUICK%"=="1" pause
 exit /b 1
 :nobranch
 echo.
 echo [FATAL] Not on a branch (detached HEAD?) - aborting.
 echo         Check out the branch to commit to, then run save.bat again.
-pause
+if not "%QUICK%"=="1" pause
 exit /b 1
 :releasebranch
 echo.
 echo [FATAL] A release is built from main, but this is branch "%BRANCH%" - aborting.
 echo         Merge into main and release from there, or use a plain save.
 echo         (Nothing was bumped, staged or committed.)
-pause
+if not "%QUICK%"=="1" pause
 exit /b 1
 :countfail
 echo.
@@ -194,7 +217,7 @@ echo [FATAL] Could not read COMMIT_COUNT from src/core/app.ts - aborting.
 echo         Expected a line of the form:  const COMMIT_COUNT = 270;
 echo         Refusing to guess: a wrong value sends the public version number
 echo         backwards (a bad count once turned 8.14 into 0.02).
-pause
+if not "%QUICK%"=="1" pause
 exit /b 1
 :buildfail
 echo.
@@ -203,7 +226,7 @@ echo         Committing now would ship the previous build against new sources.
 echo         Fix the build, then run save.bat again.
 echo         (Nothing was staged or committed.)
 call :restorebump
-pause
+if not "%QUICK%"=="1" pause
 exit /b 1
 :buildok
 
@@ -279,6 +302,8 @@ rem it entirely; only the commit-only path still offers it. Use menu option 6
 rem (Backup) to snapshot on demand.
 rem NB: a goto skip (not an if(...) block) - the "(y/n)" prompt text contains a
 rem ")" that would prematurely close a parenthesised block and break parsing.
+rem Quick mode never offers it (quick-commit is commit-only, so it would ask).
+if "%QUICK%"=="1" goto skipbackup
 if not "%COMMIT_ONLY%"=="1" goto skipbackup
 echo.
 set /p DOBACKUP=download live stats to csv first? (y/n):
@@ -290,14 +315,30 @@ git add .
 git status
 
 echo.
+if "%QUICK%"=="1" goto quickcommit
 set /p MSG=commit message [v%VERLABEL%]:
 if "%MSG%"=="" set MSG=v%VERLABEL%
 
 git commit -m "%MSG%"
 if errorlevel 1 goto commitfail
+goto commitdone
+
+rem Quick mode: the message (QMSG, captured at the top before delayed expansion)
+rem goes to a file through PowerShell's $env: and is committed with -F, so cmd
+rem never re-parses it. Same default as the prompt: v<version> when empty.
+:quickcommit
+if not defined QMSG set "QMSG=v%VERLABEL%"
+set "QMSGFILE=%TEMP%\anr-quick-msg.txt"
+powershell -NoProfile -Command "[IO.File]::WriteAllText($env:QMSGFILE, $env:QMSG, (New-Object Text.UTF8Encoding $false))"
+if errorlevel 1 goto commitfail
+git commit -F "%QMSGFILE%"
+if errorlevel 1 goto commitfail
+del "%QMSGFILE%" >nul 2>&1
+:commitdone
 set BUMPED=0
 
 if "%COMMIT_ONLY%"=="1" goto committed
+if "%QUICK%"=="1" goto quickpush
 if "%FORCE_MODE%"=="1" goto forcepush
 
 echo.
@@ -317,6 +358,17 @@ set /p FORCE=force push instead? overwrites the remote. (y/n):
 if /i "%FORCE%"=="y" goto forcepush
 
 echo [git]  skipped - nothing pushed
+set SAVE_ERROR=1
+goto end
+
+rem Quick mode push: no questions. A rejected push is a failure, full stop -
+rem never a pull/merge and never a force push. The commit stays local.
+:quickpush
+git push origin %BRANCH%
+if not errorlevel 1 goto pushed
+echo.
+echo [err]  push to origin/%BRANCH% failed - see the git error above.
+echo        The commit is kept locally; nothing was pulled or force-pushed.
 set SAVE_ERROR=1
 goto end
 
@@ -486,5 +538,5 @@ exit /b 0
 
 :end
 echo.
-pause
+if not "%QUICK%"=="1" pause
 exit /b %SAVE_ERROR%
