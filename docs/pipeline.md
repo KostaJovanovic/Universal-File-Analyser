@@ -167,7 +167,11 @@ the `binary` kind - a `.bin`, where the byte-level readout IS the analysis. In
 binary mode it reads 512 bytes instead of 128 and runs `detectVariant('bin', …,
 { specificOnly: true })`, so a raw BIN/CUE disc image (sector sync pattern) or a
 Mega Drive cartridge dump (`SEGA` at 0x100) names itself and anything else stays
-honestly generic. `guessFormat(bytes)`
+honestly generic. Before any of that, in every framing, a file whose every byte is
+the same fill value (0x00 for blank storage, 0xFF for erased flash; checked up to
+`SCAN_LARGE`) gets a short "Blank file - no data" card instead: no magic guess, no
+entropy strip, no request to report the format - a recovery tool's blank carves
+(PhotoRec's zero-filled `.dovecot` files, say) have nothing more to show. `guessFormat(bytes)`
 independently re-checks a similar magic-number table (PDF, PNG, JPEG, GIF,
 WAV/WebP/AVI via RIFF, Ogg, FLAC, ID3/MPEG audio, `ftyp`-brand MP4/MOV/M4A,
 ZIP, 7z, gzip, RAR, ELF, `MZ` EXE/DLL, XML, SQLite, BMP, ICO, TIFF, Matroska,

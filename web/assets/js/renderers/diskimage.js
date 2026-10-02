@@ -17,7 +17,7 @@ import { carveImages, repairJpeg, ensureJpegHuffman } from './photo-recover.js';
 import { detectCorruptCut } from './jpeg-salvage.js';
 import { salvageFullCanvas, emptyFraction } from './carve-gallery.js';
 import { WALL_INDEX, CARVE_THUMB_EDGE } from '../core/limits.js';
-import { looksLikeFatBoot, parseFatVolume, parseMbr, otherFsLabel, readFileBytes, FAT_PART_TYPES, PART_TYPE_NAMES, MAX_ENTRIES, } from './diskimage-fat.js';
+import { looksLikeFatBoot, parseFatVolume, parseMbr, mbrSignatureDamaged, otherFsLabel, readFileBytes, FAT_PART_TYPES, PART_TYPE_NAMES, MAX_ENTRIES, } from './diskimage-fat.js';
 // A FAT filesystem's bookkeeping - boot sector, FAT tables, directory entries -
 // lives at the front of the volume, so the whole file tree can usually be built
 // from a small prefix: a 488 MB camera card needs about 16 MB of it. We read
@@ -28,8 +28,9 @@ import { looksLikeFatBoot, parseFatVolume, parseMbr, otherFsLabel, readFileBytes
 // is on screen instead of in front of it.
 const PREFIX_START = 16 * 1024 * 1024;
 // The raw scan collects up to SCAN_CARVE hits (a used card is dominated by tiny
-// thumbnails and video frames), then the gallery shows the MAX_CARVE largest so
-// every full-size photo survives the cap and the DOM stays responsive. The "Hide
+// thumbnails and video frames), then the gallery shows MAX_CARVE of them - every
+// photo first, frames after - so no photo is lost to the cap and the DOM stays
+// responsive. The "Hide
 // frames" toggle, not a tight cap, is what declutters the frame-heavy view.
 const MAX_CARVE = 2000;
 const SCAN_CARVE = 20000;
@@ -71,6 +72,9 @@ export async function renderDiskImage(file, resultsEl, opts = {}) {
     let partitions = null;
     let layout = 'Bare filesystem (no partition table)';
     let volStart = 0;
+    // Set when the partition table points at a FAT partition whose boot sector is
+    // not there (blank, or overwritten with other data).
+    let fatBootGone = null;
     const read = async (n) => new Uint8Array(await file.slice(0, Math.min(file.size, n)).arrayBuffer());
     try {
         // The layout is decided by the first sector alone: a FAT boot sector at
@@ -81,7 +85,8 @@ export async function renderDiskImage(file, resultsEl, opts = {}) {
         const bare = looksLikeFatBoot(img, 0);
         partitions = bare ? null : parseMbr(img);
         if (partitions)
-            layout = 'MBR partition table (' + partitions.length + ' partition' + (partitions.length === 1 ? '' : 's') + ')';
+            layout = 'MBR partition table (' + partitions.length + ' partition' + (partitions.length === 1 ? '' : 's') + ')'
+                + (mbrSignatureDamaged(img) ? ' - its signature is damaged' : '');
         // Where a browsable FAT volume might begin, if anywhere.
         let candidate = bare ? 0 : -1;
         if (partitions) {
@@ -93,6 +98,16 @@ export async function renderDiskImage(file, resultsEl, opts = {}) {
                     candidate = start;
                     break;
                 } // the first FAT partition
+            }
+            // The table names a FAT partition, but is there a FAT boot sector where it
+            // points? On a wiped or overwritten card there isn't, and growing the prefix
+            // to find out would read the whole image for nothing.
+            if (candidate > 0) {
+                const boot = new Uint8Array(await file.slice(candidate, candidate + 512).arrayBuffer());
+                if (!looksLikeFatBoot(boot, 0)) {
+                    fatBootGone = { lba: candidate / 512, blank: boot.every((x) => x === 0) };
+                    candidate = -1;
+                }
             }
         }
         if (candidate < 0) {
@@ -140,7 +155,11 @@ export async function renderDiskImage(file, resultsEl, opts = {}) {
         note.appendChild(t);
         note.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:10px;' }, vol && !vol.entries.length
             ? 'A FAT filesystem was found but it holds no readable files (empty, or the directory area is damaged).'
-            : 'This image does not contain a FAT12/16/32 filesystem that Analyser can browse yet. It is identified below.'));
+            : fatBootGone
+                ? 'The partition table names a FAT partition starting at sector ' + fatBootGone.lba.toLocaleString() + ', but its boot sector is '
+                    + (fatBootGone.blank ? 'blank' : 'overwritten with other data')
+                    + ' - the start of the filesystem has been wiped, so its file list cannot be rebuilt. The photos themselves may still be in the raw sectors: use Scan for images below.'
+                : 'This image does not contain a FAT12/16/32 filesystem that Analyser can browse yet. It is identified below.'));
         resultsEl.appendChild(note);
         if (partitions)
             resultsEl.appendChild(partitionCard(partitions));
@@ -270,10 +289,11 @@ function carvedImageGallery(readFull, file, resultsEl, vol) {
         // scan would miss them.
         for (const c of carved)
             c.frame = !!(c.width && c.height && Math.max(c.width, c.height) <= FRAME_MAXDIM);
-        // Largest first: a used card is dominated by tiny thumbnails and video
-        // frames; sorting by extent floats the real full-size photos to the top so
-        // the display cap never buries them.
-        carved.sort((a, b) => (b.end - b.start) - (a.end - a.start));
+        // Photos before frames, then largest first: a used card is dominated by tiny
+        // thumbnails and video frames, and the display cap must never bury a photo
+        // under them - including a deleted photo's surviving header, which is small
+        // (one cluster) but still shows its EXIF thumbnail and date.
+        carved.sort((a, b) => (a.frame - b.frame) || ((b.end - b.start) - (a.end - a.start)));
         const total = carved.length;
         const shown = Math.min(total, MAX_CARVE);
         const list = carved.slice(0, shown);
@@ -293,7 +313,7 @@ function carvedImageGallery(readFull, file, resultsEl, vol) {
         }
         body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 12px;' }, 'Found ' + total + (total >= SCAN_CARVE ? '+' : '') + ' image' + (total === 1 ? '' : 's')
             + ' by scanning every sector for image signatures'
-            + (total > shown ? ' - showing the ' + shown + ' largest (biggest first)' : '')
+            + (total > shown ? ' - showing ' + shown + ': every photo, then the largest frames and thumbnails' : '')
             + '.'));
         const grid = el('div', { class: 'anr-carve-grid' });
         // Controls sit in one row above the grid.

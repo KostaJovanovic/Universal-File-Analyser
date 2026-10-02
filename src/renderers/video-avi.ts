@@ -119,16 +119,39 @@ export async function extractAviData(file: File, aviInfo: AviHeaderInfo | null |
   while (pos + 12 < buf.byteLength) {
     const ckId = tag(pos);
     const ckSize = view.getUint32(pos + 4, true);
-    if (ckSize === 0 || pos + ckSize > buf.byteLength + 8) break;
+    // movi is matched BEFORE the overrun check: in a truncated file (a clip
+    // recovered off a card, a recording cut short) the movi list still declares
+    // its full length and so always runs past the end - it is clamped below.
     if (ckId === 'LIST' && tag(pos + 8) === 'movi') {
       moviStart = pos + 12;
       moviEnd = Math.min(pos + 8 + ckSize, buf.byteLength);
       break;
     }
+    if (ckSize === 0 || pos + ckSize > buf.byteLength + 8) break;
     if (ckId === 'LIST') { pos += 12; continue; }
     pos += 8 + ckSize + (ckSize & 1);
   }
   if (moviStart < 0) return null;
+
+  // A stream chunk id: two stream digits + dc/db (video) or wb (audio).
+  const isStreamChunk = (o: number) => {
+    const c0 = u8[o], c1 = u8[o + 1], t = String.fromCharCode(u8[o + 2], u8[o + 3]);
+    return c0 >= 0x30 && c0 <= 0x39 && c1 >= 0x30 && c1 <= 0x39 && (t === 'dc' || t === 'db' || t === 'wb');
+  };
+  // After a corrupt chunk header, find the next chunk that is plausibly real: a
+  // stream chunk whose size fits, and - for video - whose payload is a JPEG. A
+  // file recovered off a card often has a foreign cluster spliced in mid-stream;
+  // the frames after it are intact and only need the walk to pick them up again.
+  const resync = (from: number) => {
+    for (let o = from; o + 12 <= moviEnd; o++) {
+      if (!isStreamChunk(o)) continue;
+      const sz = view.getUint32(o + 4, true);
+      if (!sz || sz > AVI_FRAME_MAX || o + 8 + sz > moviEnd) continue;
+      if (u8[o + 2] !== 0x77 /* 'w' */ && !(u8[o + 8] === 0xFF && u8[o + 9] === 0xD8)) continue;
+      return o;
+    }
+    return -1;
+  };
 
   const audioChunks = [], videoFrames = [];
   pos = moviStart;
@@ -136,12 +159,23 @@ export async function extractAviData(file: File, aviInfo: AviHeaderInfo | null |
     const ckId = tag(pos);
     const ckSize = view.getUint32(pos + 4, true);
     const dataStart = pos + 8;
-    if (dataStart + ckSize > buf.byteLength || ckSize === 0) break;
+    if (ckId === 'LIST') { pos += 12; continue; }
+    if (dataStart + ckSize > buf.byteLength || ckSize === 0
+        || !(isStreamChunk(pos) || /^(ix\d\d|JUNK|idx1)$/.test(ckId))) {
+      // The last frame of a truncated file runs off the end: keep what is there,
+      // since a JPEG cut short still decodes down to where its data stops.
+      if ((ckId === '00dc' || ckId === '00db') && ckSize <= AVI_FRAME_MAX
+          && dataStart + 2 < buf.byteLength && u8[dataStart] === 0xFF && u8[dataStart + 1] === 0xD8)
+        videoFrames.push(buf.slice(dataStart, buf.byteLength));
+      const next = resync(pos + 1);
+      if (next < 0) break;
+      pos = next;
+      continue;
+    }
     if ((ckId === '00dc' || ckId === '00db') && ckSize > 2 && ckSize <= AVI_FRAME_MAX)
       videoFrames.push(buf.slice(dataStart, dataStart + ckSize));
     if (ckId === '01wb' && ckSize > 0)
       audioChunks.push(new Uint8Array(buf, dataStart, ckSize));
-    if (ckId === 'LIST') { pos += 12; continue; }
     pos += 8 + ckSize + (ckSize & 1);
   }
 

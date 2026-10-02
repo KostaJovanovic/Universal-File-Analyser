@@ -78,6 +78,10 @@ export function scanJpeg(bytes: Uint8Array, start = 0) {
     if (p >= n) { out.truncated = true; break; }
     const marker = bytes[p++];
     if (marker === 0xD9) { out.hasEOI = true; out.eoiAt = p - 2; break; }   // EOI
+    // A second SOI at marker level is the next image starting: this one was cut off
+    // before its EOI. Walking on would swallow the next photo (on a raw card scan,
+    // a whole run of them) into this one's extent.
+    if (marker === 0xD8) { out.truncated = true; break; }
     if (jpegMarkerHasNoLength(marker)) continue;
     if (p + 2 > n) { out.truncated = true; break; }
     const len = u16be(bytes, p);
@@ -96,6 +100,7 @@ export function scanJpeg(bytes: Uint8Array, start = 0) {
     else if (marker === 0xC4) out.dht++;
     else if (marker === 0xDD) out.dri = u16be(bytes, segStart + 2);
     out.segments.push({ marker, off: p - 2, len: len + 2 });
+    out.headerEnd = segEnd;
 
     if (marker === 0xDA) {                                          // SOS: entropy data follows
       out.sosAt = p - 2;
@@ -150,7 +155,20 @@ export function repairJpeg(bytes: Uint8Array, opts: any = {}) {
     actions.push('Appended the missing end-of-image marker (truncated file)');
   }
 
-  const needsHeader = !info || !info.hasDQT || !info.hasDHT || !info.hasSOF;
+  // No Huffman tables but everything else present is a Motion-JPEG frame (a video
+  // still saved on its own), which leaves them out on purpose: the standard tables
+  // are the right ones, so graft them on rather than asking for a reference photo.
+  let hasDHT = !!(info && info.hasDHT);
+  if (info && info.hasSOS && !hasDHT && info.hasDQT && info.hasSOF && !info.progressive) {
+    const grafted = ensureJpegHuffman(data);
+    if (grafted && grafted !== data) {
+      data = grafted;
+      hasDHT = true;
+      actions.push('Inserted the standard Huffman tables (a Motion-JPEG video frame, which leaves them out)');
+    }
+  }
+
+  const needsHeader = !info || !info.hasDQT || !hasDHT || !info.hasSOF;
   return {
     data: data.slice ? data.slice() : data, actions, ok: !!(info && info.hasSOS),
     info, needsReference: needsHeader && !!(info && info.hasSOS),
@@ -471,9 +489,28 @@ export function carveImages(bytes: Uint8Array, opts: any = {}) {
     // JPEG: FF D8 FF
     if (bytes[i] === 0xFF && bytes[i + 1] === 0xD8 && bytes[i + 2] === 0xFF) {
       const scan = scanJpeg(bytes, i);
-      if (scan && scan.sosAt >= 0) {
+      // A scan with no frame header is a chance FF D8 FF in raw data whose walk
+      // happened onto an FF DA - not an image, and its "extent" can run for
+      // megabytes over real photos. Skip it and keep scanning byte by byte.
+      if (scan && scan.sosAt >= 0 && scan.sof) {
         const end = scan.hasEOI && scan.eoiAt != null ? scan.eoiAt + 2 : scan.scanEnd;
-        found.push({ format: 'jpeg', start: i, end, complete: scan.hasEOI, width: scan.sof && scan.sof.width, height: scan.sof && scan.sof.height });
+        found.push({ format: 'jpeg', start: i, end, complete: scan.hasEOI, width: scan.sof.width, height: scan.sof.height });
+        i = Math.max(i + 2, end); continue;
+      }
+      // Header only: an Exif header whose image body was overwritten (a deleted
+      // photo's first cluster). No pixels of its own, but the header may still hold
+      // the EXIF thumbnail, and always the camera and capture date - the salvage
+      // decoder shows the thumbnail when there is one.
+      if (scan && scan.sosAt < 0 && scan.headerEnd && scan.segments.length
+          && scan.segments[0].marker === 0xE1 && ascii(bytes, i + 6, 6) === 'Exif\0\0') {
+        // The overwritten header's declared length can run into the next photo,
+        // which starts on the following cluster. End at the next Exif JPEG start
+        // (an embedded thumbnail carries no Exif segment, so it isn't one).
+        let end = scan.headerEnd;
+        for (let k = i + 12; k < end - 12; k++) {
+          if (bytes[k] === 0xFF && bytes[k + 1] === 0xD8 && bytes[k + 2] === 0xFF && bytes[k + 3] === 0xE1 && ascii(bytes, k + 6, 6) === 'Exif\0\0') { end = k; break; }
+        }
+        found.push({ format: 'jpeg', start: i, end, complete: false, headerOnly: true });
         i = Math.max(i + 2, end); continue;
       }
     }

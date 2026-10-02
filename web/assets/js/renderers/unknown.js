@@ -293,6 +293,13 @@ export async function renderUnknown(file, resultsEl, opts) {
             window._anrSuggest.show(fileExt(file.name));
         return;
     }
+    // Every byte the same fill value: there is nothing to identify, so say that
+    // instead of guessing at a format and nudging the visitor to report it.
+    const fill = await uniformFill(file, headBytes);
+    if (fill !== null) {
+        renderBlankFile(file, resultsEl, fill);
+        return;
+    }
     const hex = hexBytes(headBytes, ' ');
     const ascii = Array.from(headBytes).map((b) => (b >= 0x20 && b <= 0x7E) ? String.fromCharCode(b) : '.').join('');
     const guess = guessFormat(headBytes);
@@ -583,6 +590,45 @@ export async function renderUnknown(file, resultsEl, opts) {
             scanCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' }, 'No embedded images were found in this file.'));
         }
     });
+}
+// The fill byte (0x00 or 0xFF) when EVERY byte of the file is that value, else
+// null. Blank storage reads as 0x00, erased flash as 0xFF; anything else is data.
+// Reads in slices and stops at the first different byte, so a real file costs one
+// slice; past SCAN_LARGE it isn't checked, rather than claimed from a sample.
+const BLANK_SLICE = 4 * 1024 * 1024;
+async function uniformFill(file, head) {
+    if (!head.length || file.size > SCAN_LARGE)
+        return null;
+    const v = head[0];
+    if (v !== 0x00 && v !== 0xFF)
+        return null;
+    for (let off = 0; off < file.size; off += BLANK_SLICE) {
+        const b = new Uint8Array(await file.slice(off, Math.min(file.size, off + BLANK_SLICE)).arrayBuffer());
+        for (let i = 0; i < b.length; i++)
+            if (b[i] !== v)
+                return null;
+    }
+    return v;
+}
+// The readout for a file with no data in it at all.
+function renderBlankFile(file, resultsEl, fill) {
+    resultsEl.innerHTML = '';
+    const hexv = fill === 0 ? '0x00' : '0xFF';
+    const card = el('div', { class: 'anr-card' });
+    card.appendChild(el('h3', {}, 'Blank file - no data'));
+    const tbl = el('table', { class: 'anr-readout' });
+    tbl.appendChild(rowHelp('Content', 'Blank (every byte is ' + hexv + ')', 'Every byte of this file holds the same value, so it carries no information at all - not a picture, not text, not a damaged version of either.'));
+    tbl.appendChild(row('Name', file.name));
+    tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
+    tbl.appendChild(row('Modified', file.lastModified ? new Date(file.lastModified).toISOString().replace('T', ' ').replace(/\..*$/, '') : '-'));
+    tbl.appendChild(row('Extension', fileExt(file.name) || '-'));
+    card.appendChild(tbl);
+    card.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:10px;' }, 'There is nothing in this file to identify or recover. '
+        + (fill === 0
+            ? 'Files like this come from unused or wiped storage - recovery tools such as PhotoRec sometimes save blank stretches of a memory card under a guessed file type - or from a file whose space was set aside but never written.'
+            : 'This is what erased flash memory reads as: the space was cleared and never written again.')
+        + ' Its name and extension say nothing about what it once held.'));
+    resultsEl.appendChild(card);
 }
 // Byte-entropy heatmap. Slices the file into chunks, plots each chunk's Shannon
 // entropy as a coloured column (blue = low/repetitive, red = high/random), and

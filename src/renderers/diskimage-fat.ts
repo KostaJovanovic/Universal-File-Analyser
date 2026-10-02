@@ -305,10 +305,19 @@ export const PART_TYPE_NAMES: Record<number, string> = {
   0x82: 'Linux swap', 0x83: 'Linux', 0xA5: 'FreeBSD', 0xAF: 'HFS / HFS+', 0xEE: 'GPT protective',
 };
 
+// Whether sector 0's 0x55AA signature is damaged rather than intact.
+export function mbrSignatureDamaged(img: Uint8Array) {
+  return img.length >= 512 && (img[510] !== 0x55 || img[511] !== 0xAA);
+}
+
 // Parse a 4-entry MBR partition table, or null when the 0x55AA signature or the
-// entries don't look like a partition table.
+// entries don't look like a partition table. A signature with ONE damaged byte
+// (a bit flip on a failing card) is still accepted, but only when every entry
+// in the table is fully valid - so a random sector can't pass as a table.
 export function parseMbr(img: Uint8Array) {
-  if (img.length < 512 || img[510] !== 0x55 || img[511] !== 0xAA) return null;
+  if (img.length < 512) return null;
+  const sigOk = img[510] === 0x55 && img[511] === 0xAA;
+  if (!sigOk && img[510] !== 0x55 && img[511] !== 0xAA) return null;
   const parts = [];
   for (let i = 0; i < 4; i++) {
     const o = 0x1BE + i * 16;
@@ -317,7 +326,11 @@ export function parseMbr(img: Uint8Array) {
     const lba = u32(img, o + 8);
     const sectors = u32(img, o + 12);
     // A valid entry has status 0x00/0x80 and a non-zero type + extent.
-    if ((status !== 0x00 && status !== 0x80) || type === 0 || sectors === 0) continue;
+    if ((status !== 0x00 && status !== 0x80) || type === 0 || sectors === 0) {
+      if (!sigOk && (status !== 0 || type !== 0 || sectors !== 0)) return null;
+      continue;
+    }
+    if (!sigOk && (!(type in PART_TYPE_NAMES) || lba === 0)) return null;
     parts.push({ index: i, status, type, lba, sectors, boot: status === 0x80 });
   }
   return parts.length ? parts : null;

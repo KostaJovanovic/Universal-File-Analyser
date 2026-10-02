@@ -4997,11 +4997,25 @@ export async function renderVideo(file, resultsEl, opts = {}) {
                     + (aviData.indexTruncated
                         ? 'Only the first ' + frameCount.toLocaleString() + ' frames were indexed. ' : '')));
             }
+            // A damaged AVI - typically a clip recovered off a memory card, whose later
+            // clusters were reused by other files - can keep its header and nothing else.
+            // Say so plainly: the codec banner above would otherwise send the visitor to
+            // VLC for frames that are not in the file at all.
+            if (!frameCount) {
+                resultsEl.appendChild(el('div', { class: 'anr-info' }, 'No video frames survive in this file'
+                    + (avi.totalFrames ? ' - its header promises ' + avi.totalFrames.toLocaleString() + ', but the space after it holds other data' : '')
+                    + '. This is typical of a video recovered off a memory card after its clusters were reused. '
+                    + (aviData && aviData.audioBuffer ? 'Some of its sound does survive - see Analyse audio below.' : 'Nothing of the picture can be recovered from it.')));
+            }
             if (framesAreJpeg) {
                 const frameCard = el('div', { class: 'anr-card' });
                 frameCard.appendChild(el('h3', {}, 'Frames'));
                 frameCard.appendChild(el('p', { class: 'anr-hint' }, frameCount + ' MJPEG frame' + (frameCount > 1 ? 's' : '')
-                    + (aviData.streamed ? ' indexed - read on demand' : ' extracted')));
+                    + (aviData.streamed ? ' indexed - read on demand' : ' extracted')
+                    // Fewer than the header declares: the file is cut short or damaged, and
+                    // only the frames that are still in it play.
+                    + (!aviData.streamed && avi.totalFrames && frameCount < avi.totalFrames
+                        ? ' - ' + avi.totalFrames.toLocaleString() + ' declared, the rest are missing (the file is cut short or damaged)' : '')));
                 const frameImg = el('img', {
                     style: 'max-width:100%; max-height:480px; display:block; border:1px solid var(--hairline); background:#0a0a0a;',
                     alt: 'Frame 1'

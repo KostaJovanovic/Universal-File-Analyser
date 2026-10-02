@@ -293,6 +293,16 @@ async function renderPhotoRecovery(file: File, bytes: Uint8Array<ArrayBuffer>, d
       });
       return;
     }
+    // No scan at all: only the header made it into this file (typical of a photo
+    // recovered off a card whose body clusters were reused), and its embedded
+    // thumbnail is gone too. There is no picture to get back, but the header
+    // still says which camera took it and when - show that rather than a dead end.
+    if (rep.info && !rep.info.hasSOS) {
+      out.appendChild(el('p', {}, 'Only the header of this photo survives - the picture data, and the small preview stored in the header, were overwritten. No part of the image can be recovered from this file.'));
+      out.appendChild(el('p', { class: 'anr-hint' }, 'If it came off a memory card, open the card image itself in Analyser: its sector scan can still find the preview there when the recovery tool saved only part of it.'));
+      await appendMetadataCard(file, resultsEl);
+      return;
+    }
     out.appendChild(el('p', { class: 'anr-hint' }, 'Could not salvage this JPEG: ' + (rep.reason || 'no recoverable scan data') + '.'));
     return;
   }
@@ -385,6 +395,12 @@ async function renderUndisplayableImage(file: File, ext: string, resultsEl: HTML
   t.appendChild(rowHelp('MIME', file.type || '-', "The MIME type is a short standard label for the kind of file this is, such as image/jpeg. Your browser guesses it from the filename or the operating system, so it is a hint about the format, not proof."));
   info.appendChild(t);
   resultsEl.appendChild(info);
+  await appendMetadataCard(file, resultsEl);
+}
+
+// The EXIF/IPTC/XMP readout for a file that can't be shown - all that is left of
+// a photo whose picture data is gone is often its header (camera, capture date).
+async function appendMetadataCard(file: File, resultsEl: HTMLElement) {
   let exif = null;
   try {
     exif = await exifr.parse(file, { tiff: true, exif: true, gps: true, iptc: true, xmp: true, icc: true, mergeOutput: true, translateValues: true, translateKeys: true, reviveValues: true, sanitize: true, silentErrors: true });

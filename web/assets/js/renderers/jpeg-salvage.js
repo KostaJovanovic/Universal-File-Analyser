@@ -324,10 +324,12 @@ function findEmbeddedThumb(d) {
             continue;
         }
         const len = (d[p + 2] << 8) | d[p + 3];
-        if (len < 2 || p + 2 + len > d.length)
+        if (len < 2)
             break;
         if (m >= 0xE0 && m <= 0xEF) { // APPn may carry a nested JPEG
-            const segEnd = p + 2 + len;
+            // Clamped: a header carved off a card can be cut short mid-segment, and a
+            // thumbnail missing only its last few bytes still decodes nearly whole.
+            const segEnd = Math.min(d.length, p + 2 + len);
             for (let i = p + 4; i < segEnd - 3; i++) {
                 if (d[i] === 0xFF && d[i + 1] === 0xD8 && d[i + 2] === 0xFF) {
                     const lim = Math.min(d.length - 1, i + 300000);
@@ -338,6 +340,8 @@ function findEmbeddedThumb(d) {
                 }
             }
         }
+        if (p + 2 + len > d.length)
+            break;
         p += 2 + len;
     }
     return null;

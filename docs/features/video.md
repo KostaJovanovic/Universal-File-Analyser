@@ -452,6 +452,16 @@ itself: reads the header for dimensions/codec/audio format, pulls the raw
 MJPEG frames and PCM audio out of the `movi` list, and re-wraps the PCM as
 a WAV the browser can play.
 
+**Damaged and truncated AVIs.** A clip recovered off a memory card usually
+keeps its header but loses its tail, or has a foreign cluster spliced into
+the middle. The `movi` list is clamped to the end of the file, a frame cut
+off by the end is kept (a cut-short JPEG still decodes down to where its
+data stops), and after a corrupt chunk the walk resyncs on the next real
+stream chunk instead of stopping, so every frame still in the file plays.
+The Frames card says how many the header declared when fewer survive, and a
+file with no frames left says so plainly rather than suggesting another
+player.
+
 **How to reach it.** Automatic fallback when the native `<video>` path
 fails on an `.avi`. Built in `video-avi.js`, used by `video.js`.
 

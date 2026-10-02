@@ -214,7 +214,12 @@ wrong. Strategy by format:
   tables) is damaged, prompts to **Choose reference photo...** - a healthy
   JPEG shot on the same camera/mode - and rebuilds the damaged header by
   borrowing its tables (`extractJpegTables`/`spliceJpegHeader`), so the scan
-  data can then decode.
+  data can then decode. A Motion-JPEG video frame saved on its own (it carries
+  no Huffman tables, by design) needs no reference: the standard tables are
+  grafted on automatically. A file that is only a header (a photo recovered off a
+  card whose body was overwritten) shows its embedded EXIF thumbnail when one
+  survives, and otherwise says so plainly and lists the header's metadata
+  (camera, capture date).
 - **PNG** - recovers as many image rows as possible
   (`decodePngPartial`/`repairPng`) and re-encodes them as a clean PNG; any
   unrecovered rows are blank.
