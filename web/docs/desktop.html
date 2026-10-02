@@ -158,7 +158,7 @@
 <section class="docs-card">
 <h2 id="what-ships-in-the-package">What ships in the package<a class="h-anchor" href="#what-ships-in-the-package" aria-label="Link to this section">#</a></h2>
 <p>The web assets go in as ordinary files under <code>resources/web/</code>, not inside the asar archive, which keeps the 72 MB of vendor WebAssembly straightforward to read.</p>
-<p>The build leaves out the source maps, the sitemaps, <code>robots.txt</code>, <code>llms.txt</code> and <code>_headers</code>. It keeps the generated <code>/formats/&lt;ext&gt;</code> pages, so the formats hub works offline, and the <code>/samples</code> gallery files, so every sample opens.</p>
+<p>The build leaves out the source maps, the sitemaps, <code>robots.txt</code>, <code>llms.txt</code>, <code>_headers</code> and the <code>/samples</code> gallery files. A sample is downloaded from the website the first time you open it, and after that it opens offline like the rest of the app. The generated <code>/formats/&lt;ext&gt;</code> pages are kept, so the formats hub works offline.</p>
 </section>
 <section class="docs-card">
 <h2 id="version-numbers">Version numbers<a class="h-anchor" href="#version-numbers" aria-label="Link to this section">#</a></h2>

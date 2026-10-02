@@ -397,11 +397,14 @@ something actually reads it. The one place that costs is the folder view's
 files rather than inside the asar - which keeps `net.fetch(pathToFileURL(...))`
 trivial and sidesteps asar quirks around the 72 MB of vendor WASM.
 
-Left out: `**/*.map`, `sitemap*.xml`, `robots.txt`, `llms.txt` and `_headers`.
-`formats/**` is kept: the `/formats` hub links straight at those pages, and a
-hub full of dead links is a worse trade than the 25 MB. `samples/**` (18 MB) is
-kept too: the `/samples` page opens those files, and the Everything offline
-download lists them.
+Left out: `**/*.map`, `sitemap*.xml`, `robots.txt`, `llms.txt`, `_headers` and
+`samples/**` (18 MB). A sample missing from disk is routed as `{ remote }` by
+`router.mjs` and downloaded from the live site by `main.mjs` when the `/samples`
+page opens it; the page sees it on its own origin, so the service worker caches
+it and the Everything offline download still lists it. In dev the files are on
+disk and served from there. `formats/**` is kept: the `/formats` hub links
+straight at those pages, and a hub full of dead links is a worse trade than the
+25 MB.
 
 ## Icons
 

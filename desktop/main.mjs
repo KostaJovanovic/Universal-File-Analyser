@@ -1187,6 +1187,30 @@ if (!app.requestSingleInstanceLock()) {
         }
       }
 
+      if (r.remote) {
+        // A /samples gallery file: the package leaves samples/ out, so it is
+        // downloaded from the live site when the page opens it. Same origin as
+        // far as the page knows, so the service worker caches it like any other
+        // file and the Everything offline download still works. One host, the
+        // path router.mjs built, GET/HEAD only, and none of the page's headers.
+        if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('', { status: 405 });
+        try {
+          const up = await net.fetch(SITE + r.remote, {
+            method: req.method,
+            headers: { 'user-agent': 'Analyser-Desktop/' + app.getVersion() },
+          });
+          const headers = new Headers({ 'cache-control': 'no-cache' });
+          const mime = mimeFor(r.remote) || up.headers.get('content-type');
+          if (mime) headers.set('content-type', mime);
+          const len = up.headers.get('content-length');
+          if (len) headers.set('content-length', len);
+          return new Response(up.body, { status: up.status, statusText: up.statusText, headers });
+        } catch (_) {
+          // Offline: the /samples page reports a failed load itself.
+          return new Response('', { status: 503 });
+        }
+      }
+
       let res;
       try {
         res = await net.fetch(pathToFileURL(r.file).href, { headers: req.headers });

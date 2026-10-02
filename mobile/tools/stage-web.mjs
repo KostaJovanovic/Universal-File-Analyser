@@ -9,8 +9,8 @@
  *
  * formats/** stays in, for the desktop's reason: the /formats hub links
  * straight at those pages, and a hub of dead links is worse than 25 MB.
- * samples/** (18 MB) stays in too: the /samples page opens those files, and
- * the Everything offline download lists them.
+ * samples/** (18 MB) is left out, as on the desktop: AnrWebViewClient
+ * downloads a sample from the live site when the /samples page opens it.
  *
  * It also builds the bridge. mobile/bridge/anr-bridge.js is the preload
  * equivalent, and it needs the encoder rewrite rules from
@@ -40,6 +40,7 @@ function excluded(rel) {
   const r = rel.split(sep).join('/');
   const name = basename(r);
   return name.endsWith('.map')
+    || r === 'samples' || r.startsWith('samples/')
     || (!r.includes('/') && (/^sitemap.*\.xml$/.test(name) || name === 'robots.txt' || name === 'llms.txt' || name === '_headers'));
 }
 

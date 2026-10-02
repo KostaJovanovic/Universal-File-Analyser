@@ -12,6 +12,8 @@ import com.getcapacitor.BridgeWebViewClient;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
@@ -31,6 +33,7 @@ import java.util.Map;
  *   /_capacitor_*                refused - see below
  *   /api/*                       503: the bridge sends these natively, and
  *                                nothing else should ask
+ *   /samples/* (not staged)      downloaded from the live site (remoteSample)
  *   everything else              AnrRouter picks the asset, Capacitor serves it
  *                                (an extensionless one is read here - rawAsset)
  *
@@ -91,6 +94,9 @@ final class AnrWebViewClient extends BridgeWebViewClient {
         if (path.startsWith("/api/")) return json(503, "{\"error\":\"offline\"}");
 
         AnrRouter.Route route = router.route(path);
+        // The /samples gallery files are not staged (stage-web.mjs leaves them
+        // out), so one that is missing is downloaded from the live site.
+        if (route.notFound && path.startsWith("/samples/") && path.length() > 9) return remoteSample(url, request);
         // Capacitor's server (html5mode) answers index.html for ANY path whose
         // last segment has no dot, so a real extensionless file - a vendor
         // LICENSE - is read from the assets here instead.
@@ -118,6 +124,43 @@ final class AnrWebViewClient extends BridgeWebViewClient {
             return new WebResourceResponse("text/plain", "utf-8", code, reason(code), headers, in);
         } catch (IOException e) {
             return status(404);
+        }
+    }
+
+    /**
+     * A /samples file, fetched from the live site. The page sees it on its own
+     * origin, so the service worker caches it like any other file and the
+     * Everything offline download still works. One host, the /samples/ prefix,
+     * GET only, the path rebuilt from its decoded segments (router.route() has
+     * already refused "..") and none of the page's headers. This runs on
+     * WebView's background thread, so blocking on the network is fine.
+     */
+    private WebResourceResponse remoteSample(Uri url, WebResourceRequest request) {
+        if (!"GET".equalsIgnoreCase(request.getMethod())) return status(405);
+        StringBuilder path = new StringBuilder();
+        for (String seg : url.getPathSegments()) path.append('/').append(Uri.encode(seg));
+        HttpURLConnection c = null;
+        try {
+            c = (HttpURLConnection) new URL(AnrShell.SITE + path).openConnection();
+            c.setInstanceFollowRedirects(false);
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(30000);
+            int code = c.getResponseCode();
+            if (code != 200) {
+                c.disconnect();
+                return status(code == 404 ? 404 : 503);
+            }
+            String mime = AnrRouter.mime(path.toString());
+            if (mime == null) mime = "application/octet-stream";
+            Map<String, String> headers = new HashMap<>();
+            headers.put("Cache-Control", "no-cache");
+            long len = c.getContentLengthLong();
+            if (len >= 0) headers.put("Content-Length", Long.toString(len));
+            // The stream closes the connection when WebView finishes reading it.
+            return new WebResourceResponse(mime, AnrRouter.isText(mime) ? "utf-8" : null, 200, "OK", headers, c.getInputStream());
+        } catch (IOException e) {
+            if (c != null) c.disconnect();
+            return status(503);
         }
     }
 

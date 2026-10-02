@@ -5,7 +5,7 @@
  * "auto-trailing-slash", not_found_handling = "404-page"). serve.py is the
  * spec; keep the two in step.
  *
- * Differences from serve.py, both deliberate:
+ * Differences from serve.py, all deliberate:
  *
  *  - serve.py answers `/about.html` with a 308 redirect to `/about`. In the
  *    app there is no SEO or canonical-URL reason to redirect, and a redirect
@@ -15,6 +15,8 @@
  *    process (see main.mjs), because `API_ORIGIN` in src/core/util.ts is ''
  *    (same origin) and the Worker sets no CORS headers. Any method, HEAD
  *    included, so no /api request ever falls through to the 404 page.
+ *  - `/samples/*` files missing from disk come back as `{ remote }` and are
+ *    downloaded from the live site when opened: the package leaves them out.
  *
  * The other redirects serve.py makes ARE made here, as `{ redirect }` for
  * main.mjs to answer with a 308: `/index` -> `/`, `/dir/index` -> `/dir/`, and
@@ -92,7 +94,7 @@ function isFile(p) {
  *
  * @param {string} rawPath  the URL pathname, still percent-encoded
  * @param {string} webDir   absolute path of the web/ document root
- * @returns {{proxy: true} | {redirect: string} | {file: string, notFound?: boolean}}
+ * @returns {{proxy: true} | {redirect: string} | {remote: string} | {file: string, notFound?: boolean}}
  */
 export function route(rawPath, webDir) {
   // /api/* never touches disk - main.mjs forwards it to the live Worker.
@@ -132,6 +134,15 @@ export function route(rawPath, webDir) {
 
   if (isFile(full)) return { file: full };              // real asset, served as-is
   if (isFile(full + '.html')) return { file: full + '.html' };  // /about -> about.html
+  // The /samples gallery files are not packaged (electron-builder.yml drops
+  // samples/**), so one that is not on disk is fetched from the live site by
+  // main.mjs. Checked on the normalised path, so "/samples/../x" never counts,
+  // and handed back re-encoded from the decoded segments.
+  const samplesDir = join(webDir, 'samples') + sep;
+  if (full.startsWith(samplesDir) && full.length > samplesDir.length) {
+    const rest = full.slice(samplesDir.length).split(sep).map(encodeURIComponent).join('/');
+    return { remote: '/samples/' + rest };
+  }
   return notFound();                                    // Cloudflare's 404-page
 }
 

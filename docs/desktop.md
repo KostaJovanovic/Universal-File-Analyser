@@ -277,9 +277,11 @@ The web assets go in as ordinary files under `resources/web/`, not inside the
 asar archive, which keeps the 72 MB of vendor WebAssembly straightforward to
 read.
 
-The build leaves out the source maps, the sitemaps, `robots.txt`, `llms.txt` and
-`_headers`. It keeps the generated `/formats/<ext>` pages, so the formats hub
-works offline, and the `/samples` gallery files, so every sample opens.
+The build leaves out the source maps, the sitemaps, `robots.txt`, `llms.txt`,
+`_headers` and the `/samples` gallery files. A sample is downloaded from the
+website the first time you open it, and after that it opens offline like the
+rest of the app. The generated `/formats/<ext>` pages are kept, so the formats
+hub works offline.
 
 ## Version numbers
 

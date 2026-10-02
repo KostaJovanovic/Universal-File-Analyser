@@ -64,8 +64,9 @@ extraResources:
     to: web
     filter:
       - "**/*"
-      # samples/** (18 MB) ships on purpose: the /samples page opens those
-      # files, and the Everything offline download lists them.
+      # samples/** (18 MB) is left out: main.mjs downloads a sample from the
+      # live site when the /samples page opens it (router.mjs `remote`).
+      - "!samples/**"
       # 191 source maps - dev-only, and tsc regenerates them on every build.
       - "!**/*.map"
       # Crawler and deploy plumbing with no meaning off the web.

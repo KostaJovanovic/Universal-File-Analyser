@@ -71,7 +71,7 @@ import org.json.JSONObject;
 @CapacitorPlugin(name = "AnrShell")
 public class AnrShell extends Plugin {
 
-    private static final String SITE = "https://analyser.valjdakosta.com";
+    static final String SITE = "https://analyser.valjdakosta.com";
     private static final String SITE_HOST = "analyser.valjdakosta.com";
     private static final Pattern API_PATH = Pattern.compile("^/api/[A-Za-z0-9_./-]*(\\?[A-Za-z0-9_.~=&%+-]*)?$");
     private static final int API_BODY_MAX = 64 * 1024;
