@@ -140,6 +140,37 @@ export async function inflateZipData(raw, method, maxOut) {
         return zstdInflate(raw, maxOut);
     return null;
 }
+// Code page 437, bytes 0x80-0xFF - the encoding APPNOTE assigns to a ZIP name
+// whose general-purpose bit 11 (UTF-8) is clear.
+const CP437_HIGH = 'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ';
+const utf8Strict = new TextDecoder('utf-8', { fatal: true });
+const utf8Loose = new TextDecoder();
+// Decode an entry name. Bit 11 set means UTF-8. With it clear the spec says
+// CP437, but plenty of tools (macOS Archive Utility, many Linux zips) write
+// UTF-8 without setting the flag, so a name that is valid UTF-8 is read as
+// such and only the rest falls back to CP437. The reader below looks entries
+// up by this name, so it has to match the Unicode path a manifest gives (an
+// EPUB chapter named poglavlje-č.xhtml). Shared with archive.ts.
+export function decodeZipName(raw, flags) {
+    if (flags & 0x0800)
+        return utf8Loose.decode(raw);
+    let ascii = true;
+    for (let i = 0; i < raw.length; i++)
+        if (raw[i] > 0x7F) {
+            ascii = false;
+            break;
+        }
+    if (ascii)
+        return String.fromCharCode.apply(null, Array.from(raw));
+    try {
+        return utf8Strict.decode(raw);
+    }
+    catch (_) { /* not UTF-8 */ }
+    let s = '';
+    for (let i = 0; i < raw.length; i++)
+        s += raw[i] < 0x80 ? String.fromCharCode(raw[i]) : CP437_HIGH[raw[i] - 0x80];
+    return s;
+}
 // Sequential local-header walk (fallback path). Returns { entries, buf } where
 // each entry is { name, method, compSize, uncompSize, dataStart } indexing into
 // buf. Reads up to maxBytes. Used only when the central directory is absent or
@@ -160,9 +191,7 @@ export async function readZipEntries(file, maxBytes = 32 * 1024 * 1024) {
         const uncompSize = view.getUint32(pos + 22, true);
         const nameLen = view.getUint16(pos + 26, true);
         const extraLen = view.getUint16(pos + 28, true);
-        let name = '';
-        for (let i = 0; i < nameLen; i++)
-            name += String.fromCharCode(buf[pos + 30 + i]);
+        const name = decodeZipName(buf.subarray(pos + 30, Math.min(pos + 30 + nameLen, buf.length)), flags);
         const dataStart = pos + 30 + nameLen + extraLen;
         // Bit 3 set means sizes live in a trailing data descriptor; we can't trust
         // compSize, so bail out of sequential walking for that entry.
@@ -214,6 +243,7 @@ async function readCentralDirectory(file) {
     const entries = [];
     let p = 0;
     while (p + 46 <= cd.length && cdv.getUint32(p, true) === 0x02014b50) {
+        const flags = cdv.getUint16(p + 8, true);
         const method = cdv.getUint16(p + 10, true);
         const compSize = cdv.getUint32(p + 20, true);
         const uncompSize = cdv.getUint32(p + 24, true);
@@ -221,9 +251,7 @@ async function readCentralDirectory(file) {
         const extraLen = cdv.getUint16(p + 30, true);
         const cmtLen = cdv.getUint16(p + 32, true);
         const lho = cdv.getUint32(p + 42, true);
-        let name = '';
-        for (let i = 0; i < nameLen && p + 46 + i < cd.length; i++)
-            name += String.fromCharCode(cd[p + 46 + i]);
+        const name = decodeZipName(cd.subarray(p + 46, Math.min(p + 46 + nameLen, cd.length)), flags);
         entries.push({ name, method, compSize, uncompSize, lho });
         p += 46 + nameLen + extraLen + cmtLen;
     }

@@ -15,7 +15,7 @@
 import { el, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, latin1, utf8, utf16, inflate } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
-import { SCAN_SMALL } from '../core/limits.js';
+import { SCAN_SMALL, DECOMP_ENTRY_MAX } from '../core/limits.js';
 // Lazily imported on first OLE/CFBF document; cached at module scope.
 let openCfbf;
 // ---------- small shared helpers ----------
@@ -317,7 +317,7 @@ async function parseComicArchive(file, ext) {
         // ComicInfo.xml metadata.
         if (ciEntry) {
             try {
-                const xml = utf8(await ciEntry.getBytes());
+                const xml = utf8(await ciEntry.getBytes(DECOMP_ENTRY_MAX));
                 const ci = parseComicInfo(xml);
                 if (ci) {
                     for (const [k, v] of Object.entries(ci.fields))
@@ -332,7 +332,7 @@ async function parseComicArchive(file, ext) {
         const dimLines = [];
         for (const e of imgEntries.slice(0, 12)) {
             try {
-                const bytes = await e.getBytes();
+                const bytes = await e.getBytes(DECOMP_ENTRY_MAX);
                 const d = bytes && imageDims(bytes);
                 dimLines.push((d && d.w ? d.w + '×' + d.h : '?') + (d ? '  ' + d.fmt : '') + '  ' + e.name);
             }
@@ -348,7 +348,7 @@ async function parseComicArchive(file, ext) {
         const first = imgEntries[0];
         if (first && NATIVE_IMG.test(first.name)) {
             try {
-                const bytes = await first.getBytes();
+                const bytes = await first.getBytes(DECOMP_ENTRY_MAX);
                 if (bytes) {
                     const node = imgPreview(bytes, imgMime(first.name));
                     if (node)

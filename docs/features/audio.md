@@ -300,6 +300,67 @@ btn: Export WAV
 btn: Reset zoom
 ```
 
+### Waveform editing: crop, cut and cut out
+
+**What it does.** Edits the audio itself from a waveform selection. **Crop**
+keeps only the selection, **Cut out** deletes it and closes the gap, and
+**Cut** deletes it but keeps it so **Paste** can put it back at the playhead
+(or in place of a new selection). Every edit applies to all channels at full
+resolution and plays straight away from the waveform's transport. **Undo**
+steps back one edit, **Revert** returns to the original, and **Download edited
+WAV** saves the result as a 16-bit WAV. Export WAV exports from the edited
+audio once there is an edit, with every channel.
+
+**MP3 export.** **Export MP3** (beside Export WAV) and **Download edited MP3**
+(in the edit bar) encode a 192 kbps MP3 on the device with lamejs, a
+JavaScript port of the LAME encoder (~150 KB, `vendor/lame.min.js`, LGPL),
+loaded only on the first MP3 export and part of the Everything offline tier.
+MP3 holds at most two channels and a fixed set of sample rates, so surround is
+downmixed to stereo and a rate outside 8-48 kHz (96 kHz, 88.2 kHz, ...) is
+resampled first. The button shows the encoding progress.
+
+**How to reach it.** Drag a selection on the waveform; the edit buttons sit
+beside Zoom and Export WAV, and the edit bar below appears after the first
+edit. Built in `audio.js`'s `buildWaveformCard()`. An edit is stored as a list
+of ranges into the decoded samples rather than a copy of the audio, so undo
+costs almost nothing. The spectrogram and analysis cards above keep describing
+the original file, and switching the channel view rebuilds the waveform, which
+discards the edits.
+
+```demo
+btn: Crop
+btn: Cut
+btn: Cut out
+btn: Paste
+btn: Undo
+btn: Revert
+btn: Download edited WAV
+btn: Export MP3
+btn: Download edited MP3
+```
+
+### Convert to MP3 or WAV
+
+**What it does.** Saves any audio file the analyser can decode as an MP3 or a
+WAV, on the device. Because it converts from the decoded sound rather than
+from a particular container, it covers everything that reaches the Sound
+section: the browser's own codecs, the FFmpeg decode fallback (WMA, AC3, AMR,
+...), tracker modules rendered by libopenmpt and a video's analysed audio
+track. MP3 uses lamejs (see the MP3 export notes above) at a chosen bitrate of
+128, 192 (the default), 256 or 320 kbps, mixes surround down to stereo and
+resamples a rate MP3 cannot carry. WAV keeps every channel and the original
+sample rate, as 16-bit PCM.
+
+**How to reach it.** The **Convert** card below the waveform: pick a
+**Bitrate** and click **Convert to MP3**, or click **Convert to WAV**. Built in
+`audio.js`'s `buildConvertCard()`. A long file is only decoded once you click
+"Decode and analyse", so the card appears after that.
+
+```demo
+btn: Convert to MP3
+btn: Convert to WAV
+```
+
 ### Reversed playback
 
 **What it does.** Plays and downloads the decoded audio backwards - each

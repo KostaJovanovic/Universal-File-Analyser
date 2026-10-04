@@ -184,6 +184,8 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
             // their ~60 relatives to PCM. Here rather than in Essentials so the
             // headline "whole app" download stays where it is.
             './assets/vendor/libopenmpt.js',
+            // lamejs (~150 KB): the MP3 encoder behind the waveform's MP3 export.
+            './assets/vendor/lame.min.js',
             // 3Dmol.js (~500 KB): the WebGL renderer behind the chemical-structure
             // viewer - ball-and-stick for small molecules, cartoon ribbons for
             // proteins. Same reasoning as libopenmpt for putting it here.

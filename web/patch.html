@@ -214,6 +214,24 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">9.15 - 9.18</p>
+          <p class="patch-name">Cut &amp; Convert</p>
+          <p class="patch-date">4 October 2026</p>
+          <ul class="patch-list">
+            <li><strong>Sound can now be cut, cropped and converted right where it is analysed - to MP3 or WAV, on your device, with nothing uploaded.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Edit audio on the waveform.</strong> Select a stretch, then <code>Crop</code> keeps only that, <code>Cut out</code> removes it and closes the gap, and <code>Cut</code> removes it so <code>Paste</code> can put it back at the playhead. Every edit applies to all channels and plays straight away; <code>Undo</code> steps back, <code>Revert</code> returns to the original, and the result downloads as WAV or MP3.</li>
+            <li><span class="patch-tag">New</span><strong>Convert any audio file to MP3 or WAV.</strong> A Convert card under the waveform saves whatever the analyser can play - WMA, AC3, AMR and tracker modules included - as an MP3 at 128 to 320 kbps, or as a WAV that keeps every channel.</li>
+            <li><span class="patch-tag">New</span><strong>Export MP3</strong> sits beside Export WAV for a waveform selection, and Export WAV now keeps every channel instead of mixing them down to one.</li>
+            <li><span class="patch-tag">New</span><strong>Antialiasing can be turned off for pictures.</strong> A button under the preview, and <code>Pixelated</code> in the enlarged view, show every pixel as a sharp square - for pixel art, or for checking fine detail up close.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Photos rescued from a memory card give back more.</strong> A photo whose picture was overwritten shows its surviving preview, or at least the camera and date. A video frame saved on its own repairs without a reference photo. Scanning a card image no longer lets one cut-off photo swallow the ones after it, and every photo is listed before the video frames.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A card image with a damaged partition table</strong> is still read, and one whose filesystem start was wiped says so and points to the image scan. <strong>A damaged AVI</strong> plays every frame still in it and says how many are missing.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A blank file</strong> - every byte zero, or erased flash - now says plainly that it holds no data, instead of guessing at a format.</li>
+            <li><span class="patch-tag is-fix">Fix</span>E-books and other ZIP-based files whose parts have accented names open properly, a comic book can no longer ask for a gigantic page while its cover loads, and in the apps every <a href="/samples">sample</a> opens again - those not packed into the app come from the website. A desktop update that runs out of disk space stops cleanly.</li>
+            <li><strong>Maintenance:</strong> one update only tidied the files of the project itself.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">9.09 - 9.14</p>
           <p class="patch-name">Front Door</p>
           <p class="patch-date">24 September 2026</p>
@@ -256,6 +274,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry patch-milestone">
           <p class="patch-version" data-badge="No browser required.">9.0</p>
           <p class="patch-name">Off the Web</p>
@@ -271,9 +292,6 @@
             <li><span class="patch-tag is-fix">Fix</span>Saving uses the real Save dialog, the <a href="/samples">sample</a> cards centre their writing again, and the scrollbar keeps its edge line where the handle passes over it.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">8.46</p>

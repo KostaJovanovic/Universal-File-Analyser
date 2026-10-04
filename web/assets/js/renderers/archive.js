@@ -7,44 +7,16 @@ import { el, row, rowHelp, h3help, fmtBytes, buildFileTree, isUnreadableError, c
 import { normalizeArchive, renderBreakdownCards, renderViewToggle, categorizeExt } from './folder-archive-shared.js';
 import { ARCHIVE_EXTS } from '../core/formats.js';
 import { WALL_INDEX, DECOMP_ENTRY_MAX, DECOMP_OUTPUT_MAX, LIST_ENTRIES_MAX } from '../core/limits.js';
-import { inflateZipData } from './zip.js';
+import { inflateZipData, decodeZipName } from './zip.js';
 import { extractArchive } from '../lib/libarchive-loader.js';
 import { gunzip } from '../core/binutil.js';
 import { xzDecompress } from '../lib/xz-loader.js';
 import { unlz4, unlzw } from '../lib/legacy-decompress.js';
 import { lzmaDecompress } from '../lib/lzma-loader.js';
 // ---------- ZIP parsing via central directory ----------
-// Code page 437, bytes 0x80-0xFF - the encoding APPNOTE assigns to a ZIP name
-// whose general-purpose bit 11 (UTF-8) is clear.
-const CP437_HIGH = 'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ';
-const utf8Strict = new TextDecoder('utf-8', { fatal: true });
-const utf8Loose = new TextDecoder();
-// Decode an entry name. Bit 11 set means UTF-8. With it clear the spec says
-// CP437, but plenty of tools (macOS Archive Utility, many Linux zips) write
-// UTF-8 without setting the flag, so a name that is valid UTF-8 is read as
-// such and only the rest falls back to CP437. Entries are extracted by their
-// local-header offset, never by this name, so the display choice cannot make
-// an entry unopenable.
-function decodeZipName(raw, flags) {
-    if (flags & 0x0800)
-        return utf8Loose.decode(raw);
-    let ascii = true;
-    for (let i = 0; i < raw.length; i++)
-        if (raw[i] > 0x7F) {
-            ascii = false;
-            break;
-        }
-    if (ascii)
-        return String.fromCharCode.apply(null, Array.from(raw));
-    try {
-        return utf8Strict.decode(raw);
-    }
-    catch (_) { /* not UTF-8 */ }
-    let s = '';
-    for (let i = 0; i < raw.length; i++)
-        s += raw[i] < 0x80 ? String.fromCharCode(raw[i]) : CP437_HIGH[raw[i] - 0x80];
-    return s;
-}
+// Entry names go through decodeZipName() in zip.js. Entries are extracted by
+// their local-header offset, never by this name, so the display choice cannot
+// make an entry unopenable.
 function parseZipEntries(buf) {
     const view = new DataView(buf);
     const bytes = new Uint8Array(buf);

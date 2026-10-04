@@ -2199,6 +2199,10 @@ let lbZoom = null;
 // open by openLightbox. Drives the prev/next arrows and the ArrowLeft/Right keys.
 let lbNav = null;
 let lbClose = null; // history-aware closer while the lightbox is open
+// Nearest-neighbour scaling ("Pixelated") for the preview and the lightbox: the
+// browser's smoothing blurs pixel art and hides single-pixel detail when zoomed.
+// Shared so the choice carries from the thumbnail into the lightbox and back.
+let pixelView = false;
 function ensureLightbox() {
     if (lightboxEl)
         return lightboxEl;
@@ -2422,6 +2426,7 @@ export function openLightbox(src, alt, metaText, focusOpts, showAlpha, photoTool
     // the EXIF orientation tag so the preview matches the reported pixel dimensions.
     // Normal photos leave it unset and honour the tag.
     lbImg.style.imageOrientation = (nav && nav.rawOrientation) ? 'none' : '';
+    lbImg.style.imageRendering = pixelView ? 'pixelated' : '';
     lbImg.src = src;
     lbImg.alt = alt || '';
     lbImg.onload = () => { sizeWrap(wrap, lbImg.naturalWidth, lbImg.naturalHeight); };
@@ -2491,6 +2496,15 @@ export function openLightbox(src, alt, metaText, focusOpts, showAlpha, photoTool
         toolbar.appendChild(peakBtn);
         toolbar.appendChild(hlBtn);
         toolbar.appendChild(shBtn);
+        const pxBtn = el('button', { type: 'button', class: 'lightbox-tool-btn' + (pixelView ? ' is-active' : ''),
+            title: 'Turn off smoothing so each pixel shows as a sharp square when zoomed' }, 'Pixelated');
+        pxBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            pixelView = !pixelView;
+            lbImg.style.imageRendering = pixelView ? 'pixelated' : '';
+            pxBtn.classList.toggle('is-active', pixelView);
+        });
+        toolbar.appendChild(pxBtn);
         if (showAlpha) {
             const alphaBtn = el('button', { type: 'button', class: 'lightbox-tool-btn' }, 'Transparency');
             alphaBtn.addEventListener('click', (e) => {
@@ -3842,6 +3856,21 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
             thumb.appendChild(el('p', { class: 'anr-raw-warning' }, 'This is the camera\'s embedded preview - use "Demosaiced (full decode)" at the top to analyse the full sensor image.'));
         }
         previewSlot.appendChild(thumb);
+        // Antialiasing toggle: nearest-neighbour scaling for the thumbnail (and the
+        // lightbox, which reads the same pixelView flag when it opens).
+        thumbImg.style.imageRendering = pixelView ? 'pixelated' : '';
+        const pxBtn = el('button', {
+            type: 'button', class: 'anr-btn' + (pixelView ? ' is-active' : ''),
+            title: 'Turn off smoothing so each pixel shows as a sharp square',
+            style: 'margin-top:10px;font-size:11px;width:100%;'
+        }, pixelView ? 'Antialiasing: off' : 'Antialiasing: on');
+        pxBtn.addEventListener('click', () => {
+            pixelView = !pixelView;
+            thumbImg.style.imageRendering = pixelView ? 'pixelated' : '';
+            pxBtn.classList.toggle('is-active', pixelView);
+            pxBtn.textContent = pixelView ? 'Antialiasing: off' : 'Antialiasing: on';
+        });
+        previewSlot.appendChild(pxBtn);
         // Download the displayed image. For HEIC/RAW the preview is a converted JPEG,
         // so offer it under a .jpg name; otherwise it's the original file's own bytes.
         const dlName = convertedFile ? (file.name.replace(/\.[^.]+$/, '') + '.jpg') : file.name;

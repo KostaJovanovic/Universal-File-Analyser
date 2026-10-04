@@ -18,6 +18,8 @@
    libarchive handles rar, 7z, zip, tar, cab, iso, ... so this drives the
    cbr/cb7/ace upgrades. No top-level side effects beyond a cached init. */
 
+import { DECOMP_OUTPUT_MAX } from '../core/limits.js';
+
 // Resolved against the document base URL (the app is served from the repo
 // root), matching how the other vendored assets are referenced.
 const WORKER_URL = 'assets/vendor/libarchive/worker-bundle.js';
@@ -94,10 +96,19 @@ export async function extractArchive(file: File) {
       const fullName = (it.path || '') + (it.file.name || '');
       // The entry's archive path as the worker knows it (CompressedFile._path).
       const target = it.file._path != null ? it.file._path : fullName;
+      const size = it.file.size || 0;
       return {
         name: fullName,
-        size: it.file.size || 0,
-        getBytes: async () => {
+        size,
+        // The worker allocates the entry's DECLARED size and reads at most that
+        // much, so refusing it here is what bounds the extraction - a check on
+        // the result would come after the allocation. An entry no larger than
+        // the archive itself is always allowed (a stored video in a big RAR is
+        // paid for in file bytes, not ratio); past that, `maxOut` holds.
+        // Automatic reads (ComicInfo.xml, cover thumbnails) pass
+        // DECOMP_ENTRY_MAX; a click to open an entry keeps the default.
+        getBytes: async (maxOut: number = DECOMP_OUTPUT_MAX) => {
+          if (size > Math.max(maxOut, file.size)) throw new Error('entry too large to extract');
           const a = await ensureOpen();
           const extracted = await a.extractSingleFile(target);
           const buf = await extracted.arrayBuffer();

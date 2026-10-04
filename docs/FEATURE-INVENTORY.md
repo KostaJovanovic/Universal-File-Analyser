@@ -66,6 +66,8 @@ there in Phase D.
 - [x] audio.js - Analyse / Download WAV (per separated stem) - analyse or download a generated stem - audio.md
 - [x] audio.js - Download and continue / Start separation (Yes) / Cancel - AI model download/run confirm dialog - audio.md
 - [x] audio.js - Zoom / Export WAV (waveform selection) - zoom into or export the selected time range - audio.md
+- [x] audio.js - Crop / Cut / Cut out / Paste / Undo (waveform editing) - edit the audio from a selection, play it and download it as WAV - audio.md
+- [x] audio.js - Convert to MP3 / Convert to WAV - save any decodable audio file as MP3 (128-320 kbps) or 16-bit WAV - audio.md
 - [x] audio.js - Reset zoom - returns the zoomed waveform to full view - audio.md
 - [x] audio.js - Download recording - downloads a mic recording as an audio file - audio.md
 - [x] audio.js - Channel picker (Mix/L/R/etc.) - choose which channel feeds the spectrogram/waveform - audio.md

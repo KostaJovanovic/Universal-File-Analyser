@@ -7,6 +7,7 @@
    and CBR/CB7 go through the lazy libarchive (unrar/7z) WASM loader. */
 import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, attachZoomPan, openOverlayBack, isLowMemoryDevice } from '../core/util.js';
 import { openZip } from './zip.js';
+import { DECOMP_ENTRY_MAX } from '../core/limits.js';
 const IMG_RE = /\.(jpe?g|png|gif|webp|avif|bmp|jxl)$/i;
 const NATIVE_RE = /\.(jpe?g|png|gif|webp|avif)$/i; // formats <img> can display directly
 const natCmp = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
@@ -54,7 +55,8 @@ async function extractPages(file, ext) {
         r.pages.sort((a, b) => natCmp(a.name, b.name));
         return r;
     }
-    // cbr / cb7 -> libarchive (lazy WASM)
+    // cbr / cb7 -> libarchive (lazy WASM). ComicInfo.xml and the page thumbnails
+    // are read without a click, so each is held to DECOMP_ENTRY_MAX.
     const { extractArchive } = await import('../lib/libarchive-loader.js');
     const arc = await extractArchive(file);
     const imgs = (arc.entries || []).filter((e) => IMG_RE.test(e.name)).sort((a, b) => natCmp(a.name, b.name));
@@ -62,11 +64,11 @@ async function extractPages(file, ext) {
     const ci = (arc.entries || []).find((e) => /comicinfo\.xml$/i.test(e.name));
     if (ci) {
         try {
-            comicInfo = new TextDecoder('utf-8').decode(await ci.getBytes());
+            comicInfo = new TextDecoder('utf-8').decode(await ci.getBytes(DECOMP_ENTRY_MAX));
         }
         catch (_) { }
     }
-    return { pages: imgs.map((e) => ({ name: e.name, getBytes: () => e.getBytes() })), comicInfo };
+    return { pages: imgs.map((e) => ({ name: e.name, getBytes: () => e.getBytes(DECOMP_ENTRY_MAX) })), comicInfo };
 }
 // Pull common fields out of a ComicInfo.xml string.
 function parseComicInfo(xml) {

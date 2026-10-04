@@ -334,6 +334,11 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+    { range: '9.15 - 9.18', notes: [
+            'Sound can be **edited on the waveform**: Crop keeps a selection, Cut out removes it, and Cut removes it so Paste can put it back, on every channel, with Undo and Revert, and the result downloads as WAV or MP3.',
+            'A **Convert** card saves any audio file the analyser can play - WMA, AC3, AMR and tracker modules included - as an **MP3** at 128 to 320 kbps or a **WAV** that keeps every channel, all on your device.',
+            'Pictures get an **antialiasing switch** that shows every pixel as a sharp square, and photos, card images and AVI clips **rescued from a memory card** give back more of what survives. A **blank file** now says plainly that it holds no data.',
+        ] },
     { range: '9.09 - 9.14', notes: [
             'The **home page moves** now: a drop glides the header and dropzones away, the analysis rises in their place and the header returns as a slim bar, with a **Menu button** on narrow screens. The fixed Photo, Sound and Video sections are gone, so what you drop leads the page. Extra analyses - a video’s sound and frames, a cover, an icon - wait as boxes at the end and open on a click.',
             'The largest **safety sweep** yet: archives that unpack to gigabytes, headers that loop forever and hidden code in emails, e-books and SVG pictures are all stopped, and the **PDF and spreadsheet readers** are updated past their known flaws.',

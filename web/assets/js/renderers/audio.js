@@ -2,7 +2,7 @@
    Handles uploaded files, mic recording, and live spectrogram.
    Renders waveform, file info, and an interactive spectrogram. */
 import { computeSpectrogram, computeSpectrogramAsync, computeReassignedSpectrogram, renderSpectrogram, colormaps, computeStftComplex, combineStftToDb, frequencyTicks, timeTicks, formatHz, formatTime } from './spectrogram.js';
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, errorCard, integrityCard, downloadBlob, inlineLoader, asciiBar, yieldToMain, afterPaint } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, errorCard, integrityCard, downloadBlob, inlineLoader, asciiBar, yieldToMain, afterPaint, loadScript } from '../core/util.js';
 import { computeStats, computeStereoStats } from './audio-analysis.js';
 import { peekContainer, adtsToM4a, readTagBPM, extractCoverArt, readAudioTags } from './audio-codec.js';
 // Only the cheap read-the-spectrum verdicts are called from here now; the nine
@@ -3201,11 +3201,249 @@ function buildCoverArtCard(art, file, resultsEl) {
     labelCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' }, art.mime + ' · ' + fmtBytes(art.bytes.length)));
     return labelCard;
 }
-export function buildWaveformCard(file, mono, audioBuffer, audioEl, signal) {
+function segsLength(segs) {
+    let n = 0;
+    for (const [a, b] of segs)
+        n += b - a;
+    return n;
+}
+// The source ranges covering positions [s, e) of the edited timeline.
+function sliceSegs(segs, s, e) {
+    const out = [];
+    let pos = 0;
+    for (const [a, b] of segs) {
+        const len = b - a, lo = Math.max(s, pos), hi = Math.min(e, pos + len);
+        if (hi > lo)
+            out.push([a + lo - pos, a + hi - pos]);
+        pos += len;
+        if (pos >= e)
+            break;
+    }
+    return out;
+}
+// Concatenate range lists, merging ranges that run on contiguously (so cutting
+// a region and pasting it straight back leaves one range, not three).
+function joinSegs(...lists) {
+    const out = [];
+    for (const list of lists)
+        for (const [a, b] of list) {
+            const last = out[out.length - 1];
+            if (last && last[1] === a)
+                last[1] = b;
+            else
+                out.push([a, b]);
+        }
+    return out;
+}
+function renderSegs(src, segs) {
+    const out = new Float32Array(segsLength(segs));
+    let o = 0;
+    for (const [a, b] of segs) {
+        out.set(src.subarray(a, b), o);
+        o += b - a;
+    }
+    return out;
+}
+// 16-bit PCM WAV of every channel of `buf`, played through `segs`. Reads the
+// source channels in place rather than building edited Float32 copies first, so
+// an edit of a long file costs the WAV and nothing more.
+function encodeSegsWav(buf, segs) {
+    const ch = buf.numberOfChannels, sr = buf.sampleRate, len = segsLength(segs);
+    const block = ch * 2, dataSize = len * block;
+    const out = new ArrayBuffer(44 + dataSize);
+    const v = new DataView(out);
+    let o = 0;
+    const ws = (s) => { for (let i = 0; i < s.length; i++)
+        v.setUint8(o++, s.charCodeAt(i)); };
+    ws('RIFF');
+    v.setUint32(o, 36 + dataSize, true);
+    o += 4;
+    ws('WAVEfmt ');
+    v.setUint32(o, 16, true);
+    o += 4;
+    v.setUint16(o, 1, true);
+    o += 2;
+    v.setUint16(o, ch, true);
+    o += 2;
+    v.setUint32(o, sr, true);
+    o += 4;
+    v.setUint32(o, sr * block, true);
+    o += 4;
+    v.setUint16(o, block, true);
+    o += 2;
+    v.setUint16(o, 16, true);
+    o += 2;
+    ws('data');
+    v.setUint32(o, dataSize, true);
+    o += 4;
+    const chData = [];
+    for (let c = 0; c < ch; c++)
+        chData.push(buf.getChannelData(c));
+    for (const [a, b] of segs) {
+        for (let i = a; i < b; i++) {
+            for (let c = 0; c < ch; c++) {
+                const s = Math.max(-1, Math.min(1, chData[c][i]));
+                v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                o += 2;
+            }
+        }
+    }
+    return new Blob([out], { type: 'audio/wav' });
+}
+// MP3 export. lamejs (a JS port of LAME, vendor/lame.min.js) loads on the first
+// export, so it costs nothing until someone asks for an MP3.
+const MP3_KBPS = 192;
+// The only sample rates MPEG-1/2/2.5 Layer III defines; anything else is resampled.
+const MP3_RATES = [8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000];
+let _lamePromise = null;
+function loadLame() {
+    if (!_lamePromise) {
+        _lamePromise = loadScript('/assets/vendor/lame.min.js').then(() => window.lamejs, (e) => { _lamePromise = null; throw e; });
+    }
+    return _lamePromise;
+}
+function toPcm16(src, from, n, dst) {
+    for (let i = 0; i < n; i++) {
+        const s = Math.max(-1, Math.min(1, src[from + i]));
+        dst[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+}
+// MP3 of `buf` played through `segs`. MP3 carries at most two channels and only
+// the rates above, so surround is downmixed to stereo and an off-list rate (96k,
+// 88.2k, 7350 ...) is resampled, both through an OfflineAudioContext. Encodes in
+// blocks, yielding so a long file doesn't freeze the page.
+async function encodeSegsMp3(buf, segs, onProgress, signal, kbps = MP3_KBPS) {
+    const lame = await loadLame();
+    if (!lame || !lame.Mp3Encoder)
+        throw new Error('the MP3 encoder did not load');
+    const len = segsLength(segs);
+    // A whole-file conversion reads the decoded channels in place instead of copying.
+    const whole = segs.length === 1 && segs[0][0] === 0 && segs[0][1] === buf.length;
+    let chans = [];
+    for (let c = 0; c < buf.numberOfChannels; c++)
+        chans.push(whole ? buf.getChannelData(c) : renderSegs(buf.getChannelData(c), segs));
+    const outCh = Math.min(2, chans.length);
+    const sr = buf.sampleRate;
+    const rate = MP3_RATES.includes(sr) ? sr
+        : sr > 48000 ? (sr % 11025 === 0 ? 44100 : 48000)
+            : MP3_RATES.find((r) => r >= sr);
+    if (rate !== sr || chans.length > 2) {
+        const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        const oac = new OAC(outCh, Math.max(1, Math.ceil(len * rate / sr)), rate);
+        const srcBuf = oac.createBuffer(chans.length, Math.max(1, len), sr);
+        chans.forEach((d, c) => srcBuf.copyToChannel(d, c));
+        const node = oac.createBufferSource();
+        node.buffer = srcBuf;
+        node.connect(oac.destination);
+        node.start();
+        const rendered = await oac.startRendering();
+        chans = [];
+        for (let c = 0; c < outCh; c++)
+            chans.push(rendered.getChannelData(c));
+    }
+    const enc = new lame.Mp3Encoder(outCh, rate, kbps);
+    const n = chans[0].length, BLOCK = 1152 * 32;
+    const left = new Int16Array(BLOCK), right = new Int16Array(BLOCK);
+    const parts = [];
+    let t = performance.now();
+    for (let i = 0; i < n; i += BLOCK) {
+        const m = Math.min(BLOCK, n - i);
+        toPcm16(chans[0], i, m, left);
+        if (outCh === 2)
+            toPcm16(chans[1], i, m, right);
+        // encodeBuffer returns a fresh copy each call, so it can go straight in.
+        const out = outCh === 2 ? enc.encodeBuffer(left.subarray(0, m), right.subarray(0, m)) : enc.encodeBuffer(left.subarray(0, m));
+        if (out.length)
+            parts.push(out);
+        if (performance.now() - t >= 24) {
+            if (aborted(signal))
+                throw AbortErr();
+            onProgress(i / n);
+            await yieldToMain();
+            t = performance.now();
+        }
+    }
+    const tail = enc.flush();
+    if (tail.length)
+        parts.push(tail);
+    return new Blob(parts, { type: 'audio/mpeg' });
+}
+// Run an MP3 encode from a button: the button shows the progress and stays
+// disabled until the download is handed over, and says so briefly on failure.
+async function mp3ButtonExport(btn, buf, segs, name, signal, kbps = MP3_KBPS) {
+    if (btn.disabled)
+        return;
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Encoding MP3…';
+    let failed = false;
+    try {
+        const blob = await encodeSegsMp3(buf, segs, (f) => { btn.textContent = 'Encoding MP3 ' + Math.round(f * 100) + '%'; }, signal, kbps);
+        downloadBlob(name, blob);
+    }
+    catch (e) {
+        if (aborted(signal))
+            return;
+        failed = true;
+        console.warn('MP3 export failed', e);
+    }
+    finally {
+        btn.disabled = false;
+        btn.textContent = failed ? 'MP3 export failed' : label;
+        if (failed)
+            setTimeout(() => { btn.textContent = label; }, 2500);
+    }
+}
+// "Convert" card: the whole decoded file as MP3 or WAV. It works from the decoded
+// AudioBuffer, so it covers every format that reaches the Sound section - the
+// browser's own codecs, the FFmpeg decode fallback (WMA, AC3, AMR ...), tracker
+// modules rendered by libopenmpt - with no format-specific code here.
+function buildConvertCard(file, buf, signal) {
+    const card = el('div', { class: 'anr-card' });
+    const [h, help] = h3help('Convert', 'Save this audio as an MP3 or a WAV file. It is converted on your device from the decoded sound, so it works for any format the analyser can play. MP3 keeps at most two channels, so surround is mixed down to stereo, and a sample rate MP3 does not support (such as 96 kHz) is resampled. WAV keeps every channel and the original sample rate, as 16-bit PCM.');
+    card.append(h, help);
+    const base = (file.name || 'audio').replace(/\.[^.]+$/, '');
+    const whole = [[0, buf.length]];
+    const rateSel = el('select', { 'aria-label': 'MP3 bitrate' }, ['128', '192', '256', '320'].map((v) => el('option', { value: v }, v + ' kbps')));
+    rateSel.value = String(MP3_KBPS);
+    const mp3Btn = el('button', { type: 'button', class: 'anr-btn' }, 'Convert to MP3');
+    const wavBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Convert to WAV');
+    mp3Btn.addEventListener('click', () => {
+        mp3ButtonExport(mp3Btn, buf, whole, base + '.mp3', signal, parseInt(rateSel.value, 10));
+    });
+    wavBtn.addEventListener('click', () => {
+        if (wavBtn.disabled)
+            return;
+        wavBtn.disabled = true;
+        wavBtn.textContent = 'Encoding WAV…';
+        // Defer a tick so the label repaints before the synchronous encode.
+        setTimeout(() => {
+            try {
+                downloadBlob(base + '.wav', encodeSegsWav(buf, whole));
+                wavBtn.textContent = 'Convert to WAV';
+            }
+            catch (e) {
+                console.warn('WAV export failed', e);
+                wavBtn.textContent = 'WAV export failed';
+                setTimeout(() => { wavBtn.textContent = 'Convert to WAV'; }, 2500);
+            }
+            wavBtn.disabled = false;
+        }, 0);
+    });
+    card.appendChild(el('div', { class: 'anr-controls' }, [
+        el('div', { class: 'anr-control' }, [el('label', {}, 'Bitrate'), rateSel]),
+        mp3Btn, wavBtn,
+    ]));
+    return card;
+}
+export function buildWaveformCard(file, srcMono, audioBuffer, audioEl, signal) {
     const sr = audioBuffer.sampleRate;
+    // The displayed signal. Starts as the decoded one; an edit replaces it with the
+    // edited render, and everything below (selection, zoom, stats) works on it.
+    let mono = srcMono;
     // renderWave rides on the card: the resize/zoom paths call it by name.
     const waveCard = el('div', { class: 'anr-card' });
-    const [waveH, waveHelp] = h3help('Waveform', 'Amplitude over time. Click and drag to select a region - then drag its edges to fine-tune, drag the middle to move it, or type exact start/end times. Zoom in or export the selection as a WAV file. The white playhead line shows the current playback position; drag it, or use the transport below, to scrub.');
+    const [waveH, waveHelp] = h3help('Waveform', 'Amplitude over time. Click and drag to select a region - then drag its edges to fine-tune, drag the middle to move it, or type exact start/end times. Zoom in or export the selection as a WAV or MP3 file. Crop keeps only the selection, Cut out deletes it, and Cut deletes it but keeps it to paste back in at the playhead. Edits apply to every channel, play straight away from the transport below and download as a WAV or MP3; Undo steps back and Revert returns to the original. The white playhead line shows the current playback position; drag it, or use the transport below, to scrub.');
     waveCard.appendChild(waveH);
     waveCard.appendChild(waveHelp);
     const waveCanvas = el('canvas', { class: 'anr-waveform' });
@@ -3240,9 +3478,11 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl, signal) {
     // live playback (and scrubbing) it tracks frame-by-frame with transition:none so
     // it can't lag behind - the 0.28s CSS ease on .anr-playhead would otherwise make
     // every RAF update visibly trail the audio.
+    // The element the waveform plays and follows: the file's own <audio> until an
+    // edit is made, then a private one carrying the edited WAV.
+    let playEl = audioEl;
     function tickWaveLine(animate) {
-        const d = audioBuffer.duration;
-        const currentSample = (audioEl.currentTime / d) * mono.length;
+        const currentSample = playEl.currentTime * sr;
         const visLen = zoomEnd - zoomStart;
         const pct = ((currentSample - zoomStart) / visLen) * 100;
         if (pct >= 0 && pct <= 100) {
@@ -3258,30 +3498,52 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl, signal) {
     // function would feed the RAF timestamp in as `animate`, re-enabling the ease).
     function tickWaveLoop() {
         tickWaveLine(false);
-        if (!audioEl.paused)
+        if (!playEl.paused)
             requestAnimationFrame(tickWaveLoop);
     }
-    const waveListenerOpts = signal ? { signal } : undefined;
-    audioEl.addEventListener('play', () => requestAnimationFrame(tickWaveLoop), waveListenerOpts);
-    audioEl.addEventListener('pause', () => tickWaveLine(true), waveListenerOpts);
-    // Snap (no ease) on seek: dragging the transport fires a stream of coalesced
-    // 'seeked' events, and the 0.28s CSS glide on each one stacks into visible lag.
-    // A single click-seek snapping is a fair trade for a responsive scrub.
-    audioEl.addEventListener('seeked', () => tickWaveLine(false), waveListenerOpts);
+    // Each handler checks the element is still the one being followed, so the
+    // file's <audio> (driven by the main player too) can't move the line while the
+    // edited audio owns it.
+    function wirePlayhead(m, opts) {
+        m.addEventListener('play', () => { if (playEl === m)
+            requestAnimationFrame(tickWaveLoop); }, opts);
+        m.addEventListener('pause', () => { if (playEl === m)
+            tickWaveLine(true); }, opts);
+        // Snap (no ease) on seek: dragging the transport fires a stream of coalesced
+        // 'seeked' events, and the 0.28s CSS glide on each one stacks into visible lag.
+        // A single click-seek snapping is a fair trade for a responsive scrub.
+        m.addEventListener('seeked', () => { if (playEl === m)
+            tickWaveLine(false); }, opts);
+    }
+    wirePlayhead(audioEl, signal ? { signal } : undefined);
     // Grab the playhead line and drag to scrub (respects the current zoom window).
     attachScrub(waveLine, (clientX) => {
         const rect = waveCanvas.getBoundingClientRect();
         const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
         const sample = zoomStart + frac * (zoomEnd - zoomStart);
-        audioEl.currentTime = (sample / mono.length) * audioBuffer.duration;
+        playEl.currentTime = sample / sr;
         tickWaveLine();
     });
+    // An AbortController that also fires when the card's own signal does, for
+    // listeners that must go away sooner (a replaced transport, a superseded edit).
+    function childAbort() {
+        const ac = new AbortController();
+        if (signal) {
+            if (signal.aborted)
+                ac.abort();
+            else
+                signal.addEventListener('abort', () => ac.abort(), { once: true });
+        }
+        return ac;
+    }
     // Full transport (play/pause + seek + time) directly below the canvas, wired to
     // the same <audio> the rest of the card drives - so the waveform can run playback
-    // on its own without scrolling back up to the main player.
-    waveCard.appendChild(el('div', { class: 'anr-spec-transport' }, [
-        makePlayer(audioEl, audioBuffer.duration, { signal }),
-    ]));
+    // on its own without scrolling back up to the main player. Rebuilt on every
+    // edit, against the edited audio.
+    const transportRow = el('div', { class: 'anr-spec-transport' });
+    let transportAbort = childAbort();
+    transportRow.appendChild(makePlayer(audioEl, audioBuffer.duration, { signal: transportAbort.signal }));
+    waveCard.appendChild(transportRow);
     // Selection controls (shown when a selection exists): editable start/end times,
     // a stats readout, then zoom / export.
     const selInfo = el('div', { class: 'anr-controls anr-sel-controls is-hidden' });
@@ -3294,8 +3556,22 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl, signal) {
     const selLabel = el('span', { class: 'anr-sel-label' }, '');
     const zoomBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Zoom');
     const exportBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Export WAV');
-    selInfo.append(times, selLabel, zoomBtn, exportBtn);
+    const exportMp3Btn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Export the selection as a ' + MP3_KBPS + ' kbps MP3' }, 'Export MP3');
+    const cropBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Keep only the selection' }, 'Crop');
+    const cutBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Remove the selection and keep it to paste' }, 'Cut');
+    const cutOutBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Remove the selection and close the gap' }, 'Cut out');
+    selInfo.append(times, selLabel, zoomBtn, exportBtn, exportMp3Btn, cropBtn, cutBtn, cutOutBtn);
     waveCard.appendChild(selInfo);
+    // Edit bar in its own row, like the zoom bar: it has to stay reachable after an
+    // edit clears the selection. Shown once there is an edit or something to paste.
+    const editLabel = el('span', { class: 'anr-sel-label' }, '');
+    const pasteBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Insert the cut audio at the playhead, or in place of the selection' }, 'Paste');
+    const undoBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Undo');
+    const revertBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Discard every edit and return to the original audio' }, 'Revert');
+    const dlEditBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Download the edited audio, every channel, as a 16-bit WAV' }, 'Download edited WAV');
+    const dlEditMp3Btn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Download the edited audio as a ' + MP3_KBPS + ' kbps MP3' }, 'Download edited MP3');
+    const editBar = el('div', { class: 'anr-controls anr-sel-controls is-hidden' }, [editLabel, pasteBtn, undoBtn, revertBtn, dlEditBtn, dlEditMp3Btn]);
+    waveCard.appendChild(editBar);
     // Zoom bar in its OWN row so "Reset zoom" stays reachable after a zoom - zooming
     // clears the selection, which hides the selInfo row the button used to live in.
     // Shown only while zoomed, with a label of the visible window.
@@ -3530,60 +3806,164 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl, signal) {
         updateSelInfo();
         zoomBar.classList.add('is-hidden');
     });
-    exportBtn.addEventListener('click', () => {
-        if (selStart == null || selEnd == null || selStart === selEnd)
-            return;
-        const s = Math.min(selStart, selEnd);
-        const e = Math.max(selStart, selEnd);
-        const selSamples = mono.subarray(s, e);
-        const numSamples = selSamples.length;
-        const numChannels = 1;
-        const bitsPerSample = 16;
-        const bytesPerSample = bitsPerSample / 8;
-        const blockAlign = numChannels * bytesPerSample;
-        const byteRate = audioBuffer.sampleRate * blockAlign;
-        const dataSize = numSamples * blockAlign;
-        const bufferSize = 44 + dataSize;
-        const buffer = new ArrayBuffer(bufferSize);
-        const view = new DataView(buffer);
-        // RIFF header
-        let offset = 0;
-        const writeStr = (s) => { for (let i = 0; i < s.length; i++)
-            view.setUint8(offset++, s.charCodeAt(i)); };
-        writeStr('RIFF');
-        view.setUint32(offset, 36 + dataSize, true);
-        offset += 4;
-        writeStr('WAVE');
-        // fmt chunk
-        writeStr('fmt ');
-        view.setUint32(offset, 16, true);
-        offset += 4; // chunk size
-        view.setUint16(offset, 1, true);
-        offset += 2; // PCM format
-        view.setUint16(offset, numChannels, true);
-        offset += 2;
-        view.setUint32(offset, audioBuffer.sampleRate, true);
-        offset += 4;
-        view.setUint32(offset, byteRate, true);
-        offset += 4;
-        view.setUint16(offset, blockAlign, true);
-        offset += 2;
-        view.setUint16(offset, bitsPerSample, true);
-        offset += 2;
-        // data chunk
-        writeStr('data');
-        view.setUint32(offset, dataSize, true);
-        offset += 4;
-        // Convert Float32 to Int16
-        for (let i = 0; i < numSamples; i++) {
-            let sample = selSamples[i];
-            sample = Math.max(-1, Math.min(1, sample));
-            const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-            view.setInt16(offset, intSample, true);
-            offset += 2;
+    // --- Editing ---
+    const ORIGINAL = [[0, srcMono.length]];
+    let segs = ORIGINAL;
+    const undoStack = [];
+    let clip = null; // what Cut removed, for Paste
+    let editBlob = null, editUrl = '';
+    let editEl = null, editAbort = null;
+    const baseName = (file.name || 'audio').replace(/\.[^.]+$/, '');
+    function dropEditAudio() {
+        if (editAbort) {
+            editAbort.abort();
+            editAbort = null;
         }
-        const blob = new Blob([buffer], { type: 'audio/wav' });
-        downloadBlob((file.name || 'selection').replace(/\.[^.]+$/, '') + '_selection.wav', blob);
+        if (editEl) {
+            try {
+                editEl.pause();
+            }
+            catch (_) { }
+            editEl.removeAttribute('src');
+            editEl.remove();
+            editEl = null;
+        }
+        if (editUrl) {
+            URL.revokeObjectURL(editUrl);
+            editUrl = '';
+        }
+        editBlob = null;
+    }
+    if (signal)
+        signal.addEventListener('abort', dropEditAudio, { once: true });
+    function selRange() {
+        if (selStart == null || selEnd == null || selStart === selEnd)
+            return null;
+        return [Math.min(selStart, selEnd), Math.max(selStart, selEnd)];
+    }
+    function updateEditBar() {
+        const edited = segs !== ORIGINAL;
+        editBar.classList.toggle('is-hidden', !edited && !clip);
+        editLabel.textContent = edited
+            ? 'Edited: ' + fmtSelTime(mono.length / sr) + ' (original ' + fmtSelTime(srcMono.length / sr) + ')'
+            : 'Original audio';
+        pasteBtn.classList.toggle('is-hidden', !clip);
+        if (clip)
+            pasteBtn.textContent = 'Paste ' + fmtSelTime(segsLength(clip) / sr);
+        undoBtn.classList.toggle('is-hidden', !undoStack.length);
+        revertBtn.classList.toggle('is-hidden', !edited);
+        dlEditBtn.classList.toggle('is-hidden', !edited);
+        dlEditMp3Btn.classList.toggle('is-hidden', !edited);
+    }
+    // Swap in a new range list: re-render the view, rebuild the edited audio and
+    // its transport, and park the playhead at `cursor` (a sample of the new timeline).
+    function setSegs(next, cursor) {
+        try {
+            playEl.pause();
+        }
+        catch (_) { }
+        dropEditAudio();
+        transportAbort.abort();
+        transportAbort = childAbort();
+        // Edits that add back up to the untouched file (cut, then paste straight back)
+        // count as the original again.
+        segs = (next.length === 1 && next[0][0] === 0 && next[0][1] === srcMono.length) ? ORIGINAL : next;
+        const edited = segs !== ORIGINAL;
+        mono = edited ? renderSegs(srcMono, segs) : srcMono;
+        if (edited) {
+            editAbort = childAbort();
+            editBlob = encodeSegsWav(audioBuffer, segs);
+            editUrl = URL.createObjectURL(editBlob);
+            // Kept in the card (hidden) rather than detached, so the page's "pause every
+            // <audio> before clearing the results" sweep reaches it too.
+            editEl = el('audio', { preload: 'auto', hidden: '' });
+            editEl.src = editUrl;
+            waveCard.appendChild(editEl);
+            wirePlayhead(editEl, { signal: editAbort.signal });
+            playEl = editEl;
+        }
+        else {
+            playEl = audioEl;
+        }
+        playEl.currentTime = Math.max(0, Math.min(mono.length, cursor)) / sr;
+        transportRow.replaceChildren(makePlayer(playEl, mono.length / sr, { signal: edited ? editAbort.signal : transportAbort.signal }));
+        // The timeline changed length, so the old zoom window and selection no longer
+        // point at the same audio.
+        zoomStart = 0;
+        zoomEnd = mono.length;
+        selStart = selEnd = null;
+        zoomBar.classList.add('is-hidden');
+        redrawWaveform();
+        updateSelInfo();
+        updateEditBar();
+        tickWaveLine(false);
+    }
+    function applyEdit(next, cursor) {
+        if (!segsLength(next))
+            return; // never edit down to zero samples
+        undoStack.push(segs);
+        setSegs(next, cursor);
+    }
+    cropBtn.addEventListener('click', () => {
+        const r = selRange();
+        if (!r)
+            return;
+        applyEdit(sliceSegs(segs, r[0], r[1]), 0);
+    });
+    function removeSel(keep) {
+        const r = selRange();
+        if (!r)
+            return;
+        if (r[0] === 0 && r[1] === mono.length)
+            return; // removing everything leaves no audio
+        if (keep)
+            clip = sliceSegs(segs, r[0], r[1]);
+        applyEdit(joinSegs(sliceSegs(segs, 0, r[0]), sliceSegs(segs, r[1], mono.length)), r[0]);
+    }
+    cutBtn.addEventListener('click', () => removeSel(true));
+    cutOutBtn.addEventListener('click', () => removeSel(false));
+    pasteBtn.addEventListener('click', () => {
+        if (!clip)
+            return;
+        // Replace the selection when there is one, otherwise insert at the playhead.
+        const r = selRange();
+        const at = r ? r[0] : Math.max(0, Math.min(mono.length, Math.round(playEl.currentTime * sr)));
+        const end = r ? r[1] : at;
+        applyEdit(joinSegs(sliceSegs(segs, 0, at), clip, sliceSegs(segs, end, mono.length)), at + segsLength(clip));
+    });
+    undoBtn.addEventListener('click', () => {
+        const prev = undoStack.pop();
+        if (!prev)
+            return;
+        setSegs(prev, 0);
+    });
+    revertBtn.addEventListener('click', () => {
+        if (segs === ORIGINAL)
+            return;
+        undoStack.push(segs);
+        setSegs(ORIGINAL, 0);
+    });
+    dlEditBtn.addEventListener('click', () => {
+        if (editBlob)
+            downloadBlob(baseName + '_edited.wav', editBlob);
+    });
+    // Export the selection - of the edited audio when there is an edit - with every
+    // channel, through the same range list the edits use.
+    exportBtn.addEventListener('click', () => {
+        const r = selRange();
+        if (!r)
+            return;
+        downloadBlob(baseName + '_selection.wav', encodeSegsWav(audioBuffer, sliceSegs(segs, r[0], r[1])));
+    });
+    exportMp3Btn.addEventListener('click', () => {
+        const r = selRange();
+        if (!r)
+            return;
+        mp3ButtonExport(exportMp3Btn, audioBuffer, sliceSegs(segs, r[0], r[1]), baseName + '_selection.mp3', signal);
+    });
+    dlEditMp3Btn.addEventListener('click', () => {
+        if (segs !== ORIGINAL)
+            mp3ButtonExport(dlEditMp3Btn, audioBuffer, segs, baseName + '_edited.mp3', signal);
     });
     return waveCard;
 }
@@ -4639,6 +5019,8 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     resultsEl.appendChild(lossySlot);
     resultsEl.appendChild(waveSlot);
     resultsEl.appendChild(chanSlot);
+    // Convert is a control too (nothing to wait for), so it goes in straight away.
+    resultsEl.appendChild(buildConvertCard(file, audioBuffer, renderSignal));
     resultsEl.appendChild(advSlot);
     // Build the spectrogram and WAIT for it to finish before starting anything else.
     // It is the headline visual, so it gets the main thread to itself: the forensic

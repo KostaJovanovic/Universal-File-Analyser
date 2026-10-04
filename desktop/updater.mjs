@@ -34,6 +34,7 @@
 import { app, net, shell } from 'electron';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { once } from 'node:events';
 import { chmodSync, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -302,9 +303,15 @@ async function download(asset, dest, onProgress) {
     if (res.url && !allowedDownload(res.url, false)) throw new Error('the download was redirected outside GitHub');
     mkdirSync(dirname(dest), { recursive: true });
     out = createWriteStream(part);
+    // A write error (a full disk) arrives as an 'error' event, which no try sees:
+    // unheard it is an uncaught exception, and a wait for 'drain' never ends.
+    // Keep it here and throw it from the loop; once() rejects a drain wait on it.
+    let writeErr = null;
+    out.on('error', (err) => { writeErr = err; });
     let got = 0;
     let told = 0;
     for await (const chunk of res.body) {
+      if (writeErr) throw writeErr;
       poke();
       got += chunk.length;
       // Never more than the release says the file is.
@@ -312,8 +319,9 @@ async function download(asset, dest, onProgress) {
       hash.update(chunk);
       const share = got / size;
       if (share - told >= 0.01) { told = share; onProgress(share); }
-      if (!out.write(chunk)) await new Promise((resolve) => out.once('drain', resolve));
+      if (!out.write(chunk)) await once(out, 'drain');
     }
+    if (writeErr) throw writeErr;
     if (got !== size) throw new Error('the download is shorter than the release says');
     await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())));
   } catch (err) {

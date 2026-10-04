@@ -156,6 +156,7 @@ declare global {
     heic2any?: any;      // vendor/heic2any.min.js
     initSqlJs?: any;     // vendor/sqljs/sql-wasm.js
     jsQR?: any;          // vendor/jsQR.js
+    lamejs?: any;        // vendor/lame.min.js
     lottie?: any;        // vendor/lottie/lottie.min.js
     occtimportjs?: any;  // CDN occt-import-js (via lib/occt-loader.js)
     opentype?: any;      // vendor/opentype/opentype.min.js
