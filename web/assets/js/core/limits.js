@@ -125,6 +125,11 @@ export const SOURCE_SCAN_MAX = 4 * MB;
 // largest real RTF (embedded pictures, as hex) tens of MB; the pagination below
 // builds DOM per page, so past this only the first part is read and shown.
 export const TEXTDOC_READ_MAX = 32 * MB;
+// Safari .webarchive: a binary plist, whose object table sits at the END, so
+// it has to be read whole - there is no "first part" to fall back on. Saved
+// pages are a few MB (the scripts and images they pull in included); past
+// this the viewer declines rather than buffering a huge file into memory.
+export const WEBARCHIVE_READ_MAX = 128 * MB;
 // c2pa: bytes read from EACH END of a container c2pa.js can't unpack structurally
 // (MP4/MOV/HEIF/AVIF/WebP), when hunting the JUMBF manifest store by signature.
 // Both ends, because the box is top-level and near ftyp/moov in practice but some

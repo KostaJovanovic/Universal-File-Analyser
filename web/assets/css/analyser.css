@@ -8598,8 +8598,53 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
    omit their bottom border to butt against the next row) - restore the bottom
    hairline so it reads as a closed box. */
 .anr-sel-controls { gap: 8px 14px; margin-top: 6px; align-items: center; border-bottom: var(--bd-hairline); }
+/* The audio Convert card's row stands alone too, so it closes the same way. */
+.anr-convert-controls { border-bottom: var(--bd-hairline); }
 .anr-sel-label { font-size: 0.85em; opacity: 0.8; }
 .anr-btn-sm { font-size: 0.82em; padding: 3px 10px; }
+/* A group of waveform selection/edit buttons that wraps as one block. */
+.anr-sel-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Editable waveform: a horizontal drag selects, a vertical swipe still scrolls
+   the page, and a long press brings up no callout or text selection. */
+.anr-wave-wrap:has(.anr-wave-edit) { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.anr-wave-edit { touch-action: pan-y pinch-zoom; }
+/* Grips on the selection's edges. Fixed colours rather than theme variables:
+   they sit on the dark media canvas in both themes, and match the selection
+   tint drawn there (rgb 100,180,255). Markers only - no pointer events. */
+.anr-wave-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(100, 180, 255, 0.95);
+  pointer-events: none;
+}
+.anr-wave-handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  background: rgba(100, 180, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.55);
+}
+@media (pointer: coarse) {
+  /* A taller waveform and bigger grips and buttons for fingers. */
+  .anr-wave-wrap:has(.anr-wave-edit) .anr-waveform { height: 128px; }
+  .anr-wave-handle::after { width: 14px; height: 36px; }
+  .anr-sel-controls .anr-btn-sm { min-height: 40px; padding: 8px 14px; font-size: var(--t-small); }
+  /* 16px keeps iOS from zooming the page in when a time field takes focus. */
+  .anr-sel-controls .anr-sel-time { font-size: 16px; }
+}
+@media (max-width: 700px) {
+  /* The stats line takes its own row, and each button group fills one. */
+  .anr-sel-controls .anr-sel-label { flex-basis: 100%; }
+  .anr-sel-actions { flex-basis: 100%; }
+  .anr-sel-actions .anr-btn-sm { flex: 1 1 auto; }
+}
 /* Editable start/end time fields for the waveform selection - a mono uppercase
    label + a sharp-cornered text box, matching the .anr-control input treatment. */
 .anr-sel-times { display: inline-flex; align-items: center; gap: 12px; }
@@ -9937,9 +9982,9 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
    chrome.
 
    After a drop the header folds down to a slim sticky bar - see "the collapsed
-   header" below. The result actions stay where they always were: the centred
-   chip row under the dropzones (.analyse-actions), which now carries the search
-   box too. */
+   header" below. The result actions (.analyse-actions - Export data and Analyse
+   next file?) sit in a centred chip row after the stack, just above "About this
+   file type". */
 
 /* A section shows only while it holds a visible, non-empty result. Results
    arrive asynchronously (a cover box lands once photo.js has loaded), which is
@@ -10235,15 +10280,16 @@ html[data-page="home"] .site-header.is-bar .site-mark-nav > * { flex: none; }
   html[data-page="home"] .site-header.is-bar .site-byline { font-size: 11px; }
 }
 
-/* The band the two action chips sit in, between the header and the first
-   result. It is centred and it is HALF the page's usual rhythm: a full --pad-y
-   each side of a 46px chip row, plus the chips' own 22px margins, was more air
-   than the analysis under it earns. All three halve together so the row stays in
-   the middle of whatever is left. Gated on a loaded file: the chips are hidden
-   before that and the row must collapse to nothing. */
+/* The band the two action chips sit in, at the foot of the analysis and just
+   above "About this file type". It is HALF the page's usual rhythm: half a
+   --pad-y clear of the last result, the chips' own margins halved to 11px, and
+   the About chip tucked straight under them (no second band of its own), so the
+   three read as one group of closing actions. Gated on a loaded file: the chips
+   are hidden before that and the row must collapse to nothing. */
 html[data-page="home"] body.anr-has-file .analyse-actions { padding-top: calc(var(--pad-y) / 2); }
 html[data-page="home"] body.anr-has-file .analyse-actions .analyse-next,
 html[data-page="home"] body.anr-has-file .analyse-actions .export-data { margin: 11px 0; }
+html[data-page="home"] body.anr-has-file .analyse-actions + .format-guide-cta { margin-top: 0; }
 html[data-page="home"] body.anr-has-file .anr-stack > .section:first-child {
   padding-top: calc(var(--pad-y) / 2);
 }

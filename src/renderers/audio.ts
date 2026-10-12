@@ -3003,7 +3003,7 @@ function buildConvertCard(file: File, buf: AudioBuffer, signal: AbortSignal) {
       wavBtn.disabled = false;
     }, 0);
   });
-  card.appendChild(el('div', { class: 'anr-controls' }, [
+  card.appendChild(el('div', { class: 'anr-controls anr-convert-controls' }, [
     el('div', { class: 'anr-control' }, [el('label', {}, 'Bitrate'), rateSel]),
     mp3Btn, wavBtn,
   ]));
@@ -3018,9 +3018,9 @@ export function buildWaveformCard(file: File, srcMono: Float32Array, audioBuffer
   // renderWave rides on the card: the resize/zoom paths call it by name.
   const waveCard = el('div', { class: 'anr-card' }) as
     HTMLDivElement & { renderWave?: () => void };
-  const [waveH, waveHelp] = h3help('Waveform', 'Amplitude over time. Click and drag to select a region - then drag its edges to fine-tune, drag the middle to move it, or type exact start/end times. Zoom in or export the selection as a WAV or MP3 file. Crop keeps only the selection, Cut out deletes it, and Cut deletes it but keeps it to paste back in at the playhead. Edits apply to every channel, play straight away from the transport below and download as a WAV or MP3; Undo steps back and Revert returns to the original. The white playhead line shows the current playback position; drag it, or use the transport below, to scrub.');
+  const [waveH, waveHelp] = h3help('Waveform', 'Amplitude over time. Drag across it to select a region (on a touch screen, slide a finger sideways - an up or down swipe still scrolls the page) - then drag its edge handles to fine-tune, drag the middle to move it, or type exact start/end times. A tap or click moves the playhead there. Zoom in or export the selection as a WAV or MP3 file. Crop keeps only the selection, Cut out deletes it, and Cut deletes it but keeps it to paste back in at the playhead. Edits apply to every channel, play straight away from the transport below and download as a WAV or MP3; Undo steps back and Revert returns to the original. The white playhead line shows the current playback position; drag it, or use the transport below, to scrub.');
   waveCard.appendChild(waveH); waveCard.appendChild(waveHelp);
-  const waveCanvas = el('canvas', { class: 'anr-waveform' });
+  const waveCanvas = el('canvas', { class: 'anr-waveform anr-wave-edit' });
   waveCanvas.width = 1024; waveCanvas.height = 80;
   waveCard.appendChild(waveCanvas);
   // Draw the empty bed at once. The full-length reduction is the waveform's only
@@ -3048,6 +3048,12 @@ export function buildWaveformCard(file: File, srcMono: Float32Array, audioBuffer
   waveCard.replaceChild(waveWrap, waveCanvas);
   waveWrap.appendChild(waveCanvas);
   waveWrap.appendChild(overlayCanvas);
+  // Grips on the selection's two edges, so it is plain where to take hold of it -
+  // above all on a touch screen, where there is no resize cursor to say so. They
+  // are only markers: the canvas does the hit-testing (see hitMode).
+  const handleL = el('div', { class: 'anr-wave-handle', 'aria-hidden': 'true', hidden: '' });
+  const handleR = el('div', { class: 'anr-wave-handle', 'aria-hidden': 'true', hidden: '' });
+  waveWrap.append(handleL, handleR);
 
   // Waveform playhead synced with audio
   const waveLine = el('div', { class: 'anr-playhead' });
@@ -3135,7 +3141,11 @@ export function buildWaveformCard(file: File, srcMono: Float32Array, audioBuffer
   const cropBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Keep only the selection' }, 'Crop');
   const cutBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Remove the selection and keep it to paste' }, 'Cut');
   const cutOutBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Remove the selection and close the gap' }, 'Cut out');
-  selInfo.append(times, selLabel, zoomBtn, exportBtn, exportMp3Btn, cropBtn, cutBtn, cutOutBtn);
+  // Buttons go in two groups - edit, then view/export - so on a narrow screen they
+  // wrap as whole rows of large tap targets instead of scattering around the text.
+  selInfo.append(times, selLabel,
+    el('div', { class: 'anr-sel-actions' }, [cropBtn, cutBtn, cutOutBtn]),
+    el('div', { class: 'anr-sel-actions' }, [zoomBtn, exportBtn, exportMp3Btn]));
   waveCard.appendChild(selInfo);
 
   // Edit bar in its own row, like the zoom bar: it has to stay reachable after an
@@ -3146,7 +3156,9 @@ export function buildWaveformCard(file: File, srcMono: Float32Array, audioBuffer
   const revertBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Discard every edit and return to the original audio' }, 'Revert');
   const dlEditBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Download the edited audio, every channel, as a 16-bit WAV' }, 'Download edited WAV');
   const dlEditMp3Btn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Download the edited audio as a ' + MP3_KBPS + ' kbps MP3' }, 'Download edited MP3');
-  const editBar = el('div', { class: 'anr-controls anr-sel-controls is-hidden' }, [editLabel, pasteBtn, undoBtn, revertBtn, dlEditBtn, dlEditMp3Btn]);
+  const editBar = el('div', { class: 'anr-controls anr-sel-controls is-hidden' }, [editLabel,
+    el('div', { class: 'anr-sel-actions' }, [pasteBtn, undoBtn, revertBtn]),
+    el('div', { class: 'anr-sel-actions' }, [dlEditBtn, dlEditMp3Btn])]);
   waveCard.appendChild(editBar);
 
   // Zoom bar in its OWN row so "Reset zoom" stays reachable after a zoom - zooming
@@ -3160,8 +3172,15 @@ export function buildWaveformCard(file: File, srcMono: Float32Array, audioBuffer
   function drawOverlay() {
     const octx = overlayCanvas.getContext('2d')!;
     octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    handleL.hidden = handleR.hidden = true;
     if (selStart == null || selEnd == null) return;
     const visLen = zoomEnd - zoomStart;
+    if (selStart !== selEnd) {
+      const pl = (Math.min(selStart, selEnd) - zoomStart) / visLen * 100;
+      const pr = (Math.max(selStart, selEnd) - zoomStart) / visLen * 100;
+      if (pl >= 0 && pl <= 100) { handleL.style.left = pl + '%'; handleL.hidden = false; }
+      if (pr >= 0 && pr <= 100) { handleR.style.left = pr + '%'; handleR.hidden = false; }
+    }
     const x1 = ((Math.min(selStart, selEnd) - zoomStart) / visLen) * overlayCanvas.width;
     const x2 = ((Math.max(selStart, selEnd) - zoomStart) / visLen) * overlayCanvas.width;
     octx.fillStyle = 'rgba(100, 180, 255, 0.3)';
@@ -3247,25 +3266,63 @@ export function buildWaveformCard(file: File, srcMono: Float32Array, audioBuffer
 
   // Which part of an existing selection a press at clientX lands on: an edge (to
   // resize), the interior (to move the whole region), or neither (start a new one).
-  const EDGE_PX = 6;
-  function hitMode(clientX: number) {
+  // A fingertip covers far more than a cursor's hotspot, so a touch or pen press
+  // gets a much wider grip on each edge; the visible handles mark where they are.
+  const edgePx = (pointerType: string) => pointerType === 'mouse' ? 6 : 22;
+  function hitMode(clientX: number, pointerType: string) {
     if (selStart == null || selEnd == null || selStart === selEnd) return 'new';
     const rect = waveCanvas.getBoundingClientRect();
     const px = clientX - rect.left;
     const xs = sampleToX(Math.min(selStart, selEnd));
     const xe = sampleToX(Math.max(selStart, selEnd));
-    if (Math.abs(px - xs) <= EDGE_PX) return 'left';
-    if (Math.abs(px - xe) <= EDGE_PX) return 'right';
+    const edge = Math.min(edgePx(pointerType), Math.max(4, (xe - xs) / 3));   // a narrow selection keeps a middle to move it by
+    if (Math.abs(px - xs) <= edge) return 'left';
+    if (Math.abs(px - xe) <= edge) return 'right';
     if (px > xs && px < xe) return 'move';
     return 'new';
   }
 
-  let dragMode: string|null = null, moveAnchor = 0, moveWidth = 0;
-  // Selection drag. Move/up listeners live on WINDOW (not the canvas) so a fast drag
-  // that races off the edges keeps updating and finishes cleanly - the old
-  // canvas-only mousemove dropped events the moment the pointer left the canvas.
-  function onSelMove(e: MouseEvent) {
-    if (!dragMode) return;
+  // Selection drag, on pointer events so touch and pen work as the mouse does. The
+  // pointer is captured, so a fast drag that races off the canvas keeps updating
+  // and finishes cleanly. Nothing changes until the pointer has travelled a few
+  // pixels: that keeps a tap a tap (it moves the playhead) and lets a vertical
+  // swipe scroll the page - touch-action: pan-y hands that to the browser, which
+  // then cancels the pointer, and the selection is put back as it was.
+  let dragMode: string|null = null, dragId = -1, downX = 0, downSample = 0, moved = false;
+  let moveAnchor = 0, moveWidth = 0;
+  let prevSel: [number|null, number|null] = [null, null];
+  waveCanvas.style.cursor = 'crosshair';
+  waveCanvas.addEventListener('pointerdown', (e) => {
+    if (dragMode || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    const mode = hitMode(e.clientX, e.pointerType);
+    const smp = xToSample(e.clientX);
+    prevSel = [selStart, selEnd];
+    if (mode !== 'new') {
+      // Normalize the existing selection so the grabbed edge/body drags predictably.
+      const s = Math.min(selStart!, selEnd!), en = Math.max(selStart!, selEnd!);
+      selStart = s; selEnd = en;
+      if (mode === 'move') { moveAnchor = smp - s; moveWidth = en - s; }
+    }
+    dragMode = mode; dragId = e.pointerId;
+    downX = e.clientX; downSample = smp; moved = false;
+    try { waveCanvas.setPointerCapture(e.pointerId); } catch (_) {}
+    if (e.pointerType === 'mouse') e.preventDefault();   // no text selection mid-drag
+  });
+  waveCanvas.addEventListener('pointermove', (e) => {
+    if (!dragMode) {
+      // Hover cursor hints what a press will do (resize edges / move / new selection).
+      if (e.pointerType === 'mouse') {
+        const m = hitMode(e.clientX, 'mouse');
+        waveCanvas.style.cursor = (m === 'left' || m === 'right') ? 'ew-resize' : (m === 'move' ? 'move' : 'crosshair');
+      }
+      return;
+    }
+    if (e.pointerId !== dragId) return;
+    if (!moved) {
+      if (Math.abs(e.clientX - downX) < (e.pointerType === 'mouse' ? 3 : 8)) return;
+      moved = true;
+      if (dragMode === 'new') selStart = downSample;
+    }
     const smp = xToSample(e.clientX);
     if (dragMode === 'new') selEnd = smp;
     else if (dragMode === 'left') selStart = Math.min(smp, selEnd! - 1);
@@ -3275,44 +3332,28 @@ export function buildWaveformCard(file: File, srcMono: Float32Array, audioBuffer
       selStart = ns; selEnd = ns + moveWidth;
     }
     drawOverlay(); updateSelInfo();
-  }
-  function onSelUp() {
-    window.removeEventListener('mousemove', onSelMove);
-    window.removeEventListener('mouseup', onSelUp);
+  });
+  function endDrag(e: PointerEvent, cancelled: boolean) {
+    if (!dragMode || e.pointerId !== dragId) return;
     const mode = dragMode;
-    dragMode = null;
-    if (mode == null) return;
-    if (selStart != null && selEnd != null && selStart > selEnd) { const t = selStart; selStart = selEnd; selEnd = t; }
-    // A bare click (new drag with no width) leaves nothing selected.
-    if (mode === 'new' && selStart === selEnd) { selStart = selEnd = null; }
+    dragMode = null; dragId = -1;
+    try { waveCanvas.releasePointerCapture(e.pointerId); } catch (_) {}
+    if (cancelled) {
+      [selStart, selEnd] = prevSel;
+    } else if (!moved) {
+      // A tap or bare click puts the playhead there (where Paste inserts), and
+      // outside the selection it also clears it.
+      if (mode === 'new') selStart = selEnd = null;
+      playEl.currentTime = downSample / sr;
+      tickWaveLine(true);
+    } else {
+      if (selStart != null && selEnd != null && selStart > selEnd) { const t = selStart; selStart = selEnd; selEnd = t; }
+      if (mode === 'new' && selStart === selEnd) selStart = selEnd = null;
+    }
     drawOverlay(); updateSelInfo();
   }
-
-  waveCanvas.style.cursor = 'crosshair';
-  waveCanvas.addEventListener('mousedown', (e) => {
-    const mode = hitMode(e.clientX);
-    const smp = xToSample(e.clientX);
-    if (mode === 'new') {
-      selStart = smp; selEnd = smp;
-    } else {
-      // Normalize the existing selection so the grabbed edge/body drags predictably.
-      const s = Math.min(selStart!, selEnd!), en = Math.max(selStart!, selEnd!);
-      selStart = s; selEnd = en;
-      if (mode === 'move') { moveAnchor = smp - s; moveWidth = en - s; }
-    }
-    dragMode = mode;
-    drawOverlay(); updateSelInfo();
-    e.preventDefault();
-    window.addEventListener('mousemove', onSelMove);
-    window.addEventListener('mouseup', onSelUp);
-  });
-
-  // Hover cursor hints what a press will do (resize edges / move / new selection).
-  waveCanvas.addEventListener('mousemove', (e) => {
-    if (dragMode) return;
-    const m = hitMode(e.clientX);
-    waveCanvas.style.cursor = (m === 'left' || m === 'right') ? 'ew-resize' : (m === 'move' ? 'move' : 'crosshair');
-  });
+  waveCanvas.addEventListener('pointerup', (e) => endDrag(e, false));
+  waveCanvas.addEventListener('pointercancel', (e) => endDrag(e, true));
 
   function redrawWaveform() {
     const visibleSamples = mono.subarray(zoomStart, zoomEnd);

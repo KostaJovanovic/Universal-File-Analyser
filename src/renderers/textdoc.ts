@@ -7,7 +7,9 @@
      - AbiWord (.abw)     - XML word processor, paragraph text;
      - FictionBook (.fb2) - XML ebook, titles + paragraphs;
      - HWPX               - Hangul Office (zip of XML), paragraph text;
-     - MHTML (.mht)       - MIME web archive, the HTML part rendered (sanitised).
+     - MHTML (.mht)       - MIME web archive, the HTML part rendered (sanitised);
+     - Safari .webarchive - binary-plist web archive, every frame's HTML
+                            rendered (sanitised), its saved images in a grid.
 
    Everything funnels into the shared page-preview + per-page selectable text
    cards in paged.js, so these read like the other document viewers. Every
@@ -18,13 +20,16 @@ import { el, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '.
 // Saved web pages arrive as untrusted markup - sanitised with the shared rules.
 import { sanitizeHtml } from '../core/sanitize.js';
 import { buildOsintCard } from '../core/osint.js';
-import { SCAN_LARGE, HASH_FILE_MAX, TEXTDOC_READ_MAX } from '../core/limits.js';
+import { SCAN_LARGE, HASH_FILE_MAX, TEXTDOC_READ_MAX, WEBARCHIVE_READ_MAX } from '../core/limits.js';
+import { parsePlist } from '../lib/plist.js';
 import { openZip } from './zip.js';
+import { buildEmbeddedImagesCard, type EmbeddedImageItem } from './embedded-images.js';
 import { paginateText, paginateFlow, pagedPreviewCard, pagedTextCard, pagePreviewSkeleton } from './paged.js';
 
 const LABELS: Record<string, string> = {
   rtf: 'Rich Text Format', abw: 'AbiWord document', fb2: 'FictionBook e-book',
   hwpx: 'Hangul (HWPX) document', mht: 'MHTML web archive', mhtml: 'MHTML web archive',
+  webarchive: 'Safari web archive',
   dita: 'DITA topic', ditamap: 'DITA map', tei: 'TEI document', jats: 'JATS article',
   nxml: 'JATS / NLM article', rst: 'reStructuredText', adoc: 'AsciiDoc', asciidoc: 'AsciiDoc',
   org: 'Org-mode document', textile: 'Textile markup', tex: 'TeX / LaTeX source',
@@ -192,6 +197,67 @@ function extractMhtmlHtml(text: string) {
   return html;
 }
 
+interface WebResource {
+  WebResourceURL?: string; WebResourceMIMEType?: string; WebResourceTextEncodingName?: string;
+  WebResourceData?: Uint8Array; WebResourceFrameName?: string;
+}
+interface WebArchive {
+  WebMainResource?: WebResource; WebSubresources?: WebResource[]; WebSubframeArchives?: WebArchive[];
+}
+
+// ---------- Safari web archive (.webarchive) ----------
+// A binary plist of three keys: WebMainResource (the page), WebSubresources
+// (the scripts, stylesheets and images it had loaded) and WebSubframeArchives
+// (one nested archive of the same shape per <iframe>). Web apps that draw the
+// document inside a frame - Word and Excel online, webmail, Google Docs - keep
+// the readable text in a SUBFRAME while the main page is an empty script shell,
+// so every frame's HTML is collected, main page first.
+function walkWebarchive(root: WebArchive) {
+  const frames: { url: string; html: string }[] = [];
+  const subresources: WebResource[] = [];
+  const seen = new Set<WebArchive>();   // plist objects can be shared, so the tree may be a DAG
+  const visit = (a: WebArchive, depth: number) => {
+    if (!a || typeof a !== 'object' || seen.has(a) || depth > 32) return;
+    seen.add(a);
+    const main = a.WebMainResource;
+    if (main && main.WebResourceData instanceof Uint8Array && /html|xml/i.test(main.WebResourceMIMEType || 'text/html')) {
+      let dec;
+      try { dec = new TextDecoder(main.WebResourceTextEncodingName || 'utf-8'); } catch (_) { dec = new TextDecoder('utf-8'); }
+      frames.push({ url: String(main.WebResourceURL || ''), html: dec.decode(main.WebResourceData) });
+    }
+    if (Array.isArray(a.WebSubresources)) for (const r of a.WebSubresources) if (r && typeof r === 'object') subresources.push(r);
+    if (Array.isArray(a.WebSubframeArchives)) for (const f of a.WebSubframeArchives) visit(f, depth + 1);
+  };
+  visit(root, 0);
+  return { frames, subresources };
+}
+
+// Elements that only group other blocks. A web app nests its whole page in a
+// few of these, which paginateFlow would take as ONE block taller than any
+// sheet; unwrapping them hands it the paragraphs instead. Runs of inline
+// content between blocks are kept together in a div of their own.
+const FLOW_WRAPPERS = new Set(['div', 'section', 'article', 'main', 'header', 'footer', 'nav', 'aside', 'form', 'center']);
+const FLOW_BLOCKS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'dl', 'table', 'pre', 'blockquote',
+  'figure', 'hr', 'address', 'fieldset', 'details', 'li']);
+function flattenBlocks(root: Element, out: Element, depth: number) {
+  let run: HTMLElement | null = null;
+  for (const n of Array.from(root.childNodes)) {
+    const e = n.nodeType === 1 ? n as Element : null;
+    const name = e ? e.localName : '';
+    if (e && depth < 64 && FLOW_WRAPPERS.has(name) &&
+        Array.from(e.children).some((k) => FLOW_WRAPPERS.has(k.localName) || FLOW_BLOCKS.has(k.localName))) {
+      run = null;
+      flattenBlocks(e, out, depth + 1);
+    } else if (e && (FLOW_BLOCKS.has(name) || FLOW_WRAPPERS.has(name))) {
+      run = null;
+      out.appendChild(e);
+    } else if (e || (n.textContent || '').trim()) {
+      if (!run) { run = document.createElement('div'); out.appendChild(run); }
+      run.appendChild(n);
+    }
+  }
+}
+
 // ---------- main ----------
 export async function renderTextDoc(file: File, container: HTMLElement, kind: string, ext: string) {
   container.hidden = false;
@@ -208,6 +274,8 @@ export async function renderTextDoc(file: File, container: HTMLElement, kind: st
     // A truncated FB2 / AbiWord no longer parses as XML - the FB2 path says so,
     // the AbiWord one falls back to showing the text.
     let truncated = false;
+    let extraRows: any[] = [];
+    const imageItems: EmbeddedImageItem[] = [];
     const readCapped = () => {
       if (file.size <= TEXTDOC_READ_MAX) return file.text();
       truncated = true;
@@ -225,6 +293,46 @@ export async function renderTextDoc(file: File, container: HTMLElement, kind: st
       const html = extractMhtmlHtml(raw);
       if (html == null) { container.innerHTML = ''; container.appendChild(errorCard('Could not find an HTML part in this MHTML archive.')); return; }
       pages = paginateFlow(sanitizeHtml(html));
+    } else if (kind === 'webarchive') {
+      if (file.size > WEBARCHIVE_READ_MAX) {
+        container.innerHTML = '';
+        container.appendChild(errorCard('This web archive is ' + fmtBytes(file.size) + ', past the ' + fmtBytes(WEBARCHIVE_READ_MAX) + ' that can be opened here - a binary plist has to be read whole.'));
+        return;
+      }
+      const parsed = await parsePlist(file);
+      const root = parsed && parsed.value as WebArchive;
+      if (!root || typeof root !== 'object' || !root.WebMainResource) {
+        container.innerHTML = '';
+        container.appendChild(errorCard('This does not look like a Safari web archive - its property list has no WebMainResource.'));
+        return;
+      }
+      const wa = walkWebarchive(root);
+      if (!wa.frames.length) { container.innerHTML = ''; container.appendChild(errorCard('Could not find an HTML page in this web archive.')); return; }
+      const flow = document.createElement('div');
+      for (const f of wa.frames) flattenBlocks(sanitizeHtml(f.html), flow, 0);
+      pages = paginateFlow(flow);
+
+      const main = root.WebMainResource;
+      const byType = new Map<string, number>();
+      for (const r of wa.subresources) {
+        const t = String(r.WebResourceMIMEType || 'unknown').split('/')[0];
+        byType.set(t, (byType.get(t) || 0) + 1);
+      }
+      extraRows = [
+        main.WebResourceURL && rowHelp('Saved from', String(main.WebResourceURL), 'The address the page was showing when it was saved in Safari. Nothing is fetched from it here - everything shown comes from the copy inside the file.'),
+        main.WebResourceTextEncodingName && ['Encoding', String(main.WebResourceTextEncodingName)],
+        ['Frames', String(wa.frames.length) + (wa.frames.length > 1 ? ' (the page and ' + (wa.frames.length - 1) + ' embedded frame' + (wa.frames.length > 2 ? 's' : '') + ', shown in order)' : '')],
+        wa.subresources.length && ['Saved resources', wa.subresources.length + ' (' + [...byType].map(([t, n]) => n + ' ' + t).join(', ') + ')'],
+      ];
+      for (const r of wa.subresources) {
+        const type = String(r.WebResourceMIMEType || '');
+        if (!/^image\//i.test(type) || !(r.WebResourceData instanceof Uint8Array) || !r.WebResourceData.length) continue;
+        if (imageItems.length >= 200) break;
+        const blob = new Blob([r.WebResourceData as BlobPart], { type });
+        const name = (String(r.WebResourceURL || '').split(/[?#]/)[0].split('/').pop() || '') || 'image';
+        imageItems.push({ viewBlob: blob, downloadBlob: blob, downloadName: name, bytes: r.WebResourceData.length,
+          label: type.slice(6).toUpperCase().replace('SVG+XML', 'SVG') });
+      }
     } else if (kind === 'fb2') {
       const doc = parseXml(await readCapped());
       if (!doc) { container.innerHTML = ''; container.appendChild(errorCard('Could not parse this FictionBook file.')); return; }
@@ -251,6 +359,7 @@ export async function renderTextDoc(file: File, container: HTMLElement, kind: st
       truncated && ['Shown', 'The first ' + fmtBytes(TEXTDOC_READ_MAX) + ' only'],
       file.type && rowHelp('MIME', file.type, "The MIME type is a short standard label for what kind of file this is - for example image/jpeg for a photo or audio/mpeg for an MP3. The browser guesses it from the file's extension or from the operating system, so it's a hint about the format, not proof."),
       file.lastModified && ['Last modified', new Date(file.lastModified).toLocaleString()],
+      ...extraRows,
     ]));
     container.appendChild(info);
 
@@ -262,6 +371,13 @@ export async function renderTextDoc(file: File, container: HTMLElement, kind: st
         el('h3', {}, 'Page previews'),
         el('p', { class: 'anr-hint' }, 'No readable text content could be extracted from this file.'),
       ]));
+    }
+
+    if (imageItems.length) {
+      container.appendChild(buildEmbeddedImagesCard({
+        title: 'Saved images', items: imageItems, resultsEl: container, sourceFile: file,
+        hint: 'Images Safari stored inside the archive with the page. They are shown from the file itself - the page preview above leaves them out, like any remote content.',
+      }));
     }
 
     // Network indicators (URLs / IPs / domains / emails) lifted from the source text.
@@ -279,4 +395,5 @@ export const renderAbw = (f: File, c: HTMLElement, ext: string) => renderTextDoc
 export const renderFb2 = (f: File, c: HTMLElement, ext: string) => renderTextDoc(f, c, 'fb2', ext || 'fb2');
 export const renderHwpx = (f: File, c: HTMLElement, ext: string) => renderTextDoc(f, c, 'hwpx', ext || 'hwpx');
 export const renderMhtml = (f: File, c: HTMLElement, ext: string) => renderTextDoc(f, c, 'mhtml', ext || 'mht');
-export const renderMarkup = (f: File, c: HTMLElement, ext: string) => renderTextDoc(f, c, 'markup', ext);
+export const renderWebarchive = (f: File, c: HTMLElement, ext: string) => renderTextDoc(f, c, 'webarchive', ext || 'webarchive');
+export const renderMarkup =(f: File, c: HTMLElement, ext: string) => renderTextDoc(f, c, 'markup', ext);

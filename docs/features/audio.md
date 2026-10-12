@@ -321,7 +321,11 @@ resampled first. The button shows the encoding progress.
 
 **How to reach it.** Drag a selection on the waveform; the edit buttons sit
 beside Zoom and Export WAV, and the edit bar below appears after the first
-edit. Built in `audio.js`'s `buildWaveformCard()`. An edit is stored as a list
+edit. It works the same by touch: slide a finger sideways to select (an up or
+down swipe still scrolls the page), drag the grips on the selection's edges to
+adjust it, and tap to move the playhead, which is where Paste inserts. On a
+touch screen the waveform is taller, the edge grips and buttons are larger,
+and on a narrow screen the buttons stack in full-width rows. Built in `audio.js`'s `buildWaveformCard()`. An edit is stored as a list
 of ranges into the decoded samples rather than a copy of the audio, so undo
 costs almost nothing. The spectrogram and analysis cards above keep describing
 the original file, and switching the channel view rebuilds the waveform, which

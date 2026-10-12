@@ -73,7 +73,7 @@ kinds). For full usage detail (buttons, controls, options), see the
 | `pptx.js` | PPTX slide viewer | Each slide as a card: title + body text and embedded images, in order |
 | `odf.js` | OpenDocument viewer (ODT/ODS/ODP) | Converts `content.xml` into the shared `paged.js` presentation, reusing the DOCX/XLSX/PPTX-style views |
 | `legacy-office.js` | Legacy binary Office (DOC/XLS/PPT 97-2003) | OLE2/CFBF containers; best-effort text extraction (Word FIB piece table) shown via the page-sheet preview |
-| `textdoc.js` | Text and lightweight-markup family | RTF (control words stripped), AbiWord, FictionBook, HWPX, MHTML, plus DITA/TEI/JATS/reStructuredText/AsciiDoc/Org/Textile/TeX/BibTeX as selectable source |
+| `textdoc.js` | Text and lightweight-markup family | RTF (control words stripped), AbiWord, FictionBook, HWPX, MHTML, Safari .webarchive (every frame, plus its stored images), plus DITA/TEI/JATS/reStructuredText/AsciiDoc/Org/Textile/TeX/BibTeX as selectable source |
 | `iwork.js` | Apple iWork viewer (Pages/Numbers/Keynote) | Shows the baked-in QuickLook preview (`Preview.pdf` via `pdf.js`, or the largest thumbnail) - iWork's real content (Snappy-compressed protobuf) isn't reconstructable |
 | `epub.js` | EPUB reader | Metadata, cover, chapter-by-chapter reading with navigation |
 | `mobi.js` | Kindle/Mobipocket e-book reader | Vendored **foliate-js** `mobi.js` decodes MOBI6/KF8; section-by-section sandboxed-iframe reader |

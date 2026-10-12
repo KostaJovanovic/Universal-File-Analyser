@@ -44,7 +44,7 @@
    `npm run build` recompiles.
    ============================================================================ */
 
-const COMMIT_COUNT = 323;
+const COMMIT_COUNT = 324;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -313,6 +313,7 @@ const ROUTES: RouteTable = {
   fb2:         { render: lazy('../renderers/textdoc.js', 'renderFb2') },
   hwpx:        { render: lazy('../renderers/textdoc.js', 'renderHwpx') },
   mhtml:       { render: lazy('../renderers/textdoc.js', 'renderMhtml') },
+  webarchive:  { render: lazy('../renderers/textdoc.js', 'renderWebarchive') },
   markup:      { render: lazy('../renderers/textdoc.js', 'renderMarkup') },
   notebook:    { render: lazy('../renderers/notebook.js', 'renderNotebook') },
   har:         { render: lazy('../renderers/dataview.js', 'renderHar') },

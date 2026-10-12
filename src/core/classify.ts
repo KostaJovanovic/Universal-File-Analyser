@@ -112,6 +112,7 @@ export function classifyFile(file: File) {
   if (ext === 'fb2') return 'fb2';
   if (ext === 'hwpx') return 'hwpx';
   if (ext === 'mht' || ext === 'mhtml') return 'mhtml';
+  if (ext === 'webarchive') return 'webarchive';
   if (MARKUP_EXTS.has(ext)) return 'markup';
   // `.mod` collides: it is both a tracker/Amiga music module (handled as audio
   // by proprietary.js) and a Go module manifest, which is always named exactly

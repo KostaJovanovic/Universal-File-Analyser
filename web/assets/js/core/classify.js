@@ -124,6 +124,8 @@ export function classifyFile(file) {
         return 'hwpx';
     if (ext === 'mht' || ext === 'mhtml')
         return 'mhtml';
+    if (ext === 'webarchive')
+        return 'webarchive';
     if (MARKUP_EXTS.has(ext))
         return 'markup';
     // `.mod` collides: it is both a tracker/Amiga music module (handled as audio

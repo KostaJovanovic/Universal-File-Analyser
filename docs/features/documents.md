@@ -245,7 +245,18 @@ document referenced.
 simple XML/HTML, each shown as readable prose or selectable source: markup
 source (DITA, TEI, JATS, reStructuredText, AsciiDoc, Org, Textile,
 TeX/LaTeX, BibTeX), RTF (control words stripped to readable prose),
-AbiWord (`.abw`, XML), FictionBook (`.fb2`, XML e-book), HWPX, MHTML.
+AbiWord (`.abw`, XML), FictionBook (`.fb2`, XML e-book), HWPX, MHTML, and
+Safari `.webarchive` saved pages.
+
+A `.webarchive` is a binary property list: the page itself, the images,
+scripts and stylesheets it had loaded, and one nested archive per embedded
+frame. Every frame's HTML is rendered in order, main page first, because web
+apps such as Word Online and webmail keep the readable text inside a frame
+while the main page is an empty script shell. Like MHTML, the markup goes
+through the shared sanitiser, so scripts, styles and remote images are left
+out. The readout names the address the page was saved from and counts the
+frames and stored resources, and the images stored in the archive appear in a
+Saved images grid, read from the file rather than fetched.
 
 **How to reach it.** Drop any of the above extensions. Built in
 `textdoc.js`, reusing `paged.js`'s pagination controls (Show next N pages/

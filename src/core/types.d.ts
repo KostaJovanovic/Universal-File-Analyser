@@ -17,7 +17,7 @@ export type Kind =
   | 'docx' | 'xlsx' | 'xlsb' | 'epub' | 'pptx'
   | 'odt' | 'ods' | 'odp' | 'odg'
   | 'doc' | 'xls' | 'ppt'
-  | 'rtf' | 'abw' | 'fb2' | 'hwpx' | 'mhtml' | 'markup'
+  | 'rtf' | 'abw' | 'fb2' | 'hwpx' | 'mhtml' | 'webarchive' | 'markup'
   | 'notebook' | 'har' | 'jsondata' | 'nfo'
   | 'eml' | 'mbox'
   | 'drawio' | 'dxf' | 'dwg' | 'altium' | 'kicad' | 'spice' | 'ipcnet'
