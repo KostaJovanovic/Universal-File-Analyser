@@ -3,6 +3,7 @@
 import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, openOverlayBack, timeAnomalies, timeAnomalyCard } from '../core/util.js';
 import { renderPhoto, revealPhotoSection, pickOcrLanguage, ocrLangPath } from './photo.js';
 import { pagePreviewSkeleton } from './paged.js';
+import { SCAN_SMALL, PDF_RANGE_MIN, PDF_RANGE_HEAD } from '../core/limits.js';
 // Resolved against this module's URL so the dynamic import() gets a valid
 // absolute specifier (a bare "assets/..." path is not a resolvable module id).
 const PDFJS_URL = new URL('../../vendor/pdfjs/pdf.min.mjs', import.meta.url).href;
@@ -163,26 +164,51 @@ function pdfDate(d) {
 // times the file was saved (each save appends an %%EOF marker), whether it is
 // linearised for "fast web view", and whether anything non-whitespace trails the
 // final %%EOF (appended / polyglot data, a classic tamper/smuggling tell).
-function scanRawPdf(bytes) {
-    const text = new TextDecoder('latin1').decode(bytes);
-    let eof = 0, idx = 0;
-    while ((idx = text.indexOf('%%EOF', idx)) !== -1) {
-        eof++;
-        idx += 5;
+// Read in SCAN_SMALL slices with the "%%EOF" match carried across them, so a
+// PDF of any size is scanned in one slice of memory (it used to be decoded into
+// one string, which past the browser's longest string threw and the rows
+// silently vanished).
+async function scanRawPdf(file) {
+    const head = new Uint8Array(await file.slice(0, 2048).arrayBuffer());
+    const linearized = /\/Linearized\b/.test(new TextDecoder('latin1').decode(head));
+    // `m` is how much of "%%EOF" the bytes so far end with. `printable` counts
+    // bytes > 32 since the last complete marker: any non-blank content after the
+    // final %%EOF is appended/polyglot data.
+    const PAT = [0x25, 0x25, 0x45, 0x4F, 0x46];
+    let eof = 0, printable = 0, m = 0;
+    for (let off = 0; off < file.size; off += SCAN_SMALL) {
+        const b = new Uint8Array(await file.slice(off, off + SCAN_SMALL).arrayBuffer());
+        for (let i = 0; i < b.length; i++) {
+            const c = b[i];
+            if (c > 32)
+                printable++;
+            if (c === PAT[m]) {
+                if (++m === 5) {
+                    eof++;
+                    printable = 0;
+                    m = 0;
+                }
+            }
+            else {
+                m = c === 0x25 ? (m === 2 ? 2 : 1) : 0;
+            }
+        }
+        await new Promise((r) => setTimeout(r, 0));
     }
-    const lastEof = text.lastIndexOf('%%EOF');
-    // Count printable (code > 32) characters after the final %%EOF: any non-blank
-    // trailing content is appended/polyglot data. A char-code loop avoids putting a
-    // raw NUL or escape in the source.
-    let appended = 0;
-    if (lastEof !== -1) {
-        const tail = text.slice(lastEof + 5);
-        for (let i = 0; i < tail.length; i++)
-            if (tail.charCodeAt(i) > 32)
-                appended++;
+    return { eof, appended: eof ? printable : 0, linearized };
+}
+// Past PDF_RANGE_MIN pdf.js is not handed the whole file: it asks for byte
+// ranges and this answers each with a File.slice, so a multi-GB scan opens
+// without being held in memory (twice - the old path also re-read it for the
+// raw scan). The base class is pdf.js's own; requestDataRange is the one hook.
+function fileRangeTransport(lib, file, head) {
+    const Base = lib.PDFDataRangeTransport;
+    class FileRange extends Base {
+        requestDataRange(begin, end) {
+            file.slice(begin, end).arrayBuffer().then((b) => { this.onDataRange(begin, new Uint8Array(b)); }, () => { });
+        }
     }
-    const linearized = /\/Linearized\b/.test(text.slice(0, 2048));
-    return { eof, appended, linearized };
+    return new FileRange(file.size, head);
 }
 // ---------- main render ----------
 export async function renderPdf(file, resultsEl, opts = {}) {
@@ -204,11 +230,18 @@ export async function renderPdf(file, resultsEl, opts = {}) {
     let pdf;
     const docEntry = { el: resultsEl, marker: null, task: null };
     try {
-        const buf = await file.arrayBuffer();
         // isEvalSupported: false - pdf.js would otherwise compile font glyph paths
         // into a Function; with it on, a crafted FontMatrix runs script in this page
         // (CVE-2024-4367). Every getDocument() call must pass it.
-        docEntry.task = lib.getDocument({ data: buf, isEvalSupported: false, worker: pdfWorker(lib) || undefined });
+        if (file.size > PDF_RANGE_MIN && lib.PDFDataRangeTransport) {
+            const head = new Uint8Array(await file.slice(0, PDF_RANGE_HEAD).arrayBuffer());
+            docEntry.task = lib.getDocument({ range: fileRangeTransport(lib, file, head), length: file.size,
+                disableAutoFetch: true, disableStream: true, isEvalSupported: false, worker: pdfWorker(lib) || undefined });
+        }
+        else {
+            const buf = await file.arrayBuffer();
+            docEntry.task = lib.getDocument({ data: buf, isEvalSupported: false, worker: pdfWorker(lib) || undefined });
+        }
         openDocs.push(docEntry);
         pdf = await docEntry.task.promise;
     }
@@ -303,9 +336,10 @@ export async function renderPdf(file, resultsEl, opts = {}) {
         const extras = []; // collapsible <details> blocks to append after the table
         const addRow = (node) => { stbl.appendChild(node); structRows++; };
         // -- Raw-byte forensics: revisions, linearisation, appended data --
-        // getDocument() detaches the buffer we passed it, so re-read the file here.
+        // Read straight off the File, a slice at a time (getDocument() has detached
+        // any buffer it was given).
         try {
-            const fx = scanRawPdf(new Uint8Array(await file.arrayBuffer()));
+            const fx = await scanRawPdf(file);
             if (fx.eof > 1) {
                 const updates = fx.eof - 1;
                 addRow(rowHelp('Revisions', String(fx.eof) + ' (incrementally updated ' + updates + ' time' + (updates === 1 ? '' : 's') + ')', 'Every time a PDF is saved it adds another end-of-file marker (%%EOF). More than one means the file was edited and saved again without rewriting it from scratch, so older versions of the content are still tucked inside - a strong clue about where the file came from and whether it was altered.'));

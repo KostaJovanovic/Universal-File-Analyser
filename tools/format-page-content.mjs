@@ -569,6 +569,17 @@ export const EXT_PAGES = {
   // ---- Shortcuts ----
   lnk:    { name: 'Windows shortcut', blurb: 'LNK is a Windows shortcut pointing to a program or file. Created and opened by Windows.', fact: 'Shortcuts have been part of Windows since Windows 95 in 1995, and quietly record the target’s details.' },
   url:    { name: 'Internet shortcut', blurb: 'A .url file is a saved internet shortcut that opens a web page. Created and opened by Windows.', fact: 'A .url file is a tiny text shortcut Windows uses to hold the address of a web page.' },
+  inetloc: { name: 'macOS internet location', blurb: 'INETLOC is the macOS file for a dragged mailto:, ftp: or other non-web link. Created by Apple.', fact: 'Drag a link that is not a web page onto a Mac desktop and Finder saves it as an .inetloc.' },
+  fileloc: { name: 'macOS file location', blurb: 'FILELOC is a macOS shortcut that points at a file or folder by its path. Created by Apple.', fact: 'A .fileloc stores a file:// address, so it breaks if the target is moved.' },
+  afploc:  { name: 'macOS AFP server location', blurb: 'AFPLOC is a macOS shortcut to a file server shared over Apple Filing Protocol. Created by Apple.', fact: 'Apple Filing Protocol was the Mac file-sharing standard until SMB replaced it.' },
+  ftploc:  { name: 'macOS FTP location', blurb: 'FTPLOC is a macOS shortcut to an FTP server address. Created by Apple.', fact: 'Finder writes an .ftploc when an ftp:// link is dragged to the desktop.' },
+  textclipping: { name: 'macOS text clipping', blurb: 'TEXTCLIPPING is what macOS saves when you drag selected text onto the desktop. Created by Apple.', fact: 'A text clipping can hold the same text several times over, once per format an app offered.' },
+  savedsearch: { name: 'macOS Smart Folder', blurb: 'SAVEDSEARCH is a Finder Smart Folder - a saved Spotlight query that fills itself. Created by Apple.', fact: 'A Smart Folder holds no files at all, only the search that finds them.' },
+  terminal: { name: 'macOS Terminal profile', blurb: 'A .terminal file is an exported Terminal.app profile - font, colours and window size. Created by Apple.', fact: 'Terminal stores the profile font and colours as archived Cocoa objects inside the file.' },
+  itermcolors: { name: 'iTerm2 colour preset', blurb: 'ITERMCOLORS is a colour scheme for the iTerm2 terminal on macOS.', fact: 'Every colour in an iTerm2 preset is stored as three fractions between 0 and 1.' },
+  aupreset: { name: 'Audio Unit preset', blurb: 'AUPRESET saves the settings of an Audio Unit plug-in, used by Logic Pro, GarageBand and other Mac audio apps.', fact: 'An Audio Unit is identified by three four-letter codes: type, subtype and manufacturer.' },
+  strings: { name: 'Apple strings table', blurb: 'A .strings file holds the translated text of a Mac or iOS app, one language per file. Created by Apple.', fact: 'Older .strings files are UTF-16 text; Xcode now often compiles them to binary property lists.' },
+  stringsdict: { name: 'Apple plural strings', blurb: 'STRINGSDICT holds the plural and gender rules for an app’s translated text on Apple platforms.', fact: 'A stringsdict lets an app say 1 file but 2 files in every language’s own plural rules.' },
   webloc: { name: 'macOS web shortcut', blurb: 'WEBLOC is the macOS equivalent of a saved web link, dragged from a browser. Opened on macOS.', fact: 'WEBLOC is how macOS saves a web link as a file you can keep on your desktop.' },
 
   // ---- Other ----
@@ -989,7 +1000,7 @@ export const EXT_PAGES = {
   dsf:  { name: 'DSD audio (DSF)', blurb: 'DSF holds DSD audio, the high-resolution format behind Super Audio CD. Created by Sony.' },
   dff:  { name: 'DSD audio (DFF)', blurb: 'DFF (DSDIFF) stores DSD high-resolution audio.', fact: 'DFF is the interchange form of the DSD audio used in Super Audio CD mastering.' },
   mpc:  { name: 'Musepack', blurb: 'MPC is a Musepack audio file, a lossy format tuned for high-quality music.', fact: 'Musepack was designed for transparent music quality at higher bitrates.' },
-  caf:  { name: 'Core Audio Format', blurb: 'CAF is Apple’s Core Audio Format, able to hold very large audio files. Created by Apple.', fact: 'CAF lifts the size limits of WAV and AIFF for long, high-resolution recordings.' },
+  caf:  { name: 'Core Audio Format', blurb: 'CAF is Apple’s Core Audio Format, able to hold very large audio files. iMessage voice messages are saved as CAF. Created by Apple.', fact: 'CAF lifts the size limits of WAV and AIFF for long, high-resolution recordings.' },
   rf64: { name: 'RF64 broadcast WAV', blurb: 'RF64 extends WAV past its 4 GB limit for long broadcast recordings.', fact: 'RF64 was created so broadcasters could record audio longer than WAV’s 4 GB ceiling.' },
   bw64: { name: 'Broadcast Wave 64-bit', blurb: 'BW64 is an ITU broadcast-WAV format for audio files larger than 4 GB.', fact: 'BW64 carries large broadcast audio along with rich production metadata.' },
   w64:  { name: 'Sony Wave64', blurb: 'W64 (Wave64) lifts WAV’s 4 GB size limit. Created by Sonic Foundry for Sound Forge, which passed to Sony in 2003 and to MAGIX in 2016.', fact: 'Wave64 let Sound Forge record audio well beyond the old WAV size limit.' },

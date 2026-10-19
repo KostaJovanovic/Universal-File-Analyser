@@ -73,6 +73,9 @@ fetched the first time a matching file is actually opened, then cached
 | `cfbf.js` | Shared OLE2/Compound File Binary Format reader - the container behind Outlook `.msg`, pre-2007 Office, `.msi`, `Thumbs.db`, and other OLE structured-storage files; used by `altium.js`, `legacy-office.js`, `solidworks.js` |
 | `plist.js` | Apple Property List parser (XML via `DOMParser`, binary `bplist00` via a compact object-table walker) - used across webloc, mobileconfig, provisioning profiles, sprite atlases, game saves |
 | `sqlite.js` | Lazy loader for vendored **sql.js** (SQLite compiled to WASM) - used for GeoPackage, MBTiles, Audacity `.aup3`, and other SQLite-backed formats |
+| `sqlite-pages.js` | SQLite read straight from the file's pages, for a database past `SQLITE_ENGINE_MAX` (sql.js copies the whole file into its heap): schema, columns, row counts from every leaf page (estimated from a sample past `SQLITE_PAGE_SCAN_MAX`) and sample rows. Same result shape as `sqliteAnalysis()`; no SQL |
+| `stream-archive.js` | Pure-JS TAR, `.tar.gz` and ISO 9660 readers that list from small slices and hand stored entries out as zero-copy Blob slices; `extractArchive()` tries them before libarchive |
+| `hash-stream.js` · `hash-client.js` · `hash-worker.js` | Incremental SHA-256 / SHA-1 / SHA-512 / MD5 / CRC-32 over File slices, in a module worker with a main-thread fallback - what lets the Integrity card hash a file of any size |
 | `nrbf.js` | Decodes the [MS-NRBF] .NET Binary Formatter record stream (reconstructs the .NET object graph) |
 | `legacy-decompress.js` | Small pure-JS decoders for bare (non-tar) legacy streams libarchive can't open alone: `unlz4()` (LZ4 frame format) and `unlzw()` (Unix `compress`/.Z) |
 | `libarchive-loader.js` | Lazy loader for vendored **libarchive.js** (WASM extractor, worker-based) - powers ZIP/RAR/7z/etc. extraction in `archive.js`, `comic.js`, and others |

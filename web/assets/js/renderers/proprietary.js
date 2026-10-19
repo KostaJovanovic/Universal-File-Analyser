@@ -10,7 +10,7 @@ import { EXT_VARIANTS, detectVariant } from '../core/formats.js';
 import { parseNrbf } from '../lib/nrbf.js';
 import { safe } from '../parsers/parser-util.js';
 import { buildEmbeddedImagesCard, rgbaToPngBlob } from './embedded-images.js';
-import { PREVIEW_CARVE_MAX, DECOMP_ENTRY_MAX, READABLE_TEXT_MAX, READABLE_DEPTH_MAX } from '../core/limits.js';
+import { PREVIEW_CARVE_MAX, DECOMP_ENTRY_MAX, READABLE_TEXT_MAX, READABLE_DEPTH_MAX, SQLITE_ENGINE_MAX } from '../core/limits.js';
 // ---------- helpers ----------
 function extFromName(name) {
     const dot = name.lastIndexOf('.');
@@ -1458,15 +1458,26 @@ async function parseSqlite(buf, file) {
         'Journal mode': journal[writeVer] || String(writeVer),
         'SQLite version': view.getUint32(96) ? String(view.getUint32(96)) : undefined,
     };
-    // Deep analysis with the vendored sql.js engine (lazy-loaded). Skipped for very
-    // large files to avoid loading the whole DB into memory; any failure (engine
-    // unavailable, encrypted/corrupt DB) cleanly falls back to the header facts above.
-    if (file && file.size < 268435456) {
+    // Deep analysis with the vendored sql.js engine (lazy-loaded), which copies the
+    // whole DB into memory - so past SQLITE_ENGINE_MAX (or when sql.js can't open
+    // it) the schema, row counts and sample are read straight from the file's
+    // pages by lib/sqlite-pages.js instead, with no SQL console. Any failure
+    // (encrypted/corrupt DB) cleanly falls back to the header facts above.
+    if (file) {
         try {
-            const { sqliteAnalysis } = await import('../lib/sqlite.js');
-            const a = await sqliteAnalysis(file);
+            let a = null, paged = false;
+            if (file.size < SQLITE_ENGINE_MAX) {
+                const { sqliteAnalysis } = await import('../lib/sqlite.js');
+                a = await sqliteAnalysis(file);
+            }
+            if (!a) {
+                const { sqlitePageAnalysis } = await import('../lib/sqlite-pages.js');
+                a = await sqlitePageAnalysis(file);
+                paged = !!a;
+            }
             if (a) {
                 const totalRows = a.tables.reduce((s, t) => s + (t.rows || 0), 0);
+                const anyEstimate = a.tables.some((t) => t.estimated);
                 if (a.pragma.encoding)
                     out['Encoding'] = a.pragma.encoding;
                 if (a.pragma.page_count)
@@ -1482,7 +1493,9 @@ async function parseSqlite(buf, file) {
                     out['Indexes'] = a.indexes.length;
                 if (a.triggers.length)
                     out['Triggers'] = a.triggers.length;
-                out['Total rows'] = totalRows.toLocaleString();
+                out['Total rows'] = (anyEstimate ? '≈ ' : '') + totalRows.toLocaleString();
+                if (paged)
+                    out['Read'] = 'from the file\'s pages (too large for the in-browser SQL engine)' + (anyEstimate ? ' - row counts marked ≈ are estimated from a sample of each table\'s pages' : '');
                 const sections = [];
                 if (a.tables.length) {
                     const t = el('table', { class: 'anr-readout' });
@@ -1490,14 +1503,14 @@ async function parseSqlite(buf, file) {
                     for (const tb of a.tables) {
                         t.appendChild(el('tr', {}, [
                             el('td', {}, tb.name),
-                            el('td', {}, tb.rows != null ? Number(tb.rows).toLocaleString() : '?'),
+                            el('td', {}, tb.rows != null ? (tb.estimated ? '≈ ' : '') + Number(tb.rows).toLocaleString() : '?'),
                             el('td', {}, String(tb.cols.length)),
                         ]));
                     }
                     sections.push({ title: 'Tables (' + a.tables.length + ')', node: t, open: true });
                     const cols = el('div', {});
                     for (const tb of a.tables) {
-                        cols.appendChild(el('div', { class: 'anr-readout-section' }, tb.name + (tb.rows != null ? ' - ' + Number(tb.rows).toLocaleString() + ' rows' : '')));
+                        cols.appendChild(el('div', { class: 'anr-readout-section' }, tb.name + (tb.rows != null ? ' - ' + (tb.estimated ? '≈ ' : '') + Number(tb.rows).toLocaleString() + ' rows' : '')));
                         const ct = el('table', { class: 'anr-readout' });
                         for (const c of tb.cols)
                             ct.appendChild(row(c.name + (c.pk ? ' (PK)' : ''), c.type));
@@ -1531,7 +1544,10 @@ async function parseSqlite(buf, file) {
                 // ANY statement is allowed, writes and schema changes included, and nothing
                 // is ever written back to the file on disk. That is also why Reset works -
                 // it just drops the copy and re-reads the original bytes.
-                {
+                if (paged) {
+                    sections.push({ title: 'SQL console', node: el('p', { class: 'anr-hint', style: 'margin:0;' }, 'This database (' + fmtBytes(file.size) + ') is too large for the in-browser SQL engine, which holds a copy of the whole file in memory. The tables, columns, row counts and sample above were read straight from the file instead.') });
+                }
+                else {
                     const firstTable = a.tables[0] ? a.tables[0].name : null;
                     const ta = el('textarea', { class: 'anr-sql-input', spellcheck: 'false', rows: '4' });
                     ta.value = firstTable
@@ -5328,7 +5344,16 @@ function formatFor(ext) {
 }
 // ---------- main render ----------
 export async function renderProprietary(file, container, extOverride) {
-    const ext = extOverride || extFromName(file.name);
+    let ext = extOverride || extFromName(file.name);
+    // An ambiguous extension whose other variant already has a parser under its
+    // own extension (an Apple crash report named .ips) is read as that one.
+    if (!extOverride && Object.hasOwn(EXT_VARIANTS, ext) && EXT_VARIANTS[ext].variants.some((v) => v.asExt)) {
+        const h = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
+        const vname = detectVariant(ext, h, ascii(h, 0, h.length), { specificOnly: true });
+        const v = EXT_VARIANTS[ext].variants.find((x) => x.name === vname);
+        if (v && v.asExt && formatFor(v.asExt))
+            ext = v.asExt;
+    }
     const fmt = formatFor(ext);
     if (!fmt)
         return false;

@@ -6,7 +6,7 @@
 import { makePlayer, renderAudio } from './audio.js';
 import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
 import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob, inlineLoader, yieldToMain, setPlayerFill, type ElChild, type Drawable} from '../core/util.js';
-import { HASH_FILE_MAX, AVI_EXTRACT_MAX, FFMPEG_MEMFS_MAX, FFMPEG_REMUX_MAX, FFMPEG_FPS_PROBE_HEAD, PCM_COMPANION_MAX, VIDEO_AUDIO_DECODE_MAX, PCM_DECODE_SAMPLES_MAX, VIDEO_SHA_AUTO_MAX, VIDEO_SHA_BUTTON_MAX } from '../core/limits.js';
+import { HASH_FILE_MAX, AVI_EXTRACT_MAX, FFMPEG_MEMFS_MAX, NATIVE_FFMPEG_CHUNK, FFMPEG_REMUX_MAX, TS_SEGMENT_BYTES, FFMPEG_FPS_PROBE_HEAD, PCM_COMPANION_MAX, VIDEO_AUDIO_DECODE_MAX, PCM_DECODE_SAMPLES_MAX, VIDEO_SHA_AUTO_MAX, VIDEO_SHA_BUTTON_MAX, MP4_MOOV_READ_MAX, MP4_AUDIO_READ_BATCH, MP4_AUDIO_READ_GAP, MP4_SAMPLE_TABLE_MAX, isLowMemoryDevice } from '../core/limits.js';
 import { parseAviHeader, openAviData, encodeWav } from './video-avi.js';
 import { appendSonyGyroCard } from './sony-rtmd.js';
 import { registerSyncedVideo, registerExclusiveVideo, setAudioCompanion } from '../core/video-sync.js';
@@ -385,6 +385,40 @@ export function queueFFmpeg<T>(job: () => T|Promise<T>, onWait?: (() => void)|nu
 let _ffJobSeq = 0;
 function ffJobPrefix() { return 'j' + (++_ffJobSeq) + '_'; }
 
+// Hand a job its input file the cheapest way the backend allows, as
+// { input, cleanup } - `input` is the name to pass after -i:
+//  - the desktop's native FFmpeg: copied to the job's temp folder in pieces
+//    (writeFileFrom), so the page never holds it whole;
+//  - ffmpeg.wasm: mounted read-only with WORKERFS, so FFmpeg reads it by seeking
+//    instead of copying it into its 32-bit heap;
+//  - otherwise (the Android bridge, or a mount that failed): copied whole with
+//    writeFile, refused (null) past `memfsMax`.
+// `name` is the copy's file name - keep it a shape the desktop and Android ffmpeg
+// safety checks already allow. Exported for audio.ts, which borrows the instance.
+export async function ffInputFile(ff: any, file: File, name: string, memfsMax = Infinity, onCopy?: (frac: number) => void) {
+  if (ff.writeFileFrom) {
+    await ff.writeFileFrom(name, file, onCopy);
+    return { input: name, cleanup: async () => { try { await ff.deleteFile(name); } catch (_) {} } };
+  }
+  if (!ff._native && file.name) {
+    const dir = '/' + name + '_mnt';
+    let mounted = false;
+    try { await ff.createDir(dir); mounted = await ff.mount('WORKERFS', { files: [file] }, dir); } catch (_) { mounted = false; }
+    if (mounted) {
+      return { input: dir + '/' + file.name, cleanup: async () => {
+        try { await ff.unmount(dir); } catch (_) {}
+        try { await ff.deleteDir(dir); } catch (_) {}
+      } };
+    }
+    try { await ff.deleteDir(dir); } catch (_) {}
+  }
+  if (file.size > memfsMax) return null;
+  const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
+  try { await ff.writeFile(name, await fetchFile(file)); }
+  catch (e) { try { await ff.deleteFile(name); } catch (_) {} throw e; }
+  return { input: name, cleanup: async () => { try { await ff.deleteFile(name); } catch (_) {} } };
+}
+
 // Run one ffmpeg command. exec RESOLVES on a non-zero exit (a clean failure) and
 // rejects only when the instance itself died (a wasm abort, a terminate, a native
 // binary that could not start) - so a rejection means the instance is a corpse,
@@ -491,6 +525,19 @@ async function loadNativeFFmpeg() {
       _native: true,
       _caps: caps,
       writeFile: (name: string, data: Uint8Array) => d.ffmpeg!.write(id, name, data),
+      // Desktop only (the phone's bridge has no append, and its memory walls
+      // stay up): copy a Blob over a piece at a time, so a multi-GB video never
+      // has to fit in memory whole. ffmpeg.wasm has no counterpart - callers
+      // test for this method and fall back to writeFile.
+      writeFileFrom: d.shell ? undefined : async (name: string, blob: Blob, onProgress?: (frac: number) => void) => {
+        let off = 0;
+        do {
+          const part = new Uint8Array(await blob.slice(off, off + NATIVE_FFMPEG_CHUNK).arrayBuffer());
+          await d.ffmpeg!.write(id, name, part, off > 0);
+          off += NATIVE_FFMPEG_CHUNK;
+          if (onProgress) onProgress(Math.min(1, off / (blob.size || 1)));
+        } while (off < blob.size);
+      },
       readFile: (name: string) => d.ffmpeg!.read(id, name),
       deleteFile: (name: string) => d.ffmpeg!.del(id, name),
       // Resolves with the exit code whenever ffmpeg RAN, even on a non-zero
@@ -570,15 +617,19 @@ async function ffmpegExtractAudioJob(file: File, container: HTMLDivElement) {
     const ff = await loadFFmpeg((p: number) => { setBar(p); });
     labelEl.textContent = 'extracting audio';
     setBar(1);
-    const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
     const pre = ffJobPrefix();
-    const inName = pre + 'input', outName = pre + 'output.wav';
+    const outName = pre + 'output.wav';
+    if (ff.writeFileFrom) labelEl.textContent = 'copying the video';
+    const src = await ffInputFile(ff, file, pre + 'input', FFMPEG_MEMFS_MAX, (frac: number) => {
+      setBar(frac); labelEl.textContent = 'copying the video ' + Math.round(frac * 100) + '%';
+    });
+    if (!src) throw new Error('this video is too large (' + fmtBytes(file.size) + ') to decode its audio in the browser');
+    labelEl.textContent = 'extracting audio';
     try {
-      await ff.writeFile(inName, await fetchFile(file));
-      await ffExec(ff, ['-i', inName, '-vn', '-acodec', 'pcm_s16le', '-ar', '48000', '-ac', '2', outName]);
+      await ffExec(ff, ['-i', src.input, '-vn', '-acodec', 'pcm_s16le', '-ar', '48000', '-ac', '2', outName]);
       data = await ff.readFile(outName);
     } finally {
-      try { await ff.deleteFile(inName); } catch (_) {}
+      await src.cleanup();
       try { await ff.deleteFile(outName); } catch (_) {}
     }
   } finally {
@@ -613,8 +664,6 @@ async function ffmpegReverseVideo(file: File, onLoad: ((p: number) => void)|null
   const ff = await loadFFmpeg(onLoad);
   if (signal && signal.aborted) return null;
   const aborted = () => signal && signal.aborted;
-  const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
-
   let log = '';
   const onLog = ({ message }: { message: string }) => { log += message + '\n'; };
   // Smooth, monotonic progress. The job runs ~N+2 ffmpeg commands and each emits
@@ -638,11 +687,15 @@ async function ffmpegReverseVideo(file: File, onLoad: ((p: number) => void)|null
   const rm = async (name: string) => { try { await ff.deleteFile(name); } catch (_) {} };
 
   const pre = ffJobPrefix();
-  const src = pre + 'rev_src';
   let segsMade: string[] = [];
   const revsMade: string[] = [];
-  try { await ff.writeFile(src, await fetchFile(file)); }
-  catch (_) { detachAll(); return null; }
+  // Mounted or copied in pieces (ffInputFile), not read whole, so a multi-GB
+  // source no longer has to fit in memory just to be normalised.
+  let srcIn: { input: string; cleanup: () => Promise<void> } | null = null;
+  try { srcIn = await ffInputFile(ff, file, pre + 'rev_src'); } catch (_) { srcIn = null; }
+  if (!srcIn) { detachAll(); return null; }
+  const src = srcIn.input;
+  const dropSrc = srcIn.cleanup;
 
   // Reverse one elementary clip whole (video + audio, retry video-only). Used per
   // segment and as the single-segment fast path.
@@ -677,7 +730,7 @@ async function ffmpegReverseVideo(file: File, onLoad: ((p: number) => void)|null
     const perSec = w * h * 1.5 * fps;
     const SEG = Math.max(0.5, Math.min(5, 96e6 / Math.max(1, perSec))) || 2;
     const hadAudio = /Audio:/.test(log);
-    if (aborted()) { await rm(src); detachAll(); return null; }
+    if (aborted()) { await dropSrc(); detachAll(); return null; }
 
     // 1) Normalise to H.264 with a keyframe exactly every SEG seconds. (0-30%)
     const norm = pre + 'rev_norm.mp4';
@@ -691,7 +744,7 @@ async function ffmpegReverseVideo(file: File, onLoad: ((p: number) => void)|null
       await exec(['-i', src, '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
         '-force_key_frames', kf, '-an', '-y', norm]);
     }
-    await rm(src);
+    await dropSrc();
     if (aborted() || !await read(norm)) { await rm(norm); detachAll(); if (crashed) killFFmpeg(); return null; }
 
     // 2) Split losslessly at those keyframes (near-instant; hold the bar at 30%).
@@ -768,7 +821,8 @@ async function ffmpegReverseVideo(file: File, onLoad: ((p: number) => void)|null
   } catch (_) {
     detachAll();
     // Don't leave this job's pieces in the shared filesystem.
-    for (const n of [src, pre + 'rev_norm.mp4', pre + 'rev_list.txt', pre + 'rev_out.mp4', ...segsMade, ...revsMade]) await rm(n);
+    await dropSrc();
+    for (const n of [pre + 'rev_norm.mp4', pre + 'rev_list.txt', pre + 'rev_out.mp4', ...segsMade, ...revsMade]) await rm(n);
     if (crashed) killFFmpeg();
     return null;
   }
@@ -790,10 +844,13 @@ async function ffmpegTranscodeToH264(file: File, onLoad: ((p: number) => void)|n
   if (signal && signal.aborted) return null;
   const ff = await loadFFmpeg(onLoad);
   if (signal && signal.aborted) return null;
-  const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
   const pre = ffJobPrefix();
-  const inName = pre + 'conv_in', outName = pre + 'conv_out.mp4';
-  try { await ff.writeFile(inName, await fetchFile(file)); } catch (_) { try { await ff.deleteFile(inName); } catch (_) {} return null; }
+  const outName = pre + 'conv_out.mp4';
+  // Mounted or copied in pieces, not read whole (ffInputFile).
+  let srcIn: { input: string; cleanup: () => Promise<void> } | null = null;
+  try { srcIn = await ffInputFile(ff, file, pre + 'conv_in'); } catch (_) { srcIn = null; }
+  if (!srcIn) return null;
+  const inName = srcIn.input;
   const onProg = ({ progress }: { progress: number }) => { if (onEnc && isFinite(progress)) onEnc(Math.max(0, Math.min(1, progress))); };
   ff.on('progress', onProg);
   // "turbo" is faster than libx264's own fastest preset (ultrafast is already the
@@ -828,7 +885,7 @@ async function ffmpegTranscodeToH264(file: File, onLoad: ((p: number) => void)|n
     }
   } finally {
     try { ff.off('progress', onProg); } catch (_) {}
-    try { await ff.deleteFile(inName); } catch (_) {}
+    await srcIn.cleanup();
     try { await ff.deleteFile(outName); } catch (_) {}
   }
   if (!data || !data.length) return null;
@@ -945,25 +1002,14 @@ async function ffmpegRemuxToMp4Job(file: File, signal: AbortSignal, rawKind: str
   const onLog = ({ message }: { message: string }) => { log += message + '\n'; };
   ff.on('log', onLog);
 
-  const MOUNT = '/anrrx';
   let inName: string|null = null;
   let cleanup = async () => {};
   try {
-    // Prefer a WORKERFS mount so a multi-GB stream is read by seeking, not copied
-    // into WASM memory (fetchFile of a huge file blows the heap). Fall back to an
-    // in-memory copy for smaller files / browsers without WORKERFS.
-    let mounted = false;
-    try { await ff.createDir(MOUNT); mounted = await ff.mount('WORKERFS', { files: [file] }, MOUNT); } catch (_) { mounted = false; }
-    if (mounted) {
-      inName = MOUNT + '/' + file.name;
-      cleanup = async () => { try { await ff.unmount(MOUNT); } catch (_) {} try { await ff.deleteDir(MOUNT); } catch (_) {} };
-    } else {
-      try { await ff.deleteDir(MOUNT); } catch (_) {}
-      const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
-      inName = pre + 'in.' + (demuxer === 'hevc' ? 'h265' : 'h264');
-      cleanup = async () => { try { await ff.deleteFile(inName); } catch (_) {} };
-      await ff.writeFile(inName, await fetchFile(file));
-    }
+    // Mounted (WORKERFS) so a multi-GB stream is read by seeking, not copied into
+    // WASM memory - or on the desktop, copied to native FFmpeg in pieces.
+    const srcIn = (await ffInputFile(ff, file, pre + 'in.' + (demuxer === 'hevc' ? 'h265' : 'h264')))!;
+    inName = srcIn.input;
+    cleanup = srcIn.cleanup;
 
     // Re-encode to H.264 - the last-resort path, also used up front for HEVC that
     // this browser can't decode. Lossy, but it makes the clip play.
@@ -1024,24 +1070,15 @@ async function ffmpegRemuxTsToMp4Job(file: File, signal: AbortSignal) {
   const onLog = ({ message }: { message: string }) => { log += message + '\n'; };
   ff.on('log', onLog);
 
-  const MOUNT = '/anrts';
   let inName: string|null = null;
   let cleanup = async () => {};
   try {
-    // WORKERFS mount where available so a big camcorder file is read by seeking
-    // rather than copied whole into the WASM heap (mirrors ffmpegRemuxToMp4).
-    let mounted = false;
-    try { await ff.createDir(MOUNT); mounted = await ff.mount('WORKERFS', { files: [file] }, MOUNT); } catch (_) { mounted = false; }
-    if (mounted) {
-      inName = MOUNT + '/' + file.name;
-      cleanup = async () => { try { await ff.unmount(MOUNT); } catch (_) {} try { await ff.deleteDir(MOUNT); } catch (_) {} };
-    } else {
-      try { await ff.deleteDir(MOUNT); } catch (_) {}
-      const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
-      inName = pre + 'in.ts';
-      cleanup = async () => { try { await ff.deleteFile(inName); } catch (_) {} };
-      await ff.writeFile(inName, await fetchFile(file));
-    }
+    // Mounted (WORKERFS) so a big camcorder file is read by seeking rather than
+    // copied whole into the WASM heap - or on the desktop, copied to native
+    // FFmpeg in pieces (mirrors ffmpegRemuxToMp4).
+    const srcIn = (await ffInputFile(ff, file, pre + 'in.ts'))!;
+    inName = srcIn.input;
+    cleanup = srcIn.cleanup;
 
     // Copy the (H.264) video, transcode the audio to AAC.
     let crashed = false;
@@ -1069,6 +1106,179 @@ async function ffmpegRemuxTsToMp4Job(file: File, signal: AbortSignal) {
     try { await ff.deleteFile(outName); } catch (_) {}
     await cleanup();
   }
+}
+
+// ---------- segmented playback for very large MPEG-TS / AVCHD files ----------
+// Above FFMPEG_REMUX_MAX a camcorder .mts can't be remuxed whole - the input is
+// mounted, but the output MP4 still lands in the WASM heap. A transport stream
+// splits cleanly, though: it is a run of fixed-size packets, and the camera
+// flags each keyframe's first packet (random_access_indicator). So it is cut on
+// those packets into TS_SEGMENT_BYTES parts, each part given the PAT and PMT
+// packets from the head (the tables that say which stream is which) so it
+// stands on its own, and remuxed when reached - the same player the raw-stream
+// path uses.
+
+// Packet size (188, or 192 for M2TS/AVCHD's 4-byte timecode prefix) and the
+// offset of the first sync byte.
+function tsPacketLayout(b: Uint8Array) {
+  for (const ps of [188, 192]) {
+    const sync = ps === 192 ? 4 : 0;
+    for (let o = 0; o < Math.min(ps, b.length); o++) {
+      if (b[o + sync] === 0x47 && b[o + sync + ps] === 0x47 && b[o + sync + 2 * ps] === 0x47) return { ps, sync, first: o };
+    }
+  }
+  return null;
+}
+// One packet's fields, `p` at the packet's own start (before any 4-byte prefix).
+function tsPacket(b: Uint8Array, p: number, sync: number) {
+  const h = p + sync;
+  if (b[h] !== 0x47) return null;
+  const pusi = !!(b[h + 1] & 0x40);
+  const pid = ((b[h + 1] & 0x1F) << 8) | b[h + 2];
+  const afc = (b[h + 3] >> 4) & 3;
+  let payload = h + 4, rai = false;
+  if (afc & 2) { const afl = b[h + 4]; if (afl > 0) rai = !!(b[h + 5] & 0x40); payload = h + 5 + afl; }
+  return { pid, pusi, rai, payload: (afc & 1) ? payload : -1, end: h + 188 };
+}
+
+async function planTsSegments(file: File, signal: AbortSignal) {
+  const head = new Uint8Array(await file.slice(0, Math.min(file.size, 4 * 1024 * 1024)).arrayBuffer());
+  const lay = tsPacketLayout(head);
+  if (!lay) return null;
+  const { ps, sync, first } = lay;
+  let pat: Uint8Array | null = null, pmt: Uint8Array | null = null, pmtPid = -1, videoPid = -1, videoType = 0;
+  const es: Uint8Array[] = [];
+  let esLen = 0;
+  for (let p = first; p + ps <= head.length; p += ps) {
+    const k = tsPacket(head, p, sync);
+    if (!k || k.payload < 0) continue;
+    if (k.pid === 0 && k.pusi && !pat) {
+      // PAT: pointer field, then 4-byte program entries from offset 8.
+      const s = k.payload + 1 + head[k.payload];
+      const secLen = ((head[s + 1] & 0x0F) << 8) | head[s + 2];
+      for (let e = s + 8; e + 4 <= Math.min(s + 3 + secLen - 4, k.end); e += 4) {
+        if (((head[e] << 8) | head[e + 1]) !== 0) { pmtPid = ((head[e + 2] & 0x1F) << 8) | head[e + 3]; break; }
+      }
+      if (pmtPid >= 0) pat = head.slice(p, p + ps);
+    } else if (k.pid === pmtPid && k.pusi && !pmt) {
+      // PMT: the elementary streams follow the program-info block.
+      const s = k.payload + 1 + head[k.payload];
+      const secLen = ((head[s + 1] & 0x0F) << 8) | head[s + 2];
+      const pil = ((head[s + 10] & 0x0F) << 8) | head[s + 11];
+      for (let e = s + 12 + pil; e + 5 <= Math.min(s + 3 + secLen - 4, k.end);) {
+        const type = head[e], pid = ((head[e + 1] & 0x1F) << 8) | head[e + 2];
+        const eil = ((head[e + 3] & 0x0F) << 8) | head[e + 4];
+        if (videoPid < 0 && (type === 0x1B || type === 0x24 || type === 0x02 || type === 0x01)) { videoPid = pid; videoType = type; }
+        e += 5 + eil;
+      }
+      pmt = head.slice(p, p + ps);
+    } else if (k.pid === videoPid && esLen < 1024 * 1024) {
+      // The video's elementary bytes, PES headers stripped, for the SPS readout.
+      let at = k.payload;
+      if (k.pusi && head[at] === 0 && head[at + 1] === 0 && head[at + 2] === 1) at += 9 + head[at + 8];
+      if (at < k.end) { const part = head.subarray(at, k.end); es.push(part); esLen += part.length; }
+    }
+  }
+  if (!pat || !pmt || videoPid < 0) return null;
+  const h265 = videoType === 0x24;
+  let info = null;
+  if (videoType === 0x1B || h265) {
+    const joined = new Uint8Array(esLen);
+    let o = 0;
+    for (const part of es) { joined.set(part, o); o += part.length; }
+    try { info = parseAnnexBStreamInfo(joined, h265); } catch (_) {}
+  }
+
+  // Cut points: from each multiple of TS_SEGMENT_BYTES, the next keyframe's
+  // first packet on the video PID - or, failing one within the search span, the
+  // next packet that starts a video PES. Windows stay packet-aligned.
+  const boundaries = [first];
+  const WIN = Math.floor(8 * 1024 * 1024 / ps) * ps;
+  for (let k = 1; ; k++) {
+    let from = first + Math.ceil((k * TS_SEGMENT_BYTES) / ps) * ps;
+    if (from >= file.size) break;
+    if (from <= boundaries[boundaries.length - 1]) continue;
+    let cut = -1, fallback = -1;
+    const limit = Math.min(file.size, from + 64 * 1024 * 1024);
+    while (from < limit && cut < 0) {
+      if (signal && signal.aborted) return null;
+      const b = new Uint8Array(await file.slice(from, Math.min(file.size, from + WIN)).arrayBuffer());
+      for (let p = 0; p + ps <= b.length; p += ps) {
+        const t = tsPacket(b, p, sync);
+        if (!t || t.pid !== videoPid || !t.pusi) continue;
+        if (t.rai) { cut = from + p; break; }
+        if (fallback < 0) fallback = from + p;
+      }
+      from += WIN;
+    }
+    const at = cut >= 0 ? cut : fallback;
+    if (at > boundaries[boundaries.length - 1]) boundaries.push(at);
+  }
+  boundaries.push(file.size);
+  if (boundaries.length < 3) return null;
+  const tables = new Uint8Array(pat.length + pmt.length);
+  tables.set(pat); tables.set(pmt, pat.length);
+  return { tables, boundaries, info, h265 };
+}
+
+// Remux one [start, end) part, PAT + PMT in front, to MP4: video copied and audio
+// to AAC, re-encoding the video only when the copy produces nothing (or it is
+// HEVC this browser can't decode) - the same ladder ffmpegRemuxTsToMp4 climbs.
+function remuxTsSegment(file: File, start: number, end: number, tables: Uint8Array, h265: boolean, signal: AbortSignal, loaderLabel?: string) {
+  return queueFFmpeg(() => remuxTsSegmentJob(file, start, end, tables, h265, signal, loaderLabel));
+}
+async function remuxTsSegmentJob(file: File, start: number, end: number, tables: Uint8Array, h265: boolean, signal: AbortSignal, loaderLabel?: string) {
+  if (signal && signal.aborted) return null;
+  const ff = await loadFFmpeg();
+  if (signal && signal.aborted) return null;
+  if (loaderLabel) showFfmpegLoader(loaderLabel, true);
+  const pre = ffJobPrefix();
+  const outName = pre + 'tsseg.mp4';
+  // A File over the tables and a slice of the original: nothing is copied until
+  // FFmpeg reads it (mounted, or copied in pieces on the desktop).
+  const part = new File([tables as BlobPart, file.slice(start, end)], 'seg.ts');
+  let srcIn: { input: string; cleanup: () => Promise<void> } | null = null;
+  let blob = null;
+  try {
+    srcIn = await ffInputFile(ff, part, pre + 'seg.ts');
+    if (!srcIn) return null;
+    const reencode = ['-fflags', '+genpts', '-i', srcIn.input, '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', outName];
+    let data = null;
+    if (!(h265 && !canPlayHevc())) {
+      try { await ffExec(ff, ['-fflags', '+genpts', '-i', srcIn.input, '-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart', outName]); } catch (_) {}
+      try { data = await ff.readFile(outName); } catch (_) { data = null; }
+    }
+    if ((!data || !data.length) && !(signal && signal.aborted)) {
+      try { await ff.deleteFile(outName); } catch (_) {}
+      try { await ffExec(ff, reencode); } catch (_) {}
+      try { data = await ff.readFile(outName); } catch (_) { data = null; }
+    }
+    if (data && data.length) blob = new Blob([data.buffer || data], { type: 'video/mp4' });
+  } finally {
+    if (srcIn) await srcIn.cleanup();
+    try { await ff.deleteFile(outName); } catch (_) {}
+    if (loaderLabel) hideFfmpegLoader();
+  }
+  return blob;
+}
+
+// Player for an over-size MPEG-TS / AVCHD file. Null-returning plan (no PAT/PMT,
+// no video stream) falls to the unplayable card the caller already shows.
+async function renderSegmentedTsVideo(file: File, header: any, resultsEl: HTMLElement, signal: AbortSignal) {
+  resultsEl.innerHTML = '';
+  resultsEl.appendChild(el('div', { class: 'anr-info' },
+    'Large AVCHD / MPEG-TS video (' + fmtBytes(file.size) + ') - finding keyframes to split it into playable parts…'));
+  const plan = await planTsSegments(file, signal);
+  if (signal.aborted) return true;
+  if (!plan) return false;
+  const { tables, boundaries, info, h265 } = plan;
+  const fps = (info && info.fps) || null;
+  await renderSegmentedPlayer(file, header, resultsEl, signal, {
+    boundaries, info, fps,
+    fpsRowText: fps ? roundFps(fps) + ' fps  (from the stream’s own timing information)' : '-',
+    remux: (i, label) => remuxTsSegment(file, boundaries[i], boundaries[i + 1], tables, h265, signal, label),
+  });
+  return true;
 }
 
 // ---------- segmented playback for very large raw H.264/H.265 streams ----------
@@ -1346,8 +1556,33 @@ async function renderSegmentedRawVideo(file: File, header: any, resultsEl: HTMLE
   }
 
   const { paramSets, boundaries, info } = plan;
-  const N = boundaries.length - 1;
   const streamFps = (info && info.fps) || null;
+  await renderSegmentedPlayer(file, header, resultsEl, signal, {
+    boundaries, info, fps: streamFps,
+    fpsRowText: streamFps
+      ? roundFps(streamFps) + ' fps  (from the stream’s own timing information)'
+      : '25 fps (assumed - this stream states no timing)',
+    remux: (i, label) => remuxRawSegment(file, boundaries[i], boundaries[i + 1], paramSets, h265, signal, label, streamFps),
+  });
+}
+
+/** What the segmented player needs from the stream it plays: where the parts
+ *  are cut, how to turn part i into a playable MP4, and the readout the plan
+ *  produced. Shared by raw H.264/H.265 streams and MPEG-TS / AVCHD files. */
+interface SegmentedSource {
+  boundaries: number[];
+  info: StreamInfo | null;
+  fps: number | null;
+  fpsRowText: string;
+  remux: (i: number, loaderLabel?: string) => Promise<Blob | null>;
+}
+
+// The player for a stream too large to remux whole: N parts cut on keyframes,
+// each remuxed to MP4 when it is reached and played back-to-back.
+async function renderSegmentedPlayer(file: File, header: any, resultsEl: HTMLElement, signal: AbortSignal, src: SegmentedSource) {
+  const { boundaries, info } = src;
+  const N = boundaries.length - 1;
+  const streamFps = src.fps;
   resultsEl.innerHTML = '';
 
   const playerCard = el('div', { class: 'anr-card', style: 'position:relative;' });
@@ -1393,9 +1628,7 @@ async function renderSegmentedRawVideo(file: File, header: any, resultsEl: HTMLE
   tbl.appendChild(resRow);
   const arRow = row('Aspect ratio', info && info.width ? aspectRatio(info.width, info.height) : '-');
   tbl.appendChild(arRow);
-  tbl.appendChild(row('Frame rate', streamFps
-    ? roundFps(streamFps) + ' fps  (from the stream’s own timing information)'
-    : '25 fps (assumed - this stream states no timing)'));
+  tbl.appendChild(row('Frame rate', src.fpsRowText));
   // Duration and bitrate can't be read from a raw stream without decoding it all,
   // but the first part gives a real bytes-per-second figure to scale up from.
   const durRow = row('Duration', streamFps ? 'measuring…' : '-');
@@ -1404,7 +1637,7 @@ async function renderSegmentedRawVideo(file: File, header: any, resultsEl: HTMLE
     'How much data the file uses per second of playback. A raw stream carries no length, so this is measured from the first part that plays - its byte range divided by its running time - and applied across the whole file.');
   tbl.appendChild(brRow);
   // Bit depth, chroma, colour, HDR and the parameter sets, straight from the SPS.
-  try { appendTrackRows(tbl, { video: videoTrackFromStream(info) }); } catch (_) {}
+  if (info) { try { appendTrackRows(tbl, { video: videoTrackFromStream(info) }); } catch (_) {} }
   tbl.appendChild(row('Parts', N + ' × ~' + fmtBytes(Math.round(file.size / N)) + ', split at keyframes'));
   infoCard.appendChild(tbl);
   infoCard.appendChild(el('p', { class: 'anr-hint' },
@@ -1432,7 +1665,7 @@ async function renderSegmentedRawVideo(file: File, header: any, resultsEl: HTMLE
   async function ensureSegment(i: number, loaderLabel?: string|undefined) {
     if (i < 0 || i >= N) return null;
     if (cache.has(i)) return cache.get(i);
-    const blob = await remuxRawSegment(file, boundaries[i], boundaries[i + 1], paramSets, h265, signal, loaderLabel, streamFps);
+    const blob = await src.remux(i, loaderLabel);
     if (!blob) return null;
     const entry = { url: URL.createObjectURL(blob), bytes: boundaries[i + 1] - boundaries[i] };
     cache.set(i, entry);
@@ -1850,27 +2083,8 @@ const BROWSER_UNPLAYABLE_AUDIO = new Set(['twos','sowt','lpcm','in16','in24','in
 // File (seeking past mdat by size, never reading its bytes), so it's fast even on a
 // multi-GB clip whose moov sits at the tail. Returns the lowercase-ish fourCC or ''.
 async function sniffMp4AudioCodec(file: File) {
-  const u32 = (b: Uint8Array, p: number) => (b[p] << 24 | b[p+1] << 16 | b[p+2] << 8 | b[p+3]) >>> 0;
-  const fourcc = (b: Uint8Array, p: number) => String.fromCharCode(b[p], b[p+1], b[p+2], b[p+3]);
-  // Locate the top-level moov box by reading 8-16 byte headers and jumping.
-  async function findMoov() {
-    let off = 0;
-    for (let guard = 0; guard < 4096 && off + 8 <= file.size; guard++) {
-      const h = new Uint8Array(await file.slice(off, off + 16).arrayBuffer());
-      if (h.length < 8) return null;
-      let size = u32(h, 0); let hdr = 8;
-      const type = fourcc(h, 4);
-      if (size === 1) { // 64-bit size
-        size = Number((BigInt(u32(h, 8)) << 32n) | BigInt(u32(h, 12))); hdr = 16;
-      }
-      if (size < hdr) return null;
-      if (type === 'moov') return { off, size };
-      off += size;
-    }
-    return null;
-  }
   try {
-    const moov = await findMoov();
+    const moov = await findMp4Moov(file);
     if (!moov) return '';
     const moovBuf = await file.slice(moov.off, moov.off + moov.size).arrayBuffer();
     const view = new DataView(moovBuf);
@@ -1892,23 +2106,413 @@ async function sniffMp4AudioCodec(file: File) {
   return '';
 }
 
+// Locate the top-level moov box by reading 8-16 byte box headers over the File
+// and jumping by size - mdat is skipped, never read, so this is fast even on a
+// multi-GB clip whose moov sits at the tail.
+async function findMp4Moov(file: File) {
+  const u32 = (b: Uint8Array, p: number) => (b[p] << 24 | b[p+1] << 16 | b[p+2] << 8 | b[p+3]) >>> 0;
+  const fourcc = (b: Uint8Array, p: number) => String.fromCharCode(b[p], b[p+1], b[p+2], b[p+3]);
+  let off = 0;
+  for (let guard = 0; guard < 4096 && off + 8 <= file.size; guard++) {
+    const h = new Uint8Array(await file.slice(off, off + 16).arrayBuffer());
+    if (h.length < 8) return null;
+    let size = u32(h, 0); let hdr = 8;
+    const type = fourcc(h, 4);
+    if (size === 1) { // 64-bit size
+      size = Number((BigInt(u32(h, 8)) << 32n) | BigInt(u32(h, 12))); hdr = 16;
+    }
+    if (size < hdr) return null;
+    if (type === 'moov') return { off, size };
+    off += size;
+  }
+  return null;
+}
+
+// ---------- MP4 audio, read in pieces ----------
+//
+// extractPcmFromMp4 takes the whole file as one ArrayBuffer, and that is what put
+// a size ceiling on "Analyse audio": a 5 GB camera clip cannot be read whole. Its
+// audio is a small fraction of those bytes, and the moov index says exactly where
+// every piece of it sits - so this reads the moov alone, then only the audio, a
+// batch at a time with File.slice. Memory follows the length of the audio, not
+// the size of the file, and File.slice is plain browser API, so this works on the
+// website as well as in the apps.
+//
+// Two decoders sit behind the one reader. Uncompressed PCM (what Sony and most
+// pro cameras record) is converted here. AAC and MP3 go through WebCodecs'
+// AudioDecoder; where the browser has none, or refuses the config, this returns
+// null and the caller's whole-file paths run exactly as before.
+
+const MP4_PCM_BE = new Set(['twos', 'NONE', 'in16', 'in24', 'in32', 'fl32', 'fl64']);
+const MP4_PCM_LE = new Set(['sowt', 'lpcm', 'raw ']);
+const MP4_AAC_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+
+/** One sound track's sample entry and sample tables, read straight out of the
+ *  moov. The tables stay in the DataView and are read by index, so a 20M-frame
+ *  PCM track costs nothing until it is walked. */
+interface Mp4AudioTrack {
+  dv: DataView<ArrayBuffer>;
+  codec: string;
+  entry: number;
+  entryEnd: number;
+  version: number;
+  channels: number;
+  bits: number;
+  rate: number;
+  flags: number;
+  timescale: number;
+  uniform: number;
+  sampleCount: number;
+  sizeAt: (i: number) => number;
+  chunkCount: number;
+  chunkAt: (i: number) => number;
+  runs: number;
+  runFirst: (r: number) => number;
+  runSpc: (r: number) => number;
+}
+
+/** Where each chunk of the track sits, how many bytes it holds, and which
+ *  samples (first index, count) are in it. Parallel arrays, in track order. */
+interface Mp4AudioPieces { offs: number[]; lens: number[]; firsts: number[]; counts: number[] }
+
+// The first sound track in a moov (the DataView is the moov slice, so the moov
+// box sits at offset 0).
+function mp4AudioTrackInfo(dv: DataView<ArrayBuffer>, fileSize: number): Mp4AudioTrack|null {
+  const end = dv.byteLength;
+  const fcc = (p: number) => String.fromCharCode(dv.getUint8(p), dv.getUint8(p + 1), dv.getUint8(p + 2), dv.getUint8(p + 3));
+  // Walked by exact path (trak > mdia > minf > stbl), not findAllBoxes: a
+  // udta/meta also carries an hdlr, and that one must not be read as the track's.
+  const child = (b: any, type: string) => b ? parseBoxes(dv, b.offset + b.headerSize, Math.min(b.offset + b.size, end)).find((x) => x.type === type) : undefined;
+  // Entries a table box can really hold, so a u32 count from the file can't
+  // drive a 4-billion-step loop.
+  const fits = (b: any, at: number, size: number) => Math.max(0, Math.floor((Math.min(b.offset + b.size, end) - at) / size));
+  const moov = parseBoxes(dv, 0, end).find((b) => b.type === 'moov');
+  if (!moov) return null;
+  for (const trak of parseBoxes(dv, moov.offset + moov.headerSize, Math.min(moov.offset + moov.size, end))) {
+    if (trak.type !== 'trak') continue;
+    const mdia = child(trak, 'mdia');
+    const hdlr = child(mdia, 'hdlr');
+    if (!hdlr || hdlr.offset + hdlr.headerSize + 12 > end || fcc(hdlr.offset + hdlr.headerSize + 8) !== 'soun') continue;
+    const stbl = child(child(mdia, 'minf'), 'stbl');
+    const stsd = child(stbl, 'stsd'), stsz = child(stbl, 'stsz'), stsc = child(stbl, 'stsc');
+    const stco = child(stbl, 'stco'), co64 = child(stbl, 'co64');
+    if (!stsd || !stsz || !stsc || !(stco || co64)) continue;
+    const entry = stsd.offset + stsd.headerSize + 8;
+    const base = entry + 8;                       // past the sample entry's own box header
+    if (base + 28 > end) continue;
+    const entryEnd = Math.min(entry + dv.getUint32(entry), stsd.offset + stsd.size, end);
+    const version = dv.getUint16(base + 8);
+    let channels = dv.getUint16(base + 16), bits = dv.getUint16(base + 18), rate = dv.getUint16(base + 24), flags = 0;
+    // QuickTime v2 (the 'lpcm' layout) moves all three into a block of its own.
+    if (version === 2 && base + 64 <= end) {
+      rate = dv.getFloat64(base + 32); channels = dv.getUint32(base + 40);
+      bits = dv.getUint32(base + 48); flags = dv.getUint32(base + 52);
+    }
+    let timescale = 0;
+    const mdhd = child(mdia, 'mdhd');
+    if (mdhd && mdhd.offset + mdhd.headerSize + 24 <= end) {
+      const d = mdhd.offset + mdhd.headerSize;
+      timescale = dv.getUint8(d) === 1 ? dv.getUint32(d + 20) : dv.getUint32(d + 12);
+    }
+    const sz = stsz.offset + stsz.headerSize;
+    if (sz + 12 > end) continue;
+    const uniform = dv.getUint32(sz + 4);
+    // A per-sample table is bounded by its box; a fixed size by the bytes the file has.
+    const sampleCount = Math.min(dv.getUint32(sz + 8), uniform ? Math.floor(fileSize / uniform) : fits(stsz, sz + 12, 4));
+    const co = (stco || co64)!, cp = co.offset + co.headerSize, wide = !stco;
+    if (cp + 8 > end) continue;
+    const chunkCount = Math.min(dv.getUint32(cp + 4), fits(co, cp + 8, wide ? 8 : 4));
+    const sc = stsc.offset + stsc.headerSize;
+    if (sc + 8 > end) continue;
+    const runs = Math.min(dv.getUint32(sc + 4), fits(stsc, sc + 8, 12));
+    return {
+      dv, codec: fcc(entry + 4), entry, entryEnd, version, channels, bits, rate, flags, timescale,
+      uniform, sampleCount,
+      sizeAt: (i) => dv.getUint32(sz + 12 + i * 4),
+      chunkCount,
+      chunkAt: wide ? (i) => dv.getUint32(cp + 8 + i * 8) * 0x100000000 + dv.getUint32(cp + 12 + i * 8) : (i) => dv.getUint32(cp + 8 + i * 4),
+      runs,
+      runFirst: (r) => dv.getUint32(sc + 8 + r * 12),
+      runSpc: (r) => dv.getUint32(sc + 12 + r * 12),
+    };
+  }
+  return null;
+}
+
+// Map the samples onto their chunks through stsc. `uniformBytes` is the size of
+// one sample when the track has a fixed size (0 = read the per-sample table).
+// Stops at the first chunk that would run past the end of the file.
+function mp4AudioPieces(t: Mp4AudioTrack, fileSize: number, uniformBytes: number, maxSamples: number): Mp4AudioPieces {
+  const p: Mp4AudioPieces = { offs: [], lens: [], firsts: [], counts: [] };
+  const total = Math.min(t.sampleCount, maxSamples);
+  let run = 0, si = 0;
+  for (let ci = 0; ci < t.chunkCount && si < total; ci++) {
+    while (run + 1 < t.runs && t.runFirst(run + 1) - 1 <= ci) run++;
+    const n = Math.min(t.runs ? t.runSpc(run) : 1, total - si);
+    if (n <= 0) continue;
+    let bytes = 0;
+    if (uniformBytes) bytes = n * uniformBytes;
+    else for (let k = 0; k < n; k++) bytes += t.sizeAt(si + k);
+    const off = t.chunkAt(ci);
+    if (off + bytes > fileSize) break;
+    p.offs.push(off); p.lens.push(bytes); p.firsts.push(si); p.counts.push(n);
+    si += n;
+  }
+  return p;
+}
+
+// Read the pieces in list order and hand each one's bytes to `onPiece`. Pieces
+// that sit close together are fetched in one slice (see MP4_AUDIO_READ_GAP /
+// _BATCH in limits.ts), so a track interleaved finely with its video doesn't
+// become thousands of tiny reads. Resolves false if `signal` aborts.
+async function readMp4Pieces(file: File, p: Mp4AudioPieces, onPiece: (bytes: Uint8Array, k: number) => void|Promise<void>,
+                             onProgress?: ((frac: number) => void)|null, signal?: AbortSignal|null) {
+  let total = 0, done = 0;
+  for (const len of p.lens) total += len;
+  for (let i = 0; i < p.offs.length;) {
+    const start = p.offs[i];
+    let end = start + p.lens[i], j = i + 1;
+    while (j < p.offs.length && p.offs[j] >= end && p.offs[j] - end <= MP4_AUDIO_READ_GAP
+           && p.offs[j] + p.lens[j] - start <= MP4_AUDIO_READ_BATCH) { end = p.offs[j] + p.lens[j]; j++; }
+    if (signal && signal.aborted) return false;
+    const buf = new Uint8Array(await file.slice(start, end).arrayBuffer());
+    for (let k = i; k < j; k++) {
+      await onPiece(buf.subarray(p.offs[k] - start, p.offs[k] - start + p.lens[k]), k);
+      done += p.lens[k];
+    }
+    if (onProgress) onProgress(total ? done / total : 1);
+    i = j;
+  }
+  return true;
+}
+
+const mp4RateOk = (r: number) => r >= 3000 && r <= 384000;
+
+// Uncompressed PCM: convert each piece straight into the AudioBuffer.
+async function decodeMp4Pcm(file: File, t: Mp4AudioTrack, onProgress?: ((frac: number) => void)|null, signal?: AbortSignal|null) {
+  const { dv, codec } = t;
+  let bits = t.bits, little = MP4_PCM_LE.has(codec), float = codec === 'fl32' || codec === 'fl64';
+  const unsigned = codec === 'raw ';
+  if (codec === 'in24') bits = 24;
+  else if (codec === 'in32' || codec === 'fl32') bits = 32;
+  else if (codec === 'fl64') bits = 64;
+  if (t.version === 2) { float = !!(t.flags & 1); little = !(t.flags & 2); }   // kAudioFormatFlagIsFloat / IsBigEndian
+  else if (MP4_PCM_BE.has(codec)) {
+    // QuickTime's 'enda' atom marks an in24/in32/fl32/fl64 track little-endian.
+    const enda = findSampleEntryBox(dv, t.entry, t.entryEnd, 'enda', true);
+    if (enda && enda.offset + enda.headerSize + 2 <= dv.byteLength && dv.getUint16(enda.offset + enda.headerSize)) little = true;
+  }
+  const bps = bits / 8, ch = t.channels;
+  if (float ? bps !== 4 && bps !== 8 : !(bps === 1 || bps === 2 || bps === 3 || bps === 4)) return null;
+  if (!(ch >= 1 && ch <= 32)) return null;
+  const frameSize = bps * ch;
+  // One stsz "sample" of uncompressed audio is one frame; a QuickTime writer
+  // may put 1 there instead, which still means a frame.
+  const pieces = mp4AudioPieces(t, file.size, t.uniform ? Math.max(t.uniform, frameSize) : 0, Infinity);
+
+  // Pass 1, arithmetic only: the sample total (so pass 2 writes straight into
+  // the buffer), stopping at the decode ceiling - and dropping the pieces past
+  // it, so they are never read.
+  const cap = Math.min(Math.floor(file.size / bps), PCM_DECODE_SAMPLES_MAX);
+  let total = 0, used = 0;
+  while (used < pieces.lens.length && total < cap) total += Math.floor(pieces.lens[used++] / bps);
+  pieces.offs.length = pieces.lens.length = used;
+  const frames = Math.floor(Math.min(total, cap) / ch);
+  if (frames <= 0) return null;
+  const rate = mp4RateOk(t.rate) ? t.rate : mp4RateOk(t.timescale) ? t.timescale : 44100;
+  const audioBuf = getAudioCtx().createBuffer(ch, frames, rate);
+  const chans: Float32Array[] = [];
+  for (let c = 0; c < ch; c++) chans.push(audioBuf.getChannelData(c));
+
+  // Pass 2: `s` is the running interleaved index, so frame = s / ch and channel = s % ch.
+  const limit = frames * ch;
+  let s = 0;
+  const ok = await readMp4Pieces(file, pieces, (bytes) => {
+    const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const n = Math.min(Math.floor(bytes.byteLength / bps), limit - s);
+    for (let i = 0; i < n; i++, s++) {
+      const pos = i * bps;
+      let val;
+      if (float) val = bps === 4 ? v.getFloat32(pos, little) : v.getFloat64(pos, little);
+      else if (bps === 2) val = v.getInt16(pos, little) / 0x8000;
+      else if (bps === 3) {
+        const b0 = v.getUint8(pos), b1 = v.getUint8(pos + 1), b2 = v.getUint8(pos + 2);
+        val = (little ? ((b2 << 24 | b1 << 16 | b0 << 8) >> 8) : ((b0 << 24 | b1 << 16 | b2 << 8) >> 8)) / 0x800000;
+      }
+      else if (bps === 4) val = v.getInt32(pos, little) / 0x80000000;
+      else val = unsigned ? (v.getUint8(pos) - 128) / 128 : v.getInt8(pos) / 128;
+      chans[s % ch][(s / ch) | 0] = val;
+    }
+  }, onProgress, signal);
+  return ok ? audioBuf : null;
+}
+
+// esds: ES_Descriptor (0x03) > DecoderConfigDescriptor (0x04, which names the
+// codec) > DecoderSpecificInfo (0x05, for AAC the AudioSpecificConfig).
+function parseEsds(dv: DataView<ArrayBuffer>, box: { offset: number; size: number; headerSize: number }) {
+  const end = Math.min(box.offset + box.size, dv.byteLength);
+  let p = box.offset + box.headerSize + 4;        // FullBox version + flags
+  const desc = () => {                            // tag, then a 1-4 byte length, 7 bits a byte
+    if (p + 2 > end) return null;
+    const tag = dv.getUint8(p++);
+    let len = 0;
+    for (let k = 0; k < 4 && p < end; k++) { const b = dv.getUint8(p++); len = (len << 7) | (b & 0x7f); if (!(b & 0x80)) break; }
+    return { tag, len };
+  };
+  let d = desc();
+  if (!d || d.tag !== 0x03 || p + 3 > end) return null;
+  p += 2;                                         // ES_ID
+  const flags = dv.getUint8(p++);
+  if (flags & 0x80) p += 2;                       // dependsOn_ES_ID
+  if (flags & 0x40) p += 1 + dv.getUint8(p);      // URL
+  if (flags & 0x20) p += 2;                       // OCR_ES_ID
+  d = desc();
+  if (!d || d.tag !== 0x04 || p + 13 > end) return null;
+  const oti = dv.getUint8(p);
+  p += 13;                                        // oti, streamType, bufferSize, max + avg bitrate
+  d = desc();
+  const asc = d && d.tag === 0x05 && d.len > 0 && p + d.len <= end ? new Uint8Array(dv.buffer, dv.byteOffset + p, d.len).slice() : null;
+  return { oti, asc };
+}
+
+// AAC / MP3 through WebCodecs. Each MP4 sample is one compressed packet, fed to
+// the decoder as it is read; the decoded frames go straight into the buffer.
+async function decodeMp4Compressed(file: File, t: Mp4AudioTrack, onProgress?: ((frac: number) => void)|null, signal?: AbortSignal|null) {
+  if (typeof AudioDecoder === 'undefined') return null;
+  let codec = '', description: Uint8Array|undefined;
+  let rate = mp4RateOk(t.rate) ? t.rate : 0, channels = t.channels;
+  if (t.codec === '.mp3') codec = 'mp3';
+  else if (t.codec === 'mp4a') {
+    const esdsBox = findSampleEntryBox(t.dv, t.entry, t.entryEnd, 'esds', true);
+    const es = esdsBox && parseEsds(t.dv, esdsBox);
+    if (!es) return null;
+    if (es.oti === 0x69 || es.oti === 0x6B) codec = 'mp3';
+    else if ((es.oti === 0x40 || (es.oti >= 0x66 && es.oti <= 0x68)) && es.asc && es.asc.length >= 2) {
+      // AudioSpecificConfig: a 5-bit object type (31 = escape to 6 more bits),
+      // then a 4-bit sample-rate index and a 4-bit channel configuration.
+      const a = es.asc;
+      let aot = a[0] >> 3, fi;
+      if (aot === 31) { aot = 32 + (((a[0] & 7) << 3) | (a[1] >> 5)); fi = (a[1] >> 1) & 0xF; }
+      else {
+        fi = ((a[0] & 7) << 1) | (a[1] >> 7);
+        if (!channels) channels = (a[1] >> 3) & 0xF;
+      }
+      codec = 'mp4a.40.' + aot;
+      description = a;
+      if (!rate) rate = MP4_AAC_RATES[fi] || 0;
+    }
+  }
+  if (!codec) return null;
+  if (!rate) rate = mp4RateOk(t.timescale) ? t.timescale : 44100;
+  const config: AudioDecoderConfig = { codec, sampleRate: rate, numberOfChannels: channels || 2 };
+  if (description) config.description = description;
+  try {
+    const sup = await AudioDecoder.isConfigSupported(config);
+    if (!sup || !sup.supported) return null;
+  } catch (_) { return null; }
+
+  const pieces = mp4AudioPieces(t, file.size, t.uniform, MP4_SAMPLE_TABLE_MAX);
+  let packets = 0;
+  for (const n of pieces.counts) packets += n;
+  if (!packets) return null;
+
+  // Sized by the first decoded packet: every packet of a track decodes to the
+  // same frame count (1024 for AAC-LC, 2048 with SBR, 1152 for MP3).
+  let audioBuf = null as AudioBuffer|null, failed = null as any, written = 0;
+  const chans: Float32Array[] = [];
+  const decoder = new AudioDecoder({
+    output: (data) => {
+      try {
+        if (!audioBuf) {
+          const nch = data.numberOfChannels;
+          const frames = Math.min(packets * data.numberOfFrames, Math.floor(PCM_DECODE_SAMPLES_MAX / nch));
+          if (frames <= 0) return;
+          audioBuf = getAudioCtx().createBuffer(nch, frames, data.sampleRate);
+          for (let c = 0; c < nch; c++) chans.push(audioBuf.getChannelData(c));
+        }
+        const n = Math.min(data.numberOfFrames, audioBuf.length - written);
+        if (n > 0) {
+          for (let c = 0; c < chans.length; c++) {
+            data.copyTo(chans[c].subarray(written, written + n), { planeIndex: Math.min(c, data.numberOfChannels - 1), format: 'f32-planar', frameCount: n });
+          }
+          written += n;
+        }
+      } catch (e) { failed = e; }
+      finally { data.close(); }
+    },
+    error: (e) => { failed = e; },
+  });
+  try {
+    decoder.configure(config);
+    let ts = 0;
+    const step = 1024 / rate * 1e6;               // timestamps only have to rise
+    const ok = await readMp4Pieces(file, pieces, async (bytes, k) => {
+      if (failed) throw failed;
+      let pos = 0;
+      for (let si = pieces.firsts[k], e = si + pieces.counts[k]; si < e; si++) {
+        const len = t.uniform || t.sizeAt(si);
+        decoder.decode(new EncodedAudioChunk({ type: 'key', timestamp: Math.round(ts), data: bytes.subarray(pos, pos + len) }));
+        pos += len; ts += step;
+      }
+      // Backpressure: let the decoder drain before reading further.
+      while (decoder.decodeQueueSize > 64 && !failed) await new Promise((r) => setTimeout(r, 0));
+    }, onProgress, signal);
+    if (!ok) return null;
+    await decoder.flush();
+  } catch (_) {
+    return null;
+  } finally {
+    try { decoder.close(); } catch (_) {}
+  }
+  const buf = audioBuf as AudioBuffer|null;
+  if (failed || !buf || written <= 0) return null;
+  if (written >= buf.length) return buf;
+  // Fewer frames came out than the first packet predicted: trim the unfilled tail.
+  const trimmed = getAudioCtx().createBuffer(buf.numberOfChannels, written, buf.sampleRate);
+  for (let c = 0; c < buf.numberOfChannels; c++) trimmed.copyToChannel(buf.getChannelData(c).subarray(0, written), c);
+  return trimmed;
+}
+
+// An MP4/MOV's first sound track, decoded without reading the whole file. Null
+// when there is no moov, no sound track, or a codec this can't handle here - the
+// caller then falls back to its whole-file paths.
+async function readMp4AudioTrack(file: File, onProgress?: ((frac: number) => void)|null, signal?: AbortSignal|null): Promise<AudioBuffer|null> {
+  try {
+    const moov = await findMp4Moov(file);
+    if (!moov || moov.size > MP4_MOOV_READ_MAX) return null;
+    const dv = new DataView(await file.slice(moov.off, moov.off + moov.size).arrayBuffer());
+    const t = mp4AudioTrackInfo(dv, file.size);
+    if (!t) return null;
+    if (MP4_PCM_BE.has(t.codec) || MP4_PCM_LE.has(t.codec)) return await decodeMp4Pcm(file, t, onProgress, signal);
+    return await decodeMp4Compressed(file, t, onProgress, signal);
+  } catch (_) {
+    return null;
+  }
+}
+
 // When a clip's audio codec is one browsers can't play, extract it to a WAV and
 // register it as the synced audio companion so the muted <video> still has sound.
-// Best-effort and fully in the background: silent on any failure. Skipped above a
-// size cap (the whole file must be read into memory to extract PCM).
+// Best-effort and fully in the background: silent on any failure.
 async function attachPcmAudioCompanion(file: File, playerCard: HTMLDivElement, signal: AbortSignal) {
   const ctx = curVctx();   // capture now: this runs fire-and-forget, resolving after renderVideo returns
   try {
-    // Runs automatically, and reads the whole file (plus an FFmpeg copy of it on
-    // the fallback), so it stops at a device-tiered ceiling in limits.ts.
-    if (!file || file.size > PCM_COMPANION_MAX) return;
+    if (!file) return;
     const codec = await sniffMp4AudioCodec(file);
     if (!BROWSER_UNPLAYABLE_AUDIO.has(codec)) return;     // browser plays it natively
     if (signal && signal.aborted) return;
-    const buf = await file.arrayBuffer();
+    // Read in pieces first: memory then follows the audio's length, not the
+    // file's size, so there is no file-size ceiling - except on a phone, where
+    // this runs unasked and the mobile wall stays.
+    let audioBuf = !isLowMemoryDevice() || file.size <= PCM_COMPANION_MAX ? await readMp4AudioTrack(file, null, signal) : null;
     if (signal && signal.aborted) return;
-    let audioBuf = extractPcmFromMp4(buf);
-    if (!audioBuf) { try { audioBuf = await ffmpegExtractAudio(file, playerCard); } catch (_) {} }
+    // The whole-file fallback reads all of it (plus an FFmpeg copy of it), so it
+    // stops at a device-tiered ceiling in limits.ts.
+    if (!audioBuf && file.size <= PCM_COMPANION_MAX) {
+      const buf = await file.arrayBuffer();
+      if (signal && signal.aborted) return;
+      audioBuf = extractPcmFromMp4(buf);
+      if (!audioBuf) { try { audioBuf = await ffmpegExtractAudio(file, playerCard); } catch (_) {} }
+    }
     if (!audioBuf || (signal && signal.aborted)) return;
     const wavUrl = audioBufferToWavUrl(audioBuf);
     const companion = el('audio', { src: wavUrl, preload: 'auto' });
@@ -1919,14 +2523,21 @@ async function attachPcmAudioCompanion(file: File, playerCard: HTMLDivElement, s
   } catch (_) { /* best-effort: no companion, video just stays mute */ }
 }
 
-// "Analyse audio": decode the soundtrack for the Sound section. Web Audio and the
-// PCM walker both need the whole file in memory (twice, since decodeAudioData
-// detaches its buffer), so they only run up to VIDEO_AUDIO_DECODE_MAX; past it,
-// or when they fail, FFmpeg extracts the track - itself capped at the MEMFS
-// ceiling, since ffmpeg.wasm copies the whole file into its heap.
+// "Analyse audio": decode the soundtrack for the Sound section. An MP4/MOV's
+// audio is read in pieces first (readMp4AudioTrack), which has no file-size
+// ceiling. Anything that leaves - another container, or a codec that reader
+// can't decode in this browser - falls to the whole-file paths: Web Audio and
+// the PCM walker both need the whole file in memory (twice, since
+// decodeAudioData detaches its buffer), so they only run up to
+// VIDEO_AUDIO_DECODE_MAX; past it, or when they fail, FFmpeg extracts the track.
+// It gets the file mounted (WORKERFS) or, in the desktop app, copied in pieces,
+// so no ceiling applies; only the whole-copy last resort stops at the MEMFS
+// ceiling (ffInputFile).
 async function decodeVideoAudio(file: File, audioStatus: HTMLElement, audioCard: HTMLDivElement): Promise<AudioBuffer> {
-  let audioBuf: AudioBuffer|null = null;
-  if (file.size <= VIDEO_AUDIO_DECODE_MAX) {
+  let audioBuf: AudioBuffer|null = await readMp4AudioTrack(file, (frac) => {
+    audioStatus.textContent = 'Reading the audio track… ' + Math.round(frac * 100) + '%';
+  });
+  if (!audioBuf && file.size <= VIDEO_AUDIO_DECODE_MAX) {
     const ac = getAudioCtx();
     const buf = await file.arrayBuffer();
     try { audioBuf = await ac.decodeAudioData(buf.slice(0)); } catch (_) {
@@ -1935,9 +2546,6 @@ async function decodeVideoAudio(file: File, audioStatus: HTMLElement, audioCard:
     }
   }
   if (!audioBuf) {
-    if (file.size > FFMPEG_MEMFS_MAX) {
-      throw new Error('this video is too large (' + fmtBytes(file.size) + ') to decode its audio in the browser');
-    }
     audioStatus.textContent = file.size > VIDEO_AUDIO_DECODE_MAX ? 'Large video - extracting the audio with FFmpeg…' : 'Web Audio failed, using FFmpeg…';
     audioBuf = await ffmpegExtractAudio(file, audioCard);
   }
@@ -4134,10 +4742,14 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
   // sync-byte (header.container), not the extension, so a TypeScript .ts is never
   // mistaken for a transport stream.
   if (!opts.remuxed && header.container === 'MPEG-TS') {
-    // The remux holds the input and the output MP4 in WASM memory together, so a
-    // very large file can't fit the 32-bit core. Above the cap, go straight to the
+    // The output MP4 of a whole-file remux sits in WASM memory, so a very large
+    // file can't fit the 32-bit core. Above the cap it is split at keyframes and
+    // played part by part instead; only a stream that can't be split goes to the
     // unplayable card (with its "Convert" button and VLC tip).
     if (file.size > FFMPEG_REMUX_MAX) {
+      let played = false;
+      try { played = await renderSegmentedTsVideo(file, header, resultsEl, renderSignal); } catch (_) { played = false; }
+      if (played || renderSignal.aborted) return;
       resultsEl.innerHTML = '';
       await renderUnplayableVideoInfo(file, header, resultsEl, renderSignal);
       return;

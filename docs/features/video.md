@@ -208,9 +208,9 @@ the **identical** Sound section a directly-dropped audio file gets - same
 cards in the same order, with the full forensic set (File info, the EBU R128
 / spectral **Advanced** card, channel picker, waveform, spectrogram, ...).
 
-**How to reach it.** **Analyse audio** decodes the track (Web Audio →
-in-container PCM → ffmpeg.wasm fallback; the AVI path already holds decoded
-PCM) and hands the resulting `AudioBuffer` straight to `audio.js`'s
+**How to reach it.** **Analyse audio** decodes the track (MP4/MOV read in
+pieces → Web Audio → in-container PCM → FFmpeg fallback; the AVI path already
+holds decoded PCM) and hands the resulting `AudioBuffer` straight to `audio.js`'s
 `renderAudio(file, el, { inline: true, audioBuffer, playbackFile, download: true })`
 - the pre-decoded entry point, so nothing is decoded twice. A **Download
 audio (WAV)** button (from `renderAudio`'s `opts.download`) saves the
@@ -229,6 +229,21 @@ for (or vice versa), `video-sync.js`'s "audio companion" mechanism plays a
 separately-extracted `<audio>` element in lockstep with the muted
 `<video>`, so playback stays in sync with no echo - see "Multi-player sync"
 below.
+
+**Large files.** For an MP4 or MOV, the audio is read in pieces rather than
+by loading the whole file, so a multi-GB camera clip analyses the same way a
+small one does: only the `moov` index and the audio bytes are read
+(`readMp4AudioTrack` in `video.js`), and memory follows the length of the
+audio, not the size of the file. Uncompressed PCM (Sony and most pro cameras)
+is converted directly; AAC and MP3 are decoded with the browser's WebCodecs
+`AudioDecoder`, which current Chrome, Edge, Safari and Firefox have. The
+decoded track is still capped at `PCM_DECODE_SAMPLES_MAX` (about 45 minutes of
+48 kHz stereo on a high-memory device). The same reader gives a PCM clip its
+playback companion at any file size, except on a phone, where the mobile
+memory wall stays. Other containers, and an MP4 codec the reader can't decode
+in that browser, use the whole-file paths: Web Audio up to
+`VIDEO_AUDIO_DECODE_MAX`, then FFmpeg up to 1.2 GB. In the desktop app the
+native FFmpeg is handed the file in 64 MB pieces, so it has no size ceiling.
 
 ### Reversed video
 
@@ -343,7 +358,13 @@ the content in segments rather than loading it all at once. Raw streams
 over 1.4 GB use this: they are split at keyframes, each part remuxed on
 demand. Because a raw stream carries no length, the duration and bitrate
 are measured from the first part that plays - its byte range over its
-running time - and scaled across the file.
+running time - and scaled across the file. AVCHD / MPEG-TS (`.mts`,
+`.m2ts`, `.ts`) files over the same 1.4 GB use it too: a transport stream
+is cut on the packets the camera flags as keyframe starts into parts of
+about 256 MB (64 MB on a phone), and each part gets the stream's
+programme tables from the head of the file so it plays on its own. Only a
+stream with no tables or no video track still falls to the "can't play"
+card.
 
 **How to reach it.** **Prev**/**Next** step between segments. Built in
 `video.js`.

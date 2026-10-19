@@ -4,6 +4,7 @@
 import { el, row, rowHelp, fmtBytes, fileExt, errorCard, integrityCard } from '../core/util.js';
 import { looksLikeGyroCsv, renderGyroCsv } from './gcsv.js';
 import { percentile, inferColumnTypes, columnValues, parseDateValue, looksMonthFirst } from '../lib/table-stats.js';
+import { CSV_FULL_MAX, CSV_STREAM_CHUNK, CSV_KEEP_CHARS } from '../core/limits.js';
 // Quote-aware CSV/TSV parser. Walks the whole text in a single pass so a
 // quoted field may contain the delimiter, CR/LF newlines, or escaped ""
 // quotes without breaking the row boundaries. (The previous version split the
@@ -60,6 +61,121 @@ function parseCsv(text, delim) {
     if (cur !== '' || row.length > 0)
         endRow();
     return rows;
+}
+// The same parser as a state machine fed text a chunk at a time, for files too
+// large to hold as one string. Identical rules; the two things that can straddle
+// a chunk edge - a CR whose LF is in the next chunk, and a quote inside a quoted
+// field that may be the first half of an escaped "" - are carried as flags.
+// Plain runs are copied with slice rather than one character at a time.
+function csvStreamParser(delim, onRow) {
+    const D = delim.charCodeAt(0);
+    let row = [];
+    let cur = '';
+    let inQuote = false, pendingQuote = false, pendingCR = false;
+    const endRow = () => {
+        row.push(cur);
+        cur = '';
+        if (!(row.length === 1 && row[0].trim() === ''))
+            onRow(row);
+        row = [];
+    };
+    return {
+        feed(text) {
+            const n = text.length;
+            let i = 0;
+            if (n === 0)
+                return;
+            if (pendingQuote) {
+                pendingQuote = false;
+                if (text.charCodeAt(0) === 34) {
+                    cur += '"';
+                    i = 1;
+                }
+                else
+                    inQuote = false;
+            }
+            if (pendingCR) {
+                pendingCR = false;
+                if (text.charCodeAt(i) === 10)
+                    i++;
+            }
+            let run = i;
+            while (i < n) {
+                const c = text.charCodeAt(i);
+                if (inQuote) {
+                    if (c === 34) {
+                        cur += text.slice(run, i);
+                        if (i + 1 >= n) {
+                            pendingQuote = true;
+                            i++;
+                            run = i;
+                            break;
+                        }
+                        if (text.charCodeAt(i + 1) === 34) {
+                            cur += '"';
+                            i += 2;
+                        }
+                        else {
+                            inQuote = false;
+                            i++;
+                        }
+                        run = i;
+                    }
+                    else
+                        i++;
+                    continue;
+                }
+                if (c === 34) {
+                    cur += text.slice(run, i);
+                    inQuote = true;
+                    run = ++i;
+                }
+                else if (c === D) {
+                    row.push(cur + text.slice(run, i));
+                    cur = '';
+                    run = ++i;
+                }
+                else if (c === 13) {
+                    cur += text.slice(run, i);
+                    endRow();
+                    i++;
+                    if (i >= n)
+                        pendingCR = true;
+                    else if (text.charCodeAt(i) === 10)
+                        i++;
+                    run = i;
+                }
+                else if (c === 10) {
+                    cur += text.slice(run, i);
+                    endRow();
+                    run = ++i;
+                }
+                else
+                    i++;
+            }
+            if (run < n)
+                cur += text.slice(run, n);
+        },
+        end() {
+            pendingQuote = false;
+            if (cur !== '' || row.length > 0)
+                endRow();
+        },
+    };
+}
+// Pick the delimiter from the first line: the commonest of the four.
+function pickDelimiter(text, ext) {
+    if (ext === 'tsv')
+        return '\t';
+    const firstLine = text.split('\n')[0] || '';
+    const candidates = [
+        [',', (firstLine.match(/,/g) || []).length],
+        ['\t', (firstLine.match(/\t/g) || []).length],
+        [';', (firstLine.match(/;/g) || []).length],
+        ['|', (firstLine.match(/\|/g) || []).length],
+    ];
+    candidates.sort((a, b) => b[1] - a[1]);
+    return candidates[0][1] > 0 ? candidates[0][0] : ',';
 }
 function delimiterLabel(d) {
     if (d === '\t')
@@ -317,6 +433,16 @@ export async function renderCsv(file, resultsEl) {
     resultsEl.hidden = false;
     resultsEl.innerHTML = '';
     resultsEl.appendChild(el('div', { class: 'anr-info' }, `Parsing "${file.name}"…`));
+    if (file.size > CSV_FULL_MAX) {
+        try {
+            await renderCsvStreamed(file, resultsEl);
+        }
+        catch (e) {
+            resultsEl.innerHTML = '';
+            resultsEl.appendChild(errorCard('Could not read file: ' + (e && e.message)));
+        }
+        return;
+    }
     let text;
     let encoding = 'UTF-8';
     try {
@@ -354,22 +480,7 @@ export async function renderCsv(file, resultsEl) {
         lineEnding = 'None';
     // Detect delimiter. For non-TSV files, score the first line across the four
     // common delimiters (comma, tab, semicolon, pipe) instead of only tab-vs-comma.
-    const ext = fileExt(file.name);
-    let delimiter;
-    if (ext === 'tsv') {
-        delimiter = '\t';
-    }
-    else {
-        const firstLine = text.split('\n')[0] || '';
-        const candidates = [
-            [',', (firstLine.match(/,/g) || []).length],
-            ['\t', (firstLine.match(/\t/g) || []).length],
-            [';', (firstLine.match(/;/g) || []).length],
-            ['|', (firstLine.match(/\|/g) || []).length],
-        ];
-        candidates.sort((a, b) => b[1] - a[1]);
-        delimiter = candidates[0][1] > 0 ? candidates[0][0] : ',';
-    }
+    const delimiter = pickDelimiter(text, fileExt(file.name));
     // Quote-aware parse of the whole text (handles fields spanning newlines).
     const allRows = parseCsv(text, delimiter);
     const totalRows = allRows.length;
@@ -455,6 +566,196 @@ export async function renderCsv(file, resultsEl) {
             buildProfile(statsCard, {
                 headers, dataRows, colCount, colTypes,
                 totalRows, hasHeader, delimiter, hasBom, lineEnding,
+            });
+        }
+        catch (e) {
+            statsCard.appendChild(el('div', { class: 'anr-info' }, 'Extended statistics unavailable: ' + (e && e.message)));
+        }
+    }
+    resultsEl.appendChild(statsCard);
+    resultsEl.appendChild(integrityCard(file));
+}
+// A CSV past CSV_FULL_MAX, read in slices through csvStreamParser. What can be
+// counted as it goes covers the whole file - rows, columns, ragged rows, line
+// endings, numeric min/max/mean. What needs the rows held (column types, the
+// profile, the workbench) uses the first rows that fit CSV_KEEP_CHARS.
+async function renderCsvStreamed(file, resultsEl) {
+    const status = resultsEl.firstElementChild;
+    const head = new Uint8Array(await file.slice(0, Math.min(file.size, 1024 * 1024)).arrayBuffer());
+    let label = 'utf-8', encoding = 'UTF-8';
+    if (head[0] === 0xff && head[1] === 0xfe) {
+        label = 'utf-16le';
+        encoding = 'UTF-16 LE';
+    }
+    else if (head[0] === 0xfe && head[1] === 0xff) {
+        label = 'utf-16be';
+        encoding = 'UTF-16 BE';
+    }
+    else {
+        try {
+            new TextDecoder('utf-8', { fatal: true }).decode(head, { stream: true });
+        }
+        catch (_) {
+            label = 'windows-1252';
+            encoding = 'Windows-1252 (not valid UTF-8)';
+        }
+    }
+    const headText = new TextDecoder(label).decode(head, { stream: true });
+    const delimiter = pickDelimiter(headText, fileExt(file.name));
+    const pass = async (enc, fatal) => {
+        // The UTF-8 BOM is kept and reported, as the whole-file path does; UTF-16's
+        // is consumed by the decoder there too.
+        const dec = new TextDecoder(enc, { fatal, ignoreBOM: enc === 'utf-8' });
+        const s = {
+            rows: 0, colCount: 0, header: null, kept: [], keptChars: 0, keepOpen: true,
+            ragged: 0, nCount: [], nMin: [], nMax: [], nSum: [],
+            crlf: 0, lf: 0, hasBom: false,
+        };
+        const parser = csvStreamParser(delimiter, (r) => {
+            s.rows++;
+            if (r.length > s.colCount)
+                s.colCount = r.length;
+            if (!s.header) {
+                s.header = r;
+                return;
+            }
+            if (r.length !== s.header.length)
+                s.ragged++;
+            if (s.keepOpen) {
+                let chars = 0;
+                for (const v of r)
+                    chars += v.length;
+                if (s.keptChars + chars > CSV_KEEP_CHARS)
+                    s.keepOpen = false;
+                else {
+                    s.kept.push(r);
+                    s.keptChars += chars;
+                }
+            }
+            for (let c = 0; c < r.length; c++) {
+                const v = r[c].trim();
+                if (v === '')
+                    continue;
+                const x = Number(v);
+                if (isNaN(x))
+                    continue;
+                if (s.nCount[c] === undefined) {
+                    s.nCount[c] = 0;
+                    s.nMin[c] = Infinity;
+                    s.nMax[c] = -Infinity;
+                    s.nSum[c] = 0;
+                }
+                s.nCount[c]++;
+                if (x < s.nMin[c])
+                    s.nMin[c] = x;
+                if (x > s.nMax[c])
+                    s.nMax[c] = x;
+                s.nSum[c] += x;
+            }
+        });
+        let prevCR = false;
+        for (let off = 0; off < file.size; off += CSV_STREAM_CHUNK) {
+            // A new file dropped meanwhile has emptied the results area: stop.
+            if (status && !status.isConnected)
+                return null;
+            const end = Math.min(file.size, off + CSV_STREAM_CHUNK);
+            let text = dec.decode(new Uint8Array(await file.slice(off, end).arrayBuffer()), { stream: end < file.size });
+            if (off === 0 && text.charCodeAt(0) === 0xfeff) {
+                s.hasBom = true;
+                text = text.slice(1);
+            }
+            for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) {
+                if (i > 0 ? text.charCodeAt(i - 1) === 13 : prevCR)
+                    s.crlf++;
+                else
+                    s.lf++;
+            }
+            if (text.length)
+                prevCR = text.charCodeAt(text.length - 1) === 13;
+            parser.feed(text);
+            if (status)
+                status.textContent = `Reading "${file.name}"… ${Math.round(end / file.size * 100)}%  (${s.rows.toLocaleString()} rows)`;
+        }
+        parser.end();
+        return s;
+    };
+    let st;
+    try {
+        st = await pass(label, label === 'utf-8');
+    }
+    catch (e) {
+        // Invalid UTF-8 past the first megabyte: the whole-file path would have
+        // fallen back to windows-1252, so this does too.
+        if (label !== 'utf-8' || !(e instanceof TypeError))
+            throw e;
+        encoding = 'Windows-1252 (not valid UTF-8)';
+        st = await pass('windows-1252', false);
+    }
+    if (!st)
+        return;
+    resultsEl.innerHTML = '';
+    const colCount = st.colCount;
+    const hasHeader = st.rows > 1;
+    const headers = hasHeader ? st.header : Array.from({ length: colCount }, (_, c) => `Col ${c + 1}`);
+    const dataRows = hasHeader ? st.kept : (st.header ? [st.header] : []);
+    const dataTotal = hasHeader ? st.rows - 1 : st.rows;
+    const held = dataRows.length < dataTotal;
+    let lineEnding;
+    if (st.crlf > 0 && st.lf === 0)
+        lineEnding = 'CRLF (Windows)';
+    else if (st.crlf === 0 && st.lf > 0)
+        lineEnding = 'LF (Unix)';
+    else if (st.crlf > 0 && st.lf > 0)
+        lineEnding = 'Mixed (CRLF + LF)';
+    else
+        lineEnding = 'None';
+    const tkHost = el('div');
+    resultsEl.appendChild(tkHost);
+    import('./tablekit.js').then(({ mountTableKit }) => {
+        mountTableKit(tkHost, { headers, rows: dataRows, totalRows: dataRows.length });
+    }).catch(() => { });
+    const statsCard = el('div', { class: 'anr-card' });
+    statsCard.appendChild(el('h3', {}, 'CSV / TSV file'));
+    const tbl = el('table', { class: 'anr-readout' });
+    tbl.appendChild(row('Application', 'CSV / TSV Spreadsheet'));
+    tbl.appendChild(row('Name', file.name));
+    tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
+    if (encoding !== 'UTF-8')
+        tbl.appendChild(row('Text encoding', encoding));
+    tbl.appendChild(rowHelp('Delimiter', delimiterLabel(delimiter), 'The character that marks where one column ends and the next begins - a comma (.csv files), a tab (.tsv), a semicolon, or a pipe (|).'));
+    tbl.appendChild(row('Columns', String(colCount)));
+    tbl.appendChild(row('Data rows', dataTotal.toLocaleString()));
+    if (held) {
+        tbl.appendChild(rowHelp('Rows held', `the first ${dataRows.length.toLocaleString()} of ${dataTotal.toLocaleString()}`, 'This file is too large to hold every row in memory, so it was read in pieces. The row and column counts, ragged rows, line endings and the numeric min / max / mean cover the whole file; the column types, the profile and the workbench use the first rows.'));
+        if (hasHeader)
+            tbl.appendChild(row('Ragged rows (whole file)', st.ragged
+                ? `${st.ragged.toLocaleString()} row(s) have a column count different from the header (${headers.length}).`
+                : 'none'));
+    }
+    statsCard.appendChild(tbl);
+    if (hasHeader && dataRows.length > 0) {
+        const colTypes = inferColumnTypes(dataRows, colCount);
+        statsCard.appendChild(el('div', { class: 'anr-readout-section' }, 'Column types'));
+        const typesTbl = el('table', { class: 'anr-readout' });
+        for (let c = 0; c < colCount; c++)
+            typesTbl.appendChild(row(headers[c] || `Col ${c + 1}`, colTypes[c]));
+        statsCard.appendChild(typesTbl);
+        const numTbl = el('table', { class: 'anr-readout' });
+        let anyNum = false;
+        for (let c = 0; c < colCount; c++) {
+            if (colTypes[c] !== 'number' || !st.nCount[c])
+                continue;
+            anyNum = true;
+            numTbl.appendChild(row(headers[c] || `Col ${c + 1}`, `min: ${st.nMin[c]}  max: ${st.nMax[c]}  mean: ${(st.nSum[c] / st.nCount[c]).toFixed(2)}  (${st.nCount[c]} values)`));
+        }
+        if (anyNum) {
+            statsCard.appendChild(el('div', { class: 'anr-readout-section' }, held ? 'Numeric column statistics (whole file)' : 'Numeric column statistics'));
+            statsCard.appendChild(numTbl);
+        }
+        try {
+            buildProfile(statsCard, {
+                headers, dataRows, colCount, colTypes,
+                totalRows: dataRows.length + 1, hasHeader, delimiter, hasBom: st.hasBom, lineEnding,
             });
         }
         catch (e) {

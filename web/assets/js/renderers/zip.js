@@ -10,7 +10,7 @@
    renderers (xlsx, epub, pptx, docx, odf, iwork, comic, textdoc, paint, f3d,
    lottie, proprietary, ...) and several parsers-*.js chunks. */
 import { loadScript } from '../core/util.js';
-import { DECOMP_ENTRY_MAX } from '../core/limits.js';
+import { DECOMP_ENTRY_MAX, ZIP_CD_READ_MAX } from '../core/limits.js';
 // fflate (vendored ES module) is the pure-JS raw-DEFLATE fallback for the
 // method-8 path below, used when DecompressionStream is missing (Safari < 16.4,
 // Firefox < 113) or throws on 'deflate-raw' (Chromium 80-102 / old Android
@@ -202,11 +202,16 @@ export async function readZipEntries(file, maxBytes = 32 * 1024 * 1024) {
     }
     return { entries, buf };
 }
-// Read the central directory at the tail of the file. Returns an array of
-// { name, method, compSize, uncompSize, lho } (lho = local-header offset), or
-// null when there is no usable EOCD (empty tail, ZIP64, or corrupt) - the caller
-// then falls back to readZipEntries. Only the tail + directory bytes are read.
-async function readCentralDirectory(file) {
+// Read the central directory from the tail of the file: only the tail, the
+// directory bytes and (for ZIP64) two small records are read, never the entries'
+// data - so a ZIP of any size lists without being loaded. ZIP64 is followed: when
+// the classic EOCD holds 0xFFFF / 0xFFFFFFFF sentinels, its locator (the 20 bytes
+// just before it) points at the ZIP64 EOCD with the real count, size and offset,
+// and each entry's 0x0001 extra field carries its 64-bit sizes and offset. Stops
+// after `maxEntries` (`truncated` then says so) and reads at most ZIP_CD_READ_MAX
+// of directory. Null when there is no usable EOCD or no entries - callers then
+// fall back to the sequential walk (readZipEntries) or report it.
+export async function readZipDirectory(file, maxEntries = Infinity) {
     const tailLen = Math.min(file.size, 65557 + 22); // max ZIP comment (65535) + EOCD (22)
     if (tailLen < 22)
         return null;
@@ -223,39 +228,121 @@ async function readCentralDirectory(file) {
     if (e < 0)
         return null;
     const edv = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
-    const count = edv.getUint16(e + 10, true);
-    const cdSize = edv.getUint32(e + 12, true);
-    const cdOff = edv.getUint32(e + 16, true);
-    // 0xFFFF/0xFFFFFFFF sentinels mean the real values live in a ZIP64 record;
-    // leave those (and any impossible offsets) to the sequential fallback.
-    if (count === 0xFFFF || cdSize === 0xFFFFFFFF || cdOff === 0xFFFFFFFF)
-        return null;
+    let count = edv.getUint16(e + 10, true);
+    let cdSize = edv.getUint32(e + 12, true);
+    let cdOff = edv.getUint32(e + 16, true);
+    const u64 = (dv, p) => dv.getUint32(p, true) + dv.getUint32(p + 4, true) * 0x100000000;
+    if (count === 0xFFFF || cdSize === 0xFFFFFFFF || cdOff === 0xFFFFFFFF) {
+        const locAt = tailStart + e - 20;
+        if (locAt < 0)
+            return null;
+        const loc = new DataView(await file.slice(locAt, locAt + 20).arrayBuffer());
+        if (loc.byteLength < 20 || loc.getUint32(0, true) !== 0x07064b50)
+            return null;
+        const recAt = u64(loc, 8);
+        if (!(recAt >= 0 && recAt + 56 <= file.size))
+            return null;
+        const rec = new DataView(await file.slice(recAt, recAt + 56).arrayBuffer());
+        if (rec.byteLength < 56 || rec.getUint32(0, true) !== 0x06064b50)
+            return null;
+        count = u64(rec, 32);
+        cdSize = u64(rec, 40);
+        cdOff = u64(rec, 48);
+    }
     if (cdOff + cdSize > file.size || cdSize < 46)
         return null;
     // The central directory is usually inside the tail we already read; otherwise
     // fetch just those bytes.
+    const want = Math.min(cdSize, ZIP_CD_READ_MAX);
     let cd;
     if (cdOff >= tailStart)
-        cd = tail.subarray(cdOff - tailStart, cdOff - tailStart + cdSize);
+        cd = tail.subarray(cdOff - tailStart, cdOff - tailStart + want);
     else
-        cd = new Uint8Array(await file.slice(cdOff, cdOff + cdSize).arrayBuffer());
+        cd = new Uint8Array(await file.slice(cdOff, cdOff + want).arrayBuffer());
     const cdv = new DataView(cd.buffer, cd.byteOffset, cd.byteLength);
     const entries = [];
     let p = 0;
-    while (p + 46 <= cd.length && cdv.getUint32(p, true) === 0x02014b50) {
+    while (entries.length < count && entries.length < maxEntries && p + 46 <= cd.length && cdv.getUint32(p, true) === 0x02014b50) {
+        const versionMadeBy = cdv.getUint16(p + 4, true);
         const flags = cdv.getUint16(p + 8, true);
         const method = cdv.getUint16(p + 10, true);
-        const compSize = cdv.getUint32(p + 20, true);
-        const uncompSize = cdv.getUint32(p + 24, true);
+        const modTime = cdv.getUint16(p + 12, true);
+        const modDate = cdv.getUint16(p + 14, true);
+        const crc = cdv.getUint32(p + 16, true);
+        let compSize = cdv.getUint32(p + 20, true);
+        let uncompSize = cdv.getUint32(p + 24, true);
         const nameLen = cdv.getUint16(p + 28, true);
         const extraLen = cdv.getUint16(p + 30, true);
         const cmtLen = cdv.getUint16(p + 32, true);
-        const lho = cdv.getUint32(p + 42, true);
+        let lho = cdv.getUint32(p + 42, true);
         const name = decodeZipName(cd.subarray(p + 46, Math.min(p + 46 + nameLen, cd.length)), flags);
-        entries.push({ name, method, compSize, uncompSize, lho });
+        // A Zip64 extended-information extra field (id 0x0001) carries, in order,
+        // the 64-bit value of each field whose 32-bit slot holds 0xFFFFFFFF.
+        let zip64 = false;
+        let ep = p + 46 + nameLen;
+        const extraEnd = Math.min(ep + extraLen, cd.length);
+        while (ep + 4 <= extraEnd) {
+            const id = cdv.getUint16(ep, true), sz = cdv.getUint16(ep + 2, true);
+            if (id === 0x0001) {
+                zip64 = true;
+                let zp = ep + 4;
+                const zEnd = Math.min(ep + 4 + sz, extraEnd);
+                const next = () => { if (zp + 8 > zEnd)
+                    return -1; const v = u64(cdv, zp); zp += 8; return v; };
+                if (uncompSize === 0xFFFFFFFF) {
+                    const v = next();
+                    if (v >= 0)
+                        uncompSize = v;
+                }
+                if (compSize === 0xFFFFFFFF) {
+                    const v = next();
+                    if (v >= 0)
+                        compSize = v;
+                }
+                if (lho === 0xFFFFFFFF) {
+                    const v = next();
+                    if (v >= 0)
+                        lho = v;
+                }
+                break;
+            }
+            ep += 4 + sz;
+        }
+        entries.push({ name, method, compMethod: method, compSize, uncompSize, crc, isDir: name.endsWith('/'),
+            flags, versionMadeBy, modTime, modDate, zip64, lho, index: entries.length });
         p += 46 + nameLen + extraLen + cmtLen;
     }
-    return entries.length ? entries : null;
+    if (!entries.length)
+        return null;
+    return { entries, total: count, truncated: entries.length < count };
+}
+// zip.ts's own reader wants just the list.
+async function readCentralDirectory(file) {
+    const d = await readZipDirectory(file);
+    return d ? d.entries : null;
+}
+// Read one entry's data by its local-header offset with two ranged reads (the
+// local header, whose name/extra lengths can differ from the central record,
+// then the compressed bytes), and decode it, stopping at `maxOut`. Null for an
+// encrypted, unsupported, corrupt or over-cap entry. Shared with archive.ts.
+export async function readZipEntryAt(file, e, maxOut) {
+    if (!e || e.isDir || (e.flags & 0x0001))
+        return null;
+    if (e.uncompSize > maxOut)
+        return null;
+    if (typeof e.lho !== 'number' || e.lho + 30 > file.size)
+        return null;
+    const lh = new Uint8Array(await file.slice(e.lho, e.lho + 30).arrayBuffer());
+    if (lh.length < 30 || !(lh[0] === 0x50 && lh[1] === 0x4B && lh[2] === 0x03 && lh[3] === 0x04))
+        return null;
+    const ldv = new DataView(lh.buffer);
+    const ds = e.lho + 30 + ldv.getUint16(26, true) + ldv.getUint16(28, true);
+    if (ds + e.compSize > file.size)
+        return null;
+    if (e.compMethod === 0 && e.compSize > maxOut)
+        return null;
+    const raw = new Uint8Array(await file.slice(ds, ds + e.compSize).arrayBuffer());
+    return inflateZipData(raw, e.compMethod, maxOut);
 }
 // Read one entry's raw (still-compressed) bytes. Sequential-walk entries have
 // their data in `buf` at `dataStart`; central-directory entries carry `lho` and

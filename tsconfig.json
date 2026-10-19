@@ -58,6 +58,7 @@
     // which collides with DOM (both declare self/postMessage).
     "src/lib/dfn-worker.ts",
     "src/lib/mdx-worker.ts",
+    "src/lib/hash-worker.ts",
     "src/renderers/audio-dsp-worker.ts"
   ]
 }

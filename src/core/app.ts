@@ -44,7 +44,7 @@
    `npm run build` recompiles.
    ============================================================================ */
 
-const COMMIT_COUNT = 324;
+const COMMIT_COUNT = 325;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -81,7 +81,7 @@ import { fileExt, el, row, fmtBytes, probeReadable, cloudFileWarning, emptyFileW
 import { walkItems, renderFolder } from '../renderers/folder.js';
 import { setupHeaderFx, setupSectionFx, setupFooterFx } from './effects.js';
 import { setupStatsPage } from './stats-page.js';
-import { sniffFileType, resolveByContent, isReadableText } from './file-sniff.js';
+import { sniffFileType, resolveByContent, isReadableText, isAppleDoubleName } from './file-sniff.js';
 import { signatureCheck, signatureCard, trailingDataCheck, trailingCard, findIntegrityCard, setReanalyse } from './forensics.js';
 import { showDropLoader, hideDropLoader, setDropLoaderLabel, showTypeSuggestion, hideTypeSuggestion, showLinkConfirm } from './overlays.js';
 import { setupPatchTldr } from './patch-tldr.js';
@@ -192,7 +192,7 @@ async function resolveKind(file: File) {
       if (vname && vname !== vr.primary) kind = vr.to;
     } catch (_) {}
   }
-  if (kind === 'unknown' || kind === 'extensionless' || SNIFF_FIRST.has(fileExt(file.name))) {
+  if (kind === 'unknown' || kind === 'extensionless' || SNIFF_FIRST.has(fileExt(file.name)) || isAppleDoubleName(file.name)) {
     try {
       const r = await resolveByContent(file);
       if (r.kind && r.kind !== 'unknown') kind = r.kind;
@@ -1104,8 +1104,10 @@ function boot() {
     // extension. Nothing recognised: keep the original kind - 'extensionless'
     // still renders as text below, 'unknown' and 'binary' as a hex dump.
     // Kept in step with resolveKind() above, or /compare and the folder scan would
-    // route a .bin differently from the main page.
-    if (!force && (kind === 'unknown' || kind === 'extensionless' || SNIFF_FIRST.has(fileExt(file.name)))) {
+    // route a .bin differently from the main page. A `._name` file is sniffed
+    // whatever its extension says: it is usually AppleDouble metadata wearing
+    // the name of the file it describes (isAppleDoubleName).
+    if (!force && (kind === 'unknown' || kind === 'extensionless' || SNIFF_FIRST.has(fileExt(file.name)) || isAppleDoubleName(file.name))) {
       const r = await resolveByContent(file);
       if (stale()) return;
       if (r.kind && r.kind !== 'unknown') {

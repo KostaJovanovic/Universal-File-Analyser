@@ -11,7 +11,7 @@ import { inflate, ascii, latin1 } from '../core/binutil.js';
 import {
   buildViewerCard, startViewer, makeResult,
   buildGeoFromIndexed, geoStatsCard, meshIntegrityCard, renderPartsViewer,
-  splitBodiesIndexed, subTris, geoSpan, bodyParts, BODY_SPLIT_CAP, alignToKept,
+  splitBodiesIndexed, subTris, geoSpan, bodyParts, BODY_SPLIT_CAP, alignToKept, renderStreamedMesh,
 } from './stl.js';
 import { parseStepHeader } from './proprietary.js';
 import { EMBEDDED_IMAGES_MAX, DECOMP_ENTRY_MAX, DECOMP_OUTPUT_MAX, WALL_PARSE, GLTF_VISIT_MAX, MESH_FACE_VERTS_MAX } from '../core/limits.js';
@@ -935,6 +935,8 @@ async function renderMeshFile(file: File, resultsEl: HTMLElement, ext: string) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   if (file.size > WALL_PARSE) {
+    // PLY can be read in pieces; OBJ / OFF still need the whole text.
+    if (ext === 'ply') { await renderStreamedMesh(file, resultsEl, 'ply'); return; }
     resultsEl.appendChild(errorCard('This ' + ext.toUpperCase() + ' is larger than ' + fmtBytes(WALL_PARSE) + ' and was not opened - the whole mesh has to be held in memory to draw it.'));
     return;
   }

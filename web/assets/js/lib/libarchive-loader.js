@@ -18,6 +18,7 @@
    libarchive handles rar, 7z, zip, tar, cab, iso, ... so this drives the
    cbr/cb7/ace upgrades. No top-level side effects beyond a cached init. */
 import { DECOMP_OUTPUT_MAX } from '../core/limits.js';
+import { openStreamArchive } from './stream-archive.js';
 // Resolved against the document base URL (the app is served from the repo
 // root), matching how the other vendored assets are referenced.
 const WORKER_URL = 'assets/vendor/libarchive/worker-bundle.js';
@@ -65,6 +66,11 @@ function trackLive(h) {
 // is closed on every failure path (la-archive.js also terminates it when the
 // open itself fails).
 export async function extractArchive(file) {
+    // ISO / TAR / .tar.gz are read in pure JS with slices of the file (no copy
+    // into the WASM heap, so no ~2 GB ceiling); everything else goes to libarchive.
+    const fast = await openStreamArchive(file);
+    if (fast)
+        return fast;
     const { Archive } = await loadArchiveModule();
     let archive = await Archive.open(file);
     let arr;

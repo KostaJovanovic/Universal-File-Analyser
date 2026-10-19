@@ -7,35 +7,25 @@
    and CBR/CB7 go through the lazy libarchive (unrar/7z) WASM loader. */
 import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, attachZoomPan, openOverlayBack, isLowMemoryDevice } from '../core/util.js';
 import { openZip } from './zip.js';
+import { openTar } from '../lib/stream-archive.js';
 import { DECOMP_ENTRY_MAX } from '../core/limits.js';
 const IMG_RE = /\.(jpe?g|png|gif|webp|avif|bmp|jxl)$/i;
 const NATIVE_RE = /\.(jpe?g|png|gif|webp|avif)$/i; // formats <img> can display directly
 const natCmp = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
-// Minimal TAR walker for .cbt: returns image page entries + ComicInfo.xml text.
-function tarPages(buf) {
-    const pages = [];
+// .cbt is a TAR: walked header by header with slices of the file (openTar in
+// lib/stream-archive.ts), so a large one is never read whole. Returns image page
+// entries + ComicInfo.xml text.
+async function tarPages(file) {
+    const tar = await openTar(file);
+    const entries = tar ? tar.entries : [];
+    const pages = entries.filter((e) => e.size > 0 && IMG_RE.test(e.name)).map((e) => ({ name: e.name, getBytes: () => e.getBytes() }));
     let comicInfo = null;
-    const dec = new TextDecoder('latin1');
-    const oct = (s) => parseInt(s.replace(/\0.*$/s, '').trim(), 8) || 0;
-    let p = 0;
-    while (p + 512 <= buf.length) {
-        const name = dec.decode(buf.subarray(p, p + 100)).replace(/\0.*$/s, '');
-        if (!name)
-            break; // run of zero blocks = end
-        const size = oct(dec.decode(buf.subarray(p + 124, p + 136)));
-        const type = buf[p + 156];
-        const start = p + 512;
-        if ((type === 48 || type === 0) && size > 0) {
-            if (IMG_RE.test(name))
-                pages.push({ name, getBytes: async () => buf.subarray(start, start + size) });
-            else if (/comicinfo\.xml$/i.test(name)) {
-                try {
-                    comicInfo = new TextDecoder('utf-8').decode(buf.subarray(start, start + size));
-                }
-                catch (_) { }
-            }
+    const ci = entries.find((e) => /comicinfo\.xml$/i.test(e.name));
+    if (ci && ci.size <= DECOMP_ENTRY_MAX) {
+        try {
+            comicInfo = new TextDecoder('utf-8').decode(await ci.getBytes());
         }
-        p = start + Math.ceil(size / 512) * 512;
+        catch (_) { }
     }
     return { pages, comicInfo };
 }
@@ -50,8 +40,7 @@ async function extractPages(file, ext) {
         return { pages: imgs.map((n) => ({ name: n, getBytes: () => zip.bytes(n) })), comicInfo };
     }
     if (ext === 'cbt') {
-        const buf = new Uint8Array(await file.arrayBuffer());
-        const r = tarPages(buf);
+        const r = await tarPages(file);
         r.pages.sort((a, b) => natCmp(a.name, b.name));
         return r;
     }

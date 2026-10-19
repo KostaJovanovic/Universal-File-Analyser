@@ -208,6 +208,13 @@ js/
       ships inside the file and changes per Figma version, so parsers-image.js
       reads out the container and stops rather than guessing
     stl.js · model3d.js · gcode.js · unity.js — 3D viewers + G-code toolpath + Unity assets
+    mesh-stream.js — STL / PLY past WALL_PARSE, read in MESH_STREAM_CHUNK slices
+      instead of declined: MeshStats sums count / box / area / volume over every
+      triangle (makeResult's maths), MeshDecimator builds the viewer's copy by
+      vertex clustering on a grid that halves itself when the copy outgrows
+      MESH_STREAM_PREVIEW_TRIS. STL is read twice (the grid needs the box); PLY
+      once, holding its vertex list as float32 (PLY_STREAM_VERTS_MAX). DOM-free;
+      stl.ts renderStreamedMesh() draws it, for both stl.ts and model3d.ts
     dwg.js · model3d.js · solidworks.js · f3d.js — CAD (DWG 2D drawing; STEP/IGES/BREP
       via OpenCASCADE; SolidWorks .sldprt/.sldasm/.slddrw - OLE2 preview+metadata
       for older files, identify-only for modern encrypted ones; f3d.js reads
@@ -332,6 +339,21 @@ js/
                     read an ONNX file - it also needs the compiled schema - and
                     between them that is ~500 KB to recover a field mapping that
                     is thirty stable numbers long) ·
+                    stream-archive (pure-JS TAR, .tar.gz and ISO 9660 readers
+                    that list with small slices of the File and hand stored
+                    entries out as zero-copy Blob slices - getBlob - so a
+                    multi-GB TAR or ISO opens. extractArchive() in
+                    libarchive-loader tries it first; libarchive copies the
+                    whole file into a 32-bit WASM heap, so it only gets what
+                    this can't read: RAR, 7z, CAB, xz/zstd/bzip2 tarballs,
+                    UDF-only discs) ·
+                    hash-stream / hash-client / hash-worker (streaming SHA-256,
+                    SHA-1, SHA-512, MD5 and CRC-32 that carry state between
+                    slices, run in a module worker. core/util.ts's sha256Hex and
+                    extraHashRows use them past HASH_SUBTLE_MAX / HASH_INLINE_MAX,
+                    which is why the Integrity card has no size ceiling any more.
+                    The SHA-2 constants are COMPUTED from prime roots with BigInt,
+                    not typed out - don't "simplify" them into a literal table) ·
                     ssdeep (context-triggered piecewise hashing, from scratch -
                     the published spamsum algorithm, so the strings interoperate
                     with real ssdeep. Answers "how much of these two files is the
@@ -342,7 +364,14 @@ js/
                     libopenmpt.worklet.js, which despite the name registers no
                     AudioWorkletProcessor and runs fine on the main thread) ·
                     plist · cfbf · nrbf ·
-                    sqlite · legacy-decompress · *-loader (libarchive, xz, lzma,
+                    sqlite · sqlite-pages (a database past SQLITE_ENGINE_MAX,
+                    read straight from its pages with File slices: header,
+                    the page-1 schema table, row counts from every leaf
+                    page's cell count - estimated from a sample past
+                    SQLITE_PAGE_SCAN_MAX - and the first rows of the largest
+                    table decoded from their records. Same return shape as
+                    sqliteAnalysis(); no SQL console, since sql.js would copy
+                    the whole file into its heap) · legacy-decompress · *-loader (libarchive, xz, lzma,
                     occt, ghostscript, openjpeg) · table-stats.js (DOM-free
                     column typing + numeric stats shared by csv.js and
                     renderers/tablekit.js).

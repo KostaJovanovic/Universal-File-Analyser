@@ -105,7 +105,9 @@ declare global {
     caps(): Promise<AnrFfmpegCaps>;
     /** Open a job session (its own temp directory). Returns the session id. */
     open(): Promise<string | null>;
-    write(id: string, name: string, data: Uint8Array): Promise<boolean>;
+    /** `append` (desktop only - the Android bridge ignores it) adds to the file
+        instead of replacing it, for streaming a large input over in chunks. */
+    write(id: string, name: string, data: Uint8Array, append?: boolean): Promise<boolean>;
     read(id: string, name: string): Promise<Uint8Array>;
     del(id: string, name: string): Promise<boolean>;
     /** Resolves once ffmpeg has run, whatever its exit code. */

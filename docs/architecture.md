@@ -79,7 +79,11 @@ that should grow with available memory:
 The caps are grouped by kind:
 
 - **Hard walls** (`WALL_INDEX`, `WALL_PARSE`) - a file over the wall is declined
-  outright with an error card. Tier-scaled.
+  outright with an error card. Tier-scaled. Fewer formats sit behind them than
+  used to: ZIP, TAR, ISO and FAT disk images are read in slices and never hit
+  `WALL_INDEX` (it now guards only what libarchive must load whole - RAR, 7z,
+  CAB and the like), and STL / PLY past `WALL_PARSE` stream through
+  `mesh-stream.js` instead of being declined.
 - **Mobile OOM guards** (`MOBILE_WALL`) - applied only when
   `isLowMemoryDevice()`; unified down to the tightest former value so a phone is
   never asked to decode more than before.

@@ -10,6 +10,10 @@ Source: `audio.js`, `audio-analysis.js`, `audio-forensics.js`,
 
 **What it does.** Decodes the audio (Web Audio `decodeAudioData`) and shows
 file info, container/codec details, per-channel peak/RMS, and a waveform.
+When the browser has no decoder for the codec, the file is decoded with
+ffmpeg.wasm instead and played from the decoded copy. That is how Apple's
+Core Audio Format (`.caf`) opens outside Safari, including iMessage voice
+messages, which are Opus inside CAF.
 
 **How to reach it.** Drop any recognised audio file. Built in
 `web/assets/js/renderers/audio.js`.

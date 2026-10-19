@@ -17,7 +17,7 @@ import { reverseAudioBufferToWav } from './media-reverse.js';
 // download prompt read tier sizes from here. The heavy client is still lazy.
 import { MDX_MODELS } from '../lib/mdx-model.js';
 import { DFN_MODEL } from '../lib/dfn-model.js';
-import { FFMPEG_MEMFS_MAX } from '../core/limits.js';
+import { FFMPEG_MEMFS_MAX, PCM_DECODE_SAMPLES_MAX, SCAN_SMALL } from '../core/limits.js';
 // Re-exported so existing importers (e.g. video.js) can keep importing the
 // transport from this module.
 export { makePlayer };
@@ -4082,6 +4082,367 @@ async function readArrayBufferProgress(file, onProgress) {
     }
     return out.buffer;
 }
+// Uncompressed WAV (RIFF, and RF64/BW64 past 4 GB) and AIFF/AIFC decoded
+// without ever holding the file: the header is walked chunk by chunk with small
+// slices, then the sample data is read SCAN_SMALL at a time and converted
+// straight into the AudioBuffer's channels. Peak memory is the decoded audio
+// plus one slice - the whole-file path holds the file, a copy of it for
+// decodeAudioData, and the decode. Keeps the file's own sample rate (Web Audio
+// resamples to the context's). Null for anything else - a compressed WAV
+// (ADPCM, mu-law), a layout it doesn't recognise, or audio past
+// PCM_DECODE_SAMPLES_MAX - and the caller's existing path runs instead.
+async function decodePcmStreamed(file, onProgress) {
+    const at = async (o, n) => new DataView(await file.slice(o, o + n).arrayBuffer());
+    const fcc = (dv, p) => String.fromCharCode(dv.getUint8(p), dv.getUint8(p + 1), dv.getUint8(p + 2), dv.getUint8(p + 3));
+    if (file.size < 12)
+        return null;
+    const head = await at(0, 12);
+    const riff = fcc(head, 0), form = fcc(head, 8);
+    const isWav = (riff === 'RIFF' || riff === 'RF64' || riff === 'BW64') && form === 'WAVE';
+    const isAiff = riff === 'FORM' && (form === 'AIFF' || form === 'AIFC');
+    if (!isWav && !isAiff)
+        return null;
+    const le = isWav;
+    let channels = 0, rate = 0, bps = 0, float = false, little = isWav, unsigned = false;
+    let dataOff = -1, dataLen = 0, ds64Data = -1;
+    let pos = 12;
+    for (let guard = 0; guard < 10000 && pos + 8 <= file.size; guard++) {
+        const h = await at(pos, 8);
+        if (h.byteLength < 8)
+            break;
+        const id = fcc(h, 0);
+        let size = h.getUint32(4, le);
+        const body = pos + 8;
+        if (id === 'ds64' && isWav) {
+            const d = await at(body, 16);
+            if (d.byteLength >= 16)
+                ds64Data = d.getUint32(8, true) + d.getUint32(12, true) * 0x100000000;
+        }
+        else if (id === 'fmt ' && isWav) {
+            const d = await at(body, Math.min(size, 40));
+            if (d.byteLength < 16)
+                return null;
+            let tag = d.getUint16(0, true);
+            channels = d.getUint16(2, true);
+            rate = d.getUint32(4, true);
+            const blockAlign = d.getUint16(12, true);
+            if (tag === 0xFFFE && d.byteLength >= 26)
+                tag = d.getUint16(24, true); // WAVE_FORMAT_EXTENSIBLE sub-format
+            if (tag !== 1 && tag !== 3)
+                return null;
+            float = tag === 3;
+            // The container width, not the valid bits: 24-bit audio in 32-bit slots
+            // is left-justified, so scaling by the slot is right.
+            bps = channels ? blockAlign / channels : 0;
+            unsigned = !float && bps === 1;
+        }
+        else if (id === 'COMM' && isAiff) {
+            const d = await at(body, Math.min(size, 22));
+            if (d.byteLength < 18)
+                return null;
+            channels = d.getUint16(0, false);
+            bps = Math.ceil(d.getUint16(6, false) / 8);
+            // 80-bit IEEE extended sample rate.
+            const exp = ((d.getUint8(8) & 0x7F) << 8 | d.getUint8(9)) - 16383;
+            const mant = d.getUint32(10, false) * 0x100000000 + d.getUint32(14, false);
+            rate = Math.round(mant * Math.pow(2, exp - 63));
+            if (form === 'AIFC' && d.byteLength >= 22) {
+                const comp = fcc(d, 18);
+                if (comp === 'sowt')
+                    little = true;
+                else if (comp === 'fl32' || comp === 'FL32') {
+                    float = true;
+                    bps = 4;
+                }
+                else if (comp === 'fl64' || comp === 'FL64') {
+                    float = true;
+                    bps = 8;
+                }
+                else if (comp !== 'NONE')
+                    return null;
+            }
+        }
+        else if (id === 'data' && isWav) {
+            dataOff = body;
+            dataLen = size === 0xFFFFFFFF && ds64Data >= 0 ? ds64Data : size;
+            size = dataLen;
+        }
+        else if (id === 'SSND' && isAiff) {
+            const d = await at(body, 8);
+            if (d.byteLength < 8)
+                return null;
+            dataOff = body + 8 + d.getUint32(0, false);
+            dataLen = size - 8 - d.getUint32(0, false);
+        }
+        if (dataOff >= 0 && channels && bps)
+            break;
+        pos = body + size + (size & 1);
+    }
+    if (dataOff < 0 || !channels || channels > 32 || !bps)
+        return null;
+    if (float ? bps !== 4 && bps !== 8 : !(bps >= 1 && bps <= 4))
+        return null;
+    const frameBytes = bps * channels;
+    dataLen = Math.max(0, Math.min(dataLen, file.size - dataOff));
+    const frames = Math.floor(dataLen / frameBytes);
+    if (frames <= 0 || frames * channels > PCM_DECODE_SAMPLES_MAX)
+        return null;
+    let audioBuf;
+    try {
+        audioBuf = ctx().createBuffer(channels, frames, rate);
+    }
+    catch (_) {
+        return null;
+    }
+    const chans = [];
+    for (let c = 0; c < channels; c++)
+        chans.push(audioBuf.getChannelData(c));
+    const step = Math.max(1, Math.floor(SCAN_SMALL / frameBytes)) * frameBytes;
+    let f = 0;
+    for (let off = 0; off < frames * frameBytes; off += step) {
+        const v = await at(dataOff + off, Math.min(step, frames * frameBytes - off));
+        const n = Math.floor(v.byteLength / frameBytes);
+        for (let i = 0; i < n; i++, f++) {
+            for (let c = 0; c < channels; c++) {
+                const p = i * frameBytes + c * bps;
+                let val;
+                if (float)
+                    val = bps === 4 ? v.getFloat32(p, little) : v.getFloat64(p, little);
+                else if (bps === 2)
+                    val = v.getInt16(p, little) / 0x8000;
+                else if (bps === 3) {
+                    const b0 = v.getUint8(p), b1 = v.getUint8(p + 1), b2 = v.getUint8(p + 2);
+                    val = (little ? ((b2 << 24 | b1 << 16 | b0 << 8) >> 8) : ((b0 << 24 | b1 << 16 | b2 << 8) >> 8)) / 0x800000;
+                }
+                else if (bps === 4)
+                    val = v.getInt32(p, little) / 0x80000000;
+                else
+                    val = unsigned ? (v.getUint8(p) - 128) / 128 : v.getInt8(p) / 128;
+                chans[c][f] = val;
+            }
+        }
+        onProgress(Math.min(1, (off + v.byteLength) / (frames * frameBytes)));
+        await yieldToMain();
+    }
+    return audioBuf;
+}
+// FLAC through WebCodecs' AudioDecoder, one frame at a time, so the file is
+// never held whole (decodeAudioData needs it in memory twice over). FLAC has no
+// frame index, so frames are found by their 14-bit sync code - and because those
+// bytes can also turn up inside audio data, a candidate only counts when its
+// header's CRC-8 checks out AND the frame it closes passes its own CRC-16. Sized
+// from STREAMINFO's exact sample count. Null when the browser has no FLAC
+// AudioDecoder, the count is unknown or past PCM_DECODE_SAMPLES_MAX, or anything
+// fails - the whole-file path then runs as before.
+let _crc8 = null, _crc16 = null;
+function flacCrcTables() {
+    if (!_crc8) {
+        _crc8 = new Uint8Array(256);
+        _crc16 = new Uint16Array(256);
+        for (let n = 0; n < 256; n++) {
+            let c = n;
+            for (let k = 0; k < 8; k++)
+                c = (c & 0x80) ? ((c << 1) ^ 0x07) & 0xFF : (c << 1) & 0xFF;
+            _crc8[n] = c;
+            let d = n << 8;
+            for (let k = 0; k < 8; k++)
+                d = (d & 0x8000) ? ((d << 1) ^ 0x8005) & 0xFFFF : (d << 1) & 0xFFFF;
+            _crc16[n] = d;
+        }
+    }
+    return { T8: _crc8, T16: _crc16 };
+}
+// Length of a valid FLAC frame header at b[p], or 0. Checks the sync code, the
+// reserved bits, the coded-number form, and the header CRC-8.
+function flacHeaderLen(b, p, T8) {
+    if (p + 6 > b.length || b[p] !== 0xFF || (b[p + 1] & 0xFE) !== 0xF8)
+        return 0;
+    const bsCode = b[p + 2] >> 4, srCode = b[p + 2] & 0xF;
+    if (bsCode === 0 || srCode === 15 || (b[p + 3] >> 4) > 10 || ((b[p + 3] >> 1) & 7) === 3 || (b[p + 3] & 1))
+        return 0;
+    let q = p + 4;
+    // The frame/sample number, UTF-8 style: the lead byte's high ones say how many follow.
+    const lead = b[q];
+    let extra = 0;
+    if (lead >= 0xFE)
+        return 0;
+    else if (lead >= 0xFC)
+        extra = 5;
+    else if (lead >= 0xF8)
+        extra = 4;
+    else if (lead >= 0xF0)
+        extra = 3;
+    else if (lead >= 0xE0)
+        extra = 2;
+    else if (lead >= 0xC0)
+        extra = 1;
+    else if (lead >= 0x80)
+        return 0;
+    q += 1 + extra;
+    if (bsCode === 6)
+        q += 1;
+    else if (bsCode === 7)
+        q += 2;
+    if (srCode === 12)
+        q += 1;
+    else if (srCode === 13 || srCode === 14)
+        q += 2;
+    if (q >= b.length)
+        return 0;
+    let crc = 0;
+    for (let i = p; i < q; i++)
+        crc = T8[crc ^ b[i]];
+    return crc === b[q] ? q + 1 - p : 0;
+}
+async function decodeFlacStreamed(file, onProgress) {
+    if (typeof AudioDecoder === 'undefined' || file.size < 42)
+        return null;
+    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+    if (String.fromCharCode(...head) !== 'fLaC')
+        return null;
+    // Metadata blocks: 1 last-flag bit, 7 type bits, 24-bit length. STREAMINFO is first.
+    let pos = 4, info = null;
+    for (let guard = 0; guard < 1024 && pos + 4 <= file.size; guard++) {
+        const h = new Uint8Array(await file.slice(pos, pos + 4).arrayBuffer());
+        const len = (h[1] << 16) | (h[2] << 8) | h[3];
+        if ((h[0] & 0x7F) === 0 && len >= 34)
+            info = new Uint8Array(await file.slice(pos, pos + 4 + len).arrayBuffer());
+        pos += 4 + len;
+        if (h[0] & 0x80)
+            break;
+    }
+    if (!info || pos >= file.size)
+        return null;
+    const s = info.subarray(4);
+    const rate = (s[10] << 12) | (s[11] << 4) | (s[12] >> 4);
+    const channels = ((s[12] >> 1) & 7) + 1;
+    const total = ((s[13] & 0xF) * 0x100000000) + ((s[14] << 24 | s[15] << 16 | s[16] << 8 | s[17]) >>> 0);
+    const maxBlock = (s[2] << 8) | s[3];
+    if (!rate || !total || total * channels > PCM_DECODE_SAMPLES_MAX)
+        return null;
+    // The description is the stream marker plus STREAMINFO, flagged as the last block.
+    const description = new Uint8Array(4 + info.length);
+    description.set([0x66, 0x4C, 0x61, 0x43]);
+    description.set(info, 4);
+    description[4] |= 0x80;
+    const config = { codec: 'flac', sampleRate: rate, numberOfChannels: channels, description };
+    try {
+        const sup = await AudioDecoder.isConfigSupported(config);
+        if (!sup || !sup.supported)
+            return null;
+    }
+    catch (_) {
+        return null;
+    }
+    let audioBuf;
+    try {
+        audioBuf = ctx().createBuffer(channels, total, rate);
+    }
+    catch (_) {
+        return null;
+    }
+    const chans = [];
+    for (let c = 0; c < channels; c++)
+        chans.push(audioBuf.getChannelData(c));
+    let written = 0, failed = null;
+    const decoder = new AudioDecoder({
+        output: (data) => {
+            try {
+                const n = Math.min(data.numberOfFrames, total - written);
+                if (n > 0) {
+                    for (let c = 0; c < channels; c++) {
+                        data.copyTo(chans[c].subarray(written, written + n), { planeIndex: Math.min(c, data.numberOfChannels - 1), format: 'f32-planar', frameCount: n });
+                    }
+                    written += n;
+                }
+            }
+            catch (e) {
+                failed = e;
+            }
+            finally {
+                data.close();
+            }
+        },
+        error: (e) => { failed = e; },
+    });
+    const { T8, T16 } = flacCrcTables();
+    const step = (maxBlock || 4096) / rate * 1e6;
+    let ts = 0;
+    const emit = (frame) => {
+        decoder.decode(new EncodedAudioChunk({ type: 'key', timestamp: Math.round(ts), data: frame }));
+        ts += step;
+    };
+    // A frame ends where the next valid header starts and its own trailing CRC-16
+    // (over every byte before it) matches.
+    const frameOk = (b, end) => {
+        let crc = 0;
+        for (let i = 0; i < end - 2; i++)
+            crc = ((crc << 8) & 0xFFFF) ^ T16[(crc >> 8) ^ b[i]];
+        return crc === ((b[end - 2] << 8) | b[end - 1]);
+    };
+    try {
+        decoder.configure(config);
+        let pending = new Uint8Array(0), searchFrom = 2, fileOff = pos;
+        for (;;) {
+            if (failed)
+                throw failed;
+            const atEof = fileOff >= file.size;
+            let p = searchFrom, cut = -1;
+            for (; p + 16 <= pending.length || (atEof && p < pending.length); p++) {
+                if (pending[p] !== 0xFF)
+                    continue;
+                if (flacHeaderLen(pending, p, T8) && frameOk(pending, p)) {
+                    cut = p;
+                    break;
+                }
+            }
+            if (cut > 0) {
+                emit(pending.slice(0, cut));
+                pending = pending.subarray(cut);
+                searchFrom = 2;
+                while (decoder.decodeQueueSize > 64 && !failed)
+                    await new Promise((r) => setTimeout(r, 0));
+                continue;
+            }
+            if (atEof) {
+                // The last frame runs to the end of the file - less a trailing 128-byte
+                // ID3v1 tag, which some taggers append to FLAC too.
+                let end = pending.length;
+                if (end > 128 && !frameOk(pending, end) && pending[end - 128] === 0x54 && pending[end - 127] === 0x41 && pending[end - 126] === 0x47)
+                    end -= 128;
+                if (end > 0)
+                    emit(pending.slice(0, end));
+                break;
+            }
+            searchFrom = Math.max(2, p);
+            const more = new Uint8Array(await file.slice(fileOff, fileOff + SCAN_SMALL).arrayBuffer());
+            fileOff += more.length;
+            const joined = new Uint8Array(pending.length + more.length);
+            joined.set(pending);
+            joined.set(more, pending.length);
+            pending = joined;
+            onProgress(Math.min(1, (fileOff - pos) / (file.size - pos)));
+        }
+        await decoder.flush();
+    }
+    catch (_) {
+        return null;
+    }
+    finally {
+        try {
+            decoder.close();
+        }
+        catch (_) { }
+    }
+    if (failed || written <= 0)
+        return null;
+    if (written >= total)
+        return audioBuf;
+    const trimmed = ctx().createBuffer(channels, written, rate);
+    for (let c = 0; c < channels; c++)
+        trimmed.copyToChannel(chans[c].subarray(0, written), c);
+    return trimmed;
+}
 // Decode a dropped audio file to an AudioBuffer, reporting progress and yielding
 // while it reads. Same strategy as the direct path: raw ADTS AAC is wrapped to M4A
 // (browsers reject bare ADTS in decodeAudioData), otherwise decoded directly, with
@@ -4092,6 +4453,16 @@ async function readArrayBufferProgress(file, onProgress) {
 async function decodeAudioStrategy(file, header, { onProgress, noteMount } = {}) {
     const rp = (f) => { if (onProgress)
         onProgress(f); };
+    // Uncompressed WAV / AIFF, and FLAC: decoded a slice at a time, never read whole.
+    try {
+        const pcm = (await decodePcmStreamed(file, (f) => rp(f * 0.45)))
+            || (await decodeFlacStreamed(file, (f) => rp(f * 0.45)));
+        if (pcm) {
+            rp(1);
+            return { audioBuffer: pcm, playbackFile: file, usedFfmpeg: false };
+        }
+    }
+    catch (_) { /* fall through to the whole-file path */ }
     const buf = await readArrayBufferProgress(file, (f) => rp(f * 0.45));
     let audioBuffer = null, playbackFile = file, usedFfmpeg = false;
     if (header.container === 'AAC') {
@@ -4387,22 +4758,21 @@ async function renderUndecodableAudio(file, header, resultsEl, playable, extras 
 async function ffmpegDecodeAudio(file, resultsEl) {
     const note = el('div', { class: 'anr-info' }, "Your browser can't decode this audio directly - decoding with FFmpeg to build the waveform and spectrogram...");
     resultsEl.appendChild(note);
-    // The whole file is copied into ffmpeg's in-memory filesystem, so hold it to
-    // the same ceiling video.ts uses for its MEMFS jobs.
-    if (file.size > FFMPEG_MEMFS_MAX) {
-        note.remove();
-        throw new Error('Too large to decode with FFmpeg in the browser');
-    }
-    const { loadFFmpeg, queueFFmpeg } = await import('./video.js');
+    const { loadFFmpeg, queueFFmpeg, ffInputFile } = await import('./video.js');
     // One shared instance: join video's job queue so this never runs on top of a
     // remux/convert (and never collides with its files).
     return queueFFmpeg(async () => {
         let ff = null;
+        let src = null;
         try {
             ff = await loadFFmpeg();
-            await ff.writeFile('adin', new Uint8Array(await file.arrayBuffer()));
+            // Mounted, or copied in pieces on the desktop (ffInputFile); only the
+            // whole-copy last resort is held to the MEMFS ceiling video.ts uses.
+            src = await ffInputFile(ff, file, 'adin', FFMPEG_MEMFS_MAX);
+            if (!src)
+                throw new Error('Too large to decode with FFmpeg in the browser');
             // -vn drops any cover-art video stream; keep source rate/channels.
-            const code = await ff.exec(['-i', 'adin', '-vn', '-c:a', 'pcm_s16le', '-f', 'wav', 'adout.wav']);
+            const code = await ff.exec(['-i', src.input, '-vn', '-c:a', 'pcm_s16le', '-f', 'wav', 'adout.wav']);
             // exec RESOLVES on a failed transcode, so a non-zero exit must be caught here
             // or a stale/partial adout.wav would be read as this file's audio.
             if (typeof code === 'number' && code !== 0)
@@ -4416,10 +4786,8 @@ async function ffmpegDecodeAudio(file, resultsEl) {
             // Always clear the MEMFS copies - on failure too, where they used to be left
             // holding the whole input inside the shared ffmpeg instance.
             if (ff) {
-                try {
-                    await ff.deleteFile('adin');
-                }
-                catch (_) { }
+                if (src)
+                    await src.cleanup();
                 try {
                     await ff.deleteFile('adout.wav');
                 }

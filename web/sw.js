@@ -2,7 +2,7 @@
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v324';
+const VERSION = 'analyser-v325';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -120,6 +120,8 @@ const SHELL = [
   './assets/js/lib/plist.js',
   './assets/js/lib/cfbf.js',
   './assets/js/lib/sqlite.js',
+  './assets/js/lib/sqlite-pages.js',
+  './assets/js/renderers/mesh-stream.js',
   './assets/js/lib/libarchive-loader.js',
   './assets/js/lib/openjpeg-loader.js',
   './assets/js/lib/xz-loader.js',
@@ -136,6 +138,10 @@ const SHELL = [
   './assets/js/lib/dfn-dsp.js',
   './assets/js/lib/dfn-enhance.js',
   './assets/js/lib/dfn-client.js',
+  './assets/js/lib/hash-stream.js',
+  './assets/js/lib/hash-client.js',
+  './assets/js/lib/hash-worker.js',
+  './assets/js/lib/stream-archive.js',
   './assets/js/lib/dfn-worker.js',
   './assets/js/parsers/parsers-dev.js',
   './assets/js/parsers/parsers-archive.js',

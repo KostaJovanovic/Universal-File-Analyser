@@ -1039,9 +1039,9 @@ ipcMain.handle('anr:ffmpeg-open', async (e) => {
   return id;
 });
 
-ipcMain.handle('anr:ffmpeg-write', async (e, { id, name, data }) => {
+ipcMain.handle('anr:ffmpeg-write', async (e, { id, name, data, append }) => {
   if (!fromMainWindow(e)) return false;
-  return ffnative.put(id, name, data);
+  return ffnative.put(id, name, data, !!append);
 });
 
 ipcMain.handle('anr:ffmpeg-read', async (e, { id, name }) => {

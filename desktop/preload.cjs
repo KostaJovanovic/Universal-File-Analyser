@@ -120,7 +120,7 @@ contextBridge.exposeInMainWorld('anrDesktop', {
   ffmpeg: {
     caps: () => ipcRenderer.invoke('anr:ffmpeg-caps'),
     open: () => ipcRenderer.invoke('anr:ffmpeg-open'),
-    write: (id, name, data) => ipcRenderer.invoke('anr:ffmpeg-write', { id, name, data }),
+    write: (id, name, data, append) => ipcRenderer.invoke('anr:ffmpeg-write', { id, name, data, append }),
     read: (id, name) => ipcRenderer.invoke('anr:ffmpeg-read', { id, name }),
     del: (id, name) => ipcRenderer.invoke('anr:ffmpeg-delete', { id, name }),
     exec: (id, args, timeout) => ipcRenderer.invoke('anr:ffmpeg-exec', { id, args, timeout }),

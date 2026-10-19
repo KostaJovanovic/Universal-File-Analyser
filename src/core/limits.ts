@@ -59,7 +59,35 @@ export function isLowMemoryDevice() {
 
 // ---- hard walls: file declined outright (errorCard), never read ----
 // Genuine "too large to open" walls only. Scaled by tier.
-export const WALL_INDEX = byTier({ high: 2 * GB, mid: 1.5 * GB, low: 400 * MB }); // cheap index/browse: archives, disk images
+export const WALL_INDEX = byTier({ high: 2 * GB, mid: 1.5 * GB, low: 400 * MB }); // archives libarchive must load whole (RAR, 7z, CAB...); ZIP/TAR/ISO/disk images read by slices
+// Past PDF_RANGE_MIN a PDF is handed to pdf.js as byte ranges served from the
+// File (pdf.ts fileRangeTransport) instead of one whole buffer; the first
+// PDF_RANGE_HEAD bytes are given up front so the header parses at once. Below
+// it the battle-tested whole-buffer path runs unchanged.
+export const PDF_RANGE_MIN = 64 * MB;
+export const PDF_RANGE_HEAD = 1 * MB;
+// Disk images (diskimage.ts) are never read whole. The FAT is the one part kept
+// in memory - every chain walk needs it; 16 MB for a 128 GB card at 32 KB
+// clusters - so past DISK_FAT_READ_MAX the volume isn't mounted. The raw-sector
+// image scan reads the image DISK_CARVE_WINDOW at a time (plus a 64 MB overlap).
+export const DISK_FAT_READ_MAX = byTier({ high: 512 * MB, mid: 256 * MB, low: 64 * MB });
+export const DISK_CARVE_WINDOW = byTier({ high: 256 * MB, mid: 128 * MB, low: 64 * MB });
+// An mbox is scanned for its "From " separators in slices of this size, keeping
+// only their offsets; each message is read when it is shown (email.ts).
+export const MBOX_SCAN_CHUNK = 8 * MB;
+// A ZIP's central directory is the one part of it read whole (zip.ts
+// readZipDirectory) - ~100 bytes an entry, so this is a million-odd entries.
+// Past it the listing is truncated, not declined.
+export const ZIP_CD_READ_MAX = byTier({ high: 256 * MB, mid: 128 * MB, low: 32 * MB });
+// CSV / TSV: past CSV_FULL_MAX the file is no longer decoded into one string and
+// parsed whole (a 2 GB CSV is past V8's string limit, and its rows as arrays are
+// several times the file). It streams in CSV_STREAM_CHUNK slices instead: row
+// count, column count, ragged rows and numeric min/max/mean cover every row,
+// while the workbench and the profile hold the first rows up to CSV_KEEP_CHARS
+// characters of cell text.
+export const CSV_FULL_MAX = byTier({ high: 200 * MB, mid: 120 * MB, low: 40 * MB });
+export const CSV_STREAM_CHUNK = 8 * MB;
+export const CSV_KEEP_CHARS = byTier({ high: 64 * MB, mid: 32 * MB, low: 12 * MB });
 export const WALL_PARSE = byTier({ high: 1 * GB, mid: 600 * MB, low: 250 * MB }); // full in-memory parse: g-code
 
 // ---- mobile OOM guards (isLowMemoryDevice-gated) ----
@@ -67,10 +95,24 @@ export const WALL_PARSE = byTier({ high: 1 * GB, mid: 600 * MB, low: 250 * MB })
 // Raising a mobile guard would re-introduce phone tab-crashes, so this only ever
 // tightens. Flat (already only applied on low-memory devices).
 export const MOBILE_WALL = 200 * MB;
+// sql.js copies the whole database into the WASM heap (~2x the file resident),
+// so the SQL console declines past this on a phone (was a literal in sqlite.ts).
+export const SQLITE_MOBILE_MAX = 300 * MB;
+
+// SQLite: below SQLITE_ENGINE_MAX the database opens in sql.js (full schema
+// facts and the SQL console). Above it lib/sqlite-pages.ts reads the schema, row
+// counts and sample straight from the file's pages instead - no SQL, but no
+// size ceiling. Row counts read every leaf page header; past SQLITE_PAGE_SCAN_MAX
+// of leaf pages a table's count is estimated from an even sample of its leaves.
+export const SQLITE_ENGINE_MAX = byTier({ high: 512 * MB, mid: 256 * MB, low: 256 * MB });
+export const SQLITE_PAGE_SCAN_MAX = byTier({ high: 1 * GB, mid: 512 * MB, low: 256 * MB });
 
 // ---- non-wall device switches (their own category - NOT walls) ----
 export const DECODE_FULL_MAX = 120 * MB;   // psd: decode every layer vs fall back to the embedded thumbnail. Never raise.
 export const FFMPEG_MEMFS_MAX = 1.2 * GB;  // video: WASM MEMFS fallback copy ceiling (silent skip, not a decline)
+// Desktop app: native FFmpeg reads a real temp file, so a video past the MEMFS
+// ceiling is copied over in pieces of this size instead of read whole.
+export const NATIVE_FFMPEG_CHUNK = 64 * MB;
 
 // ---- video (renderers/video.ts) ----
 // Whole-file FFmpeg remux of a raw H.264/H.265 stream or an MPEG-TS/AVCHD file
@@ -79,6 +121,10 @@ export const FFMPEG_MEMFS_MAX = 1.2 * GB;  // video: WASM MEMFS fallback copy ce
 // player and a TS file goes to the unplayable card. 1400 MB is the historical
 // figure; a low-memory phone can't spare that, so it drops to the mobile wall.
 export const FFMPEG_REMUX_MAX = isLowMemoryDevice() ? MOBILE_WALL : 1400 * MB;
+// Above FFMPEG_REMUX_MAX an MPEG-TS / AVCHD file is cut on keyframes into parts
+// of about this size, each remuxed when the player reaches it (video.ts
+// planTsSegments) - the part and its MP4 together have to fit the WASM heap.
+export const TS_SEGMENT_BYTES = isLowMemoryDevice() ? 64 * MB : 256 * MB;
 // The automatic FFmpeg frame-rate probe (only for containers whose rate the JS
 // walkers can't read - MediaRecorder WebMs and the like) copies just this much of
 // the file's head into FFmpeg: the stream headers plus the 2 s it decodes.
@@ -93,14 +139,24 @@ export const PCM_COMPANION_MAX = isLowMemoryDevice() ? MOBILE_WALL
 // the track instead (itself bounded by FFMPEG_MEMFS_MAX).
 export const VIDEO_AUDIO_DECODE_MAX = isLowMemoryDevice() ? MOBILE_WALL
   : byTier({ high: 1 * GB, mid: 600 * MB, low: 250 * MB });
+// "Analyse audio" and the PCM companion read an MP4's audio track in pieces
+// (video.ts readMp4AudioTrack) rather than the whole file, so neither depends on
+// the file's size. The moov index IS read whole - a few MB even on a long camera
+// clip - so it has its own ceiling. Neighbouring audio pieces are merged into one
+// read when the gap between them is at most MP4_AUDIO_READ_GAP, up to
+// MP4_AUDIO_READ_BATCH per read: fewer, larger reads without pulling in the video.
+export const MP4_MOOV_READ_MAX = byTier({ high: 256 * MB, mid: 128 * MB, low: 64 * MB });
+export const MP4_AUDIO_READ_BATCH = 16 * MB;
+export const MP4_AUDIO_READ_GAP = 1 * MB;
 // Samples one MP4 PCM track may decode into an AudioBuffer (4 bytes each as
 // float32): 256M = 1 GB, about 45 min of 48 kHz stereo. Stops overlapping chunk
 // offsets turning a small file into a multi-GB allocation.
 export const PCM_DECODE_SAMPLES_MAX = byTier({ high: 256e6, mid: 128e6, low: 48e6 });
-// Video Integrity card: SHA-256 runs automatically up to VIDEO_SHA_AUTO_MAX; up to
-// VIDEO_SHA_BUTTON_MAX it sits behind a button; past that there is no card.
+// Video Integrity card: SHA-256 runs automatically up to VIDEO_SHA_AUTO_MAX; past
+// it, it sits behind a button. VIDEO_SHA_BUTTON_MAX used to drop the card above
+// 2 GB; hashing now streams (see HASH_FILE_MAX), so every size gets the button.
 export const VIDEO_SHA_AUTO_MAX = 200 * MB;
-export const VIDEO_SHA_BUTTON_MAX = 2 * GB;
+export const VIDEO_SHA_BUTTON_MAX = Number.POSITIVE_INFINITY;
 // MP4 sample tables read by the GOP map, the telemetry tracks and Sony rtmd:
 // the sample count is a u32 from the file (a fixed-size stsz can claim 4e9
 // samples in 20 bytes), so it is bounded by the box, the file and this ceiling -
@@ -219,6 +275,11 @@ export const WEBP_ANIM_FILE_MAX = 200 * MB;
 // size is a header field, not the byte count) can still exhaust the tab - past
 // this the viewer falls back to the embedded thumbnail like an oversized file.
 export const PSD_DECODE_MAX_PX = byTier({ high: 100e6, mid: 60e6, low: 24e6 });
+// Everything ag-psd can't take (past DECODE_FULL_MAX / PSD_DECODE_MAX_PX, PSB,
+// CMYK, Lab, 16/32-bit) has its layer list read from the records and its
+// flattened image decoded row by row straight from the file, sampled down to at
+// most this many pixels on the long side - the whole canvas is never allocated.
+export const PSD_STREAM_PREVIEW_SIDE = 2048;
 // Largest single preview carved out of a container that stores one (a DWG image
 // section, a DOS EPS TIFF preview, a Blender TEST block). A real one is tens to
 // hundreds of KB - this exists only to reject a corrupt or hostile length field
@@ -227,13 +288,18 @@ export const PREVIEW_CARVE_MAX = 32 * MB;
 export const CONVERT_TIMEOUT_MS = 45000;   // per-file conversion timeout in a folder scan
 
 // ---- whole-file hashing ----
-// Above this size the Integrity card is skipped entirely: producing it streams the
-// WHOLE file through crypto.subtle for the SHA-256, which on a multi-hundred-MB
-// file costs more than the fingerprint is worth mid-analysis. Every renderer that
-// appends an integrity card gates on this - it was the same literal copy-pasted
-// into 17 call sites before it moved here. Sits just below HASH_JS_MAX, which caps
-// the *extra* JS-only rows inside a card that is already being built.
-export const HASH_FILE_MAX = 500 * MB;
+// Every renderer that appends an Integrity card gates on HASH_FILE_MAX (it was the
+// same literal copy-pasted into 17 call sites before it moved here). The card used
+// to stop at 500 MB because the SHA-256 read the whole file into memory for
+// crypto.subtle. Hashes now stream (lib/hash-client.ts) past HASH_SUBTLE_MAX, and
+// sha256Row() already waits for a button above 50 MB, so the card costs nothing
+// until asked for - hence no ceiling.
+export const HASH_FILE_MAX = Number.POSITIVE_INFINITY;
+// Up to here a hash reads the file whole and uses crypto.subtle (native, fast);
+// past it the file is hashed in HASH_STREAM_CHUNK slices in a worker (pure JS,
+// slower, but one slice of memory whatever the size).
+export const HASH_SUBTLE_MAX = byTier({ high: 512 * MB, mid: 256 * MB, low: 128 * MB });
+export const HASH_STREAM_CHUNK = 8 * MB;
 
 // ---- full in-memory reads ----
 // extractAviData() pulls an entire AVI into an ArrayBuffer to carve its MJPEG
@@ -416,12 +482,11 @@ export const PE_SECTION_SAMPLE = 512 * 1024;
 export const PE_PACKER_SCAN = 256 * 1024;
 
 // ---- compute-cost guards (bound main-thread work, not memory) ----
-// Above this size the pure-JS MD5 / CRC-32 in extraHashRows() are skipped: they
-// walk the file byte-by-byte (no crypto.subtle equivalent exists) and would freeze
-// the tab for several seconds on a multi-hundred-MB file. The SHA-1/SHA-512 rows,
-// which run natively, still compute. Normal files are far below this, so day-to-day
-// behaviour is unchanged; only the rare very large file loses the two JS-only rows.
-export const HASH_JS_MAX = 512 * MB;
+// Up to this size extraHashRows() runs the pure-JS MD5 / CRC-32 inline on the main
+// thread (no crypto.subtle equivalent exists; a fraction of a second here). Past it
+// all four extra hashes go to the streaming worker instead, so a large file no
+// longer freezes the page or loses its MD5 / CRC-32 rows.
+export const HASH_INLINE_MAX = 32 * MB;
 // Node-count ceiling for inline SVG sanitisation. Above this an untrusted SVG is
 // declined for preview rather than walked attribute-by-attribute (an O(nodes) scan
 // with regexes that freezes on a 100k+ element file, e.g. a DWG-derived drawing).
@@ -454,6 +519,15 @@ export const GLTF_VISIT_MAX = 200_000;
 // OBJ/OFF/PLY: vertices in one polygon. A real n-gon has tens; a list length in
 // the millions is a stream that has lost its place.
 export const MESH_FACE_VERTS_MAX = 65_536;
+// STL / PLY past WALL_PARSE are read in MESH_STREAM_CHUNK slices instead of
+// declined (renderers/mesh-stream.ts): the triangle count, box, area and volume
+// cover every triangle, and the viewer gets a copy simplified by merging
+// vertices on a grid, coarsened until it fits MESH_STREAM_PREVIEW_TRIS. A PLY
+// indexes its faces into the vertex list, so that list is held - as float32,
+// up to PLY_STREAM_VERTS_MAX vertices (12 bytes each).
+export const MESH_STREAM_CHUNK = 16 * MB;
+export const MESH_STREAM_PREVIEW_TRIS = byTier({ high: 1_500_000, mid: 800_000, low: 300_000 });
+export const PLY_STREAM_VERTS_MAX = byTier({ high: 50e6, mid: 25e6, low: 8e6 });
 // SPICE .raw: variables in one capture. Each is a separate array and the count
 // is the record stride; a real netlist probes hundreds, a large one thousands.
 export const SPICE_VARS_MAX = 65_536;

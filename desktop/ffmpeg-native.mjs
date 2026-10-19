@@ -27,7 +27,7 @@
 import { spawn, execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 
 // The encoder families, the argument rewrite and the safety checks live in a
@@ -239,9 +239,11 @@ function sessionOf(id) {
   return s;
 }
 
-export async function put(id, name, data) {
+/** `append` adds to the file instead of replacing it, so the page can stream a
+ *  multi-GB input over in chunks rather than hold it in memory whole. */
+export async function put(id, name, data, append) {
   const s = sessionOf(id);
-  await writeFile(join(s.dir, safeName(name)), Buffer.from(data));
+  await (append ? appendFile : writeFile)(join(s.dir, safeName(name)), Buffer.from(data));
   return true;
 }
 

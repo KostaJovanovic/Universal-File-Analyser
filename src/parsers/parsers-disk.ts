@@ -15,7 +15,8 @@
    zstd/gzip; esd uses LZMS) stay metadata-only. Anything rated rare AND hard is
    identification-only. No top-level side effects. */
 
-import { fmtBytes, preBlock, fmtDate } from '../core/util.js';
+import { fmtBytes, preBlock, fmtDate, readSlice } from '../core/util.js';
+import { parsePlist } from '../lib/plist.js';
 import { Reader, ascii, findBytes, latin1, utf8, utf16, fmtGuid } from '../core/binutil.js';
 import type { Row, ParseFn } from '../core/types.js';
 
@@ -1280,11 +1281,101 @@ async function parseDjiFirmware(file: File) {
 function ident(name: string, note: string) { return () => ({ 'Format': name, 'Note': note }); }
 
 // ===================================================================
+//                Apple disk image (.dmg, UDIF)
+// ===================================================================
+// A UDIF image ends in a 512-byte 'koly' trailer pointing at an XML plist whose
+// resource-fork/blkx array lists every partition, each with a 'mish' block
+// table. The table's chunk types say how the image is compressed (UDZO = zlib,
+// ULFO = LZFSE, ...); the partition names say the filesystem. Reading the
+// files inside would need HFS+/APFS plus the decompressors, so this stops at
+// the layout. An encrypted image has no readable trailer at all - it starts
+// with 'encrcdsa' (v2) or ends with 'cdsaencr' (v1).
+const UDIF_CHUNKS: Record<number, string> = {
+  0x00000000: 'zero-fill', 0x00000001: 'raw', 0x00000002: 'free', 0x80000004: 'ADC',
+  0x80000005: 'zlib', 0x80000006: 'bzip2', 0x80000007: 'LZFSE', 0x80000008: 'LZMA',
+};
+const UDIF_FORMATS: Record<string, string> = {
+  zlib: 'UDZO (zlib-compressed)', bzip2: 'UDBZ (bzip2-compressed)', LZFSE: 'ULFO (LZFSE-compressed)',
+  LZMA: 'ULMO (LZMA-compressed)', ADC: 'UDCO (ADC-compressed)', raw: 'UDRO / UDRW (uncompressed)',
+};
+async function parseDmg(file: File) {
+  const head = await readSlice(file, 0, 8);
+  const encrypted = { 'Encryption': 'AES (password or certificate)', 'Note': 'The whole image is encrypted, so its partitions and contents cannot be read without the password.' };
+  if (ascii(head, 0, 8) === 'encrcdsa') return { 'Format': 'Encrypted Apple disk image (encrcdsa, v2)', ...encrypted };
+  if (file.size < 512) return null;
+  const k = await readSlice(file, file.size - 512, 512);
+  if (ascii(k, 0, 4) !== 'koly') {
+    if (ascii(k, 504, 8) === 'cdsaencr') return { 'Format': 'Encrypted Apple disk image (cdsaencr, v1)', ...encrypted };
+    return { 'Format': 'Apple disk image (no UDIF trailer)', 'Note': 'There is no koly trailer at the end of the file: a raw read/write image (the same bytes as a .cdr), a pre-OS X NDIF image, or a download that was cut short.' };
+  }
+  const dv = new DataView(k.buffer, k.byteOffset, 512);
+  const u64 = (o: number) => Number(dv.getBigUint64(o));
+  const dataLen = u64(32), segNum = dv.getUint32(56), segCount = dv.getUint32(60);
+  const xmlOff = u64(216), xmlLen = u64(224);
+  const ckType = dv.getUint32(352), ck = dv.getUint32(360);
+  const sectors = u64(492);
+  const out: Row = { 'Format': 'Apple disk image (UDIF version ' + dv.getUint32(4) + ')' };
+  if (sectors) out['Disk size'] = fmtBytes(sectors * 512);
+  if (dataLen) out['Stored data'] = fmtBytes(dataLen) + (sectors ? ' (' + Math.round(100 * dataLen / (sectors * 512)) + '% of the disk size)' : '');
+  if (segCount > 1) out['Segment'] = segNum + ' of ' + segCount;
+  if (ckType === 2) out['Checksum'] = 'CRC-32 ' + ck.toString(16).padStart(8, '0');
+  // Signed with codesign: an embedded signature superblob (FA DE 0C C0) at the
+  // offset the trailer's reserved area carries.
+  const sigOff = u64(232), sigLen = u64(240);
+  if (sigLen && sigLen < 16 * 1024 * 1024 && sigOff + sigLen <= file.size - 512) {
+    const s = await readSlice(file, sigOff, 4);
+    if (s[0] === 0xFA && s[1] === 0xDE && s[2] === 0x0C && s[3] === 0xC0) out['Code signature'] = 'Present (' + fmtBytes(sigLen) + ')';
+  }
+
+  if (!xmlLen || xmlLen > 32 * 1024 * 1024 || xmlOff + xmlLen > file.size) return out;
+  const parsed = await parsePlist(await readSlice(file, xmlOff, xmlLen));
+  const rf = parsed && parsed.value && parsed.value['resource-fork'];
+  const blkx = rf && Array.isArray(rf.blkx) ? rf.blkx : [];
+  const tally: Record<string, number> = {};
+  const parts: string[] = [];
+  let fs = '';
+  for (const p of blkx.slice(0, 256)) {
+    const name = String(p.Name || p.CFName || '');
+    let data: Uint8Array | null = p.Data instanceof Uint8Array ? p.Data : null;
+    if (!data && typeof p.Data === 'string') {
+      try { data = Uint8Array.from(atob(p.Data.replace(/\s+/g, '')), (c) => c.charCodeAt(0)); } catch (_) { data = null; }
+    }
+    let size = '';
+    if (data && data.length >= 204 && ascii(data, 0, 4) === 'mish') {
+      const m = new DataView(data.buffer, data.byteOffset, data.byteLength);
+      size = fmtBytes(Number(m.getBigUint64(16)) * 512);
+      const n = Math.min(m.getUint32(200), Math.floor((data.length - 204) / 40));
+      for (let i = 0; i < n; i++) {
+        const t = UDIF_CHUNKS[m.getUint32(204 + i * 40)];
+        if (t && t !== 'zero-fill' && t !== 'free') tally[t] = (tally[t] || 0) + 1;
+      }
+    }
+    parts.push((size ? size.padStart(10) + '  ' : '') + name);
+    if (!fs) {
+      if (/Apple_APFS/i.test(name)) fs = 'APFS';
+      else if (/Apple_HFSX/i.test(name)) fs = 'HFS+ (case-sensitive)';
+      else if (/Apple_HFS/i.test(name)) fs = 'HFS+ (Mac OS Extended)';
+      else if (/DOS_FAT|FAT32|MS-DOS/i.test(name)) fs = 'FAT';
+      else if (/ISO9660|CD_partition/i.test(name)) fs = 'ISO 9660 (CD/DVD)';
+    }
+  }
+  const main = Object.entries(tally).sort((a, b) => (b[1] - a[1]) || (a[0] === 'raw' ? 1 : -1))[0];
+  if (main) out['Image format'] = UDIF_FORMATS[main[0]] || main[0];
+  if (fs) out['Filesystem'] = fs;
+  if (parts.length) {
+    out['Partitions'] = parts.length;
+    out._sections = [{ title: 'Partition map (' + parts.length + ')', node: preBlock(parts.join('\n')), open: true }];
+  }
+  return out;
+}
+
+// ===================================================================
 //                       dispatch
 // ===================================================================
 export const PARSERS: Record<string, ParseFn> = {
   // DJI firmware (.bin routed here by magic - sniffedExt 'djifw')
   djifw: (c) => parseDjiFirmware(c.file),
+  dmg: (c) => parseDmg(c.file),
   // Virtualization
   ovf: (c) => parseOvf(c.file),
   ova: (c) => parseOva(c.file),

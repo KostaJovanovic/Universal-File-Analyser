@@ -14,6 +14,10 @@ page-thumbnail previews with a full-page lightbox, embedded raster image
 extraction, and OCR - all via the vendored **pdf.js**.
 
 **How to reach it.** Drop any `.pdf`. Built in `web/assets/js/renderers/pdf.js`.
+A PDF past 64 MB is handed to pdf.js piece by piece, each range read from
+the file as a page needs it, rather than loaded whole - so a very large
+scan opens and only the pages you look at are read. The revision and
+trailing-data checks scan the file in pieces too.
 
 **How to use it.**
 

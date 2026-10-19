@@ -86,10 +86,10 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
             './assets/js/games/boss.js', './assets/js/games/leaderboard.js', './assets/js/games/menus.js',
             './assets/js/games/render.js', './assets/js/games/update.js', './assets/js/games/input.js',
             './assets/js/renderers/docx.js', './assets/js/renderers/xlsx.js', './assets/js/renderers/epub.js',
-            './assets/js/renderers/pptx.js', './assets/js/renderers/stl.js', './assets/js/renderers/zip.js',
+            './assets/js/renderers/pptx.js', './assets/js/renderers/stl.js', './assets/js/renderers/mesh-stream.js', './assets/js/renderers/zip.js',
             './assets/js/renderers/lrc.js', './assets/js/renderers/midi.js', './assets/js/renderers/subtitles.js',
             './assets/js/renderers/geo.js', './assets/js/renderers/markdown.js', './assets/js/renderers/comic.js',
-            './assets/js/core/binutil.js', './assets/js/lib/plist.js', './assets/js/lib/cfbf.js', './assets/js/lib/sqlite.js', './assets/js/lib/libarchive-loader.js', './assets/js/lib/openjpeg-loader.js', './assets/js/lib/xz-loader.js', './assets/js/lib/ghostscript-loader.js', './assets/js/parsers/parsers-dev.js',
+            './assets/js/core/binutil.js', './assets/js/lib/plist.js', './assets/js/lib/cfbf.js', './assets/js/lib/sqlite.js', './assets/js/lib/sqlite-pages.js', './assets/js/lib/libarchive-loader.js', './assets/js/lib/openjpeg-loader.js', './assets/js/lib/xz-loader.js', './assets/js/lib/ghostscript-loader.js', './assets/js/parsers/parsers-dev.js',
             './assets/js/parsers/parsers-archive.js', './assets/js/parsers/parsers-email.js',
             './assets/js/parsers/parsers-security.js', './assets/js/parsers/parsers-gaming.js',
             './assets/js/parsers/parsers-disk.js', './assets/js/parsers/parsers-sci.js', './assets/js/parsers/parsers-osmisc.js',
@@ -123,6 +123,10 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
             // URLs they pull live in the Complete tier below.
             './assets/js/lib/dfn-model.js', './assets/js/lib/dfn-dsp.js', './assets/js/lib/dfn-enhance.js',
             './assets/js/lib/dfn-client.js', './assets/js/lib/dfn-worker.js',
+            // Streaming file hashes (the Integrity card past HASH_SUBTLE_MAX).
+            './assets/js/lib/hash-stream.js', './assets/js/lib/hash-client.js', './assets/js/lib/hash-worker.js',
+            // Pure-JS TAR / .tar.gz / ISO reader, tried before libarchive.
+            './assets/js/lib/stream-archive.js',
             './assets/js/core/effects.js', './assets/js/core/popups.js', './assets/js/core/export-data.js',
             './assets/img/favicon.svg', './assets/img/icon.png', './assets/img/icon-192.png', './assets/img/icon-512.png',
             './assets/vendor/exifr.umd.js',

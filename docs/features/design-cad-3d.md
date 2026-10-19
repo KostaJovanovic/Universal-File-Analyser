@@ -68,8 +68,16 @@ btn: PNG
 ```
 
 **Notes / limits.** ag-psd doesn't support CMYK/Lab/16-bit/PSB and
-recomposites nothing for those - Analyser falls back to the embedded
-thumbnail from path 1 rather than failing.
+recomposites nothing for those, and it holds the whole file. Everything it
+can't take - those modes, 32-bit, PSB, and files past the size or canvas
+cap - is read in pieces instead: the full layer list (names, groups, blend
+modes, opacity, visibility, hidden-content flags) comes from the layer
+records, and the flattened image Photoshop saves is decoded row by row,
+shown at up to 2048 px on its long side. Layer pixels are not unpacked on
+that path, so layers have no thumbnails or PNG buttons there. When the
+flattened image can't be read (a file saved without "Maximize
+Compatibility" stores a blank one), the embedded thumbnail from path 1
+stands in.
 
 ### Raster painting apps (Krita/Procreate)
 
@@ -210,6 +218,16 @@ btn: Z-up
 ```demo
 btn: Wireframe
 ```
+
+**Notes / limits.** An STL (or PLY) past 1 GB on a desktop - less on
+smaller devices - is read in pieces instead of declined. The triangle count,
+bounding box, surface area and volume still cover every triangle; the view
+is a simplified copy, with corners snapped to a grid across the model and
+the triangles that collapse or repeat dropped, and the grid made coarser
+until the copy fits in memory. A PLY's faces point into its vertex list, so
+that list is held whole (up to 50 million vertices on a desktop). Splitting
+into bodies and the mesh integrity check need the whole mesh at once, so
+they are not run on that path.
 
 ### Mesh integrity (non-manifold / watertight check)
 

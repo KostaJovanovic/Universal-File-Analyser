@@ -22,6 +22,13 @@ workbench below it (see "Table analysis workbench" below) for interactive
 sorting/filtering/charting. A file that looks like a Gyroflow IMU log is
 detected and handed to `gcsv.js`'s gyro-specific view instead.
 
+**Notes / limits.** A large CSV (past 200 MB on a desktop, less on smaller
+devices) is read in pieces rather than as one block of text. The row and
+column counts, ragged rows, line endings and the numeric min / max / mean
+still cover every row; the column types, the profile and the workbench use
+the first rows that fit in memory, and a **Rows held** line says how many
+that is.
+
 ### Table analysis workbench
 
 **What it does.** A full data-analysis toolkit mounted below any
@@ -189,6 +196,9 @@ btn: Show more messages
 
 **Notes / limits.** No network fetches and no scripts ever run - the HTML
 body is sanitised the same way the MHTML viewer sanitises saved web pages.
+An `.mbox` of any size opens: it is scanned in pieces for the `From `
+separator lines, and each message is read from the file only when it is
+shown.
 
 ### Archive inspection (ZIP and beyond)
 
@@ -217,7 +227,15 @@ btn: Filter by type
 **Notes / limits.** ZIP parsing (`zip.js`) prefers a central-directory read
 with ranged fetches per entry (order-independent, never loads the whole
 file), falling back to a sequential local-header walk for truncated/
-headerless archives - see [`renderers.md`](../renderers.md).
+headerless archives - see [`renderers.md`](../renderers.md). It reads ZIP64
+as well, so a ZIP past 4 GB or with more than 65,535 entries lists in full;
+a listing too long to show is cut short with a note rather than declined.
+TAR, `.tar.gz` and ISO 9660 discs (Joliet and Rock Ridge names included)
+are read the same way, from small pieces of the file, and a stored entry
+opens as a slice of the original without being copied. RAR, 7z, CAB,
+UDF-only discs and `.tar.xz` / `.tar.zst` / `.tar.bz2` still go through
+libarchive, which has to hold the whole archive in memory, so for those the
+size limit remains.
 
 ### Folder overview
 

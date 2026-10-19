@@ -281,7 +281,7 @@ export const FORMATS = {
     msi: { app: 'Windows Installer' },
     apk: { app: 'Android Application' },
     ipa: { app: 'iOS Application', zip: true },
-    dmg: { app: 'macOS Disk Image' },
+    dmg: { app: 'macOS Disk Image', chunk: 'disk' },
     appimage: { app: 'Linux AppImage' },
     // Web
     html: { app: 'HTML Document', parse: 'html' },
@@ -806,6 +806,21 @@ export const FORMATS = {
     pol: { app: 'Group Policy (Registry.pol)', chunk: 'osmisc' },
     scr: { app: 'Windows Screensaver' },
     ds_store: { app: 'macOS .DS_Store', chunk: 'osmisc' },
+    // AppleDouble is never an extension: resolveByContent routes `._name` files
+    // here by their 00 05 16 07 magic (sniffedExt 'appledouble').
+    appledouble: { app: 'macOS AppleDouble metadata', chunk: 'osmisc' },
+    // Property-list documents macOS writes under their own extensions.
+    textclipping: { app: 'macOS Text Clipping', chunk: 'osmisc' },
+    inetloc: { app: 'macOS Internet Location', chunk: 'osmisc' },
+    fileloc: { app: 'macOS File Location', chunk: 'osmisc' },
+    afploc: { app: 'macOS AFP Server Location', chunk: 'osmisc' },
+    ftploc: { app: 'macOS FTP Location', chunk: 'osmisc' },
+    savedsearch: { app: 'macOS Smart Folder (Saved Search)', chunk: 'osmisc' },
+    terminal: { app: 'macOS Terminal Profile', chunk: 'osmisc' },
+    itermcolors: { app: 'iTerm2 Colour Preset', chunk: 'osmisc' },
+    aupreset: { app: 'Audio Unit Preset', chunk: 'osmisc' },
+    strings: { app: 'Apple Localised Strings', chunk: 'osmisc' },
+    stringsdict: { app: 'Apple Plural Strings Dictionary', chunk: 'osmisc' },
     thumbsdb: { app: 'Windows Thumbs.db', chunk: 'osmisc' },
     dsym: { app: 'dSYM Debug Symbols', chunk: 'osmisc' },
     dwarf: { app: 'DWARF Debug Symbols', chunk: 'osmisc' },

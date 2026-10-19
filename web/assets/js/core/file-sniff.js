@@ -129,6 +129,13 @@ export async function sniffFileType(file) {
         return { kind: 'svg', ext: 'svg', label: 'SVG image' };
     return null;
 }
+// A `._<name>` file is almost always AppleDouble metadata, but its name ends in
+// the real file's extension (`._photo.jpg`), so classifyFile routes it as that
+// type. Callers run resolveByContent for these names too, which the magic check
+// there settles either way.
+export function isAppleDoubleName(name) {
+    return /^\._./.test((name || '').replace(/^.*[\\/]/, ''));
+}
 // Resolve a file's true type from its CONTENT - the niche text/game magics first,
 // then the broad sniffFileType() magic table, then git objects and the CSV
 // heuristic. The SINGLE source of truth shared by the drop path (handleFile) and
@@ -144,7 +151,26 @@ export async function resolveByContent(file) {
         const a = (s, l) => Array.from(head.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
         const lowerExt = fileExt(file.name);
         const lowerName = (file.name || '').toLowerCase().replace(/^.*[\\/]/, '');
-        if (a(0, 4) === '%PDF')
+        // AppleDouble / AppleSingle (00 05 16 07 / 00 05 16 00): the metadata a Mac
+        // writes beside a file on a non-Mac disk or into a zip as `._<name>`. It
+        // borrows the real file's name, so it is caught here before that name's
+        // extension sends it to the wrong viewer (see isAppleDoubleName).
+        if (head[0] === 0x00 && head[1] === 0x05 && head[2] === 0x16 && (head[3] === 0x07 || head[3] === 0x00)) {
+            kind = 'proprietary';
+            sniffedExt = 'appledouble';
+        }
+        // Apple property lists under an extension nothing catalogues (.textClipping
+        // relatives, ~/Library caches, extensionless prefs): binary, or XML with the
+        // plist doctype / root element in the first bytes.
+        else if (a(0, 8) === 'bplist00') {
+            kind = 'proprietary';
+            sniffedExt = 'plist';
+        }
+        else if (/^(\xEF\xBB\xBF)?\s*<\?xml[^>]*>\s*(<!DOCTYPE plist|<plist[\s>])/.test(a(0, 128))) {
+            kind = 'proprietary';
+            sniffedExt = 'plist';
+        }
+        else if (a(0, 4) === '%PDF')
             kind = 'pdf';
         else if (head[0] === 0x50 && head[1] === 0x4B)
             kind = 'zip';

@@ -208,7 +208,10 @@ can expand into prose. British spelling, no em-dashes (site house style).
   projects and anything else built on SQLite. There is a full **SQL console**
   too: any statement you like, including writes, run against a copy of the
   database held in memory. The copy is discarded when you leave and the file on
-  your device is never written to.
+  your device is never written to. A database too large to copy into memory
+  (past 512 MB on a desktop) still opens: its tables, columns, row counts and
+  sample rows are read straight from the file's pages (very large tables get
+  an estimated count, marked ≈), and only the SQL console is left out.
 
 ## Presentations
 
@@ -459,6 +462,16 @@ can expand into prose. British spelling, no em-dashes (site house style).
   (e.g. some game saves).
 - **Apple property lists** (`.plist`, XML and binary) - used by `.webloc`,
   configuration profiles, provisioning profiles, sprite atlases, game saves.
+  Recognised by content under any name, with Cocoa NSKeyedArchiver archives
+  rebuilt into a readable tree. Text clippings, internet/file locations,
+  Smart Folders, Terminal and iTerm2 presets, Audio Unit presets and
+  `.strings` tables get their own summaries.
+- **macOS `._` AppleDouble files** - the metadata a Mac leaves beside files
+  on USB sticks and in zips: Finder tags and label, resource fork, and the
+  quarantine / where-from attributes that say which app downloaded the file
+  and from which address.
+- **macOS DMG disk images** - size, compression format, filesystem,
+  partition map, checksum, code signature or encryption.
 
 ## Unknown files
 

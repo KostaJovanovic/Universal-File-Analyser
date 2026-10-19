@@ -8,7 +8,7 @@ import { el, row, rowHelp, h3help, fmtBytes, buildFileTree, isUnreadableError, c
 import { normalizeArchive, renderBreakdownCards, renderViewToggle, categorizeExt } from './folder-archive-shared.js';
 import { ARCHIVE_EXTS } from '../core/formats.js';
 import { WALL_INDEX, DECOMP_ENTRY_MAX, DECOMP_OUTPUT_MAX, LIST_ENTRIES_MAX } from '../core/limits.js';
-import { inflateZipData, decodeZipName } from './zip.js';
+import { readZipDirectory, readZipEntryAt, inflateZipData } from './zip.js';
 import { extractArchive } from '../lib/libarchive-loader.js';
 import { gunzip } from '../core/binutil.js';
 import { xzDecompress } from '../lib/xz-loader.js';
@@ -16,104 +16,15 @@ import { unlz4, unlzw } from '../lib/legacy-decompress.js';
 import { lzmaDecompress } from '../lib/lzma-loader.js';
 
 // ---------- ZIP parsing via central directory ----------
-
-// Entry names go through decodeZipName() in zip.js. Entries are extracted by
-// their local-header offset, never by this name, so the display choice cannot
-// make an entry unopenable.
-function parseZipEntries(buf: ArrayBuffer) {
-  const view = new DataView(buf);
-  const bytes = new Uint8Array(buf);
-  const entries: any[] = [];
-
-  let eocdOffset = -1;
-  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
-    if (view.getUint32(i, true) === 0x06054b50) {
-      eocdOffset = i;
-      break;
-    }
-  }
-
-  if (eocdOffset === -1) return entries;
-
-  const cdOffset = view.getUint32(eocdOffset + 16, true);
-  const cdSize   = view.getUint32(eocdOffset + 12, true);
-  const entryCount = view.getUint16(eocdOffset + 10, true);
-
-  // A malformed EOCD can point cdOffset/cdSize outside the buffer. Clamp the
-  // central-directory window to what actually exists so the per-header reads
-  // below can't run a DataView getter past the end (which throws).
-  if (cdOffset >= bytes.length) return entries;
-  const cdEnd = Math.min(cdOffset + cdSize, bytes.length);
-
-  let pos = cdOffset;
-
-  // Each central-directory header is a fixed 46-byte record plus variable
-  // name/extra/comment fields; require the fixed part to fit before reading it.
-  for (let i = 0; i < entryCount && pos + 46 <= cdEnd; i++) {
-    if (view.getUint32(pos, true) !== 0x02014b50) break;
-
-    const versionMadeBy = view.getUint16(pos + 4, true);
-    const flags         = view.getUint16(pos + 8, true);
-    const compMethod    = view.getUint16(pos + 10, true);
-    const modTime       = view.getUint16(pos + 12, true);
-    const modDate       = view.getUint16(pos + 14, true);
-    const crc           = view.getUint32(pos + 16, true);
-    let compSize        = view.getUint32(pos + 20, true);
-    let uncompSize      = view.getUint32(pos + 24, true);
-    const nameLen       = view.getUint16(pos + 28, true);
-    const extraLen      = view.getUint16(pos + 30, true);
-    const commentLen    = view.getUint16(pos + 32, true);
-    let lho             = view.getUint32(pos + 42, true);
-    const name          = decodeZipName(bytes.subarray(pos + 46, Math.min(pos + 46 + nameLen, cdEnd)), flags);
-    const isDir         = name.endsWith('/');
-
-    // Scan the extra field for a Zip64 extended-information record (id 0x0001).
-    // It carries, in order, the 64-bit value of each field whose 32-bit slot
-    // holds the 0xFFFFFFFF sentinel.
-    let zip64 = false;
-    {
-      let ep = pos + 46 + nameLen;
-      const extraEnd = Math.min(ep + extraLen, cdEnd);
-      while (ep + 4 <= extraEnd) {
-        const id = view.getUint16(ep, true);
-        const sz = view.getUint16(ep + 2, true);
-        if (id === 0x0001) {
-          zip64 = true;
-          let zp = ep + 4;
-          const zEnd = Math.min(ep + 4 + sz, extraEnd);
-          const next = () => { if (zp + 8 > zEnd) return -1; const v = view.getUint32(zp, true) + view.getUint32(zp + 4, true) * 0x100000000; zp += 8; return v; };
-          if (uncompSize === 0xFFFFFFFF) { const v = next(); if (v >= 0) uncompSize = v; }
-          if (compSize === 0xFFFFFFFF) { const v = next(); if (v >= 0) compSize = v; }
-          if (lho === 0xFFFFFFFF) { const v = next(); if (v >= 0) lho = v; }
-          break;
-        }
-        ep += 4 + sz;
-      }
-    }
-
-    entries.push({ name, compSize, uncompSize, compMethod, crc, isDir, flags, versionMadeBy, modTime, modDate, zip64, lho, index: i });
-    pos += 46 + nameLen + extraLen + commentLen;
-  }
-
-  return entries;
-}
-
-// Read one entry's data straight from its local header (the central-directory
-// offset), so an entry is found by position rather than by name - duplicate or
-// oddly encoded names still open the right bytes. Inflation stops at `maxOut`,
-// and an entry whose declared size is already past it is refused unread.
-// Returns null for an encrypted, unsupported, corrupt or over-cap entry.
-async function readZipEntry(buf: ArrayBuffer, e: any, maxOut: number): Promise<Uint8Array | null> {
-  if (!e || e.isDir || isEncrypted(e)) return null;
-  if (e.uncompSize > maxOut) return null;
-  const bytes = new Uint8Array(buf);
-  const lho = e.lho;
-  if (typeof lho !== 'number' || lho + 30 > bytes.length) return null;
-  const view = new DataView(buf);
-  if (view.getUint32(lho, true) !== 0x04034b50) return null;
-  const ds = lho + 30 + view.getUint16(lho + 26, true) + view.getUint16(lho + 28, true);
-  if (ds + e.compSize > bytes.length) return null;
-  return inflateZipData(bytes.subarray(ds, ds + e.compSize), e.compMethod, maxOut);
+//
+// The directory is read by readZipDirectory() in zip.js (ranged, ZIP64-aware)
+// and each entry by readZipEntryAt() - two small slices of the File - so the
+// archive is never loaded whole and has no size ceiling. Entry names go through
+// decodeZipName(); entries are extracted by their local-header offset, never by
+// name, so the display choice cannot make an entry unopenable, and duplicate or
+// oddly encoded names still open the right bytes.
+function readZipEntry(file: Blob, e: any, maxOut: number): Promise<Uint8Array | null> {
+  return readZipEntryAt(file, e, maxOut);
 }
 
 // True when a blob starts with a ZIP signature (local header or an empty
@@ -292,7 +203,7 @@ function buildTimeHistogram(stamps: number[], min: number, max: number) {
 // own offset and dropped before the next, so peak memory is one entry rather
 // than the whole unpacked archive. Entries declared (or found) larger than
 // DECOMP_ENTRY_MAX are skipped and counted, never inflated.
-async function verifyArchiveCrcs(buf: ArrayBuffer, verifiable: any[]) {
+async function verifyArchiveCrcs(buf: Blob, verifiable: any[]) {
   await new Promise((r) => setTimeout(r, 0));   // let the progress bar paint first
   let pass = 0, fail = 0, skipped = 0, tooLarge = 0;
   const mismatches = [];
@@ -314,7 +225,7 @@ async function verifyArchiveCrcs(buf: ArrayBuffer, verifiable: any[]) {
 
 // Build the "Timing & integrity" card: timestamp summary + flags + histogram, and
 // an on-demand CRC verification control. Returns null when there's nothing to show.
-function buildArchiveForensics(buf: ArrayBuffer, fileEntries: any[]) {
+function buildArchiveForensics(buf: Blob, fileEntries: any[]) {
   const dated = fileEntries.map((e) => dosToMs(e.modDate, e.modTime)).filter((t) => t != null).sort((a: number, b: number) => a - b);
   const verifiable = fileEntries.filter((e) => !isEncrypted(e));
   if (!dated.length && !verifiable.length) return null;
@@ -415,21 +326,12 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading ZIP archive "${file.name}"…`));
 
-  // A ZIP is read whole into an ArrayBuffer here; a multi-GB archive would
-  // allocate several copies and crash the tab before any inspection. Above a
-  // ceiling, decline rather than attempt the allocation. (In-browser ArrayBuffers
-  // are impractical near this size anyway.)
-  if (file.size > WALL_INDEX) {
-    resultsEl.innerHTML = '';
-    resultsEl.appendChild(errorCard(
-      'This archive is ' + fmtBytes(file.size) + ' - too large to browse in the browser without exhausting memory. '
-      + 'The file was not opened.'));
-    return;
-  }
-
-  let buf: ArrayBuffer;
+  // Only the central directory is read here (ranged, ZIP64-aware), and each
+  // entry later by its own offset - so a multi-GB archive (a Google Takeout
+  // export, a backup) browses without being loaded and has no size wall.
+  let dir;
   try {
-    buf = await file.arrayBuffer();
+    dir = await readZipDirectory(file, LIST_ENTRIES_MAX);
   } catch (e) {
     resultsEl.innerHTML = '';
     if (isUnreadableError(e)) {
@@ -440,12 +342,14 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
     return;
   }
 
-  const entries = parseZipEntries(buf);
+  const entries: any[] = dir ? dir.entries : [];
   if (entries.length === 0) {
     resultsEl.innerHTML = '';
     resultsEl.appendChild(errorCard('No entries found in this ZIP file, or the archive is corrupt.'));
     return;
   }
+  // Entries are read straight off the File from here on (readZipEntry).
+  const buf: Blob = file;
 
   resultsEl.innerHTML = '';
 
@@ -474,6 +378,10 @@ export async function renderArchive(file: File, resultsEl: HTMLElement, opts: an
   for (const e of fileEntries) { const n = METHODS[e.compMethod] || ('Method ' + e.compMethod); methodCounts[n] = (methodCounts[n] || 0) + 1; }
   const methodStr = Object.entries(methodCounts).map(([k, v]) => k + ' ×' + v).join(', ');
   if (methodStr) tbl.appendChild(rowHelp('Compression', methodStr, 'The method used to shrink each file. Deflate is the usual ZIP squeezing method; Stored means the file was kept as-is with no shrinking.'));
+  if (dir && dir.truncated) {
+    tbl.appendChild(rowHelp('⚠ Listed', `the first ${entries.length.toLocaleString()} of ${dir.total.toLocaleString()} entries`,
+      'This archive holds more entries than can be listed here at once, so the counts, sizes and tree below cover the first part of it only.'));
+  }
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
 
@@ -805,8 +713,10 @@ export function renderHandleTree(handle: any, fileEntries: any[], file: File, re
 
   async function openEntry(entry: any) {
     try {
-      const bytes = await entry.getBytes();
-      const f = new File([bytes], entry.name.split('/').pop() || entry.name, { type: 'application/octet-stream' });
+      // A stored entry (TAR / ISO, lib/stream-archive.ts) is a zero-copy slice of
+      // the archive, so even a multi-GB file inside opens without being read.
+      const part = entry.getBlob ? entry.getBlob() : await entry.getBytes();
+      const f = new File([part], entry.name.split('/').pop() || entry.name, { type: 'application/octet-stream' });
       // Register a Back-bar restore that re-renders this archive (one level up).
       if (window._anrPushNav) {
         window._anrPushNav(file.name || 'archive', () => { resultsEl.hidden = false; resultsEl.innerHTML = ''; renderHandleTree(handle, fileEntries, file, resultsEl, opts); });

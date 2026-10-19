@@ -13,7 +13,7 @@
    ============================================================================ */
 
 import { el, row, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '../core/util.js';
-import { HASH_FILE_MAX } from '../core/limits.js';
+import { HASH_FILE_MAX, MBOX_SCAN_CHUNK } from '../core/limits.js';
 import { sanitizeHtml as sanitizeHtmlShared } from '../core/sanitize.js';
 
 // ---------- header parsing ----------
@@ -238,14 +238,50 @@ export async function renderEml(file: File, container: HTMLElement) {
   }
 }
 
+// Byte offsets of every mbox separator - a line beginning "From " - found by
+// scanning the file in MBOX_SCAN_CHUNK slices (each read 4 bytes long, so a
+// separator split across two slices is still seen). The mailbox is never held
+// whole: a multi-GB Takeout .mbox is past the browser's longest string, which is
+// what file.text() used to hit. Returns [start, end) byte ranges, one a message.
+async function mboxRanges(file: File, onProgress: (frac: number) => void) {
+  const starts = [0];
+  let prevLast = 10;                      // as if a newline came before byte 0
+  for (let off = 0; off < file.size; off += MBOX_SCAN_CHUNK) {
+    const b = new Uint8Array(await file.slice(off, off + MBOX_SCAN_CHUNK + 4).arrayBuffer());
+    const n = Math.min(MBOX_SCAN_CHUNK, b.length);
+    for (let i = 0; i < n; i++) {
+      if (b[i] !== 0x46 || (i ? b[i - 1] : prevLast) !== 10) continue;            // 'F' at a line start
+      if (b[i + 1] === 0x72 && b[i + 2] === 0x6F && b[i + 3] === 0x6D && b[i + 4] === 0x20 && off + i > 0) starts.push(off + i);
+    }
+    prevLast = b[n - 1];
+    onProgress(Math.min(1, (off + n) / file.size));
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  const ranges: [number, number][] = [];
+  for (let k = 0; k < starts.length; k++) ranges.push([starts[k], k + 1 < starts.length ? starts[k + 1] : file.size]);
+  return ranges;
+}
+
+// One message's text: its separator line dropped, and the line break that led
+// into the next separator trimmed (what the old whole-text split removed).
+async function mboxMessage(file: File, [a, b]: [number, number]) {
+  let t = await file.slice(a, b).text();
+  if (t.startsWith('From ')) { const nl = t.indexOf('\n'); t = nl < 0 ? '' : t.slice(nl + 1); }
+  return t.replace(/\r?\n$/, '');
+}
+
 export async function renderMbox(file: File, container: HTMLElement) {
   container.hidden = false;
   container.innerHTML = '';
-  container.appendChild(el('div', { class: 'anr-info' }, 'Reading mailbox...'));
+  const status = el('div', { class: 'anr-info' }, 'Reading mailbox...');
+  container.appendChild(status);
   try {
-    const text = await file.text();
-    // Split on lines beginning with "From " (the mbox message separator).
-    const chunks = text.split(/\r?\n(?=From )/).map((c) => c.replace(/^From .*\r?\n/, '')).filter((c) => c.trim());
+    let ranges = await mboxRanges(file, (f) => { status.textContent = 'Reading mailbox... ' + Math.round(f * 100) + '%'; });
+    // Whatever sits before the first separator is a message only if it has
+    // text in it (the old split dropped a blank preamble). A real separator at
+    // byte 0 makes the first range a message anyway.
+    if (ranges.length && ranges[0][1] - ranges[0][0] <= 64 * 1024 && !(await mboxMessage(file, ranges[0])).trim()) ranges = ranges.slice(1);
+    const chunks = ranges;
     container.innerHTML = '';
     const info = el('div', { class: 'anr-card' });
     info.appendChild(el('h3', {}, 'Mailbox (mbox)'));
@@ -266,13 +302,16 @@ export async function renderMbox(file: File, container: HTMLElement) {
     const moreBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show more messages');
     btnRow.appendChild(moreBtn);
     container.appendChild(btnRow);
-    function reveal(upTo: number) {
-      for (; shown < upTo && shown < chunks.length; shown++) host.appendChild(messageCard(chunks[shown], 'Message ' + (shown + 1)));
+    // Each message is sliced and decoded only when it is revealed.
+    async function reveal(upTo: number) {
+      moreBtn.disabled = true;
+      for (; shown < upTo && shown < chunks.length; shown++) host.appendChild(messageCard(await mboxMessage(file, chunks[shown]), 'Message ' + (shown + 1)));
+      moreBtn.disabled = false;
       if (shown >= chunks.length) btnRow.hidden = true;
       else moreBtn.textContent = 'Show more messages (' + shown + '/' + chunks.length + ')';
     }
-    moreBtn.addEventListener('click', () => reveal(shown + BATCH));
-    reveal(Math.min(chunks.length, BATCH));
+    moreBtn.addEventListener('click', () => { reveal(shown + BATCH); });
+    await reveal(Math.min(chunks.length, BATCH));
 
     if (file.size <= HASH_FILE_MAX) container.appendChild(integrityCard(file));
   } catch (e) {

@@ -1,7 +1,7 @@
 /* Analyser - shared utilities
    DOM helpers and small formatters used by every module. */
 
-import { HASH_JS_MAX } from './limits.js';
+import { HASH_SUBTLE_MAX, HASH_INLINE_MAX } from './limits.js';
 
 // Origin to prefix onto /api/... calls. Always same-origin - the site calls
 // /api/* on its own domain.
@@ -930,8 +930,15 @@ function hex(buf: ArrayBuffer|Uint8Array) {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export async function sha256Hex(file: File) {
-  if (!crypto.subtle) return null;
+// Up to HASH_SUBTLE_MAX the file is read whole and digested natively; past it it
+// is streamed through lib/hash-client.ts in slices (a worker), so a file of any
+// size can be hashed without holding it in memory. `onProgress` (0..1) only
+// fires on the streamed path - the native one is one opaque call.
+export async function sha256Hex(file: File, onProgress?: ((frac: number) => void) | null) {
+  if (file.size > HASH_SUBTLE_MAX || !crypto.subtle) {
+    const { hashFileStreamed } = await import('../lib/hash-client.js');
+    return (await hashFileStreamed(file, ['sha256'], onProgress)).sha256 || null;
+  }
   const buf = await file.arrayBuffer();
   return hex(await crypto.subtle.digest('SHA-256', buf));
 }
@@ -1015,32 +1022,34 @@ export function crc32Hex(bytes: Uint8Array) {
   return ((crc ^ 0xFFFFFFFF) >>> 0).toString(16).padStart(8, '0');
 }
 
-// CRC-32 + MD5 + SHA-1 + SHA-512 over one in-memory read, returned as
-// [label, hex, description?] tuples. Used by the "Show more hashes" affordance in
-// sha256Row(). CRC-32 carries its own description since it isn't a hash.
-export async function extraHashRows(file: File) {
-  const buf = await file.arrayBuffer();
-  const [sha1, sha512] = await Promise.all([
-    subtleHex('SHA-1', buf),
-    subtleHex('SHA-512', buf),
-  ]);
-  const crcDesc = 'CRC-32 is a fast check number, not a security fingerprint - the same one built into ZIP, PNG and gzip files, and stored in SFV checksum files. It reliably catches accidental damage, but it can be fooled on purpose (it is not collision-resistant), so unlike the hashes below it is not proof against deliberate tampering.';
-  const rows = [];
-  // MD5 and CRC-32 have no crypto.subtle equivalent, so they run in pure JS,
-  // byte-by-byte. On a very large file that is a multi-second main-thread freeze,
-  // so skip them past HASH_JS_MAX; the two native SHA rows below still compute.
-  if (buf.byteLength <= HASH_JS_MAX) {
+// CRC-32 + MD5 + SHA-1 + SHA-512, returned as [label, hex, description?] tuples.
+// Used by the "Show more hashes" affordance in sha256Row(). CRC-32 carries its
+// own description since it isn't a hash. A small file is read once and hashed in
+// place; past HASH_INLINE_MAX all four stream through the hash worker in one pass
+// (`onProgress` 0..1), so a large file neither freezes the page nor has to fit in
+// memory.
+export async function extraHashRows(file: File, onProgress?: ((frac: number) => void) | null) {
+  let crc, md5, sha1, sha512;
+  if (file.size <= HASH_INLINE_MAX) {
+    const buf = await file.arrayBuffer();
+    [sha1, sha512] = await Promise.all([
+      subtleHex('SHA-1', buf),
+      subtleHex('SHA-512', buf),
+    ]);
     const bytes = new Uint8Array(buf);
-    rows.push(['CRC-32', crc32Hex(bytes), crcDesc]);
-    rows.push(['MD5', md5Hex(bytes), 'MD5 is a legacy 128-bit checksum still keyed on by forensic databases (NSRL) and old checksum files. It is not collision-resistant, so treat it as a lookup key, not tamper-evidence.']);
+    crc = crc32Hex(bytes);
+    md5 = md5Hex(bytes);
   } else {
-    const skip = `not computed - file over ${Math.round(HASH_JS_MAX / (1024 * 1024))} MB (MD5/CRC-32 run without hardware acceleration and would freeze the page; the SHA rows below still apply)`;
-    rows.push(['CRC-32', skip, crcDesc]);
-    rows.push(['MD5', skip, 'MD5 is a legacy 128-bit checksum. It was skipped here because computing it on a file this large would lock up the page.']);
+    const { hashFileStreamed } = await import('../lib/hash-client.js');
+    ({ crc32: crc, md5, sha1, sha512 } = await hashFileStreamed(file, ['crc32', 'md5', 'sha1', 'sha512'], onProgress));
   }
-  rows.push(['SHA-1', sha1 || 'unavailable']);
-  rows.push(['SHA-512', sha512 || 'unavailable']);
-  return rows;
+  const crcDesc = 'CRC-32 is a fast check number, not a security fingerprint - the same one built into ZIP, PNG and gzip files, and stored in SFV checksum files. It reliably catches accidental damage, but it can be fooled on purpose (it is not collision-resistant), so unlike the hashes below it is not proof against deliberate tampering.';
+  return [
+    ['CRC-32', crc || 'unavailable', crcDesc],
+    ['MD5', md5 || 'unavailable', 'MD5 is a legacy 128-bit checksum still keyed on by forensic databases (NSRL) and old checksum files. It is not collision-resistant, so treat it as a lookup key, not tamper-evidence.'],
+    ['SHA-1', sha1 || 'unavailable'],
+    ['SHA-512', sha512 || 'unavailable'],
+  ];
 }
 
 // Above this size SHA-256 isn't computed automatically (hashing reads the whole
@@ -1069,7 +1078,7 @@ export function sha256Row(file: File) {
       bar.indeterminate();
       cell.textContent = '';
       cell.appendChild(bar);
-      extraHashRows(file).then(rows => {
+      extraHashRows(file, (frac) => bar.set(frac)).then(rows => {
         bar.stop();
         let anchor = ctrlRow;
         rows.forEach(([label, value, desc]) => {
@@ -1089,7 +1098,7 @@ export function sha256Row(file: File) {
     bar.indeterminate();
     td.textContent = '';
     td.appendChild(bar);
-    sha256Hex(file).then(h => {
+    sha256Hex(file, (frac) => bar.set(frac)).then(h => {
       bar.stop();
       td.textContent = h || 'unavailable';
       td.style.wordBreak = 'break-all';

@@ -7,12 +7,14 @@
    open?}]` for collapsible blocks or `_previewNode`. Return null to fall back to
    the generic identification card.
 
-   Dependency-free: only the shared toolkit (util/binutil) is imported. */
+   Dependency-free: only the shared toolkit (util/binutil) and the shared
+   Apple plist reader (lib/plist) are imported. */
 
 import { el, fmtBytes, preBlock, fmtDate, readSlice, readText } from '../core/util.js';
 import type { ElChild, ElAttrs } from '../core/util.js';
 import { Reader, ascii, cp437, latin1, utf8 } from '../core/binutil.js';
-import { PARSE_TEXT_MAX } from '../core/limits.js';
+import { PARSE_TEXT_MAX, SCAN_SMALL } from '../core/limits.js';
+import { parsePlist, unarchiveKeyed } from '../lib/plist.js';
 import type { Row, ParseFn } from '../core/types.js';
 
 // ---------- small helpers ----------
@@ -561,8 +563,287 @@ async function parseSamsungBackup(file: File) {
   };
 }
 
+// ---------- macOS property-list documents ----------
+// A plist value tree as readable JSON: binary data shown by size, dates as ISO.
+function plistDump(v: any) {
+  let json = '';
+  try { json = JSON.stringify(v, (k, x) => (x instanceof Uint8Array ? '<' + x.length + ' bytes>' : x), 2) || ''; } catch (_) { return null; }
+  return preBlock(json.length > 40000 ? json.slice(0, 40000) + '\n…' : json);
+}
+// A pasteboard / plist value that should be text: a string, or bytes in UTF-8
+// (UTF-16 when the type says so or the bytes carry a BOM).
+function plistText(x: any, utf16 = false) {
+  if (typeof x === 'string') return x;
+  if (!(x instanceof Uint8Array)) return null;
+  const bom16 = x.length >= 2 && ((x[0] === 0xFF && x[1] === 0xFE) || (x[0] === 0xFE && x[1] === 0xFF));
+  if (utf16 || bom16) return new TextDecoder(x[0] === 0xFE ? 'utf-16be' : 'utf-16le').decode(x);
+  return new TextDecoder('utf-8').decode(x);
+}
+const fourcc = (n: any) => typeof n === 'number' && n > 0x20202020 ? String.fromCharCode((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255) : String(n);
+
+async function parseMacPlist(file: File, ext: string) {
+  if (file.size > SCAN_SMALL) return null;   // these are KB-sized; a plist must be read whole
+  const res = await parsePlist(file);
+  if (!res) return null;
+  const v = unarchiveKeyed(res.value);
+  if (!v || typeof v !== 'object') return null;
+  const out: Row = { 'Format': 'Property list (' + res.format + ')' };
+  const sections: any[] = [];
+
+  if (ext === 'textclipping') {
+    // Text dragged out of any app onto the desktop. The clip is stored once per
+    // pasteboard type (UTI) under "UTI-Data"; very old clippings keep it in a
+    // resource fork only, which a copy off the Mac loses.
+    const uti = (v['UTI-Data'] && typeof v['UTI-Data'] === 'object') ? v['UTI-Data'] : {};
+    const types = Object.keys(uti);
+    if (types.length) out['Stored as'] = types.join(', ');
+    const text = plistText(uti['public.utf8-plain-text']) ?? plistText(uti['public.utf16-plain-text'], true)
+      ?? plistText(uti['public.plain-text']) ?? plistText(uti['com.apple.traditional-mac-plain-text']);
+    const url = plistText(uti['public.url']) || plistText(uti['public.file-url']);
+    if (url) out['URL'] = url;
+    if (text) {
+      out['Characters'] = text.length.toLocaleString();
+      sections.push({ title: 'Clipped text', node: preBlock(text.length > 200000 ? text.slice(0, 200000) + '\n…' : text), open: true });
+    } else if (!types.length) out['Note'] = 'No clip data in the file. Clippings from older macOS kept it in the resource fork, which is lost when the file leaves a Mac.';
+  } else if (ext === 'inetloc' || ext === 'fileloc' || ext === 'afploc' || ext === 'ftploc') {
+    const u = v.URL || v.url || (v.URLPrefixLength != null && v.URL);
+    if (u) out['URL'] = String(u);
+    if (typeof u === 'string' && /^file:/i.test(u)) {
+      try { out['Path'] = decodeURIComponent(u.replace(/^file:\/\/(localhost)?/i, '')); } catch (_) {}
+    }
+  } else if (ext === 'savedsearch') {
+    // A Finder Smart Folder: a Spotlight query plus where it searches.
+    if (v.RawQuery) out['Spotlight query'] = String(v.RawQuery);
+    const sc = (v.SearchCriteria && typeof v.SearchCriteria === 'object') ? v.SearchCriteria : {};
+    const scope = sc.FXScopeArrayOfPaths || sc.FXScope;
+    if (Array.isArray(scope) && scope.length) out['Searches in'] = scope.map(String).join(', ');
+    if (Array.isArray(sc.FXCriteriaSlices)) out['Criteria rows'] = sc.FXCriteriaSlices.length;
+    if (v.CompatibleVersion != null) out['Format version'] = String(v.CompatibleVersion);
+  } else if (ext === 'terminal') {
+    if (v.name) out['Profile name'] = String(v.name);
+    if (v.columnCount || v.rowCount) out['Window'] = (v.columnCount || '?') + ' x ' + (v.rowCount || '?') + ' characters';
+    if (v.CommandString) out['Runs command'] = String(v.CommandString);
+    // Font and colours are themselves NSKeyedArchiver archives nested as data.
+    if (v.Font instanceof Uint8Array) {
+      try {
+        const f = await parsePlist(v.Font);
+        const fv = f && unarchiveKeyed(f.value);
+        if (fv && fv.NSName) out['Font'] = String(fv.NSName) + (fv.NSSize ? ' ' + fv.NSSize + ' pt' : '');
+      } catch (_) {}
+    }
+    const colours = Object.keys(v).filter((k) => /Color$/.test(k));
+    if (colours.length) out['Colour settings'] = colours.length;
+  } else if (ext === 'itermcolors') {
+    // An iTerm2 colour preset: each "<name> Color" holds 0-1 RGB components.
+    const swatches: HTMLElement[] = [];
+    const to255 = (x: any) => Math.max(0, Math.min(255, Math.round((Number(x) || 0) * 255)));
+    for (const [name, c] of Object.entries<any>(v)) {
+      if (!c || typeof c !== 'object' || c['Red Component'] == null) continue;
+      const rgb = [to255(c['Red Component']), to255(c['Green Component']), to255(c['Blue Component'])];
+      const hex = '#' + rgb.map((n) => n.toString(16).padStart(2, '0')).join('');
+      swatches.push(el('div', { style: 'display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:12px;' }, [
+        el('span', { style: 'width:28px;height:18px;flex:none;border:var(--bd-hairline);background:' + hex + ';' }),
+        el('span', {}, hex + '  ' + name),
+      ]));
+    }
+    if (swatches.length) {
+      out['Colours'] = swatches.length;
+      sections.push({ title: 'Palette (' + swatches.length + ')', open: true,
+        node: el('div', { style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px 16px;' }, swatches) });
+    }
+  } else if (ext === 'aupreset') {
+    // An Audio Unit plug-in preset (Logic, GarageBand, any AU host).
+    if (v.name) out['Preset name'] = String(v.name);
+    if (v.manufacturer != null) out['Manufacturer code'] = fourcc(v.manufacturer);
+    if (v.type != null) out['Unit type'] = fourcc(v.type);
+    if (v.subtype != null) out['Unit subtype'] = fourcc(v.subtype);
+    if (v.version != null) out['Version'] = String(v.version);
+    const blob = v.data || v['jucePluginState'] || v.vstdata;
+    if (blob instanceof Uint8Array) out['State data'] = fmtBytes(blob.length);
+  } else if (ext === 'stringsdict' || ext === 'strings') {
+    const keys = Object.keys(v);
+    out['Entries'] = keys.length;
+    if (keys.length) sections.push({ title: 'Keys (' + keys.length + ')', node: preBlock(keys.slice(0, 500).join('\n') + (keys.length > 500 ? '\n…' : '')) });
+  }
+
+  const dump = plistDump(v);
+  if (dump) sections.push({ title: 'Contents', node: dump });
+  out._sections = sections;
+  return out;
+}
+
+// ---------- Apple .strings (localisation table) ----------
+// Text form `"key" = "value";` (often UTF-16), or a binary/XML plist since Xcode
+// started compiling them - the plist case goes through parseMacPlist.
+async function parseStrings(file: File) {
+  const head = await readSlice(file, 0, 64);
+  if (ascii(head, 0, 6) === 'bplist' || /^\s*<\?xml/.test(ascii(head, 0, Math.min(head.length, 64)))) return parseMacPlist(file, 'strings');
+  const buf = await readSlice(file, 0, PARSE_TEXT_MAX);
+  const enc = buf[0] === 0xFF && buf[1] === 0xFE ? 'utf-16le' : buf[0] === 0xFE && buf[1] === 0xFF ? 'utf-16be'
+    : (buf.length > 3 && buf[1] === 0 && buf[3] === 0) ? 'utf-16le' : 'utf-8';
+  const text = new TextDecoder(enc).decode(buf).replace(/^﻿/, '');
+  const pairs: string[] = [];
+  const re = /"((?:[^"\\]|\\.)*)"\s*=\s*"((?:[^"\\]|\\.)*)"\s*;/g;
+  let m; let n = 0;
+  while ((m = re.exec(text))) { n++; if (pairs.length < 500) pairs.push(m[1] + '  =  ' + m[2]); }
+  if (!n) return null;
+  const out: Row = { 'Format': 'Strings table (text, ' + enc.toUpperCase() + ')', 'Entries': n };
+  out._sections = [{ title: 'Strings (' + n + (n > 500 ? ', first 500 shown' : '') + ')', node: preBlock(pairs.join('\n')), open: true }];
+  return out;
+}
+
+// ---------- AppleDouble / AppleSingle (._name) ----------
+// When a Mac copies a file to a disk that cannot hold Mac metadata (FAT, exFAT,
+// NTFS, SMB shares) or into a zip, the metadata goes into a sibling file named
+// `._<name>`: a header, then entries for the Finder info, the resource fork
+// and - packed after the Finder info - every extended attribute. That last part
+// is the forensic gold: com.apple.quarantine says which app downloaded the
+// file and when, kMDItemWhereFroms says from which URL.
+const AD_ENTRIES: Record<number, string> = {
+  1: 'Data fork', 2: 'Resource fork', 3: 'Real name', 4: 'Comment', 5: 'Icon (black and white)',
+  6: 'Icon (colour)', 8: 'File dates', 9: 'Finder info', 10: 'Macintosh file info', 11: 'ProDOS file info',
+  12: 'MS-DOS file info', 13: 'AFP short name', 14: 'AFP file info', 15: 'AFP directory ID',
+};
+const FINDER_LABELS = ['', 'Grey', 'Green', 'Purple', 'Blue', 'Yellow', 'Red', 'Orange'];
+const AD_EPOCH = 946684800;   // AppleSingle dates count seconds from 2000-01-01 UTC
+
+async function parseAppleDouble(file: File) {
+  const b = await readSlice(file, 0, SCAN_SMALL);
+  if (b.length < 26) return null;
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const magic = dv.getUint32(0);
+  if (magic !== 0x00051607 && magic !== 0x00051600) return null;
+  const single = magic === 0x00051600;
+  const out: Row = {
+    'Format': single ? 'AppleSingle (a Mac file and its metadata in one)' : 'AppleDouble (Mac metadata kept beside a file)',
+    'Version': (dv.getUint32(4) >>> 16) + '',
+  };
+  const real = (file.name || '').replace(/^.*[\\/]/, '').replace(/^\._/, '');
+  if (!single && real) out['Describes'] = real;
+  const home = latin1(b.subarray(8, 24)).replace(/\0/g, '').trim();
+  if (home) out['Written by'] = home;
+  out['_app'] = single ? 'macOS AppleSingle file' : 'macOS AppleDouble metadata';
+
+  const count = Math.min(dv.getUint16(24), 64);
+  const listed: string[] = [];
+  const attrLines: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const p = 26 + i * 12;
+    if (p + 12 > b.length) break;
+    const id = dv.getUint32(p), off = dv.getUint32(p + 4), len = dv.getUint32(p + 8);
+    listed.push((AD_ENTRIES[id] || 'Entry ' + id) + '  ' + fmtBytes(len));
+    if (off + len > b.length) continue;   // past the read window: listed, not decoded
+    if (id === 3 && len) out['Original name'] = utf8(b.subarray(off, off + len));
+    else if (id === 4 && len) out['Finder comment'] = utf8(b.subarray(off, off + len));
+    else if (id === 1) out['Data fork'] = fmtBytes(len);
+    else if (id === 2 && len) {
+      out['Resource fork'] = fmtBytes(len);
+      const types = resourceTypes(b, off, len);
+      if (types.length) out['Resource types'] = types.join(', ');
+    } else if (id === 8 && len >= 16) {
+      const d = (k: number) => { const s = dv.getInt32(off + k); return s === -0x80000000 ? null : new Date((AD_EPOCH + s) * 1000); };
+      const c = d(0), m = d(4);
+      if (c) out['Created (Mac)'] = fmtDate(c);
+      if (m) out['Modified (Mac)'] = fmtDate(m);
+    } else if (id === 9 && len >= 32) {
+      const type = latin1(b.subarray(off, off + 4)), creator = latin1(b.subarray(off + 4, off + 8));
+      if (/[^\0]/.test(type)) out['File type code'] = type;
+      if (/[^\0]/.test(creator)) out['Creator code'] = creator;
+      const flags = dv.getUint16(off + 8);
+      const label = FINDER_LABELS[(flags >> 1) & 7];
+      if (label) out['Finder label'] = label;
+      const fl = [];
+      if (flags & 0x4000) fl.push('invisible');
+      if (flags & 0x0400) fl.push('custom icon');
+      if (flags & 0x8000) fl.push('alias');
+      if (flags & 0x0800) fl.push('stationery');
+      if (flags & 0x1000) fl.push('name locked');
+      if (fl.length) out['Finder flags'] = fl.join(', ');
+      if (len > 34 + 36 && ascii(b, off + 34, 4) === 'ATTR') await readXattrs(b, dv, off + 34, out, attrLines);
+    }
+  }
+  const sections: any[] = [{ title: 'Entries (' + listed.length + ')', node: preBlock(listed.join('\n')) }];
+  if (attrLines.length) sections.unshift({ title: 'Extended attributes (' + attrLines.length + ')', node: preBlock(attrLines.join('\n\n')), open: true });
+  out._sections = sections;
+  return out;
+}
+
+// The resource-fork type list (TEXT, icns, sfnt, url , ...): what the fork holds.
+function resourceTypes(b: Uint8Array, off: number, len: number) {
+  try {
+    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    const mapOff = off + dv.getUint32(off + 4);
+    if (mapOff + 30 > off + len) return [];
+    const typeList = mapOff + dv.getUint16(mapOff + 24);
+    const n = (dv.getUint16(typeList) + 1) & 0xFFFF;
+    const out = [];
+    for (let i = 0; i < Math.min(n, 64); i++) {
+      const p = typeList + 2 + i * 8;
+      if (p + 8 > off + len) break;
+      out.push(latin1(b.subarray(p, p + 4)) + ' x' + (dv.getUint16(p + 4) + 1));
+    }
+    return out;
+  } catch (_) { return []; }
+}
+
+// The xattr block packed after the Finder info: an 'ATTR' header, then entries
+// of (offset, length, flags, name) whose offsets are from the start of the file.
+async function readXattrs(b: Uint8Array, dv: DataView, h: number, out: Row, lines: string[]) {
+  const n = Math.min(dv.getUint16(h + 34), 256);
+  let p = h + 36;
+  for (let i = 0; i < n; i++) {
+    if (p + 11 > b.length) break;
+    const off = dv.getUint32(p), len = dv.getUint32(p + 4), nameLen = b[p + 10];
+    const name = utf8(b.subarray(p + 11, p + 11 + nameLen)).replace(/\0+$/, '');
+    p += (11 + nameLen + 3) & ~3;
+    if (off + len > b.length) { lines.push(name + '\n  ' + fmtBytes(len) + ' (outside the read window)'); continue; }
+    const val = b.subarray(off, off + len);
+    let shown = '';
+    if (name === 'com.apple.quarantine') {
+      // flags;hex-unix-time;agent;event-uuid
+      const [flags, t, agent, uuid] = utf8(val).split(';');
+      const when = parseInt(t, 16);
+      if (agent) out['Quarantined by'] = agent;
+      if (when) out['Quarantined at'] = fmtDate(new Date(when * 1000));
+      shown = 'flags ' + flags + (when ? ', ' + new Date(when * 1000).toISOString() : '') + (agent ? ', by ' + agent : '') + (uuid ? ', event ' + uuid : '');
+    } else if (name === 'com.apple.lastuseddate#PS' && len >= 8) {
+      const s = Number(dv.getBigUint64(off, true));
+      if (s > 0 && s < 1e11) { out['Last opened'] = fmtDate(new Date(s * 1000)); shown = new Date(s * 1000).toISOString(); }
+    } else if (val.length >= 8 && ascii(val, 0, 6) === 'bplist') {
+      let pv: any = null;
+      try { const r = await parsePlist(val); pv = r && unarchiveKeyed(r.value); } catch (_) {}
+      if (name === 'com.apple.metadata:kMDItemWhereFroms' && Array.isArray(pv)) {
+        if (pv[0]) out['Downloaded from'] = String(pv[0]);
+        if (pv[1]) out['Referring page'] = String(pv[1]);
+      } else if (name === 'com.apple.metadata:kMDItemDownloadedDate' && Array.isArray(pv) && pv[0] instanceof Date) {
+        out['Downloaded at'] = fmtDate(pv[0]);
+      } else if (name === 'com.apple.metadata:_kMDItemUserTags' && Array.isArray(pv) && pv.length) {
+        out['Tags'] = pv.map((t: any) => { const [tn, c] = String(t).split('\n'); return tn + (FINDER_LABELS[+c] && FINDER_LABELS[+c] !== tn ? ' (' + FINDER_LABELS[+c] + ')' : ''); }).join(', ');
+      }
+      try { shown = JSON.stringify(pv, (k, x) => (x instanceof Uint8Array ? '<' + x.length + ' bytes>' : x)); } catch (_) { shown = 'binary plist'; }
+    } else if (len && !val.some((c) => c < 9 || (c > 13 && c < 32))) {
+      shown = utf8(val);
+    } else {
+      shown = fmtBytes(len) + ' of binary data';
+    }
+    lines.push(name + '\n  ' + (shown.length > 600 ? shown.slice(0, 600) + '…' : shown));
+  }
+}
+
 // ---------- dispatch ----------
 export const PARSERS: Record<string, ParseFn> = {
+  appledouble: (c) => parseAppleDouble(c.file),
+  textclipping: (c) => parseMacPlist(c.file, c.ext),
+  inetloc: (c) => parseMacPlist(c.file, c.ext),
+  fileloc: (c) => parseMacPlist(c.file, c.ext),
+  afploc: (c) => parseMacPlist(c.file, c.ext),
+  ftploc: (c) => parseMacPlist(c.file, c.ext),
+  savedsearch: (c) => parseMacPlist(c.file, c.ext),
+  terminal: (c) => parseMacPlist(c.file, c.ext),
+  itermcolors: (c) => parseMacPlist(c.file, c.ext),
+  aupreset: (c) => parseMacPlist(c.file, c.ext),
+  stringsdict: (c) => parseMacPlist(c.file, c.ext),
+  strings: (c) => parseStrings(c.file),
   opml: (c) => parseOpml(c.file),
   rss: (c) => parseFeed(c.file),
   atom: (c) => parseFeed(c.file),

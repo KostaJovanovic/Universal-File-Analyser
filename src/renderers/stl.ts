@@ -1163,12 +1163,62 @@ export function bodyParts(whole: MeshGeometry, bodies: number[][], makeBodyGeo: 
   return parts;
 }
 
+// ---------- STL / PLY past WALL_PARSE ----------
+// Read in pieces by mesh-stream.js: the figures cover every triangle, the view
+// is a vertex-clustered copy. Body splitting and the integrity checks need the
+// whole mesh in memory, so they are not run here.
+export async function renderStreamedMesh(file: File, resultsEl: HTMLElement, kind: 'stl' | 'ply') {
+  const label = kind.toUpperCase();
+  const status = el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}" in pieces…`);
+  resultsEl.appendChild(status);
+  let r;
+  try {
+    const m = await import('./mesh-stream.js');
+    const onProgress = (f: number, what: string) => { status.textContent = `${what} - "${file.name}" ${Math.round(f * 100)}%`; };
+    r = kind === 'stl' ? await m.streamStl(file, onProgress) : await m.streamPly(file, onProgress);
+  } catch (e) {
+    resultsEl.innerHTML = '';
+    resultsEl.appendChild(errorCard('Could not read ' + label + ': ' + (e && e.message)));
+    return;
+  }
+  if (!status.isConnected) return;   // another file was dropped meanwhile
+  resultsEl.innerHTML = '';
+  if (r && 'error' in r) { resultsEl.appendChild(errorCard(r.error)); return; }
+  if (!r || !r.positions.length) { resultsEl.appendChild(errorCard('No triangles found in this ' + label + '.')); return; }
+
+  const nrm = new Float32Array(r.positions.length);
+  fixNormals(r.positions, nrm);
+  const geo = makeResult(r.format, r.positions, nrm);
+  const { stats } = r;
+  const { viewCard, viewer } = buildViewerCard(geo, '3D model (simplified preview)', { zUp: kind === 'stl' });
+  resultsEl.appendChild(viewCard);
+  startViewer(viewer);
+
+  const statsCard = el('div', { class: 'anr-card' });
+  statsCard.appendChild(el('h3', {}, 'Geometry'));
+  const tbl = el('table', { class: 'anr-readout' });
+  tbl.appendChild(row('Format', r.format));
+  tbl.appendChild(row('File', file.name));
+  tbl.appendChild(row('Size', fmtBytes(file.size)));
+  tbl.appendChild(rowHelp('Triangles', stats.count.toLocaleString(), 'How many triangles make up the model, counted across the whole file.'));
+  if (r.vertices != null) tbl.appendChild(row('Vertices', r.vertices.toLocaleString()));
+  tbl.appendChild(rowHelp('Preview', geo.count.toLocaleString() + ' triangles', 'The model is too large to draw whole, so the view shows a simplified copy: every corner is snapped to a ' + r.grid + '-cell grid across the model, and triangles that collapse or repeat are dropped. The figures in this table come from the full model, not the copy.'));
+  const dx = stats.max[0] - stats.min[0], dy = stats.max[1] - stats.min[1], dz = stats.max[2] - stats.min[2];
+  tbl.appendChild(rowHelp('Bounding box', `${dx.toFixed(2)} × ${dy.toFixed(2)} × ${dz.toFixed(2)} (units)`, 'The size of the smallest upright box the whole model fits inside, as width × depth × height, in the file’s own units.'));
+  tbl.appendChild(rowHelp('Surface area', stats.area.toFixed(2) + ' units²', 'The total area of the model’s outer surface, added up from every triangle, in the model’s own units squared.'));
+  tbl.appendChild(rowHelp('Volume', Math.abs(stats.vol).toFixed(2) + ' units³ (if watertight)', 'How much space the model encloses, in the model’s units cubed. This only makes sense if the model is fully sealed with no holes or gaps (watertight).'));
+  statsCard.appendChild(tbl);
+  resultsEl.appendChild(statsCard);
+  resultsEl.appendChild(el('div', { class: 'anr-info' },
+    'This model is larger than ' + fmtBytes(WALL_PARSE) + ', so it was read in pieces rather than held in memory whole. The counts and measurements cover every triangle; splitting into separate bodies and the mesh integrity checks need the whole mesh at once, so they are not run.'));
+}
+
 // ---------- entry point ----------
 export async function renderStl(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   if (file.size > WALL_PARSE) {
-    resultsEl.appendChild(errorCard('This STL is larger than ' + fmtBytes(WALL_PARSE) + ' and was not opened - the whole mesh has to be held in memory to draw it.'));
+    await renderStreamedMesh(file, resultsEl, 'stl');
     return;
   }
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));

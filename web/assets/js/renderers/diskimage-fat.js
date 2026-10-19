@@ -343,6 +343,148 @@ export function readFileBytes(img, geom, startCl, size) {
     }
     return out;
 }
+// ---------- the same volume, read without holding the image ----------
+//
+// parseFatVolume() needs the image (or a big enough prefix of it) in memory,
+// which put a 2 GB wall on disk images - and an SD card's directories can sit
+// anywhere on it, so a prefix alone often wasn't enough. This reads only what
+// the tree needs through `read(offset, length)`: the boot sector, the first FAT
+// copy (kept, since every chain walk needs it), and each directory's own
+// clusters. A 128 GB card then costs its FAT (16 MB at 32 KB clusters) plus its
+// directories. The result has the same shape as parseFatVolume's, plus `fat` -
+// the FAT bytes, indexed from 0 - which fileBlobFromChain() and the disk-image
+// carver walk chains through. Null when there is no FAT here, or its FAT is
+// larger than `fatMax`.
+export async function parseFatVolumeAt(read, partStart, fatMax) {
+    const boot = await read(partStart, 512);
+    if (!looksLikeFatBoot(boot, 0))
+        return null;
+    const bps = u16(boot, 0x0B);
+    const spc = boot[0x0D];
+    const reserved = u16(boot, 0x0E);
+    const numFats = boot[0x10];
+    const rootEntries = u16(boot, 0x11);
+    const totalSectors = u16(boot, 0x13) || u32(boot, 0x20);
+    let fatSize = u16(boot, 0x16);
+    let rootCluster = 0;
+    const isFat32 = fatSize === 0;
+    if (isFat32) {
+        fatSize = u32(boot, 0x24);
+        rootCluster = u32(boot, 0x2C);
+    }
+    if (!fatSize || !numFats || !totalSectors)
+        return null;
+    if (fatSize * bps > fatMax)
+        return null;
+    const bytesPerCluster = bps * spc;
+    const rootDirSectors = Math.ceil((rootEntries * 32) / bps);
+    const firstDataSector = reserved + numFats * fatSize + rootDirSectors;
+    const countOfClusters = Math.max(0, Math.floor((totalSectors - firstDataSector) / spc));
+    const type = isFat32 ? 'FAT32' : (countOfClusters < 4085 ? 'FAT12' : 'FAT16');
+    const fatStart = partStart + reserved * bps;
+    const maxClusters = countOfClusters + 2;
+    const geom = { partStart, bps, spc, reserved, numFats, fatSize, rootEntries, firstDataSector, bytesPerCluster, fatStart, type, maxClusters };
+    const fat = await read(fatStart, fatSize * bps);
+    const dirMaxClusters = Math.min(maxClusters, Math.ceil(65536 * 32 / bytesPerCluster));
+    // A directory's clusters, contiguous runs read as one slice each.
+    async function clustersToBytes(clusters) {
+        const parts = [];
+        let total = 0;
+        for (let i = 0; i < clusters.length;) {
+            let j = i + 1;
+            while (j < clusters.length && clusters[j] === clusters[j - 1] + 1)
+                j++;
+            const off = partStart + (firstDataSector + (clusters[i] - 2) * spc) * bps;
+            const b = await read(off, (j - i) * bytesPerCluster);
+            parts.push(b);
+            total += b.length;
+            if (b.length < (j - i) * bytesPerCluster)
+                break; // ran off the end of the image
+            i = j;
+        }
+        const out = new Uint8Array(total);
+        let o = 0;
+        for (const p of parts) {
+            out.set(p, o);
+            o += p.length;
+        }
+        return out;
+    }
+    const rootRaw = isFat32
+        ? await clustersToBytes(chain(fat, 0, type, rootCluster, dirMaxClusters))
+        : await read(partStart + (reserved + numFats * fatSize) * bps, rootEntries * 32);
+    const entries = [];
+    let fileCount = 0, dirCount = 0, truncated = false;
+    const visitedDirs = new Set();
+    let volumeLabel = '';
+    async function walk(raw, path, depth) {
+        if (depth > MAX_DEPTH || entries.length >= MAX_ENTRIES) {
+            truncated = truncated || entries.length >= MAX_ENTRIES;
+            return;
+        }
+        const { files, dirs, volumeLabel: vl } = readDir(raw);
+        if (depth === 0 && vl)
+            volumeLabel = vl;
+        for (const f of files) {
+            if (entries.length >= MAX_ENTRIES) {
+                truncated = true;
+                return;
+            }
+            fileCount++;
+            entries.push({ name: path ? path + '/' + f.name : f.name, size: f.size, startCl: f.startCl });
+        }
+        for (const d of dirs) {
+            if (d.startCl < 2 || visitedDirs.has(d.startCl))
+                continue; // loop / bad-pointer guard
+            visitedDirs.add(d.startCl);
+            dirCount++;
+            await walk(await clustersToBytes(chain(fat, 0, type, d.startCl, dirMaxClusters)), path ? path + '/' + d.name : d.name, depth + 1);
+        }
+    }
+    await walk(rootRaw, '', 0);
+    if (!volumeLabel)
+        volumeLabel = trimAscii(boot, isFat32 ? 0x47 : 0x2B, 11);
+    const oem = trimAscii(boot, 0x03, 8);
+    const fatEntries = type === 'FAT12' ? Math.floor(fat.length * 2 / 3) : type === 'FAT16' ? Math.floor(fat.length / 2) : Math.floor(fat.length / 4);
+    const lastCl = Math.min(countOfClusters + 2, fatEntries);
+    let freeClusters = 0;
+    for (let cl = 2; cl < lastCl; cl++)
+        if (nextCluster(fat, 0, type, cl, null) === 0)
+            freeClusters++;
+    return {
+        type, oem, volumeLabel, bytesPerCluster,
+        volumeBytes: totalSectors * bps,
+        capacityBytes: countOfClusters * bytesPerCluster,
+        freeBytes: freeClusters * bytesPerCluster,
+        fileCount, dirCount, truncated,
+        shortRead: false,
+        geom, fat, entries,
+    };
+}
+// One file's bytes as a Blob built from slices of the image along its cluster
+// chain (contiguous runs as one slice each) - nothing is read until the Blob is.
+// `fat` is parseFatVolumeAt's FAT copy, indexed from 0.
+export function fileBlobFromChain(file, geom, fat, startCl, size) {
+    if (!size || startCl < 2)
+        return new Blob([]);
+    const { partStart, bps, spc, firstDataSector, bytesPerCluster, type, maxClusters } = geom;
+    const clusters = chain(fat, 0, type, startCl, Math.min(Math.ceil(size / bytesPerCluster) + 1, maxClusters));
+    let left = Math.min(size, clusters.length * bytesPerCluster);
+    const parts = [];
+    for (let i = 0; i < clusters.length && left > 0;) {
+        let j = i + 1;
+        while (j < clusters.length && clusters[j] === clusters[j - 1] + 1)
+            j++;
+        const off = partStart + (firstDataSector + (clusters[i] - 2) * spc) * bps;
+        const n = Math.min((j - i) * bytesPerCluster, left);
+        if (off >= file.size)
+            break;
+        parts.push(file.slice(off, off + n));
+        left -= n;
+        i = j;
+    }
+    return new Blob(parts);
+}
 // ---------- MBR partition table ----------
 export const FAT_PART_TYPES = new Set([0x01, 0x04, 0x06, 0x0B, 0x0C, 0x0E, 0x14, 0x16, 0x1B, 0x1C, 0x1E]);
 export const PART_TYPE_NAMES = {

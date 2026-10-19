@@ -144,6 +144,9 @@ function parseBinaryPlist(bytes) {
                 const n = count();
                 return new TextDecoder('utf-16be').decode(bytes.subarray(p, p + n * 2));
             } // UTF-16
+            // UID - an object reference used only by NSKeyedArchiver. Shaped the way
+            // an XML plist spells it, so unarchiveKeyed() reads both alike.
+            case 0x8: return { 'CF$UID': readBE(p, info + 1) };
             case 0xa:
             case 0xc: { // array / set
                 let n = count();
@@ -170,6 +173,82 @@ function parseBinaryPlist(bytes) {
         }
     }
     return obj(topObject);
+}
+// ---------- NSKeyedArchiver ----------
+// Cocoa's object archive (nibs, text clippings, app caches, iOS backups) is a
+// plist whose real content is FLATTENED: every object sits in one `$objects`
+// array and refers to the others by UID, and `$top` names the roots. This
+// rebuilds the tree, turning the common Foundation classes back into plain
+// values (NSString -> string, NSArray -> array, NSDictionary -> object,
+// NSDate -> Date, NSURL -> its string) and leaving any other class as an
+// object tagged with its `$class` name. Not an archive: returned unchanged.
+const NS_EPOCH = 978307200000; // 2001-01-01, NSDate's reference date
+export function unarchiveKeyed(v) {
+    if (!v || typeof v !== 'object' || v.$archiver !== 'NSKeyedArchiver' || !Array.isArray(v.$objects) || !v.$top)
+        return v;
+    const objs = v.$objects;
+    const memo = new Map();
+    const busy = new Set();
+    const isUid = (x) => x && typeof x === 'object' && !Array.isArray(x) && typeof x['CF$UID'] === 'number';
+    const ref = (x, depth) => {
+        if (isUid(x))
+            return obj(x['CF$UID'], depth + 1);
+        if (Array.isArray(x))
+            return x.map((y) => ref(y, depth + 1));
+        return x;
+    };
+    const className = (o) => {
+        const c = isUid(o.$class) ? objs[o.$class['CF$UID']] : null;
+        return c && typeof c.$classname === 'string' ? c.$classname : '';
+    };
+    function obj(i, depth) {
+        if (i < 0 || i >= objs.length || depth > 200 || busy.has(i))
+            return null;
+        if (memo.has(i))
+            return memo.get(i);
+        const o = objs[i];
+        if (o === '$null')
+            return null;
+        if (!o || typeof o !== 'object' || Array.isArray(o) || o instanceof Date || o instanceof Uint8Array)
+            return o;
+        busy.add(i);
+        let out;
+        const cls = className(o);
+        if (Array.isArray(o['NS.keys']) && Array.isArray(o['NS.objects'])) {
+            out = {};
+            o['NS.keys'].forEach((k, n) => setKey(out, String(ref(k, depth)), ref(o['NS.objects'][n], depth)));
+        }
+        else if (Array.isArray(o['NS.objects']))
+            out = ref(o['NS.objects'], depth);
+        else if (o['NS.string'] != null)
+            out = String(ref(o['NS.string'], depth));
+        else if (o['NS.bytes'] instanceof Uint8Array)
+            out = o['NS.bytes'];
+        else if (o['NS.data'] != null)
+            out = ref(o['NS.data'], depth);
+        else if (typeof o['NS.time'] === 'number')
+            out = new Date(NS_EPOCH + o['NS.time'] * 1000);
+        else if (o['NS.relative'] != null) {
+            const rel = ref(o['NS.relative'], depth), base = ref(o['NS.base'], depth);
+            out = (base ? String(base) : '') + String(rel);
+        }
+        else {
+            out = {};
+            if (cls)
+                out.$class = cls;
+            for (const k of Object.keys(o))
+                if (k !== '$class')
+                    setKey(out, k, ref(o[k], depth));
+        }
+        busy.delete(i);
+        memo.set(i, out);
+        return out;
+    }
+    const top = {};
+    for (const k of Object.keys(v.$top))
+        setKey(top, k, ref(v.$top[k], 0));
+    const keys = Object.keys(top);
+    return keys.length === 1 && (keys[0] === 'root' || keys[0] === '$0') ? top[keys[0]] : top;
 }
 // Parse a File (or Uint8Array) into a plist value tree. Returns
 // { format: 'xml' | 'binary', value } or null.

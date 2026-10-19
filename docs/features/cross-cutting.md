@@ -30,7 +30,10 @@ card: Integrity
 **Notes / limits.** For very large files where hashing the whole file
 up-front would be slow (notably video), the hash is instead gated behind an
 explicit **Compute SHA-256** button rather than computed automatically -
-see [`video.md`](video.md).
+see [`video.md`](video.md). There is no size ceiling: past a few hundred MB
+the hashes are computed in a background worker that reads the file in
+8 MB pieces, so a multi-GB file hashes without being held in memory, with
+a progress bar while it runs.
 
 ### Fuzzy hashing (ssdeep / CTPH)
 
@@ -159,6 +162,44 @@ btn: ▶ Play as Lottie animation
 btn: Analyse
 btn: Download
 ```
+
+### macOS metadata files and property lists
+
+**What it does.** Opens the small files macOS leaves behind, which on
+Windows or Linux otherwise look like broken copies of real files.
+
+- **AppleDouble `._name` files.** A Mac writes one beside every file it
+  copies to a USB stick, a network share or a zip, wearing the real file's
+  name (`._report.docx`). They are recognised by their `00 05 16 07` magic
+  whatever the extension says, and the readout shows the Finder type and
+  creator codes, label colour and flags, tags, the resource fork's contents,
+  and the extended attributes - including `com.apple.quarantine` (which app
+  downloaded the file, and when) and `kMDItemWhereFroms` (the download
+  address and the page it came from).
+- **Property lists under any name.** A binary (`bplist00`) or XML plist is
+  recognised by its content, so extensionless preference files and caches
+  open in the plist readout rather than the hex dump. Cocoa
+  `NSKeyedArchiver` archives - a flat `$objects` table - are rebuilt into a
+  readable tree.
+- **Named plist documents** get a summary on top of the full contents: text
+  clippings (the clipped text), `.inetloc` / `.fileloc` / `.afploc` /
+  `.ftploc` locations (the address or path), Finder Smart Folders
+  (`.savedSearch`: the Spotlight query and where it searches), Terminal
+  profiles, iTerm2 colour presets (drawn as a palette), Audio Unit presets
+  (`.aupreset`: name and four-letter unit codes), and `.strings` /
+  `.stringsdict` localisation tables, text or plist.
+- **`.dmg` disk images** are read from their UDIF `koly` trailer: disk
+  size, image format (UDZO, ULFO, ULMO, UDBZ or uncompressed), filesystem,
+  partition map, checksum, an embedded code signature, or the fact that the
+  image is encrypted. The files inside are not listed.
+- **`.ips`** is both an IPS ROM patch and the JSON crash report macOS 12+
+  and iOS write; the crash report is read as one.
+
+**How to reach it.** Drop the file. Parsers live in `parsers-osmisc.js`
+(AppleDouble, the plist documents, `.strings`), `parsers-disk.js` (DMG) and
+`parsers-dev.js` (generic plist); the content sniff is in
+`file-sniff.js`'s `resolveByContent()`, and the archive rebuild is
+`unarchiveKeyed()` in `lib/plist.js`.
 
 ### Forensic integrity cards
 

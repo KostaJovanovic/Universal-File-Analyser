@@ -8,7 +8,7 @@
 import { el, row, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
 import { Reader, ascii } from '../core/binutil.js';
 import { SCAN_SMALL, SCAN_MED, SCAN_LARGE, SOURCE_SCAN_MAX } from '../core/limits.js';
-import { parsePlist } from '../lib/plist.js';
+import { parsePlist, unarchiveKeyed } from '../lib/plist.js';
 import { openZip } from '../renderers/zip.js';
 // ---------- small helpers ----------
 function b64urlToBytes(s) {
@@ -644,8 +644,12 @@ async function parsePlistRows(file) {
     const res = await parsePlist(file);
     if (!res)
         return null;
-    const v = res.value;
+    // An NSKeyedArchiver plist is a flat object table; show the rebuilt tree.
+    const keyed = res.value && res.value.$archiver === 'NSKeyedArchiver';
+    const v = unarchiveKeyed(res.value);
     const out = { 'Format': 'Property List (' + res.format + ')' };
+    if (keyed)
+        out['Archive'] = 'NSKeyedArchiver (Cocoa object archive)' + (v && v.$class ? ' - root object ' + v.$class : '');
     const topKeys = (v && typeof v === 'object' && !Array.isArray(v)) ? Object.keys(v) : [];
     if (topKeys.length)
         out['Root keys'] = topKeys.length;

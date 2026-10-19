@@ -7,6 +7,7 @@
    failure resolves cleanly (null) rather than throwing into the caller. */
 
 import { loadScript, isLowMemoryDevice } from '../core/util.js';
+import { SQLITE_MOBILE_MAX } from '../core/limits.js';
 
 let _sqlPromise: Promise<any>|null = null;
 
@@ -36,7 +37,7 @@ export async function sqliteQuery(file: File) {
     // The whole DB is copied into the WASM heap (~2x file size resident), so a
     // large database OOM-crashes the tab on a phone. Degrade to null (callers
     // fall back to identification-only) on memory-constrained devices.
-    if (file && file.size > 300 * 1024 * 1024 && isLowMemoryDevice()) return null;
+    if (file && file.size > SQLITE_MOBILE_MAX && isLowMemoryDevice()) return null;
     const SQL = await getSQL();
     if (!SQL) return null;
     const bytes = new Uint8Array(await file.arrayBuffer());

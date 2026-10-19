@@ -1,9 +1,9 @@
 {
-  // Analyser - the three module workers, compiled against the WebWorker lib
+  // Analyser - the four module workers, compiled against the WebWorker lib
   // instead of DOM. Kept separate because lib.dom and lib.webworker both declare
   // `self`, `postMessage`, `addEventListener` etc. and cannot be loaded together.
   //
-  // Note: modules these three import (mdx-model, mdx-stft, dfn-dsp, ...) are part
+  // Note: modules these four import (mdx-model, mdx-stft, dfn-dsp, ...) are part
   // of this program too and so get emitted by both configs. That is harmless -
   // types are erased, so both configs emit byte-identical JS for them.
   "extends": "./tsconfig.json",
@@ -14,6 +14,7 @@
     "types",
     "src/lib/dfn-worker.ts",
     "src/lib/mdx-worker.ts",
+    "src/lib/hash-worker.ts",
     "src/renderers/audio-dsp-worker.ts"
   ],
   "exclude": ["node_modules", "web", "tools", "worker"]
