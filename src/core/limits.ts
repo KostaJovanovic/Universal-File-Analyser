@@ -113,6 +113,13 @@ export const FFMPEG_MEMFS_MAX = 1.2 * GB;  // video: WASM MEMFS fallback copy ce
 // Desktop app: native FFmpeg reads a real temp file, so a video past the MEMFS
 // ceiling is copied over in pieces of this size instead of read whole.
 export const NATIVE_FFMPEG_CHUNK = 64 * MB;
+// Tesseract workers for a whole-document OCR scan (pdf.ts). Each holds its own
+// WASM engine and language data, about 100 MB, plus a page canvas of up to
+// ~22 MB, so the pool scales with RAM and with cores, never past 4. A phone
+// keeps one, as before.
+export const OCR_WORKERS = isLowMemoryDevice() ? 1
+  : Math.max(1, Math.min(byTier({ high: 4, mid: 2, low: 1 }),
+    Math.floor(((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) / 2)));
 
 // ---- video (renderers/video.ts) ----
 // Whole-file FFmpeg remux of a raw H.264/H.265 stream or an MPEG-TS/AVCHD file

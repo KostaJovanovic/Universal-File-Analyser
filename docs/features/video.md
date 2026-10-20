@@ -228,7 +228,10 @@ btn: Analyse photo
 for (or vice versa), `video-sync.js`'s "audio companion" mechanism plays a
 separately-extracted `<audio>` element in lockstep with the muted
 `<video>`, so playback stays in sync with no echo - see "Multi-player sync"
-below.
+below. Some browsers, the desktop app's among them, do play that PCM audio
+themselves; once the video has played a moment, the companion checks whether
+the video is decoding sound of its own and, if it is, steps aside rather than
+doubling it.
 
 **Large files.** For an MP4 or MOV, the audio is read in pieces rather than
 by loading the whole file, so a multi-GB camera clip analyses the same way a
@@ -265,6 +268,34 @@ btn: Download reversed (MP4)
 **Notes / limits.** Explicitly warned as slow in the UI copy ("this isn't
 as straightforward as it seems... going to take a while") - a full FFmpeg
 re-encode, not a cheap operation.
+
+### Compress
+
+**What it does.** Makes a smaller copy of a video that already plays - an
+H.264/AAC MP4 - and offers it as a download. Optional: nothing runs until you
+ask. It uses the same encoder and settings as the undecodable codec
+conversion below. When it finishes it shows how long it took, the new size
+against the original, and what did the encoding: FFmpeg in the browser, or in
+the desktop app the graphics card's encoder (or software, if the hardware
+attempt failed and was run again without it).
+
+**How to reach it.** Click **Compress video** on any playable video, above
+**↺ Reverse video**. **Advanced** shows the resolution, frame rate and speed
+controls. Built in `video.js` (`buildConvertVideoCard`).
+
+**How to use it.** Once done: **Download MP4** saves the copy; **Analyse
+compressed** runs the full analysis on it, with a Back bar to the original
+(the same drill-down as a file inside a ZIP).
+
+```demo
+btn: Compress video
+btn: Advanced
+btn: Download MP4
+btn: Analyse compressed
+```
+
+**Notes / limits.** Lossy re-encode. The default is the fast 720p, 30 fps
+proxy; choose **Full** and **Original** under Advanced for a full-size copy.
 
 ### Scene change detection
 

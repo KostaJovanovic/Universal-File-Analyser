@@ -69,6 +69,12 @@ declare global {
         footer's "Install as app" button becomes "Check for updates" and calls
         this (core/offline-tiers.ts). */
     checkUpdates?(): Promise<unknown>;
+    /** Desktop only: a token for a File the user dropped or picked (null for
+        one the page built). core/util.ts desktopFileToken() is the one caller. */
+    fileToken?(file: File): Promise<string | null>;
+    /** Desktop only: hash the file a token names, from disk, in the main
+        process. null when it cannot - the page then hashes it itself. */
+    hash?(token: string, algos: string[], onProgress?: ((frac: number) => void) | null): Promise<Record<string, string> | null>;
     /** Android only (mobile/bridge/anr-bridge.js): hear the newer version on
         offer, '' for none, replayed at once. core/popups.ts turns the header's
         Get App chip into an Update chip while there is one. The desktop has
@@ -102,7 +108,8 @@ declare global {
   }
 
   interface AnrFfmpegBridge {
-    caps(): Promise<AnrFfmpegCaps>;
+    /** `quiet` (desktop only) asks without raising the "get FFmpeg" offer. */
+    caps(opts?: { quiet?: boolean }): Promise<AnrFfmpegCaps>;
     /** Open a job session (its own temp directory). Returns the session id. */
     open(): Promise<string | null>;
     /** `append` (desktop only - the Android bridge ignores it) adds to the file
@@ -115,6 +122,12 @@ declare global {
     close(id: string): Promise<boolean>;
     /** Register the log/progress sink for one session. */
     listen(id: string, cb: ((p: any) => void) | null): void;
+    /** Desktop only: register the sink for "a different binary was downloaded
+        or chosen" (desktop/ffmpeg-setup.mjs). The Android bridge has none. */
+    onChange?(cb: (() => void) | null): void;
+    /** Desktop only: let `name` stand for the opened file `token` names, so
+        ffmpeg reads it in place. false means copy the bytes as before. */
+    link?(id: string, name: string, token: string): Promise<boolean>;
   }
 
   interface Window {

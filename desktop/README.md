@@ -65,6 +65,7 @@ The builds people download come from GitHub, not from this machine. See
 | `updater.mjs` | Checks the GitHub release for a new version, and installs it where the copy allows |
 | `ffmpeg-native.mjs` | Finds an ffmpeg binary, probes its working hardware encoders, runs jobs |
 | `ffmpeg-accel.mjs` | Pure: the encoder families, the argument rewrite, and the safety checks. Shared with `mobile/` |
+| `ffmpeg-setup.mjs` | Offers to download an ffmpeg build or choose one when none is found; Help > FFmpeg (hardware video) |
 | `tools/check-ffmpeg-args.mjs` | Runs the safety checks against every argument list in `src/`, and against the attacks |
 | `electron-builder.yml` | One target per system, `extraResources`, NSIS options, `publish: null` |
 | `build/installer.nsh` | The Windows installer's pages (the "Install" or "Portable copy" choice, progress, finish) and the portable section |
@@ -163,24 +164,41 @@ Measured on one machine, the same 10 s 720p transcode: **30.5 s** on WASM,
 
 Three parts:
 
-1. **Find** a binary - a bundled one under `resources/ffmpeg/` (none shipped
-   yet), then `PATH`, then the usual per-platform install directories.
+1. **Find** a binary - the user's chosen file or Analyser's own download (see
+   below), a bundled one under `resources/ffmpeg/` (none shipped yet), then
+   `PATH`, then the usual per-platform install directories.
 2. **Probe.** `ffmpeg -encoders` is NOT evidence: a full build lists every
    family it was compiled with, so an NVIDIA-only machine still advertises
    `h264_qsv` and `h264_amf` and fails both at runtime. The probe encodes a
-   throwaway frame with each candidate and keeps only what exits 0. Cached in
-   `userData/ffmpeg-caps.json`, keyed by the binary's path, size and mtime.
+   throwaway clip with each candidate and keeps only what exits 0, then decodes
+   that clip with the family's `-hwaccel` and records the answer as `decode`
+   (an encoder that works says nothing about the decoder). VAAPI tries
+   `/dev/dri/renderD128`, then `renderD129`, and records the node that encoded
+   as `device`. Cached in `userData/ffmpeg-caps.json`, keyed by the binary's
+   path, size and mtime and `PROBE_VERSION` - bump that when the probe learns
+   something new, so every cached record re-probes.
 3. **Rewrite and run.** `accelerate()` maps `-c:v libx264` onto this machine's
-   encoder, translates the x264 preset name (NVENC wants `p1`..`p7`), converts
-   `-crf` to the family's own quality flag, and adds `-hwaccel` for decode when
-   no filter graph needs CPU frames. `-c copy` is never touched.
+   encoder, translates the x264 preset name (NVENC wants `p1`..`p7`), drops
+   x264's `-tune` (NVENC refuses `zerolatency`, which used to send every turbo
+   convert to software), and converts `-crf` to the family's own quality flag
+   (NVENC adds `-b:v 0`, or ffmpeg's default ~2 Mbit/s target caps `-cq`). It
+   adds `-hwaccel` for decode when no filter graph needs CPU frames, and on
+   NVIDIA turns convert's one resize into `scale_cuda` on CUDA frames
+   (`-hwaccel_output_format cuda`, `-pix_fmt` dropped). VAAPI gets
+   `-vaapi_device` and a filter chain ending in `format=nv12,hwupload`. A job
+   with no encoder whose output is `-f rawvideo` (scene detection) gets
+   `-hwaccel` alone. `-c copy` is never touched.
 
 Two rules to keep:
 
-- **A hardware failure retries the ORIGINAL software arguments.** Drivers refuse
+- **A hardware failure ends in the ORIGINAL software arguments.** Drivers refuse
   jobs for unglamorous reasons - NVENC rejects frames below roughly 145x49, for
-  one. The retry is what stops a hardware quirk losing a user's work. Verified:
-  a 32x32 clip fails on NVENC and completes in software with no visible error.
+  one. `runJob()` tries the full rewrite, then (when that one decoded on the
+  GPU) the same rewrite with `{ decode: false }`, then the page's arguments
+  untouched; a retry adds `-y`, since a failed attempt can leave a partial
+  output behind. The last step is what stops a hardware quirk losing a user's
+  work. Verified: a 32x32 clip fails on NVENC and completes in software with no
+  visible error.
 - **The page must not be able to tell which backend it got.**
   `loadNativeFFmpeg()` in `src/renderers/video.ts` returns an object with the
   same shape as an ffmpeg.wasm instance, which is the only reason the ~40 call
@@ -190,6 +208,56 @@ Two rules to keep:
 
 With no binary installed, `caps().available` is false and `video.ts` loads the
 WASM core exactly as the website does.
+
+**Getting a binary (`ffmpeg-setup.mjs`).** The `anr:ffmpeg-caps` handler passes
+its answer through `offerIfMissing()`: the first time in a run that a job finds
+no binary, a native dialog offers **Download FFmpeg**, **Choose the ffmpeg
+file** or **Not now**, with a "Don't ask again" box (kept in
+`userData/ffmpeg-setup.json`). Help > FFmpeg (hardware video) shows the
+probe's answer and offers the same at any time.
+
+- The download is BtbN/FFmpeg-Builds' `latest` release: the newest release
+  branch build for this system (`ffmpeg-nX.Y-latest-win64-gpl-X.Y.zip`,
+  `linux64`, `winarm64`, `linuxarm64`), master as the fallback. It is refused
+  unless its SHA-256 matches the API's `digest` (or `checksums.sha256`), and
+  the hosts are held to BtbN's release downloads and GitHub's asset storage,
+  like `updater.mjs`. The system tar unpacks it (`System32\tar.exe` on
+  Windows, which reads zip), and only `bin/ffmpeg` is kept, as
+  `userData/ffmpeg/ffmpeg(.exe)` - beside the program on a portable copy. No
+  macOS build exists there; a Mac is pointed at Homebrew.
+- A chosen file must answer `-version` as `ffmpeg version ...` before it is
+  stored.
+- `ffPaths()` in `main.mjs` searches the chosen file, then the download, then
+  the bundled and portable paths, then PATH.
+- After either, `resetCapabilities()` drops the cached probe, the new binary is
+  probed, and main sends `anr:ffmpeg-changed`. `video.ts` listens through
+  `anrDesktop.ffmpeg.onChange` and lets a WASM instance it already loaded give
+  way on the next `loadFFmpeg()`.
+- The job that raised the offer keeps its answer: a chosen file is used at
+  once, a download only by the jobs after it.
+
+**Reading an opened file in place.** `ffInputFile()` in `video.ts` first asks
+the native instance to `linkFile(name, file)`: the page turns the File into a
+token (`desktopFileToken()` in `core/util.ts`, below), main's `anr:ffmpeg-link`
+resolves it, and `link()` in `ffmpeg-native.mjs` lets that bare name stand for
+the real path. Everything is still checked against the bare name;
+`checkInputs()` peeks the real file, and `withLinks()` swaps `file:<path>` in
+for that `-i` value only after every check has passed. A link is an input
+only: an output of the same name lands in the session folder, `get()` never
+reads through one, and `del()` only forgets it. No token (a slice, a File the
+page built, a file changed since) means the old chunked copy.
+
+**Tokens for dropped files, and native hashing.** Files opened by path already
+have `anr-open` tokens; `desktopFile()` remembers each File's token in a
+WeakMap. A dropped or picked File has none, so `anrDesktop.fileToken(file)`
+calls `webUtils.getPathForFile()` in the preload (which knows a path only for a
+File the user handed the page) and main's `anr:file-token` mints one, after
+checking the size and mtime still match. The page never sees the path.
+`lib/hash-client.ts` hands such a file to `anrDesktop.hash()` (`anr:hash`),
+which streams it through Node's `createHash` and `zlib.crc32` in one read, with
+`anr:hash-progress` events; anything it cannot do comes back null and the
+worker runs as on the website. `sha256Hex()` takes that route from
+`HASH_INLINE_MAX` up in the app.
 
 The families and `accelerate()` live in `ffmpeg-accel.mjs`, a pure module with
 no Node imports, like `router.mjs`. The Android shell inlines the same file
@@ -207,7 +275,9 @@ native library (`-vf frei0r=...`).
 So `runJob()` calls `checkArgs()` and `checkInputs()` before anything spawns.
 They refuse:
 
-- absolute paths, drive paths, drive-relative paths and `..` steps
+- absolute paths, drive paths, drive-relative paths and `..` steps - with ONE
+  exception, the value of `-vaapi_device`, and only in the exact shape
+  `/dev/dri/renderD1NN` (a GPU, which cannot hand ffmpeg anyone's data)
 - URLs and every ffmpeg protocol (`file:`, `concat:`, `subfile,`, `pipe:`, ...)
 - capture and playback devices after `-f`
 - filters that load code or open a socket (`frei0r`, `ladspa`, `lv2`, `zmq`,
@@ -222,12 +292,14 @@ They refuse:
 
 On top of that deny-list sits an **allow-list**: only the options, `-f`
 formats, filter graphs, codecs and file names the app actually emits pass,
-including the hardware rewrites (`-hwaccel`, the NVENC/QSV/AMF/VideoToolbox/
-MediaCodec quality options and presets) and the openh264 fallback. An unknown
-option is refused, and so are `-dump_attachment`, `-attach`,
-`-protocol_whitelist` and muxers that write extra files (`hls`, `dash`, `tee`,
-`image2`; `segment` only in the reverse's exact `rev_seg_%03d.mp4` shape).
-Outputs must be bare `.mp4`/`.wav`/`.jpg` names, never a Windows device name.
+including the hardware rewrites (`-hwaccel`, `-hwaccel_output_format cuda`,
+`-vaapi_device`, the NVENC/QSV/AMF/VAAPI/VideoToolbox/MediaCodec quality
+options and presets, `scale_cuda` and the `hwupload` tail) and the openh264
+fallback. An unknown option is refused, and so are `-dump_attachment`,
+`-attach`, `-protocol_whitelist` and muxers that write extra files (`hls`,
+`dash`, `tee`, `image2`; `segment` only in the reverse's exact
+`rev_seg_%03d.mp4` shape). Outputs must be bare `.mp4`/`.wav`/`.jpg`/`.rgb`
+names (`.rgb` is scene detection's `-f rawvideo`), never a Windows device name.
 `runJob()` checks the rewritten list too, since that is what spawns, and
 `safeName()` refuses the same names for writeFile/readFile.
 
@@ -384,6 +456,8 @@ second launch all go through.
 Known trade-off: a fetched blob is not disk-backed the way a dropped `File` is.
 Drag-and-drop and the in-page file picker stay the primary paths and are
 disk-backed, so a multi-GB file is best dropped rather than opened by path.
+Native work - ffmpeg reading in place, hashing - goes by the token either way,
+so it reads the file from disk whichever way it was opened.
 
 For a folder, the listing carries **stubs**, not files - materialising every
 entry up front would copy the whole tree through the blob store just to draw a
@@ -506,8 +580,17 @@ not exist in a browser, so the website is unaffected:
   GitHub release on the website) becomes "Check for updates",
   which calls `anrDesktop.checkUpdates()` (IPC `anr:check-updates`, answered by
   `updater.mjs` on the title bar's Update button). The download tiers
-  stay: the ffmpeg core, OCCT, Tesseract language data and the ONNX models are
-  all still remote.
+  stay: OCCT, Tesseract language data and the ONNX models are all still
+  remote. `tierUrls()` asks `anrDesktop.ffmpeg.caps({ quiet: true })` and
+  leaves the WASM ffmpeg core out when a native binary is found (quiet, so
+  the question never raises the download offer).
+- `core/util.ts` - `desktopFileToken()`, and `sha256Hex()` taking the streamed
+  path from `HASH_INLINE_MAX` up; `lib/hash-client.ts` tries `anrDesktop.hash`
+  first.
+- `renderers/video.ts` - beyond native FFmpeg itself: `linkFile` on the native
+  instance, and `nativeSceneFrames()`, which reads scene detection's samples
+  with one `-f rawvideo` pass when a file can be linked (the seek loop
+  otherwise).
 - `core/limits.ts` - the device tier reads `anrDesktop.memoryGB`, the real
   `os.totalmem()` figure, instead of `navigator.deviceMemory`, which Chromium
   clamps at 8.

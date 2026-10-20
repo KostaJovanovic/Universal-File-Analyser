@@ -1875,27 +1875,41 @@ function renderLsbPlanes(img: Drawable, container: HTMLDivElement) {
   let currentBit = 0;
   const bitLabel = (b: number) => 'bit ' + b + (b === 0 ? ' (LSB)' : (b === 7 ? ' (MSB)' : ''));
 
-  // Full-resolution planes are built lazily on lightbox open. Only the bit plane on
-  // show is kept: each one is three full-size PNG data URLs, and caching all eight
-  // on a large photo held gigabytes. Past LSB_PLANE_MAX_PX the "full" view is a
-  // nearest-neighbour sample (no smoothing, so every shown pixel is a real pixel's
-  // bit rather than a blend) instead of the whole sensor.
+  // Full-resolution planes are built lazily, one at a time: only the plane on
+  // show is encoded, as a PNG blob (toBlob encodes off the main thread; a data
+  // URL encoded inline and then cost a third again as base64). Only the bit plane
+  // on show is kept - caching every plane on a large photo held gigabytes. The
+  // full-size pixels are read once and reused for every bit. Past
+  // LSB_PLANE_MAX_PX the "full" view is a nearest-neighbour sample (no
+  // smoothing, so every shown pixel is a real pixel's bit rather than a blend)
+  // instead of the whole sensor.
   const fullScale = Math.min(1, Math.sqrt(LSB_PLANE_MAX_PX / Math.max(1, img.naturalWidth * img.naturalHeight)));
   const fullW = Math.max(1, Math.floor(img.naturalWidth * fullScale));
   const fullH = Math.max(1, Math.floor(img.naturalHeight * fullScale));
-  const fullByBit: any = {};
-  function ensureFullRes(bit: number) {
-    if (fullByBit[bit]) return fullByBit[bit];
-    for (const k of Object.keys(fullByBit)) delete fullByBit[k];
-    const fullCv = document.createElement('canvas');
-    fullCv.width = fullW; fullCv.height = fullH;
-    const fCtx = fullCv.getContext('2d', { willReadFrequently: true })!;
-    fCtx.imageSmoothingEnabled = false;
-    fCtx.drawImage(img, 0, 0, fullW, fullH);
-    const fullData = fCtx.getImageData(0, 0, fullW, fullH).data;
-    fullByBit[bit] = channels.map((ch) =>
-      makeLsbPlane(fullData, fullW, fullH, ch.offset, bit).toDataURL('image/png'));
-    return fullByBit[bit];
+  let fullData: ImageDataArray | null = null;
+  let planesBit = -1;
+  let planeUrls: (Promise<string> | null)[] = [null, null, null];
+  function fullPlaneUrl(bit: number, ci: number): Promise<string> {
+    if (bit !== planesBit) {
+      for (const p of planeUrls) if (p) p.then((u) => URL.revokeObjectURL(u), () => {});
+      planeUrls = [null, null, null];
+      planesBit = bit;
+    }
+    if (!fullData) {
+      const fullCv = document.createElement('canvas');
+      fullCv.width = fullW; fullCv.height = fullH;
+      const fCtx = fullCv.getContext('2d', { willReadFrequently: true })!;
+      fCtx.imageSmoothingEnabled = false;
+      fCtx.drawImage(img, 0, 0, fullW, fullH);
+      fullData = fCtx.getImageData(0, 0, fullW, fullH).data;
+    }
+    if (!planeUrls[ci]) {
+      const cv = makeLsbPlane(fullData, fullW, fullH, channels[ci].offset, bit);
+      planeUrls[ci] = new Promise<string>((resolve, reject) => {
+        cv.toBlob((blob) => { if (blob) resolve(URL.createObjectURL(blob)); else reject(new Error('PNG encode failed')); }, 'image/png');
+      });
+    }
+    return planeUrls[ci]!;
   }
 
   // ---- Chi-square steganalysis verdict (statistical LSB-replacement test) ----
@@ -1929,11 +1943,14 @@ function renderLsbPlanes(img: Drawable, container: HTMLDivElement) {
     function show(i: number) {
       idx = i;
       const ch = channels[idx];
-      const srcs = ensureFullRes(currentBit);
-      lbImg.src = srcs[idx];
-      lbImg.onload = () => sizeWrap(lbWrap, img.naturalWidth, img.naturalHeight);
-      meta.textContent = ch.label + ' ' + bitLabel(currentBit) + '  (' + fullW + ' × ' + fullH
-        + (fullScale < 1 ? ', sampled from ' + img.naturalWidth + ' × ' + img.naturalHeight : '') + ')';
+      const bit = currentBit;
+      fullPlaneUrl(bit, idx).then((url) => {
+        if (idx !== i || currentBit !== bit) return;   // moved on while it encoded
+        lbImg.onload = () => sizeWrap(lbWrap, img.naturalWidth, img.naturalHeight);
+        lbImg.src = url;
+        meta.textContent = ch.label + ' ' + bitLabel(bit) + '  (' + fullW + ' × ' + fullH
+          + (fullScale < 1 ? ', sampled from ' + img.naturalWidth + ' × ' + img.naturalHeight : '') + ')';
+      }, () => { meta.textContent = ch.label + ' ' + bitLabel(bit) + '  (full resolution unavailable)'; });
       prevBtn.style.visibility = idx > 0 ? 'visible' : 'hidden';
       nextBtn.style.visibility = idx < channels.length - 1 ? 'visible' : 'hidden';
       label.textContent = ch.label + ' (' + (idx + 1) + '/' + channels.length + ')';
@@ -1947,8 +1964,11 @@ function renderLsbPlanes(img: Drawable, container: HTMLDivElement) {
     const saveBtn = el('button', { type: 'button', class: 'lightbox-tool-btn' }, 'Save PNG');
     saveBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const a = el('a', { href: ensureFullRes(currentBit)[idx], download: 'plane_bit' + currentBit + '_' + channels[idx].label.toLowerCase() + '.png' });
-      document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 500);
+      const bit = currentBit, ci = idx;
+      fullPlaneUrl(bit, ci).then((url) => {
+        const a = el('a', { href: url, download: 'plane_bit' + bit + '_' + channels[ci].label.toLowerCase() + '.png' });
+        document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 500);
+      }, () => {});
     });
 
     toolbar.appendChild(prevBtn);

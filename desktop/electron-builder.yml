@@ -46,6 +46,7 @@ files:
   - updater.mjs
   - ffmpeg-native.mjs
   - ffmpeg-accel.mjs
+  - ffmpeg-setup.mjs
   - preload.cjs
   # The title bar is the window's own page, served from here (main.mjs reads
   # chrome/ out of the asar). Without it a packaged copy has no title bar at

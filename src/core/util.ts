@@ -251,13 +251,39 @@ export async function desktopFile<T>(f: T): Promise<T | File> {
   // as though it were the file.
   if (!res.ok) throw new Error('Could not open ' + stub.name + ' (' + res.status + ')');
   const blob = await res.blob();
-  return new File([blob], stub.name, {
+  const file = new File([blob], stub.name, {
     // The type comes from the shell's payload (`mime`, carried on the stub). The
     // Android shell serves every open as application/octet-stream, which says
     // nothing, so that is never taken as the file's type.
     type: stub.type || (blob.type === 'application/octet-stream' ? '' : blob.type) || '',
     lastModified: stub.lastModified || Date.now(),
   });
+  // Remember which token this File came from, so the desktop's native work
+  // (hashing, ffmpeg reading in place) can name it - see desktopFileToken().
+  if (stub._anrOpenUrl.startsWith('anr-open://')) {
+    try { _desktopTokens.set(file, new URL(stub._anrOpenUrl).hostname); } catch (_) {}
+  }
+  return file;
+}
+
+// File -> the desktop shell's token for the same file on disk.
+const _desktopTokens = new WeakMap<Blob, string>();
+
+// The desktop shell's token for a File the user opened, dropped or picked, or
+// null - on the website, on the phone, and for any Blob that is not the whole
+// file as the user gave it (a slice, or a File the page built). A token is what
+// lets the main process work on the file from disk (lib/hash-client.ts,
+// video.ts's ffInputFile); the page never learns the path.
+export async function desktopFileToken(file: Blob): Promise<string | null> {
+  const d = window.anrDesktop;
+  if (!d || d.shell) return null;
+  const known = _desktopTokens.get(file);
+  if (known) return known;
+  if (!d.fileToken || !(file instanceof File)) return null;
+  let token: string | null = null;
+  try { token = await d.fileToken(file); } catch (_) { token = null; }
+  if (token) _desktopTokens.set(file, token);
+  return token;
 }
 
 // Probe whether a File's bytes are actually readable. Returns null on success,
@@ -933,9 +959,12 @@ function hex(buf: ArrayBuffer|Uint8Array) {
 // Up to HASH_SUBTLE_MAX the file is read whole and digested natively; past it it
 // is streamed through lib/hash-client.ts in slices (a worker), so a file of any
 // size can be hashed without holding it in memory. `onProgress` (0..1) only
-// fires on the streamed path - the native one is one opaque call.
+// fires on the streamed path - the native one is one opaque call. The desktop
+// app takes the streamed path from HASH_INLINE_MAX up, since there it hashes
+// the file from disk (hash-client.ts) rather than reading it into the page.
 export async function sha256Hex(file: File, onProgress?: ((frac: number) => void) | null) {
-  if (file.size > HASH_SUBTLE_MAX || !crypto.subtle) {
+  const fromDisk = !!(window.anrDesktop && window.anrDesktop.hash) && file.size > HASH_INLINE_MAX;
+  if (file.size > HASH_SUBTLE_MAX || !crypto.subtle || fromDisk) {
     const { hashFileStreamed } = await import('../lib/hash-client.js');
     return (await hashFileStreamed(file, ['sha256'], onProgress)).sha256 || null;
   }

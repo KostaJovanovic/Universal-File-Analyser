@@ -341,13 +341,15 @@ The five things worth knowing before you touch anything:
   `desktop/ffmpeg-native.mjs` finds a binary, PROBES which hardware encoders
   actually work (by encoding a throwaway frame - `ffmpeg -encoders` lists
   families the machine cannot run), and rewrites `-c:v libx264` into
-  `h264_nvenc` / `h264_qsv` / `h264_amf` / `h264_videotoolbox` with the matching
-  preset and quality flag. Measured 52x on an NVENC machine: 0.58 s against
+  `h264_nvenc` / `h264_qsv` / `h264_amf` / `h264_vaapi` / `h264_videotoolbox`
+  with the matching preset and quality flag, and moves decoding to the GPU where
+  the probe found that works too. Measured 52x on an NVENC machine: 0.58 s against
   30.5 s for the same transcode. `loadNativeFFmpeg()` in `video.ts` returns an
   object with the **same shape as an ffmpeg.wasm instance**, which is why the
   ~40 call sites are untouched - keep that shape if you change either side. A
-  hardware failure silently retries the ORIGINAL software arguments, so a driver
-  quirk can never lose a job; never remove that fallback. No binary found means
+  hardware failure silently retries (hardware encoder alone, then the ORIGINAL
+  software arguments), so a driver quirk can never lose a job; never remove that
+  last fallback. No binary found means
   the WASM path runs exactly as on the website. The encoder families and the
   rewrite live in **`desktop/ffmpeg-accel.mjs`**, a pure module (no Node imports,
   like `router.mjs`) that the Android shell inlines too - keep it import-free
@@ -560,7 +562,9 @@ desktop/            — Electron desktop shell (Windows, macOS, Linux). Its OWN
                       security), router.mjs (a 1:1 port of serve.py's _route),
                       preload.cjs (the site's bridge: window.anrDesktop),
                       menu.mjs (one menu tree, three consumers), updater.mjs
-                      (updates from the GitHub release), chrome/ (the window's
+                      (updates from the GitHub release), ffmpeg-setup.mjs
+                      (offers to download an ffmpeg build or choose one when
+                      none is found; Help > FFmpeg), chrome/ (the window's
                       OWN contents: titlebar.html + titlebar.js + preload.cjs,
                       bridged as window.anrChrome and served from
                       analyser://.../__chrome/), electron-builder.yml (all three

@@ -72,6 +72,12 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
   const TIER_SIZES: any = {};
   TIER_ORDER.forEach((t) => { TIER_SIZES[t] = '~' + TIER_MB[t] + ' MB'; });
 
+  // ffmpeg.wasm's core. tierUrls() leaves it out in an app that runs native ffmpeg.
+  const WASM_FFMPEG_CORE = [
+    'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js',
+    'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm',
+  ];
+
   const TIERS: Record<string, string[]> = {
     essentials: [
       './', './about', './patch', './compare', './manifest.json', './assets/css/analyser.css', './assets/css/fonts.css',
@@ -156,8 +162,7 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
       './assets/vendor/ffmpeg/types.js',
       './assets/vendor/ffmpeg/utils.js',
       './assets/vendor/ffmpeg/worker.js',
-      'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js',
-      'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm',
+      ...WASM_FFMPEG_CORE,
       './assets/vendor/ffmpeg/ffmpeg-util.js'
     ],
     everything: [
@@ -371,10 +376,20 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
     btn.classList.add('is-done', 'is-fading');
   }
 
-  function tierUrls(tier: string) {
-    const urls = [...TIERS.essentials];
+  // The apps run a real ffmpeg binary when they find one (desktop/ffmpeg-native.mjs,
+  // AnrFfmpeg.java), and then the ~31 MB WASM core is never loaded, so a tier
+  // skips it. With no binary the core is cached as on the website. Asked quietly,
+  // so this question never raises the desktop's "get FFmpeg" offer.
+  async function tierUrls(tier: string) {
+    let urls = [...TIERS.essentials];
     if (tier === 'everything' || tier === 'complete') urls.push(...TIERS.everything);
     if (tier === 'complete') urls.push(...TIERS.complete);
+    const ff = window.anrDesktop && window.anrDesktop.ffmpeg;
+    if (ff) {
+      let native = false;
+      try { const caps = await ff.caps({ quiet: true }); native = !!(caps && caps.available); } catch (_) {}
+      if (native) urls = urls.filter((u) => !WASM_FFMPEG_CORE.includes(u));
+    }
     return urls;
   }
 
@@ -509,7 +524,7 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
     if (activeTiers.has(tier)) return false;   // already running from an earlier boot
     activeTiers.add(tier);
     let r;
-    try { r = await runCacheLoop(btn, tierUrls(tier), force); } finally { activeTiers.delete(tier); }
+    try { r = await runCacheLoop(btn, await tierUrls(tier), force); } finally { activeTiers.delete(tier); }
     if (r.aborted) return false;  // Clear storage cancelled us: it resets the UI itself
     r.setBar(1);
     const state = readOfflineState();
@@ -542,7 +557,7 @@ export function setupOfflineTiers(COMMIT_COUNT: number, RELEASE_COMMITS: number[
     if (activeTiers.has('feat:' + key)) return false;   // already running from an earlier boot
     activeTiers.add('feat:' + key);
     let r;
-    try { r = await runCacheLoop(btn, tierUrls('everything').concat(feat.urls), false); } finally { activeTiers.delete('feat:' + key); }
+    try { r = await runCacheLoop(btn, (await tierUrls('everything')).concat(feat.urls), false); } finally { activeTiers.delete('feat:' + key); }
     if (r.aborted) return false;
     r.setBar(1);
     if (r.failed > 0) { reportDownloadFailure(r); return false; }

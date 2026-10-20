@@ -27,20 +27,67 @@ Measured on one machine, the same ten-second 720p transcode:
 | Native FFmpeg, NVIDIA NVENC | 0.58 s |
 
 The app detects the graphics hardware for you. It supports NVIDIA NVENC, Intel
-Quick Sync, AMD AMF and Apple VideoToolbox, and it picks whichever one the
-machine really has.
+Quick Sync, AMD AMF, Apple VideoToolbox and, on Linux, VAAPI (Intel and AMD
+graphics through the open drivers), and it picks whichever one the machine
+really has. The VAAPI route has not yet been tried on a real Linux machine; if
+it fails there, the software retry below covers it.
 
 "Really" is the important word. Asking FFmpeg which encoders it contains is not
 a useful answer, because a build lists every family it was compiled with. A
 machine with only an NVIDIA card still advertises the Intel and AMD encoders,
 and both fail the moment you use them. So the app tests each one by encoding a
-throwaway frame, and only trusts the ones that succeed. The result is cached, so
-only the first launch pays for it.
+throwaway clip, and only trusts the ones that succeed. It then decodes that clip
+on the same hardware, which tells it whether the graphics card can also do the
+decoding. The result is cached, so only the first launch pays for it.
 
-If a hardware encode fails anyway, for instance because a driver refuses an
-unusual frame size, the app silently repeats the job on the software encoder.
-You get the result either way. It also falls back to the WebAssembly build in
-full when no FFmpeg binary is installed, so the app still works without one.
+Decoding moves to the graphics card too where it can. With NVIDIA, the convert
+tool's resize also runs on the card, so a frame never visits the processor. The
+fast "Turbo" convert uses the hardware encoder as well; it used to fall back to
+software on NVIDIA.
+
+If a hardware job fails anyway, for instance because a driver refuses an unusual
+frame size or cannot decode a stream, the app retries it - first with the
+hardware encoder alone, then entirely in software. You get the result either
+way. It also falls back to the WebAssembly build in full when no FFmpeg binary
+is installed, so the app still works without one.
+
+### Other work the desktop does natively
+
+- **Large files are not copied.** A file you opened, dropped or picked is read
+  by FFmpeg where it is on disk, instead of being copied into a temporary
+  folder first.
+- **Hashes run at disk speed.** For files past 32 MB, the Integrity card's
+  SHA-256, and the extra CRC-32, MD5, SHA-1 and SHA-512, are computed by the app
+  itself straight from the file, not by JavaScript in the page.
+- **Scene changes come from one pass.** Scene detection, and the content
+  timeline built on it, read their samples with one FFmpeg decode instead of
+  hundreds of seeks in the player.
+- **No WebAssembly FFmpeg in the offline download** when a native binary is
+  found, since it would never run. Without one, it is cached as on the website.
+
+The page still names a file only by a token the app hands it. The app looks the
+token up itself, and FFmpeg only ever reads such a file, never writes to it.
+
+### Getting FFmpeg
+
+The app looks for FFmpeg by itself: on your PATH, in the usual install folders,
+and next to a portable copy. If it finds none, the first video job of a session
+offers to get one:
+
+- **Download FFmpeg** fetches a build from
+  [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) on GitHub (about
+  150 to 200 MB), checks it against its SHA-256, and keeps only the `ffmpeg`
+  program, in Analyser's own data folder. Nothing else is installed, and a
+  portable copy keeps it on the stick. The job that asked carries on in the
+  WebAssembly build meanwhile, and the next one uses FFmpeg.
+- **Choose the ffmpeg file** points Analyser at a copy you already have. It is
+  asked for its version first, and refused unless it answers as FFmpeg.
+- **Don't ask again** stops the offer for good.
+
+**Help**, then **FFmpeg (hardware video)**, shows which FFmpeg is in use and
+which graphics hardware it encodes on, and offers the same two actions at any
+time. There is no download for macOS, because BtbN builds none: install it with
+Homebrew (`brew install ffmpeg`) and Analyser finds it.
 
 ## What about the AI models
 
@@ -192,7 +239,12 @@ renderer gets the surface it has on the website, not your filesystem -
 - The main process checks every FFmpeg job before it runs. The page chooses
   FFmpeg's arguments, so the app refuses any job that names a file outside the
   job's own temporary folder, a network address, a camera or the screen, or a
-  filter that loads outside code.
+  filter that loads outside code. The one path it accepts is a Linux graphics
+  device (`/dev/dri/renderD128` and its siblings), and only as the VAAPI
+  device. A file you opened is read in place only after the job has passed
+  these checks under its plain name.
+- Native work on a dropped file needs a token, and the app mints one only for a
+  file you gave the page. A file the page built itself has no path to name.
 - There is no Content Security Policy, for the same reason `web/_headers` has
   none: the app lazy-loads WebAssembly, spawns blob and module workers and uses
   `data:` URIs, and a wrong policy would silently break individual viewers.
@@ -236,10 +288,11 @@ which does not exist in a browser. The website is unaffected.
 | "Email me!" and "Suggest this format" | The app skips the human-check, because that widget belongs to the site's hostname and can never verify here. The mail client opens directly |
 | "Install as app" | Becomes **Check for updates** |
 | "Get App" button | Hidden. You already have the app |
-| Download for offline use | Unchanged, and still worth doing. The ffmpeg core, OCCT, the Tesseract language data and the ONNX models all still come from the network on first use |
+| Download for offline use | Still worth doing. OCCT, the Tesseract language data and the ONNX models all still come from the network on first use. The WebAssembly FFmpeg is left out when a native FFmpeg is found |
+| Hashes | Files past 32 MB are hashed by the app straight from disk |
 | Device tier | Sized from real total RAM, not `navigator.deviceMemory`, which browsers clamp at 8 GB. A large machine gets the caps it deserves |
 | Export report | Offers a native save dialog, and keeps the browser path as a fallback |
-| Video encoding | Runs on your graphics hardware through a real FFmpeg binary. See the section above |
+| Video encoding | Runs on your graphics hardware through a real FFmpeg binary, which also decodes and finds scene changes. See the section above |
 | Title bar | The window draws its own, above the page. See below |
 
 ## The title bar
@@ -293,9 +346,13 @@ site's version numbering works.
 
 ## Not built yet
 
-The app uses an FFmpeg binary it finds on your machine, and falls back to the
-WebAssembly build when there is none. Shipping one inside the installer is the
-obvious next step, and would make the hardware path work on a fresh machine.
+The app uses an FFmpeg binary it finds on your machine, or one it downloads when
+you ask (see "Getting FFmpeg" above), and falls back to the WebAssembly build
+when there is none. Shipping one inside the installer would make the hardware
+path work on a fresh machine with no download at all.
+
+Intel graphics do not yet resize on the card the way NVIDIA's do (the decode
+and the encode both run there already).
 
 Also outstanding: file associations, a bundled OCCT and code signing. No build
 carries a paid certificate yet, so Windows SmartScreen warns the first time one

@@ -33,7 +33,7 @@ const SEP = { type: 'separator' };
  * string; the title bar formats it for display.
  *
  * @param {{openFile: Function, openFolder: Function, go: Function, external: Function,
- *          showData: Function, view: Function, checkUpdates: Function}} actions
+ *          showData: Function, view: Function, checkUpdates: Function, ffmpeg: Function}} actions
  */
 export function menuTree(actions) {
   return [
@@ -85,6 +85,8 @@ export function menuTree(actions) {
         { id: 'help.data', label: 'Where my data is stored', run: () => actions.showData() },
         // updater.mjs. The app also checks by itself, so this is for the impatient.
         { id: 'help.updates', label: 'Check for updates', run: () => actions.checkUpdates() },
+        // ffmpeg-setup.mjs: what runs video jobs, and a way to download or choose one.
+        { id: 'help.ffmpeg', label: 'FFmpeg (hardware video)', run: () => actions.ffmpeg() },
         SEP,
         { id: 'help.site', label: 'Open the website', run: () => actions.external('https://analyser.valjdakosta.com/') },
         { id: 'help.repo', label: 'Source on GitHub', run: () => actions.external(REPO) },

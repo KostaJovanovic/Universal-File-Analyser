@@ -213,10 +213,18 @@ function imageToMagnitude(imageData: ImageData, o: any, ear: string) {
 // frames, advanced by an incremental complex phasor so there is no Math.sin in
 // the inner loop. The phasor is renormalised periodically to fight rounding
 // drift over hundreds of thousands of samples.
+//
+// Where WebGPU exists the same sum runs on the GPU first (synthOscillatorGpu),
+// one invocation per output sample. Anything that goes wrong there - no
+// adapter, a buffer past the device's limits, a lost device - returns null and
+// this CPU loop runs exactly as before.
 async function synthOscillator(mag: Float32Array, o: any, onProgress?: ((p: number) => void)|null) {
   const N = o.fftSize, bins = N >> 1;
   const frames = o.frames;
   const total = Math.round(o.duration * o.sampleRate);
+  let gpuOut: Float32Array | null = null;
+  try { gpuOut = await synthOscillatorGpu(mag, o, total, onProgress); } catch (_) { gpuOut = null; }
+  if (gpuOut) return gpuOut;
   const out = new Float32Array(total);
 
   // The bin loop blocks the main thread, so we surrender it to the event loop
@@ -255,6 +263,135 @@ async function synthOscillator(mag: Float32Array, o: any, onProgress?: ((p: numb
   }
   if (onProgress) onProgress(1);
   return out;
+}
+
+// The oscillator bank as a compute shader. Each invocation is one output
+// sample and loops over the active bins. Phase is u32 fixed point - a full turn
+// is 2^32 - so phase0 + inc * n wraps exactly and never drifts, where an f32
+// phase accumulator would smear high bins within seconds. inc is exact as well:
+// a bin's frequency is b * rate / N, which is b * 2^32 / N turns per sample,
+// an integer for every power-of-two N. The angle is taken signed, in [-pi, pi),
+// the range where GPU cos is most accurate.
+const OSC_WGSL = `
+struct Params { start: u32, count: u32, total: u32, frames: u32, bins: u32, nActive: u32, pad0: u32, pad1: u32 };
+@group(0) @binding(0) var<uniform> p: Params;
+@group(0) @binding(1) var<storage, read> mag: array<f32>;
+@group(0) @binding(2) var<storage, read> binIdx: array<u32>;
+@group(0) @binding(3) var<storage, read> phase0: array<u32>;
+@group(0) @binding(4) var<storage, read> inc: array<u32>;
+@group(0) @binding(5) var<storage, read_write> outBuf: array<f32>;
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let i = gid.x;
+  if (i >= p.count) { return; }
+  let n = p.start + i;
+  var ff = 0.0;
+  if (p.total > 1u) { ff = f32(n) / f32(p.total - 1u) * f32(p.frames - 1u); }
+  var f0 = u32(floor(ff));
+  let k = ff - f32(f0);
+  if (f0 >= p.frames - 1u) { f0 = p.frames - 1u; }
+  let r0 = f0 * p.bins;
+  let r1 = min(p.frames - 1u, f0 + 1u) * p.bins;
+  var acc = 0.0;
+  for (var j = 0u; j < p.nActive; j = j + 1u) {
+    let b = binIdx[j];
+    let a0 = mag[r0 + b];
+    let a1 = mag[r1 + b];
+    let ph = phase0[j] + inc[j] * n;
+    let ang = f32(bitcast<i32>(ph)) * 1.4629180792671596e-9;
+    acc = acc + (a0 + (a1 - a0) * k) * cos(ang);
+  }
+  outBuf[i] = acc;
+}`;
+
+// Same test as lib/mdx-worker.ts: WebKit's WebGPU stays off the GPU paths here.
+function isWebKitUa() {
+  try {
+    const ua = navigator.userAgent || '';
+    const iOS = /iP(hone|ad|od)/.test(ua) || (/Macintosh/.test(ua) && (navigator as any).maxTouchPoints > 1);
+    return iOS || (/AppleWebKit/.test(ua) && !/Chrom(e|ium)|Android/.test(ua));
+  } catch (_) { return false; }
+}
+
+// The GPU oscillator bank. Resolves the samples, or null when the GPU path is
+// unavailable, so the caller runs the CPU loop. Dispatches a slice of samples
+// at a time, sized so one dispatch stays far below the driver's watchdog (a
+// GPU that runs one job for seconds is reset by Windows) and the progress bar
+// moves; each slice is read back before the next goes out.
+async function synthOscillatorGpu(mag: Float32Array, o: any, total: number, onProgress?: ((p: number) => void)|null) {
+  const gpu = (navigator as any).gpu;
+  if (!gpu || isWebKitUa() || total <= 0) return null;
+  const N = o.fftSize, bins = N >> 1, frames = o.frames;
+
+  // The active bins, as the CPU loop picks them, and their oscillators.
+  const active: number[] = [];
+  for (let b = 1; b < bins; b++) {
+    for (let f = 0; f < frames; f++) { if (mag[f * bins + b] > 1e-4) { active.push(b); break; } }
+  }
+  if (!active.length) return new Float32Array(total);
+  const binIdx = Uint32Array.from(active);
+  const inc = new Uint32Array(active.length);
+  const phase0 = new Uint32Array(active.length);
+  for (let j = 0; j < active.length; j++) {
+    inc[j] = (active[j] * (4294967296 / N)) >>> 0;
+    phase0[j] = (Math.random() * 4294967296) >>> 0;
+  }
+
+  const adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' });
+  if (!adapter) return null;
+  const device = await adapter.requestDevice();
+  try {
+    const maxBinding = device.limits.maxStorageBufferBindingSize;
+    if (mag.byteLength > maxBinding) return null;
+    // About 32M bin-samples per dispatch, a multiple of the workgroup size.
+    const chunk = Math.max(4096, Math.min(262144, Math.floor((1 << 25) / active.length))) & ~255;
+    const Usage = (globalThis as any).GPUBufferUsage;
+    const MapMode = (globalThis as any).GPUMapMode;
+    const make = (data: ArrayBufferView, usage: number) => {
+      const buf = device.createBuffer({ size: Math.max(16, (data.byteLength + 3) & ~3), usage: usage | Usage.COPY_DST });
+      device.queue.writeBuffer(buf, 0, data.buffer, data.byteOffset, data.byteLength);
+      return buf;
+    };
+    const magBuf = make(mag, Usage.STORAGE);
+    const binBuf = make(binIdx, Usage.STORAGE);
+    const phaseBuf = make(phase0, Usage.STORAGE);
+    const incBuf = make(inc, Usage.STORAGE);
+    const params = new Uint32Array(8);
+    const paramBuf = device.createBuffer({ size: params.byteLength, usage: Usage.UNIFORM | Usage.COPY_DST });
+    const outBuf = device.createBuffer({ size: chunk * 4, usage: Usage.STORAGE | Usage.COPY_SRC });
+    const readBuf = device.createBuffer({ size: chunk * 4, usage: Usage.MAP_READ | Usage.COPY_DST });
+
+    const pipeline = await device.createComputePipelineAsync({
+      layout: 'auto',
+      compute: { module: device.createShaderModule({ code: OSC_WGSL }), entryPoint: 'main' },
+    });
+    const bind = device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [paramBuf, magBuf, binBuf, phaseBuf, incBuf, outBuf].map((buffer, binding) => ({ binding, resource: { buffer } })),
+    });
+
+    const out = new Float32Array(total);
+    for (let start = 0; start < total; start += chunk) {
+      const count = Math.min(chunk, total - start);
+      params.set([start, count, total, frames, bins, active.length, 0, 0]);
+      device.queue.writeBuffer(paramBuf, 0, params);
+      const enc = device.createCommandEncoder();
+      const pass = enc.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bind);
+      pass.dispatchWorkgroups(Math.ceil(count / 256));
+      pass.end();
+      enc.copyBufferToBuffer(outBuf, 0, readBuf, 0, count * 4);
+      device.queue.submit([enc.finish()]);
+      await readBuf.mapAsync(MapMode.READ, 0, count * 4);
+      out.set(new Float32Array(readBuf.getMappedRange(0, count * 4)), start);
+      readBuf.unmap();
+      if (onProgress) onProgress(Math.min(1, (start + count) / total));
+    }
+    return out;
+  } finally {
+    try { device.destroy(); } catch (_) {}
+  }
 }
 
 // ---------- synthesis: Griffin-Lim ----------

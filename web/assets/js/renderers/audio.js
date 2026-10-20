@@ -1,7 +1,7 @@
 /* Analyser - audio module
    Handles uploaded files, mic recording, and live spectrogram.
    Renders waveform, file info, and an interactive spectrogram. */
-import { computeSpectrogram, computeSpectrogramAsync, computeReassignedSpectrogram, renderSpectrogram, colormaps, computeStftComplex, combineStftToDb, frequencyTicks, timeTicks, formatHz, formatTime } from './spectrogram.js';
+import { computeSpectrogram, computeSpectrogramAsync, computeReassignedSpectrogram, renderSpectrogram, colormaps, colormapLut, COLORMAP_LUT_STEPS, computeStftComplex, combineStftToDb, frequencyTicks, timeTicks, formatHz, formatTime } from './spectrogram.js';
 import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, errorCard, integrityCard, downloadBlob, inlineLoader, asciiBar, yieldToMain, afterPaint, loadScript } from '../core/util.js';
 import { computeStats, computeStereoStats } from './audio-analysis.js';
 import { peekContainer, adtsToM4a, readTagBPM, extractCoverArt, readAudioTags } from './audio-codec.js';
@@ -5930,11 +5930,13 @@ function streamSpectrogram(ac, source, mountEl) {
     function onResize() { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { sizeCanvas(); }); }
     window.addEventListener('resize', onResize);
     let dbData = new Float32Array(analyser.frequencyBinCount);
-    const cmap = colormaps.magma || colormaps.viridis;
+    const lut = colormapLut(colormaps.magma || colormaps.viridis);
+    const top = COLORMAP_LUT_STEPS - 1;
     const nyq = ac.sampleRate / 2;
     const dbFloor = -100, dbCeil = -10, range = dbCeil - dbFloor;
     const drawW = 1;
     const logMin = Math.log10(10), logMax = Math.log10(nyq); // 10 Hz floor to match buildFreqAxis (shows sub-20 Hz)
+    let colImg = null;
     function tick() {
         if (stopped)
             return;
@@ -5947,10 +5949,12 @@ function streamSpectrogram(ac, source, mountEl) {
             raf = requestAnimationFrame(tick);
             return;
         }
-        // Scroll the existing bitmap one column left, draw the newest FFT slice at the right edge.
-        const img = ctxC.getImageData(drawW, 0, w - drawW, h);
-        ctxC.putImageData(img, 0, 0);
-        const colImg = ctxC.createImageData(drawW, h);
+        // Scroll the existing bitmap one column left, draw the newest FFT slice at the
+        // right edge. drawImage copies on the GPU; reading the pixels back to scroll
+        // them stalled the canvas every frame.
+        ctxC.drawImage(canvas, drawW, 0, w - drawW, h, 0, 0, w - drawW, h);
+        if (!colImg || colImg.height !== h)
+            colImg = ctxC.createImageData(drawW, h);
         for (let y = 0; y < h; y++) {
             const frac = 1 - y / (h - 1);
             const hz = Math.pow(10, logMin + frac * (logMax - logMin));
@@ -5962,13 +5966,13 @@ function streamSpectrogram(ac, source, mountEl) {
             let t = (db - dbFloor) / range;
             if (t < 0)
                 t = 0;
-            else if (t > 1)
+            else if (!(t <= 1))
                 t = 1;
-            const [r, g, bl] = cmap(t);
+            const c = Math.round(t * top) * 3;
             const o = y * drawW * 4;
-            colImg.data[o] = r;
-            colImg.data[o + 1] = g;
-            colImg.data[o + 2] = bl;
+            colImg.data[o] = lut[c];
+            colImg.data[o + 1] = lut[c + 1];
+            colImg.data[o + 2] = lut[c + 2];
             colImg.data[o + 3] = 255;
         }
         ctxC.putImageData(colImg, w - drawW, 0);
@@ -6289,11 +6293,12 @@ async function startLive(resultsEl, liveBtn) {
         const w = canvas.width, h = canvas.height;
         if (w <= drawW || h <= 0)
             return requestAnimationFrame(tick);
-        const img = ctxC.getImageData(drawW, 0, w - drawW, h);
-        ctxC.putImageData(img, 0, 0);
+        // Scroll on the GPU (see the live scope above), then paint the new columns.
+        ctxC.drawImage(canvas, drawW, 0, w - drawW, h, 0, 0, w - drawW, h);
         ctxC.fillStyle = '#0a0a0a';
         ctxC.fillRect(w - drawW, 0, drawW, h);
-        const cmap = colormaps[state.cmap] || colormaps.viridis;
+        const lut = colormapLut(colormaps[state.cmap] || colormaps.viridis);
+        const top = COLORMAP_LUT_STEPS - 1;
         const nyq = ac.sampleRate / 2;
         const dbFloor = -100, dbCeil = -10;
         const range = dbCeil - dbFloor;
@@ -6318,9 +6323,10 @@ async function startLive(resultsEl, liveBtn) {
             let t = (db - dbFloor) / range;
             if (t < 0)
                 t = 0;
-            else if (t > 1)
+            else if (!(t <= 1))
                 t = 1;
-            const [r, g, bl] = cmap(t);
+            const c = Math.round(t * top) * 3;
+            const r = lut[c], g = lut[c + 1], bl = lut[c + 2];
             for (let x = 0; x < drawW; x++) {
                 const o = (y * drawW + x) * 4;
                 colImg.data[o] = r;

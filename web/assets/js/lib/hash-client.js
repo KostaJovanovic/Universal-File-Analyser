@@ -6,9 +6,11 @@
    workers are unavailable or the worker fails to start, the same code runs on
    the main thread instead, yielding between slices - slower to the eye, same
    answer. core/util.ts loads this lazily, only for files too large to hand to
-   crypto.subtle whole. */
+   crypto.subtle whole. In the desktop app the main process hashes the file
+   from disk instead, when it can (anrDesktop.hash). */
 import { hashBlob } from './hash-stream.js';
 import { HASH_STREAM_CHUNK } from '../core/limits.js';
+import { desktopFileToken } from '../core/util.js';
 let worker = null;
 let _jobSeq = 0;
 // Every job waiting on the shared worker, so a dead worker settles all of them.
@@ -74,8 +76,26 @@ function inWorker(file, algos, onProgress) {
         w.postMessage({ jobId, file, algos, chunk: HASH_STREAM_CHUNK });
     });
 }
-/** Hash `file` with every algorithm in `algos` in one streamed pass. */
+/** Hash `file` with every algorithm in `algos` in one streamed pass. In the
+ *  desktop app a file the user opened is hashed from disk by the main process
+ *  first (Node's native hashes, at disk speed); anything it cannot do comes
+ *  back null and runs here as on the website. */
 export async function hashFileStreamed(file, algos, onProgress) {
+    const d = window.anrDesktop;
+    if (d && d.hash) {
+        const token = await desktopFileToken(file);
+        if (token) {
+            let out = null;
+            try {
+                out = await d.hash(token, algos, onProgress);
+            }
+            catch (_) {
+                out = null;
+            }
+            if (out && algos.every((a) => typeof out[a] === 'string'))
+                return out;
+        }
+    }
     try {
         return await inWorker(file, algos, onProgress);
     }

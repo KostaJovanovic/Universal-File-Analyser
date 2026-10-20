@@ -45,10 +45,13 @@ challenge, which cannot verify on an `analyser://` origin, and open the mailto
 directly), `core/offline-tiers.ts` (the footer install button becomes "Check for updates", keep the
 download tiers), `core/limits.ts` (device tier from real RAM, not the clamped
 `navigator.deviceMemory`), `core/export-data.ts` (native save dialog for the
-report), `renderers/video.ts` (native FFmpeg, below) and the open-by-path glue
+report), `renderers/video.ts` (native FFmpeg, below - including reading an
+opened file in place and scene detection's one-pass sampling), `lib/hash-client.ts`
+(large files hashed from disk by the main process) and the open-by-path glue
 in `core/app.ts` + `renderers/folder.ts`, which leans on `desktopFile()` in
-`core/util.ts`. Add new ones the same way - a guarded branch in the module that
-owns the behaviour, not a new file.
+`core/util.ts`. `desktopFileToken()` there is the one way to name a File to
+the desktop's main process: a token, never a path. Add new ones the same way -
+a guarded branch in the module that owns the behaviour, not a new file.
 
 **The Android shell (`mobile/`) publishes the same `window.anrDesktop`**, from a
 script its native side injects at document start, so every guard above also

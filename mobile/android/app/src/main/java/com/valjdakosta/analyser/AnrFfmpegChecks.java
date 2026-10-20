@@ -130,7 +130,10 @@ final class AnrFfmpegChecks {
     // ---- The allow-list (see ffmpeg-accel.mjs for why each entry exists) ----
 
     private static final String NUM = "^[0-9]{1,10}(?:\\.[0-9]{1,20})?$";
-    private static final String VCODEC = "^(?:copy|libx264|libopenh264|(?:h264|hevc|av1)_(?:nvenc|qsv|amf|videotoolbox|mediacodec))$";
+    private static final String VCODEC = "^(?:copy|libx264|libopenh264|(?:h264|hevc|av1)_(?:nvenc|qsv|amf|vaapi|videotoolbox|mediacodec))$";
+    /** VAAPI's render node: the one absolute path allowed, and only as the value
+     *  of -vaapi_device (see VAAPI_DEVICE in ffmpeg-accel.mjs). */
+    private static final Pattern VAAPI_DEVICE = Pattern.compile("^/dev/dri/renderD1[2-9][0-9]$");
     private static final String ACODEC = "^(?:copy|aac|pcm_s16le)$";
 
     /** Option -> value pattern; a null value is a flag. -i and -f are special. */
@@ -146,7 +149,9 @@ final class AnrFfmpegChecks {
         opt("-f", "");
         opt("-fflags", "^\\+genpts$");
         opt("-skip_loop_filter", "^all$");
-        opt("-hwaccel", "^(?:cuda|qsv|d3d11va|videotoolbox)$");
+        opt("-hwaccel", "^(?:cuda|qsv|d3d11va|vaapi|videotoolbox)$");
+        opt("-hwaccel_output_format", "^cuda$");
+        OPTIONS.put("-vaapi_device", VAAPI_DEVICE);
         opt("-safe", "^0$");
         opt("-c", "^copy$");
         opt("-c:v", VCODEC);
@@ -158,23 +163,26 @@ final class AnrFfmpegChecks {
         }
         opt("-preset", "^(?:ultrafast|superfast|veryfast|faster|fast|medium|slow|slower|veryslow|p[1-7]|speed|balanced|quality)$");
         opt("-tune", "^zerolatency$");
-        opt("-pix_fmt", "^yuv420p$");
+        opt("-pix_fmt", "^(?:yuv420p|rgb24)$");
         opt("-movflags", "^\\+faststart$");
-        opt("-vf", "^(?:reverse|scale=-2:2\\*trunc\\(min\\([0-9]{1,5}\\\\,ih\\)/2\\))$");
+        opt(
+            "-vf",
+            "^(?:(?:reverse|scale=-2:2\\*trunc\\(min\\([0-9]{1,5}\\\\,ih\\)/2\\))(?:,format=nv12,hwupload)?|format=nv12,hwupload|scale_cuda=-2:2\\*trunc\\(min\\([0-9]{1,5}\\\\,ih\\)/2\\):format=yuv420p|fps=[0-9]{1,4}(?:\\.[0-9]{1,6})?,scale=[0-9]{1,4}:[0-9]{1,4})$"
+        );
         opt("-af", "^areverse$");
         opt("-force_key_frames", "^expr:gte\\(t,n_forced\\*[0-9]{1,10}(?:\\.[0-9]{1,20})?\\)$");
         opt("-map", "^0$");
         opt("-reset_timestamps", "^1$");
         opt("-rc", "^(?:vbr|cqp)$");
         opt("-bitrate_mode", "^vbr$");
-        opt("-b:v", "^[0-9]{1,9}k$");
+        opt("-b:v", "^(?:0|[0-9]{1,9}k)$");
     }
 
     private static final Set<String> INPUT_FORMATS = new HashSet<>(Arrays.asList("h264", "hevc", "concat"));
-    private static final Set<String> OUTPUT_FORMATS = new HashSet<>(Arrays.asList("wav", "null", "segment"));
+    private static final Set<String> OUTPUT_FORMATS = new HashSet<>(Arrays.asList("wav", "null", "segment", "rawvideo"));
 
     private static final Pattern NAME = Pattern.compile("^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$");
-    private static final Pattern OUTPUT_NAME = Pattern.compile("^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}\\.(?:mp4|wav|jpg)$");
+    private static final Pattern OUTPUT_NAME = Pattern.compile("^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}\\.(?:mp4|wav|jpg|rgb)$");
     private static final Pattern SEGMENT_NAME = Pattern.compile("^[A-Za-z0-9_]{0,63}_%0[1-9]d\\.mp4$");
     private static final Pattern RESERVED = Pattern.compile("^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?![^.])");
 
@@ -197,6 +205,9 @@ final class AnrFfmpegChecks {
             if (a.equals("-f") && i + 1 < args.size() && DEVICES.contains(asciiLower(String.valueOf(args.get(i + 1))))) {
                 return "-f " + args.get(i + 1) + " is a capture or playback device";
             }
+            // The render node after -vaapi_device is the one absolute path
+            // allowed; the allow-list below checks it again in place.
+            if (i > 0 && "-vaapi_device".equals(args.get(i - 1)) && VAAPI_DEVICE.matcher(a).matches()) continue;
             String bad = valueProblem(a);
             if (bad != null) return "\"" + a + "\" contains " + bad;
         }

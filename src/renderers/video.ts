@@ -5,7 +5,7 @@
 
 import { makePlayer, renderAudio } from './audio.js';
 import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob, inlineLoader, yieldToMain, setPlayerFill, type ElChild, type Drawable} from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob, inlineLoader, yieldToMain, setPlayerFill, desktopFileToken, type ElChild, type Drawable} from '../core/util.js';
 import { HASH_FILE_MAX, AVI_EXTRACT_MAX, FFMPEG_MEMFS_MAX, NATIVE_FFMPEG_CHUNK, FFMPEG_REMUX_MAX, TS_SEGMENT_BYTES, FFMPEG_FPS_PROBE_HEAD, PCM_COMPANION_MAX, VIDEO_AUDIO_DECODE_MAX, PCM_DECODE_SAMPLES_MAX, VIDEO_SHA_AUTO_MAX, VIDEO_SHA_BUTTON_MAX, MP4_MOOV_READ_MAX, MP4_AUDIO_READ_BATCH, MP4_AUDIO_READ_GAP, MP4_SAMPLE_TABLE_MAX, isLowMemoryDevice } from '../core/limits.js';
 import { parseAviHeader, openAviData, encodeWav } from './video-avi.js';
 import { appendSonyGyroCard } from './sony-rtmd.js';
@@ -387,8 +387,9 @@ function ffJobPrefix() { return 'j' + (++_ffJobSeq) + '_'; }
 
 // Hand a job its input file the cheapest way the backend allows, as
 // { input, cleanup } - `input` is the name to pass after -i:
-//  - the desktop's native FFmpeg: copied to the job's temp folder in pieces
-//    (writeFileFrom), so the page never holds it whole;
+//  - the desktop's native FFmpeg: read where it is on disk when the file is one
+//    the user opened, dropped or picked (linkFile); otherwise copied to the
+//    job's temp folder in pieces (writeFileFrom), so the page never holds it whole;
 //  - ffmpeg.wasm: mounted read-only with WORKERFS, so FFmpeg reads it by seeking
 //    instead of copying it into its 32-bit heap;
 //  - otherwise (the Android bridge, or a mount that failed): copied whole with
@@ -396,6 +397,10 @@ function ffJobPrefix() { return 'j' + (++_ffJobSeq) + '_'; }
 // `name` is the copy's file name - keep it a shape the desktop and Android ffmpeg
 // safety checks already allow. Exported for audio.ts, which borrows the instance.
 export async function ffInputFile(ff: any, file: File, name: string, memfsMax = Infinity, onCopy?: (frac: number) => void) {
+  if (ff.linkFile && await ff.linkFile(name, file)) {
+    // deleteFile only forgets a link; the user's file is never touched.
+    return { input: name, cleanup: async () => { try { await ff.deleteFile(name); } catch (_) {} } };
+  }
   if (ff.writeFileFrom) {
     await ff.writeFileFrom(name, file, onCopy);
     return { input: name, cleanup: async () => { try { await ff.deleteFile(name); } catch (_) {} } };
@@ -538,6 +543,14 @@ async function loadNativeFFmpeg() {
           if (onProgress) onProgress(Math.min(1, off / (blob.size || 1)));
         } while (off < blob.size);
       },
+      // Desktop only: let `name` stand for the user's own file, read where it
+      // is - no copy at all. false (a slice, a file the page built, a changed
+      // file) and the caller copies the bytes instead. See ffInputFile.
+      linkFile: d.shell || !d.ffmpeg.link ? undefined : async (name: string, blob: Blob) => {
+        const token = await desktopFileToken(blob);
+        if (!token) return false;
+        try { return !!(await d.ffmpeg!.link!(id, name, token)); } catch (_) { return false; }
+      },
       readFile: (name: string) => d.ffmpeg!.read(id, name),
       deleteFile: (name: string) => d.ffmpeg!.del(id, name),
       // Resolves with the exit code whenever ffmpeg RAN, even on a non-zero
@@ -557,11 +570,21 @@ async function loadNativeFFmpeg() {
   }
 }
 
+// The desktop can gain a binary mid-session: the first job of a run without one
+// offers to download one or to choose one (desktop/ffmpeg-setup.mjs). A WASM
+// instance loaded before that would otherwise run every later job, so it gives
+// way on the next load. Every loadFFmpeg() call sits inside a queued job, so no
+// job is using it by then.
+let _ffNativeArrived = false;
+if (window.anrDesktop && window.anrDesktop.ffmpeg && window.anrDesktop.ffmpeg.onChange) {
+  window.anrDesktop.ffmpeg.onChange(() => { _ffNativeArrived = true; });
+}
+
 // One load at a time: two callers arriving together (a probe and a convert, or
 // the two compare panels) used to build two instances and orphan one of them.
 let _ffLoading: Promise<any>|null = null;
 export async function loadFFmpeg(onProgress?: ((p: number) => void)|null) {
-  if (ffmpegInstance && ffmpegInstance.loaded) return ffmpegInstance;
+  if (ffmpegInstance && ffmpegInstance.loaded && !(_ffNativeArrived && !ffmpegInstance._native)) return ffmpegInstance;
   if (_ffLoading) return _ffLoading;
   _ffLoading = loadFFmpegFresh(onProgress);
   try { return await _ffLoading; }
@@ -569,7 +592,8 @@ export async function loadFFmpeg(onProgress?: ((p: number) => void)|null) {
 }
 
 async function loadFFmpegFresh(onProgress?: ((p: number) => void)|null) {
-  if (ffmpegInstance) killFFmpeg();   // half-loaded / terminated leftover
+  if (ffmpegInstance) killFFmpeg();   // half-loaded / terminated leftover, or WASM giving way
+  _ffNativeArrived = false;
   // Desktop first. It needs no download, so it must be tried BEFORE the loader
   // bar goes up - there is nothing to show progress for.
   const native = await loadNativeFFmpeg();
@@ -844,12 +868,16 @@ async function ffmpegTranscodeToH264(file: File, onLoad: ((p: number) => void)|n
   if (signal && signal.aborted) return null;
   const ff = await loadFFmpeg(onLoad);
   if (signal && signal.aborted) return null;
+  // opts.onLog hears FFmpeg's log lines for this job (the optional convert card
+  // reads the native shell's "[analyser] ... retrying" notes from them).
+  const onLog = typeof opts.onLog === 'function' ? opts.onLog : null;
+  if (onLog) ff.on('log', onLog);
   const pre = ffJobPrefix();
   const outName = pre + 'conv_out.mp4';
   // Mounted or copied in pieces, not read whole (ffInputFile).
   let srcIn: { input: string; cleanup: () => Promise<void> } | null = null;
   try { srcIn = await ffInputFile(ff, file, pre + 'conv_in'); } catch (_) { srcIn = null; }
-  if (!srcIn) return null;
+  if (!srcIn) { if (onLog) { try { ff.off('log', onLog); } catch (_) {} } return null; }
   const inName = srcIn.input;
   const onProg = ({ progress }: { progress: number }) => { if (onEnc && isFinite(progress)) onEnc(Math.max(0, Math.min(1, progress))); };
   ff.on('progress', onProg);
@@ -885,11 +913,130 @@ async function ffmpegTranscodeToH264(file: File, onLoad: ((p: number) => void)|n
     }
   } finally {
     try { ff.off('progress', onProg); } catch (_) {}
+    if (onLog) { try { ff.off('log', onLog); } catch (_) {} }
     await srcIn.cleanup();
     try { await ff.deleteFile(outName); } catch (_) {}
   }
   if (!data || !data.length) return null;
   return new Blob([data.buffer || data], { type: 'video/mp4' });
+}
+
+// The convert settings - resolution, frame rate, encode speed - behind an
+// Advanced toggle. Lower values are dramatically faster (encode cost scales
+// with pixels x frames); the defaults make the fast 720p proxy. Shared by the
+// "can't play this" card and the optional convert card on playable videos.
+function convertSettingsControls() {
+  const mkSel = (options: [string, string][], def: string) => {
+    const s = el('select', { class: 'anr-select' }, options.map(([label, value]) => el('option', { value }, label)));
+    s.value = def; return s;
+  };
+  const resSel = mkSel([['Full', '0'], ['2160p (4K)', '2160'], ['1440p', '1440'], ['1080p', '1080'], ['720p', '720'], ['480p', '480']], '720');
+  const fpsSel = mkSel([['Original', '0'], ['60 fps', '60'], ['30 fps', '30'], ['24 fps', '24'], ['15 fps', '15']], '30');
+  const spdSel = mkSel([['Turbo', 'turbo'], ['Fastest', 'ultrafast'], ['Fast', 'veryfast'], ['Balanced', 'faster'], ['Better quality', 'medium']], 'ultrafast');
+  const settingCol = (label: ElChild | ElChild[], sel: ElChild) => el('label', { class: 'anr-conv-setting' }, [el('span', {}, label), sel]);
+  const convSettings = el('div', { class: 'anr-conv-settings', hidden: '' }, [
+    settingCol('Resolution', resSel), settingCol('Frame rate', fpsSel), settingCol('Speed', spdSel),
+    el('p', { class: 'anr-hint', style: 'margin:8px 0 0; flex-basis:100%;' },
+      'Lower resolution and frame rate convert much faster. "Speed" trades encode time for a slightly smaller/cleaner file.'),
+  ]);
+  const advToggle = el('button', { type: 'button', class: 'anr-btn' }, 'Advanced');
+  advToggle.addEventListener('click', () => {
+    convSettings.hidden = !convSettings.hidden;
+    advToggle.classList.toggle('is-active', !convSettings.hidden);
+  });
+  const opts = () => ({
+    maxHeight: parseInt(resSel.value, 10) || 0,
+    maxFps: parseInt(fpsSel.value, 10) || 0,
+    preset: spdSel.value,
+  });
+  return { convSettings, advToggle, opts };
+}
+
+// Optional "Compress" on a video that already plays: re-encode it to a smaller
+// H.264 / AAC MP4 on demand and offer the result as a download. Nothing runs
+// until the button is pressed. The result line says how long it took and what
+// encoded it - in the desktop app that is the graphics card's encoder when the
+// native FFmpeg has one, or software when the hardware attempt failed (read
+// from the shell's own "[analyser] ... retrying" log lines).
+function buildConvertVideoCard(file: File, signal: AbortSignal) {
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, 'Compress'));
+  card.appendChild(el('p', { class: 'anr-hint' },
+    'Optional. Make a smaller copy of this video (an MP4 that plays almost anywhere) and download it. Advanced sets the resolution, frame rate and speed. ' +
+    (window.anrDesktop ? 'The desktop app uses your graphics card for this where it can.' : 'This runs in your browser with FFmpeg and can take a while.')));
+  const { convSettings, advToggle, opts } = convertSettingsControls();
+  const btn = el('button', { type: 'button', class: 'anr-btn' }, 'Compress video');
+  const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
+  const labelEl = el('div', { class: 'anr-progress-label' }, 'loading ffmpeg');
+  const wrap = el('div', { class: 'anr-progress', style: 'display:none;' }, [barEl, labelEl]);
+  const out = el('div');
+  const setBar = (frac: number) => {
+    const ch = parseFloat(getComputedStyle(barEl).fontSize) * 0.6 || 8;
+    const total = Math.max(10, Math.floor((barEl.parentElement!.clientWidth - ch * 2) / ch));
+    const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
+    barEl.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' + ' '.repeat(total - filled) + ']';
+  };
+  let url: string | null = null;
+  if (signal) signal.addEventListener('abort', () => { if (url) { try { URL.revokeObjectURL(url); } catch (_) {} } });
+  btn.addEventListener('click', async () => {
+    btn.disabled = true; btn.textContent = 'Compressing…';
+    wrap.style.display = ''; out.innerHTML = '';
+    let log = '';
+    let started = 0;
+    let blob = null;
+    try {
+      blob = await queueFFmpeg(
+        () => {
+          btn.textContent = 'Compressing…';
+          started = performance.now();
+          return ffmpegTranscodeToH264(file,
+            (p: number) => { labelEl.textContent = 'loading ffmpeg'; setBar(p); },
+            (p: number) => { labelEl.textContent = 'compressing'; setBar(p); },
+            signal, Object.assign(opts(), { onLog: (m: any) => { if (m && m.message && log.length < 65536) log += m.message; } }));
+        },
+        () => { btn.textContent = 'Queued…'; labelEl.textContent = 'waiting for another FFmpeg job to finish…'; });
+    } catch (_) { blob = null; }
+    wrap.style.display = 'none';
+    btn.disabled = false; btn.textContent = 'Compress again';
+    if (signal && signal.aborted) return;
+    if (!blob) {
+      out.appendChild(el('p', { class: 'anr-hint', style: 'color:var(--accent);' },
+        'Could not compress this video - it may be corrupt, or too large to hold in memory.'));
+      return;
+    }
+    const secs = (performance.now() - started) / 1000;
+    const caps = ffmpegInstance && ffmpegInstance._native ? ffmpegInstance._caps : null;
+    let how;
+    if (!caps) how = 'FFmpeg in your browser (WebAssembly, software)';
+    else if (/retrying in software|rewrite refused/.test(log)) how = 'software - the hardware encoder failed, so it was run again without it';
+    else if (caps.accel) how = caps.accel.label + (/retrying with the hardware encoder only/.test(log) ? ' (decoding on the processor)' : '');
+    else how = 'native FFmpeg, software (no working hardware encoder found)';
+    if (url) { try { URL.revokeObjectURL(url); } catch (_) {} }
+    url = URL.createObjectURL(blob);
+    const name = (file.name || 'video').replace(/\.[^/.]+$/, '') + ' (compressed).mp4';
+    const tbl = el('table', { class: 'anr-readout' });
+    tbl.appendChild(row('Time', secs.toFixed(1) + ' s'));
+    tbl.appendChild(row('Encoded with', how));
+    tbl.appendChild(row('Size', fmtBytes(blob.size) + '  (' + Math.round(blob.size / Math.max(1, file.size) * 100) + '% of the original)'));
+    out.appendChild(tbl);
+    // Analyse the copy as a fresh file, with a breadcrumb back to the original -
+    // the same drill-down as opening a file inside an archive.
+    const analyseBtn = el('button', { type: 'button', class: 'anr-btn', style: 'display:inline-block;' }, 'Analyse compressed');
+    analyseBtn.addEventListener('click', () => {
+      const compFile = new File([blob], name, { type: 'video/mp4' });
+      if (window._anrPushNav) window._anrPushNav(file.name || 'video', () => { if (window._anrHandleFile) window._anrHandleFile(file, {}); });
+      if (window._anrHandleFile) window._anrHandleFile(compFile, { nested: true });
+    });
+    out.appendChild(el('div', { style: 'margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;' }, [
+      el('a', { href: url, download: name, class: 'anr-btn', style: 'display:inline-block;text-decoration:none;' }, 'Download MP4'),
+      analyseBtn,
+    ]));
+  });
+  card.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [btn, advToggle]));
+  card.appendChild(convSettings);
+  card.appendChild(wrap);
+  card.appendChild(out);
+  return card;
 }
 
 // Card with a button that reverses the playable video on demand, then shows a
@@ -1725,9 +1872,9 @@ async function renderSegmentedPlayer(file: File, header: any, resultsEl: HTMLEle
 // DNxHD, HEVC-in-MKV, ...) using the FFmpeg WASM fallback, as { blob, time }.
 // Decodes a SINGLE frame only - it no longer scans a ladder of timestamps for a
 // non-black frame - so even a large or slow-to-decode master pays for just one
-// decode. Prefers a WORKERFS mount so multi-GB files are read by seeking rather
-// than copied whole into WASM memory; falls back to an in-memory copy for
-// smaller files. Returns null if nothing usable could be extracted. Fully guarded.
+// decode. The input goes in through ffInputFile, so the desktop's native ffmpeg
+// takes any size and ffmpeg.wasm reads a multi-GB file by seeking rather than
+// copying it. Returns null if nothing usable could be extracted. Fully guarded.
 function ffmpegFirstFrame(file: File, signal: AbortSignal) {
   return queueFFmpeg(() => ffmpegFirstFrameJob(file, signal));
 }
@@ -1738,32 +1885,15 @@ async function ffmpegFirstFrameJob(file: File, signal: AbortSignal) {
   const pre = ffJobPrefix();
   const frameName = pre + 'anr_frame.jpg';
 
-  const MOUNT = '/anrmnt';
-  let input = null;
   let cleanup = async () => {};
   try {
-    // Preferred path: mount the File via WORKERFS (no full in-memory copy).
-    let mounted = false;
-    try {
-      await ff.createDir(MOUNT);
-      mounted = await ff.mount('WORKERFS', { files: [file] }, MOUNT);
-    } catch (_) { mounted = false; }
-    if (mounted) {
-      input = MOUNT + '/' + file.name;
-      cleanup = async () => {
-        try { await ff.unmount(MOUNT); } catch (_) {}
-        try { await ff.deleteDir(MOUNT); } catch (_) {}
-      };
-    } else {
-      // Fallback: copy into MEMFS, but only when small enough to fit WASM memory.
-      try { await ff.deleteDir(MOUNT); } catch (_) {}
-      if (file.size > FFMPEG_MEMFS_MAX) return null;
-      const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
-      const inName = pre + 'anr_input';
-      cleanup = async () => { try { await ff.deleteFile(inName); } catch (_) {} };
-      await ff.writeFile(inName, await fetchFile(file));
-      input = inName;
-    }
+    // ffInputFile picks the cheapest route: the native binary streams the file
+    // to its folder, ffmpeg.wasm mounts it via WORKERFS (no full in-memory
+    // copy), and anything else copies it whole up to FFMPEG_MEMFS_MAX.
+    const src = await ffInputFile(ff, file, pre + 'anr_input', FFMPEG_MEMFS_MAX);
+    if (!src) return null;
+    cleanup = src.cleanup;
+    const input = src.input;
 
     if (signal && signal.aborted) return null;
     // Decode exactly one frame - the first - and stop. No -ss ladder, so a large
@@ -2520,7 +2650,31 @@ async function attachPcmAudioCompanion(file: File, playerCard: HTMLDivElement, s
     playerCard.appendChild(companion);
     ctx.companion(companion);
     if (signal) signal.addEventListener('abort', () => { try { ctx.companion(null); URL.revokeObjectURL(wavUrl); } catch (_) {} });
+    retireCompanionIfVideoHasSound(playerCard.querySelector('video'), companion, ctx, signal);
   } catch (_) { /* best-effort: no companion, video just stays mute */ }
+}
+
+// The codec list above says what browsers USUALLY drop, not what this one does:
+// some Chromium builds (the desktop app's among them) do decode PCM in an MP4 or
+// MOV, and then the video AND the companion both sound - a doubled, echoing
+// track. So once the video has played a moment, ask the element whether it is
+// actually decoding audio, and if it is, the companion steps aside. The test is
+// Chromium's (and WebKit's) webkitAudioDecodedByteCount; a browser without it
+// keeps the companion, as before.
+function retireCompanionIfVideoHasSound(video: HTMLVideoElement | null, companion: HTMLAudioElement, ctx: VideoCtx, signal: AbortSignal) {
+  if (!video || typeof (video as any).webkitAudioDecodedByteCount !== 'number') return;
+  const check = () => {
+    if (signal && signal.aborted) { video.removeEventListener('timeupdate', check); return; }
+    if (video.paused || video.currentTime < 0.3) return;
+    video.removeEventListener('timeupdate', check);
+    if (!((video as any).webkitAudioDecodedByteCount > 0)) return;   // really silent: keep it
+    try { companion.pause(); } catch (_) {}
+    try { ctx.companion(null); } catch (_) {}
+    companion.removeAttribute('src');
+    try { companion.load(); } catch (_) {}
+    companion.remove();
+  };
+  video.addEventListener('timeupdate', check);
 }
 
 // "Analyse audio": decode the soundtrack for the Sound section. An MP4/MOV's
@@ -3468,29 +3622,11 @@ async function renderUnplayableVideoInfo(file: File, header: any, resultsEl: HTM
   const convCard = el('div', { class: 'anr-card' });
   convCard.appendChild(el('h3', {}, 'Convert to H.264'));
 
-  // Advanced settings: resolution / frame rate / encode speed. Lower values are
-  // dramatically faster (encode cost scales with pixels x frames). Hidden until
-  // the Advanced button is pressed; defaults make the fast proxy.
-  const mkSel = (options: [string, string][], def: string) => {
-    const s = el('select', { class: 'anr-select' }, options.map(([label, value]) => el('option', { value }, label)));
-    s.value = def; return s;
-  };
-  const resSel = mkSel([['Full', '0'], ['2160p (4K)', '2160'], ['1440p', '1440'], ['1080p', '1080'], ['720p', '720'], ['480p', '480']], '720');
-  const fpsSel = mkSel([['Original', '0'], ['60 fps', '60'], ['30 fps', '30'], ['24 fps', '24'], ['15 fps', '15']], '30');
-  const spdSel = mkSel([['Turbo', 'turbo'], ['Fastest', 'ultrafast'], ['Fast', 'veryfast'], ['Balanced', 'faster'], ['Better quality', 'medium']], 'ultrafast');
-  const settingCol = (label: ElChild | ElChild[], sel: ElChild) => el('label', { class: 'anr-conv-setting' }, [el('span', {}, label), sel]);
-  const convSettings = el('div', { class: 'anr-conv-settings', hidden: '' }, [
-    settingCol('Resolution', resSel), settingCol('Frame rate', fpsSel), settingCol('Speed', spdSel),
-    el('p', { class: 'anr-hint', style: 'margin:8px 0 0; flex-basis:100%;' },
-      'Lower resolution and frame rate convert much faster. "Speed" trades encode time for a slightly smaller/cleaner file.'),
-  ]);
+  // Advanced settings: resolution / frame rate / encode speed, hidden until the
+  // Advanced button is pressed (convertSettingsControls).
+  const { convSettings, advToggle, opts: convSettingsOpts } = convertSettingsControls();
 
   const convBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Convert to H.264 and play');
-  const advToggle = el('button', { type: 'button', class: 'anr-btn' }, 'Advanced');
-  advToggle.addEventListener('click', () => {
-    convSettings.hidden = !convSettings.hidden;
-    advToggle.classList.toggle('is-active', !convSettings.hidden);
-  });
   const convBar = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const convLabel = el('div', { class: 'anr-progress-label' }, 'loading ffmpeg');
   const convWrap = el('div', { class: 'anr-progress', style: 'display:none;' }, [convBar, convLabel]);
@@ -3504,11 +3640,7 @@ async function renderUnplayableVideoInfo(file: File, header: any, resultsEl: HTM
   convBtn.addEventListener('click', async () => {
     convBtn.disabled = true; convBtn.textContent = 'Converting…';
     convWrap.style.display = ''; convErr.innerHTML = '';
-    const convOpts = {
-      maxHeight: parseInt(resSel.value, 10) || 0,
-      maxFps: parseInt(fpsSel.value, 10) || 0,
-      preset: spdSel.value,
-    };
+    const convOpts = convSettingsOpts();
     let blob = null;
     try {
       // Serialise through the shared FFmpeg instance: if the other file's convert is
@@ -3698,7 +3830,11 @@ async function detectFps(file: File, fpsCell?: HTMLTableCellElement|null|undefin
 // `onProgress`, if given, is called with a 0..1 fraction before each sample.
 // Scrubbing a long or large clip takes a while, so every caller feeds it a
 // progress bar rather than leaving a bare "Detecting…" line on screen.
-async function detectSceneChanges(video: HTMLVideoElement, threshold: number, signal: AbortSignal, collect: any[], onProgress?: ((p: number) => void)|null) {
+// `file`, when given, lets the desktop app read the same samples in ONE native
+// ffmpeg pass (nativeSceneFrames) instead of hundreds of player seeks. The
+// scoring below is shared, so both routes give the same kind of answer, and any
+// failure on the native route falls back to the seeks.
+async function detectSceneChanges(video: HTMLVideoElement, threshold: number, signal: AbortSignal, collect: any[], onProgress?: ((p: number) => void)|null, file?: File) {
   if (!isFinite(video.duration) || video.duration <= 0) return [];
 
   const dur = video.duration;
@@ -3720,21 +3856,38 @@ async function detectSceneChanges(video: HTMLVideoElement, threshold: number, si
   thumbCanvas.height = th;
   const thumbCtx = thumbCanvas.getContext('2d')!;
 
+  let native: Uint8Array | null = null;
+  if (file) {
+    try { native = await nativeSceneFrames(file, dur, interval, tw, th, signal, onProgress); } catch (_) { native = null; }
+  }
+  const frameBytes = tw * th * 3;
+  const nativeCount = native ? Math.min(sampleCount + 1, Math.floor(native.length / frameBytes)) : 0;
+
   let prevData = null;
   const changes = [];
 
   const px = tw * th;
-  for (let i = 0; i <= sampleCount; i++) {
+  const lastSample = native ? nativeCount - 1 : sampleCount;
+  for (let i = 0; i <= lastSample; i++) {
     if (signal && signal.aborted) break;
-    if (onProgress) { try { onProgress(i / (sampleCount + 1)); } catch (_) {} }
     const t = Math.min(i * interval, dur - 0.05);
-    // Shorter patience than the contact sheet's: these seeks step forward in
-    // small increments so they rarely stall, and there can be hundreds of them -
-    // a long per-seek ceiling would turn one bad sample into a minutes-long wait.
-    await seekAndPaint(video, t, 5000);
-
-    cmpCtx.drawImage(video, 0, 0, tw, th);
-    const frame = cmpCtx.getImageData(0, 0, tw, th);
+    let frame: ImageData;
+    if (native) {
+      // ffmpeg's packed RGB, widened to the RGBA a canvas would have read.
+      frame = cmpCtx.createImageData(tw, th);
+      const src = native.subarray(i * frameBytes, (i + 1) * frameBytes), dst = frame.data;
+      for (let j = 0, k = 0; j < px; j++, k += 3) {
+        dst[j * 4] = src[k]; dst[j * 4 + 1] = src[k + 1]; dst[j * 4 + 2] = src[k + 2]; dst[j * 4 + 3] = 255;
+      }
+    } else {
+      if (onProgress) { try { onProgress(i / (sampleCount + 1)); } catch (_) {} }
+      // Shorter patience than the contact sheet's: these seeks step forward in
+      // small increments so they rarely stall, and there can be hundreds of them -
+      // a long per-seek ceiling would turn one bad sample into a minutes-long wait.
+      await seekAndPaint(video, t, 5000);
+      cmpCtx.drawImage(video, 0, 0, tw, th);
+      frame = cmpCtx.getImageData(0, 0, tw, th);
+    }
     const d = frame.data;
 
     // Per-sample average colour + luma - drives the content-timeline barcode and
@@ -3760,7 +3913,8 @@ async function detectSceneChanges(video: HTMLVideoElement, threshold: number, si
       meanDiff = sum / (px * 3);
 
       if (meanDiff > threshold) {
-        thumbCtx.drawImage(video, 0, 0, tw, th);
+        if (native) thumbCtx.putImageData(frame, 0, 0);
+        else thumbCtx.drawImage(video, 0, 0, tw, th);
         changes.push({
           time: t,
           diff: meanDiff,
@@ -3778,6 +3932,47 @@ async function detectSceneChanges(video: HTMLVideoElement, threshold: number, si
   }
 
   return changes;
+}
+
+// Scene detection's samples from the desktop's native ffmpeg: one decode pass,
+// the fps filter picking a frame every `interval` seconds and scale shrinking
+// it to tw x th, written as packed RGB to one file - frame i is bytes
+// i*tw*th*3 onward, standing for time i*interval. The GPU decodes it where it
+// can (accelerate() in desktop/ffmpeg-accel.mjs adds -hwaccel to a raw-frames
+// job). Null when this is not the desktop, no binary is installed (asked
+// quietly, so the scan never raises the "get FFmpeg" offer, nor loads the WASM
+// build, which would be slower than the seeks), or the pass fails.
+async function nativeSceneFrames(file: File, dur: number, interval: number, tw: number, th: number, signal: AbortSignal, onProgress?: ((p: number) => void)|null): Promise<Uint8Array | null> {
+  const d = window.anrDesktop;
+  if (!d || d.shell || !d.ffmpeg) return null;
+  const caps = await d.ffmpeg.caps({ quiet: true });
+  if (!caps || !caps.available || (signal && signal.aborted)) return null;
+  return queueFFmpeg(async () => {
+    if (signal && signal.aborted) return null;
+    const ff = await loadFFmpeg();
+    if (!ff || !ff._native) return null;
+    const pre = ffJobPrefix();
+    const outName = pre + 'scene.rgb';
+    // Only when ffmpeg can read the file in place: copying a large video over
+    // first would cost more than the seeks this replaces.
+    const inName = pre + 'scene_in';
+    if (!ff.linkFile || !(await ff.linkFile(inName, file))) return null;
+    const src = { input: inName, cleanup: async () => { try { await ff.deleteFile(inName); } catch (_) {} } };
+    const onProg = (p: any) => { if (onProgress && p && isFinite(p.progress)) { try { onProgress(Math.max(0, Math.min(1, p.progress))); } catch (_) {} } };
+    ff.on('progress', onProg);
+    try {
+      const fps = (1 / interval).toFixed(6).replace(/\.?0+$/, '');
+      const code = await ffExec(ff, ['-i', src.input, '-an', '-vf', 'fps=' + fps + ',scale=' + tw + ':' + th,
+        '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-y', outName], Math.max(120000, dur * 2000));
+      if (code !== 0 || (signal && signal.aborted)) return null;
+      const data = await ff.readFile(outName);
+      return data && data.length >= tw * th * 3 * 2 ? data : null;
+    } finally {
+      try { ff.off('progress', onProg); } catch (_) {}
+      await src.cleanup();
+      try { await ff.deleteFile(outName); } catch (_) {}
+    }
+  });
 }
 
 // Turn the per-sample colour/luma series into a content-timeline card: a movie
@@ -4141,7 +4336,7 @@ async function renderVisibleVideoFallback(file: File, url: string, header: any, 
       const contentSamples: any[] = [];
       try {
         changes = await detectSceneChanges(playerEl, 55, signal, contentSamples,
-          (f: number) => prog.set(f, 'Scanning for scene changes… ' + Math.round(f * 100) + '%'));
+          (f: number) => prog.set(f, 'Scanning for scene changes… ' + Math.round(f * 100) + '%'), file);
       } catch (_) {}
       try { playerEl.currentTime = 0; playerEl.pause(); } catch (_) {}
       sceneBadge.remove();
@@ -4229,8 +4424,9 @@ async function renderVisibleVideoFallback(file: File, url: string, header: any, 
     }
   });
 
-  // ---- Reverse playback (re-encode the video backwards, on demand) ----
-  // Sits just above Integrity, below the scene-change card.
+  // ---- Optional compress, then reverse playback (both on demand) ----
+  // Sit just above Integrity, below the scene-change card.
+  resultsEl.appendChild(buildConvertVideoCard(file, signal));
   resultsEl.appendChild(buildReverseVideoCard(file, signal));
 
   // ---- Content Credentials + AI-generation signals ----
@@ -5776,7 +5972,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
       const contentSamples: any[] = [];
       try {
         changes = await detectSceneChanges(videoEl, 55, renderSignal, contentSamples,
-          (f: number) => prog.set(f, 'Scanning for scene changes… ' + Math.round(f * 100) + '%'));
+          (f: number) => prog.set(f, 'Scanning for scene changes… ' + Math.round(f * 100) + '%'), file);
       } catch (_) {}
       if (removeAfter) { try { videoEl.removeAttribute('src'); videoEl.load(); } catch (_) {} videoEl.remove(); }
       sceneBadge.remove();
@@ -5922,8 +6118,9 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
     }
   });
 
-  // ---- Reverse playback (re-encode the video backwards, on demand) ----
-  // Sits just above Integrity, below the scene-change card.
+  // ---- Optional compress, then reverse playback (both on demand) ----
+  // Sit just above Integrity, below the scene-change card.
+  resultsEl.appendChild(buildConvertVideoCard(file, renderSignal));
   resultsEl.appendChild(buildReverseVideoCard(file, renderSignal));
 
   // ---- SHA-256 ----

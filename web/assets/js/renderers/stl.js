@@ -891,19 +891,63 @@ export function analyzeMeshIntegrity(positions, step) {
     if (triN > BODY_SPLIT_CAP)
         return { tooLarge: true, triN };
     const s = step || 1;
-    // Weld corners -> a compact welded-vertex id per corner.
-    const map = new Map();
+    // Weld corners -> a compact welded-vertex id per corner, ids in first-seen
+    // order. The quantized corner is the key. It used to be a string per corner
+    // in a Map; it is now three int32s in an open-addressed table (no garbage,
+    // a fraction of the memory). A mesh whose quantized coordinates leave int32 -
+    // a model far from the origin compared with its own size - keeps the string
+    // keys, which give the same ids.
     const wid = new Int32Array(nCorners);
-    for (let i = 0; i < nCorners; i++) {
-        const k = Math.round(positions[i * 3] / s) + '|' + Math.round(positions[i * 3 + 1] / s) + '|' + Math.round(positions[i * 3 + 2] / s);
-        let id = map.get(k);
-        if (id === undefined) {
-            id = map.size;
-            map.set(k, id);
+    let V = 0;
+    let fitsInt = true;
+    for (let i = 0; i < nCorners * 3; i++) {
+        const q = Math.round(positions[i] / s);
+        if (!(q >= -2147483648 && q <= 2147483647)) {
+            fitsInt = false;
+            break;
         }
-        wid[i] = id;
     }
-    const V = map.size;
+    if (fitsInt) {
+        let cap = 1;
+        while (cap < nCorners * 4 / 3)
+            cap <<= 1;
+        const slots = new Int32Array(cap).fill(-1);
+        const keys = new Int32Array(nCorners * 3);
+        const mask = cap - 1;
+        for (let i = 0; i < nCorners; i++) {
+            const qx = Math.round(positions[i * 3] / s), qy = Math.round(positions[i * 3 + 1] / s), qz = Math.round(positions[i * 3 + 2] / s);
+            let h = (Math.imul(qx, 73856093) ^ Math.imul(qy, 19349663) ^ Math.imul(qz, 83492791)) & mask;
+            for (;;) {
+                const id = slots[h];
+                if (id === -1) {
+                    slots[h] = V;
+                    keys[V * 3] = qx;
+                    keys[V * 3 + 1] = qy;
+                    keys[V * 3 + 2] = qz;
+                    wid[i] = V++;
+                    break;
+                }
+                if (keys[id * 3] === qx && keys[id * 3 + 1] === qy && keys[id * 3 + 2] === qz) {
+                    wid[i] = id;
+                    break;
+                }
+                h = (h + 1) & mask;
+            }
+        }
+    }
+    else {
+        const map = new Map();
+        for (let i = 0; i < nCorners; i++) {
+            const k = Math.round(positions[i * 3] / s) + '|' + Math.round(positions[i * 3 + 1] / s) + '|' + Math.round(positions[i * 3 + 2] / s);
+            let id = map.get(k);
+            if (id === undefined) {
+                id = map.size;
+                map.set(k, id);
+            }
+            wid[i] = id;
+        }
+        V = map.size;
+    }
     // Edge pass. Each undirected edge (lo,hi) keys a [useCount, dirSum] pair, where
     // dirSum sums +1 for a face traversing lo->hi and -1 for hi->lo. A well-formed
     // 2-manifold edge is used by exactly two faces in opposite directions (dirSum 0);
@@ -920,9 +964,12 @@ export function analyzeMeshIntegrity(positions, step) {
         e[0]++;
         e[1] += (a < b) ? 1 : -1;
     };
-    // Duplicate-face detection is a string-keyed Set, so gate it to a smaller mesh to
-    // keep memory bounded; the edge/manifold checks always run up to BODY_SPLIT_CAP.
+    // Duplicate-face detection is a Set of sorted corner triples, so gate it to a
+    // smaller mesh to keep memory bounded; the edge/manifold checks always run up
+    // to BODY_SPLIT_CAP. The triple is one number while V^3 stays exact in a
+    // double (V below ~208k), and a string beyond that.
     const dupCheck = triN <= 300000;
+    const numericTri = V * V * V < Number.MAX_SAFE_INTEGER;
     const seenTri = dupCheck ? new Set() : null;
     let degenerate = 0, duplicate = 0;
     for (let t = 0; t < triN; t++) {
@@ -948,7 +995,7 @@ export function analyzeMeshIntegrity(positions, step) {
                 x = y;
                 y = tmp;
             }
-            const tk = x + '_' + y + '_' + z;
+            const tk = numericTri ? (x * V + y) * V + z : x + '_' + y + '_' + z;
             if (seenTri.has(tk))
                 duplicate++;
             else

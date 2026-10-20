@@ -43,6 +43,9 @@ const APP = [
   ['-fflags', '+genpts', '-f', 'hevc', '-i', 'j22_in.h265', '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', 'j22_out.mp4'],
   ['-fflags', '+genpts', '-i', 'j23_in.ts', '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', 'j23_out.mp4'],
   ['-i', 'j24_anr_input', '-frames:v', '1', '-q:v', '3', '-y', 'j24_anr_frame.jpg'],
+  // Scene detection's one pass (nativeSceneFrames): 2 and 0.333333 frames a second.
+  ['-i', 'j25_scene_in', '-an', '-vf', 'fps=2,scale=160:90', '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-y', 'j25_scene.rgb'],
+  ['-i', 'j26_scene_in', '-an', '-vf', 'fps=0.333333,scale=160:90', '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-y', 'j26_scene.rgb'],
 ];
 
 const ATTACKS = [
@@ -104,6 +107,23 @@ const ATTACKS = [
   ['-i', 'in.mp4', '-c:v', 'rawvideo', 'out.mp4'],
   ['-i', 'in.mp4', '-vf', 'x\u00a0/etc/passwd', 'out.mp4'],
   ['-i', 'in.mp4', '-segment_time', '1', 'out.mp4'],
+  // VAAPI's render node is the one absolute path allowed, and only as the
+  // value of -vaapi_device, in exactly that shape.
+  ['-vaapi_device', '/etc/passwd', '-i', 'in.mp4', 'out.mp4'],
+  ['-vaapi_device', '/dev/dri/renderD128/../../../etc/passwd', '-i', 'in.mp4', 'out.mp4'],
+  ['-vaapi_device', '/dev/dri/card0', '-i', 'in.mp4', 'out.mp4'],
+  ['-vaapi_device', '/dev/dri/renderD128', '-i', '/dev/dri/renderD128', 'out.mp4'],
+  ['-i', '/dev/dri/renderD128', 'out.mp4'],
+  ['-i', 'in.mp4', '-y', '/dev/dri/renderD128'],
+  ['-vaapi_device', '-vaapi_device', '/dev/dri/renderD128', '-i', 'in.mp4', 'out.mp4'],
+  ['-vaapi_device', '/dev/dri/renderD128\n', '-i', 'in.mp4', 'out.mp4'],
+  ['-hwaccel_output_format', 'vaapi', '-i', 'in.mp4', 'out.mp4'],
+  ['-i', 'in.mp4', '-vf', 'format=nv12,hwupload,movie=x.mp4', 'out.mp4'],
+  ['-i', 'in.mp4', '-vf', 'scale_cuda=1:1,movie=x.mp4', 'out.mp4'],
+  ['-i', 'in.mp4', '-b:v', '0x', 'out.mp4'],
+  ['-f', 'rawvideo', '-i', 'in.rgb', 'out.mp4'],
+  ['-i', 'in.mp4', '-vf', 'fps=2,scale=160:90,movie=x.mp4', '-f', 'rawvideo', 'out.rgb'],
+  ['-i', 'in.mp4', '-f', 'rawvideo', '-'],
   // Java's $ matches before a final line break; JavaScript's does not.
   ['-i', 'in.mp4', '-map', '0\n', 'out.mp4'],
   ['-i', 'input\n', 'out.mp4'],
@@ -171,17 +191,43 @@ for (const n of ['', 'con', 'NUL.txt', 'com1.mp4', 'a:b', 'a\u0000b', '.hidden',
 // Every hardware rewrite and the openh264 fallback of every app shape must
 // pass too - the rewritten list is what spawns, and on Android the native
 // check only ever sees the rewritten form.
+// Each family is tried with hardware decoding on and off (runJob's first and
+// second attempts), so both forms pass.
 let rewrites = 0;
 for (const f of FAMILIES) {
   const accel = { vendor: f.vendor, h264: f.h264, hevc: f.hevc, av1: f.av1 };
   for (const a of APP) {
-    const r = accelerate(a, accel);
-    if (!r.changed) continue;
-    rewrites++;
-    const why = checkArgs(r.args);
-    if (why) fail(f.vendor + ' rewrite refused: ' + why + '\n      ' + JSON.stringify(r.args));
+    for (const decode of [true, false]) {
+      const r = accelerate(a, accel, { decode });
+      if (!r.changed) continue;
+      rewrites++;
+      const why = checkArgs(r.args);
+      if (why) fail(f.vendor + ' rewrite refused: ' + why + '\n      ' + JSON.stringify(r.args));
+      if (r.args.includes('-tune')) fail(f.vendor + ' rewrite kept x264\'s -tune: ' + JSON.stringify(r.args));
+      if (!decode && r.decoded) fail(f.vendor + ' rewrite decoded on the GPU when told not to: ' + JSON.stringify(r.args));
+    }
   }
 }
+// The rewrite's own decisions, on the shapes that exercise them.
+const famOf = (v) => { const f = FAMILIES.find((x) => x.vendor === v); return { vendor: f.vendor, h264: f.h264, hevc: f.hevc, av1: f.av1 }; };
+const TURBO = APP.find((a) => a.includes('zerolatency'));
+const nv = accelerate(TURBO, famOf('nvidia'));
+if (!nv.decoded || !nv.args.includes('scale_cuda=-2:2*trunc(min(1080\\,ih)/2):format=yuv420p') || nv.args.includes('-pix_fmt')) {
+  fail('NVENC did not move the convert\'s resize to the GPU: ' + JSON.stringify(nv.args));
+}
+if (!accelerate(APP[2], famOf('nvidia')).args.join(' ').includes('-cq 20 -b:v 0')) fail('NVENC quality is missing -b:v 0');
+if (accelerate(APP[3], famOf('nvidia')).decoded) fail('NVENC decoded on the GPU under -vf reverse');
+const va = accelerate(TURBO, famOf('vaapi'));
+if (va.args[0] !== '-vaapi_device' || !va.args.includes('scale=-2:2*trunc(min(1080\\,ih)/2),format=nv12,hwupload') || va.args.includes('-pix_fmt')) {
+  fail('VAAPI rewrite is not the upload shape: ' + JSON.stringify(va.args));
+}
+if (!accelerate(APP[2], { ...famOf('nvidia'), decode: false }).args.every((x) => x !== '-hwaccel')) fail('a family whose decode probe failed still got -hwaccel');
+const SCENE = APP.find((a) => a.includes('rawvideo'));
+const sc = accelerate(SCENE, famOf('amd'));
+if (!sc.changed || !sc.decoded || sc.args[sc.args.indexOf('-i') - 1] !== 'd3d11va') fail('scene detection did not get GPU decoding: ' + JSON.stringify(sc.args));
+if (accelerate(SCENE, famOf('amd'), { decode: false }).changed) fail('a decode-only job was rewritten with decoding off');
+if (accelerate(SCENE, famOf('mediacodec')).changed) fail('MediaCodec rewrote a decode-only job');
+console.log('vaapi, scene detection:    ' + accelerate(SCENE, famOf('vaapi')).args.join(' '));
 for (const a of APP) {
   const fb = softwareFallback(a, ['libopenh264', 'aac']);
   if (fb === a) continue;
@@ -194,6 +240,8 @@ for (const f of FAMILIES) {
   const accel = { vendor: f.vendor, h264: f.h264, hevc: f.hevc, av1: null };
   console.log((f.vendor + ', gcode clip:').padEnd(26) + accelerate(APP[2], accel).args.join(' '));
 }
+console.log('nvidia, turbo convert:     ' + nv.args.join(' '));
+console.log('vaapi, turbo convert:      ' + va.args.join(' '));
 const mc = FAMILIES.find((f) => f.vendor === 'mediacodec');
 const accel = { vendor: mc.vendor, h264: mc.h264, hevc: mc.hevc, av1: null };
 console.log('mediacodec, reverse:      ' + accelerate(APP[3], accel).args.join(' '));

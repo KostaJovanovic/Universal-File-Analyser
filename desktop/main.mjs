@@ -13,8 +13,9 @@
  */
 
 import { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, net, protocol, screen, shell } from 'electron';
-import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import * as zlib from 'node:zlib';
 import { totalmem } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -22,6 +23,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { looksLikeWebRoot, mimeFor, route } from './router.mjs';
 import { buildMenu, menuModel, runMenuItem } from './menu.mjs';
 import * as ffnative from './ffmpeg-native.mjs';
+import { offerIfMissing, preferredPaths, setupFfmpeg, showFfmpegStatus } from './ffmpeg-setup.mjs';
 import { checkForUpdates, checkForUpdatesFromPage, clickUpdate, currentOffer, startUpdates } from './updater.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -240,6 +242,75 @@ function approve(path, tokens) {
 function releaseFolderTokens() {
   for (const t of folderTokens) approved.delete(t);
   folderTokens = [];
+}
+
+/* Tokens for files the user DROPPED (or picked with the page's own file input).
+   Those reach the page as File objects, not tokens, so native work on them
+   (anr:hash, anr:ffmpeg-link) needs one minted after the fact. The preload asks
+   with webUtils.getPathForFile(), which only knows a path for a File the user
+   gave the page - a File the page built itself has none - so a page can still
+   only name files the user handed it. One token per path, reused. */
+const dropTokens = new Map();                       // path -> token
+
+function tokenForDrop(path, size, lastModified) {
+  if (typeof path !== 'string' || !path) return null;
+  let st;
+  try { st = statSync(path); } catch (_) { return null; }
+  // The page's File must still be the file on disk, or its bytes and the
+  // native result would disagree.
+  if (!st.isFile() || st.size !== size || Math.abs(st.mtimeMs - lastModified) > 2000) return null;
+  const known = dropTokens.get(path);
+  const entry = known && approved.get(known);
+  if (entry && entry.size === st.size && entry.mtime === st.mtimeMs) return known;
+  const a = approve(path);
+  if (!a) return null;
+  const token = new URL(a.url).hostname;
+  dropTokens.set(path, token);
+  return token;
+}
+
+/** The approved entry for a token, if the file on disk is still the one that
+ *  was approved. A file changed since then is the page's copy no longer. */
+function liveEntry(token) {
+  const entry = approved.get(String(token || ''));
+  if (!entry) return null;
+  try {
+    const st = statSync(entry.path);
+    if (!st.isFile() || st.size !== entry.size || Math.abs(st.mtimeMs - entry.mtime) > 2000) return null;
+  } catch (_) { return null; }
+  return entry;
+}
+
+/* The page's hash names (lib/hash-stream.ts) and Node's. CRC-32 is zlib's,
+   which Electron 33's Node has (20.15+). */
+const HASH_ALGOS = { sha256: 'sha256', sha1: 'sha1', sha512: 'sha512', md5: 'md5', crc32: null };
+
+/** Stream one file through every requested hash in a single read. Resolves
+ *  { algo: hex } in the page's spelling, or null when it cannot. */
+function hashFile(path, algos, onProgress) {
+  const want = algos.filter((a) => Object.prototype.hasOwnProperty.call(HASH_ALGOS, a));
+  if (!want.length) return Promise.resolve(null);
+  if (want.includes('crc32') && typeof zlib.crc32 !== 'function') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const hashes = want.filter((a) => HASH_ALGOS[a]).map((a) => [a, createHash(HASH_ALGOS[a])]);
+    let crc = 0, done = 0, total = 0, lastTick = 0;
+    try { total = statSync(path).size; } catch (_) { return resolve(null); }
+    const stream = createReadStream(path, { highWaterMark: 4 * 1024 * 1024 });
+    stream.on('data', (chunk) => {
+      for (const [, h] of hashes) h.update(chunk);
+      if (want.includes('crc32')) crc = zlib.crc32(chunk, crc);
+      done += chunk.length;
+      const now = Date.now();
+      if (onProgress && now - lastTick > 100) { lastTick = now; onProgress(total ? done / total : 1); }
+    });
+    stream.on('error', () => resolve(null));
+    stream.on('end', () => {
+      const out = {};
+      for (const [a, h] of hashes) out[a] = h.digest('hex');
+      if (want.includes('crc32')) out.crc32 = (crc >>> 0).toString(16).padStart(8, '0');
+      resolve(out);
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -642,6 +713,13 @@ const actions = {
   checkUpdates() {
     checkForUpdates().catch(() => {});
   },
+  /* Help > FFmpeg (hardware video): what is in use, download or choose one.
+     See ffmpeg-setup.mjs. */
+  ffmpeg() {
+    ffnative.capabilities(app.getPath('userData'), ffPaths())
+      .then(showFfmpegStatus)
+      .catch(() => {});
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -1007,7 +1085,9 @@ ipcMain.handle('anr:save-report', async (e, req) => {
 //
 // A shipped binary would live in resources/ffmpeg/; none is bundled yet, so
 // BUNDLED_FFMPEG resolves to a path that simply does not exist and the finder
-// moves on to PATH.
+// moves on to PATH. Ahead of all of it come the file the user chose and the
+// copy Analyser downloaded (ffmpeg-setup.mjs), which also offers to get one
+// the first time a job finds none.
 // ---------------------------------------------------------------------------
 const FF_EXE = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
 const BUNDLED_FFMPEG = [
@@ -1021,14 +1101,36 @@ const BUNDLED_FFMPEG = [
   PORTABLE_DIR ? join(PORTABLE_DIR, 'ffmpeg', 'bin', FF_EXE) : null,
 ].filter(Boolean);
 
+/** Every place to look, best first. Read per call: the user's choice changes. */
+const ffPaths = () => [...preferredPaths(), ...BUNDLED_FFMPEG];
+
+setupFfmpeg({
+  window: () => mainWindow,
+  /* A different binary is in charge: probe it, then tell the page, whose
+     loaded WASM instance gives way to it on the next job (video.ts). */
+  changed: async () => {
+    ffnative.resetCapabilities();
+    const caps = await ffnative.capabilities(app.getPath('userData'), ffPaths());
+    const wc = appContents();
+    if (wc) wc.send('anr:ffmpeg-changed');
+    return caps;
+  },
+});
+
 /** Every ffmpeg IPC call must come from the app's own view. */
 function fromMainWindow(e) {
   return e.sender === appContents();
 }
 
-ipcMain.handle('anr:ffmpeg-caps', async (e) => {
+/* The page asks this as each ffmpeg instance loads, so it is also where the
+   first job of a run without ffmpeg raises the offer to get one. A quiet ask
+   (the offline tiers, which only want to know) never raises it. */
+ipcMain.handle('anr:ffmpeg-caps', async (e, opts) => {
   if (!fromMainWindow(e)) return { available: false };
-  try { return await ffnative.capabilities(app.getPath('userData'), BUNDLED_FFMPEG); }
+  try {
+    const caps = await ffnative.capabilities(app.getPath('userData'), ffPaths());
+    return opts && opts.quiet ? caps : await offerIfMissing(caps);
+  }
   catch (err) { return { available: false, error: String((err && err.message) || err) }; }
 });
 
@@ -1059,7 +1161,7 @@ ipcMain.handle('anr:ffmpeg-delete', async (e, { id, name }) => {
 
 ipcMain.handle('anr:ffmpeg-exec', async (e, { id, args, timeout }) => {
   if (!fromMainWindow(e)) return { ok: false, code: -1 };
-  const caps = await ffnative.capabilities(app.getPath('userData'), BUNDLED_FFMPEG);
+  const caps = await ffnative.capabilities(app.getPath('userData'), ffPaths());
   if (!caps.available) return { ok: false, code: -1, log: 'no ffmpeg binary' };
   const post = (payload) => {
     const wc = appContents();
@@ -1082,6 +1184,33 @@ ipcMain.handle('anr:ffmpeg-close', async (e, { id }) => {
   if (!fromMainWindow(e)) return false;
   await ffnative.closeSession(id);
   return true;
+});
+
+/* Let ffmpeg read an opened file in place (ffmpeg-native.mjs link()). The page
+   names the file by token only; false sends it back to copying the bytes. */
+ipcMain.handle('anr:ffmpeg-link', async (e, { id, name, token }) => {
+  if (!fromMainWindow(e)) return false;
+  const entry = liveEntry(token);
+  if (!entry) return false;
+  try { return ffnative.link(id, name, entry.path); } catch (_) { return false; }
+});
+
+/* A token for a file the user dropped, from the path the preload found with
+   webUtils.getPathForFile(). The page gets the token, never the path. */
+ipcMain.handle('anr:file-token', (e, { path, size, lastModified }) => {
+  if (!fromMainWindow(e)) return null;
+  return tokenForDrop(path, Number(size), Number(lastModified));
+});
+
+/* Hash an opened file from disk, at disk speed, instead of streaming it through
+   the page's JavaScript hashes (lib/hash-client.ts tries this first). Progress
+   goes back as anr:hash-progress events keyed by the caller's id. */
+ipcMain.handle('anr:hash', async (e, { id, token, algos }) => {
+  if (!fromMainWindow(e)) return null;
+  const entry = liveEntry(token);
+  if (!entry || !Array.isArray(algos)) return null;
+  const post = (frac) => { const wc = appContents(); if (wc) wc.send('anr:hash-progress', { id, frac }); };
+  return hashFile(entry.path, algos.map(String), post);
 });
 
 /* The footer's "Check for updates" button (core/offline-tiers.ts via the

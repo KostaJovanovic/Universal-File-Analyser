@@ -103,6 +103,34 @@ export const windows: Record<string, (N: number) => Float32Array> = {
 };
 
 // ---------- FFT (radix-2 in-place, complex) ----------
+interface FftPlan { rev: Uint32Array; cosT: Float64Array; sinT: Float64Array; }
+const _fftPlans = new Map<number, FftPlan>();
+
+// The bit-reversal permutation and the n/2 twiddle factors for one FFT size,
+// built once and kept: a session only ever uses a handful of sizes.
+function fftPlan(n: number): FftPlan {
+  let p = _fftPlans.get(n);
+  if (p) return p;
+  const rev = new Uint32Array(n);
+  let j = 0;
+  for (let i = 1; i < n; i++) {
+    let bit = n >> 1;
+    while (j & bit) { j ^= bit; bit >>= 1; }
+    j ^= bit;
+    rev[i] = j;
+  }
+  const half = n >> 1;
+  const cosT = new Float64Array(half), sinT = new Float64Array(half);
+  for (let m = 0; m < half; m++) {
+    const angle = -2 * Math.PI * m / n;
+    cosT[m] = Math.cos(angle);
+    sinT[m] = Math.sin(angle);
+  }
+  p = { rev, cosT, sinT };
+  _fftPlans.set(n, p);
+  return p;
+}
+
 /**
  * Radix-2 Cooley-Tukey FFT.
  *
@@ -113,32 +141,34 @@ export const windows: Record<string, (N: number) => Float32Array> = {
  * Step 1: bit-reversal permutation (reorders inputs so the butterflies can
  *         walk the array contiguously).
  * Step 2: log2(N) passes of butterflies, doubling the sub-FFT size each pass.
+ *
+ * The twiddle factors and the permutation come from per-size tables built on
+ * the first call (fftPlan), so a spectrogram's thousands of frames call
+ * Math.cos/Math.sin N/2 times in total rather than N/2 * log2(N) per frame.
  */
 export function fft(real: Float32Array|Float64Array, imag: Float32Array|Float64Array) {
   const n = real.length;
   if ((n & (n - 1)) !== 0) throw new Error('FFT size must be a power of 2');
+  const { rev, cosT, sinT } = fftPlan(n);
 
   // bit reversal
-  let j = 0;
   for (let i = 1; i < n; i++) {
-    let bit = n >> 1;
-    while (j & bit) { j ^= bit; bit >>= 1; }
-    j ^= bit;
+    const j = rev[i];
     if (i < j) {
-      [real[i], real[j]] = [real[j], real[i]];
-      [imag[i], imag[j]] = [imag[j], imag[i]];
+      const tr = real[i]; real[i] = real[j]; real[j] = tr;
+      const ti = imag[i]; imag[i] = imag[j]; imag[j] = ti;
     }
   }
 
-  // butterflies
+  // butterflies. A size-`size` stage needs exp(-2*pi*i*k/size), which is entry
+  // k*(n/size) of the size-n table.
   for (let size = 2; size <= n; size <<= 1) {
     const half = size >> 1;
-    const tableStep = -2 * Math.PI / size;
+    const stride = n / size;
     for (let i = 0; i < n; i += size) {
       for (let k = 0; k < half; k++) {
-        const angle = tableStep * k;
-        const cos = Math.cos(angle);
-        const sin = Math.sin(angle);
+        const cos = cosT[k * stride];
+        const sin = sinT[k * stride];
         const tre = real[i + k + half] * cos - imag[i + k + half] * sin;
         const tim = real[i + k + half] * sin + imag[i + k + half] * cos;
         real[i + k + half] = real[i + k] - tre;
@@ -563,6 +593,25 @@ export const colormaps: Record<string, (t: number) => number[]> = {
   ])
 };
 
+// A colour map sampled into COLORMAP_LUT_STEPS rgb triples, built once per map.
+// Painting reads lut[round(t * (steps-1)) * 3 ...] instead of calling the map,
+// which allocated a fresh [r, g, b] array for every pixel. At 1024 steps a
+// colour lands within half a level of the exact one, which the 8-bit canvas
+// rounds away.
+export const COLORMAP_LUT_STEPS = 1024;
+const _cmapLuts = new WeakMap<(t: number) => number[], Uint8ClampedArray>();
+export function colormapLut(cmap: (t: number) => number[]) {
+  let lut = _cmapLuts.get(cmap);
+  if (lut) return lut;
+  lut = new Uint8ClampedArray(COLORMAP_LUT_STEPS * 3);
+  for (let i = 0; i < COLORMAP_LUT_STEPS; i++) {
+    const [r, g, b] = cmap(i / (COLORMAP_LUT_STEPS - 1));
+    lut[i * 3] = r; lut[i * 3 + 1] = g; lut[i * 3 + 2] = b;
+  }
+  _cmapLuts.set(cmap, lut);
+  return lut;
+}
+
 // ---------- RENDERING ----------
 /**
  * Paint a precomputed spectrogram onto a canvas.
@@ -595,7 +644,8 @@ export function renderSpectrogram(canvas: SpecCanvas, spec: any, opts: any = {})
   const dbCeil    = opts.dbCeil    != null ? opts.dbCeil  : -10;
   const minHz     = opts.minHz     != null ? opts.minHz   : 10;
   const maxHz     = opts.maxHz     != null ? opts.maxHz   : sampleRate / 2;
-  const cmap      = colormaps[cmapName] || colormaps.viridis;
+  const lut       = colormapLut(colormaps[cmapName] || colormaps.viridis);
+  const top       = COLORMAP_LUT_STEPS - 1;
 
   const w = canvas.width;
   const h = canvas.height;
@@ -643,12 +693,12 @@ export function renderSpectrogram(canvas: SpecCanvas, spec: any, opts: any = {})
       const v1 = data[row + b1];
       const db = v0 + (v1 - v0) * kBin;
       let t = (db - dbFloor) / dbRange;
-      if (t < 0) t = 0; else if (t > 1) t = 1;
-      const [r, g, bl] = cmap(t);
+      if (t < 0) t = 0; else if (!(t <= 1)) t = 1;   // NaN paints the top colour, as the map did
+      const c = Math.round(t * top) * 3;
       const o = (y * w + x) * 4;
-      pixels[o]     = r;
-      pixels[o + 1] = g;
-      pixels[o + 2] = bl;
+      pixels[o]     = lut[c];
+      pixels[o + 1] = lut[c + 1];
+      pixels[o + 2] = lut[c + 2];
       pixels[o + 3] = 255;
     }
   }

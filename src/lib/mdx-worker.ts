@@ -143,6 +143,10 @@ async function ensureModel(model: any, report?: (phase: string, frac: number) =>
     ortMod.env.wasm.simd = true;
     ortMod.env.wasm.proxy = false;
     try { ortMod.env.logLevel = 'error'; } catch (_) {}
+    // A laptop with two GPUs would otherwise get whichever adapter the browser
+    // defaults to, often the integrated one. A hint only: one GPU, or a browser
+    // that ignores it, behaves exactly as before.
+    try { if (ortMod.env.webgpu) ortMod.env.webgpu.powerPreference = 'high-performance'; } catch (_) {}
     if (report) report('runtime', 0.1);
   }
 

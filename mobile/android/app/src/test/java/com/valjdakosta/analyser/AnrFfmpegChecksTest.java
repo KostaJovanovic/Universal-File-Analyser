@@ -47,11 +47,17 @@ public class AnrFfmpegChecksTest {
         a("-fflags", "+genpts", "-f", "hevc", "-i", "j22_in.h265", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "j22_out.mp4"),
         a("-fflags", "+genpts", "-i", "j23_in.ts", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", "j23_out.mp4"),
         a("-i", "j24_anr_input", "-frames:v", "1", "-q:v", "3", "-y", "j24_anr_frame.jpg"),
+        a("-i", "j25_scene_in", "-an", "-vf", "fps=2,scale=160:90", "-pix_fmt", "rgb24", "-f", "rawvideo", "-y", "j25_scene.rgb"),
+        a("-hwaccel", "d3d11va", "-i", "j26_scene_in", "-an", "-vf", "fps=0.333333,scale=160:90", "-pix_fmt", "rgb24", "-f", "rawvideo", "-y", "j26_scene.rgb"),
         // The hardware rewrites and the openh264 fallback (from accelerate() and
         // softwareFallback() in ffmpeg-accel.mjs). On Android the bridge rewrites
         // in the page, so the native check only ever sees these forms. The
         // desktop script checks every family against every app shape.
-        a("-hwaccel", "cuda", "-i", "clip.webm", "-c:v", "h264_nvenc", "-preset", "p2", "-rc", "vbr", "-cq", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "clip.mp4"),
+        a("-hwaccel", "cuda", "-i", "clip.webm", "-c:v", "h264_nvenc", "-preset", "p2", "-rc", "vbr", "-cq", "20", "-b:v", "0", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "clip.mp4"),
+        a("-skip_loop_filter", "all", "-hwaccel", "cuda", "-hwaccel_output_format", "cuda", "-i", "j20_conv_in", "-c:v", "h264_nvenc", "-preset", "p1", "-rc", "vbr", "-cq", "23", "-b:v", "0", "-vf", "scale_cuda=-2:2*trunc(min(1080\\,ih)/2):format=yuv420p", "-r", "30", "-an", "-movflags", "+faststart", "-y", "j20_conv_out.mp4"),
+        a("-vaapi_device", "/dev/dri/renderD128", "-hwaccel", "vaapi", "-i", "clip.webm", "-c:v", "h264_vaapi", "-vf", "format=nv12,hwupload", "-global_quality", "20", "-movflags", "+faststart", "clip.mp4"),
+        a("-vaapi_device", "/dev/dri/renderD129", "-skip_loop_filter", "all", "-i", "j20_conv_in", "-c:v", "h264_vaapi", "-global_quality", "23", "-vf", "scale=-2:2*trunc(min(1080\\,ih)/2),format=nv12,hwupload", "-r", "30", "-an", "-movflags", "+faststart", "-y", "j20_conv_out.mp4"),
+        a("-vaapi_device", "/dev/dri/renderD128", "-i", "j27_rev_in.mp4", "-vf", "reverse,format=nv12,hwupload", "-af", "areverse", "-c:a", "aac", "-c:v", "h264_vaapi", "-y", "j27_rev_out.mp4"),
         a("-f", "concat", "-safe", "0", "-hwaccel", "cuda", "-i", "j26_rev_list.txt", "-c:v", "h264_nvenc", "-preset", "p1", "-pix_fmt", "yuv420p", "-an", "-y", "j26_rev_out.mp4"),
         a("-i", "j27_rev_in.mp4", "-vf", "reverse", "-af", "areverse", "-c:a", "aac", "-c:v", "h264_nvenc", "-preset", "p1", "-pix_fmt", "yuv420p", "-y", "j27_rev_out.mp4"),
         a("-hwaccel", "qsv", "-i", "clip.webm", "-c:v", "h264_qsv", "-preset", "veryfast", "-global_quality", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "clip.mp4"),
@@ -127,6 +133,23 @@ public class AnrFfmpegChecksTest {
         a("-i", "in.mp4", "-c:v", "rawvideo", "out.mp4"),
         a("-i", "in.mp4", "-vf", "x /etc/passwd", "out.mp4"),
         a("-i", "in.mp4", "-segment_time", "1", "out.mp4"),
+        // VAAPI's render node is the one absolute path allowed, and only as the
+        // value of -vaapi_device, in exactly that shape.
+        a("-vaapi_device", "/etc/passwd", "-i", "in.mp4", "out.mp4"),
+        a("-vaapi_device", "/dev/dri/renderD128/../../../etc/passwd", "-i", "in.mp4", "out.mp4"),
+        a("-vaapi_device", "/dev/dri/card0", "-i", "in.mp4", "out.mp4"),
+        a("-vaapi_device", "/dev/dri/renderD128", "-i", "/dev/dri/renderD128", "out.mp4"),
+        a("-i", "/dev/dri/renderD128", "out.mp4"),
+        a("-i", "in.mp4", "-y", "/dev/dri/renderD128"),
+        a("-vaapi_device", "-vaapi_device", "/dev/dri/renderD128", "-i", "in.mp4", "out.mp4"),
+        a("-vaapi_device", "/dev/dri/renderD128\n", "-i", "in.mp4", "out.mp4"),
+        a("-hwaccel_output_format", "vaapi", "-i", "in.mp4", "out.mp4"),
+        a("-i", "in.mp4", "-vf", "format=nv12,hwupload,movie=x.mp4", "out.mp4"),
+        a("-i", "in.mp4", "-vf", "scale_cuda=1:1,movie=x.mp4", "out.mp4"),
+        a("-i", "in.mp4", "-b:v", "0x", "out.mp4"),
+        a("-f", "rawvideo", "-i", "in.rgb", "out.mp4"),
+        a("-i", "in.mp4", "-vf", "fps=2,scale=160:90,movie=x.mp4", "-f", "rawvideo", "out.rgb"),
+        a("-i", "in.mp4", "-f", "rawvideo", "-"),
         // Java's $ matches before a final line break; JavaScript's does not.
         a("-i", "in.mp4", "-map", "0\n", "out.mp4"),
         a("-i", "input\n", "out.mp4")

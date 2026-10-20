@@ -90,6 +90,7 @@ there in Phase D.
 - [x] video.js - Download audio (WAV) - downloads extracted audio track - video.md
 - [x] video.js - Analyse audio - runs extracted audio through the audio analyser - video.md
 - [x] video.js - Analyse photo - runs current frame through the photo analyser - video.md
+- [x] video.js - Compress video - optional smaller MP4 copy of a playable video as a download, with time, size and encoder shown - video.md
 - [x] video.js - Reverse video - re-encodes the video reversed via FFmpeg - video.md
 - [x] video.js - Analyse reversed / Download reversed (MP4) - analyse or download the reversed clip - video.md
 - [x] video.js - Detect scene changes - scans for scene cuts - video.md

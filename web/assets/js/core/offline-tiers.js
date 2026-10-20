@@ -66,6 +66,11 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
     const TIER_MB = { essentials: 50, everything: 120, complete: 345 + MDX_TIER_MB + DFN_MODEL_MB };
     const TIER_SIZES = {};
     TIER_ORDER.forEach((t) => { TIER_SIZES[t] = '~' + TIER_MB[t] + ' MB'; });
+    // ffmpeg.wasm's core. tierUrls() leaves it out in an app that runs native ffmpeg.
+    const WASM_FFMPEG_CORE = [
+        'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js',
+        'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm',
+    ];
     const TIERS = {
         essentials: [
             './', './about', './patch', './compare', './manifest.json', './assets/css/analyser.css', './assets/css/fonts.css',
@@ -150,8 +155,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
             './assets/vendor/ffmpeg/types.js',
             './assets/vendor/ffmpeg/utils.js',
             './assets/vendor/ffmpeg/worker.js',
-            'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js',
-            'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm',
+            ...WASM_FFMPEG_CORE,
             './assets/vendor/ffmpeg/ffmpeg-util.js'
         ],
         everything: [
@@ -385,12 +389,27 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
         badge.hidden = false;
         btn.classList.add('is-done', 'is-fading');
     }
-    function tierUrls(tier) {
-        const urls = [...TIERS.essentials];
+    // The apps run a real ffmpeg binary when they find one (desktop/ffmpeg-native.mjs,
+    // AnrFfmpeg.java), and then the ~31 MB WASM core is never loaded, so a tier
+    // skips it. With no binary the core is cached as on the website. Asked quietly,
+    // so this question never raises the desktop's "get FFmpeg" offer.
+    async function tierUrls(tier) {
+        let urls = [...TIERS.essentials];
         if (tier === 'everything' || tier === 'complete')
             urls.push(...TIERS.everything);
         if (tier === 'complete')
             urls.push(...TIERS.complete);
+        const ff = window.anrDesktop && window.anrDesktop.ffmpeg;
+        if (ff) {
+            let native = false;
+            try {
+                const caps = await ff.caps({ quiet: true });
+                native = !!(caps && caps.available);
+            }
+            catch (_) { }
+            if (native)
+                urls = urls.filter((u) => !WASM_FFMPEG_CORE.includes(u));
+        }
         return urls;
     }
     // Reflect the current offline state across all three tier buttons at once:
@@ -537,7 +556,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
         activeTiers.add(tier);
         let r;
         try {
-            r = await runCacheLoop(btn, tierUrls(tier), force);
+            r = await runCacheLoop(btn, await tierUrls(tier), force);
         }
         finally {
             activeTiers.delete(tier);
@@ -581,7 +600,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
         activeTiers.add('feat:' + key);
         let r;
         try {
-            r = await runCacheLoop(btn, tierUrls('everything').concat(feat.urls), false);
+            r = await runCacheLoop(btn, (await tierUrls('everything')).concat(feat.urls), false);
         }
         finally {
             activeTiers.delete('feat:' + key);

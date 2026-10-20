@@ -37,9 +37,10 @@
 // Hardware encoder families
 //
 // Preference order: NVENC first (fastest and most predictable), then Intel
-// Quick Sync, AMD AMF, Apple VideoToolbox, and Android MediaCodec. A desktop
-// build never lists the MediaCodec encoders, so the desktop probe skips that
-// family, and an Android build lists none of the others.
+// Quick Sync, AMD AMF, VAAPI (Linux), Apple VideoToolbox, and Android
+// MediaCodec. A desktop build never lists the MediaCodec encoders, so the
+// desktop probe skips that family, and an Android build lists none of the
+// others.
 // ---------------------------------------------------------------------------
 
 /** x264's CRF scale mapped onto a VBR bitrate, for encoders with no reliable
@@ -59,7 +60,13 @@ export const FAMILIES = [
     hwaccel: 'cuda',
     // x264's named presets map onto NVENC's p1..p7 speed/quality ladder.
     preset: { ultrafast: 'p1', superfast: 'p1', veryfast: 'p2', faster: 'p3', fast: 'p4', medium: 'p4', slow: 'p5', slower: 'p6', veryslow: 'p7' },
-    quality: (crf) => ['-rc', 'vbr', '-cq', String(crf)],
+    // -b:v 0 lifts the average-bitrate target ffmpeg otherwise hands NVENC
+    // (about 2 Mbit/s), which would cap -cq on a busy scene.
+    quality: (crf) => ['-rc', 'vbr', '-cq', String(crf), '-b:v', '0'],
+    // The one resize the app emits (convert's maxHeight) can run on the GPU:
+    // decode to CUDA frames and scale them there, so no frame visits the CPU.
+    // Only when hardware decode is on; see accelerate().
+    gpuScale: { outputFormat: 'cuda', filter: (h) => 'scale_cuda=-2:2*trunc(min(' + h + '\\,ih)/2):format=yuv420p' },
   },
   {
     vendor: 'intel', label: 'Intel Quick Sync',
@@ -74,6 +81,24 @@ export const FAMILIES = [
     hwaccel: 'd3d11va',
     preset: { ultrafast: 'speed', superfast: 'speed', veryfast: 'speed', faster: 'speed', fast: 'balanced', medium: 'balanced', slow: 'quality', slower: 'quality', veryslow: 'quality' },
     quality: (crf) => ['-rc', 'cqp', '-qp_i', String(crf), '-qp_p', String(crf)],
+  },
+  {
+    // Linux's own route to Intel and AMD encoders (Mesa or intel-media-driver),
+    // where Quick Sync depends on the build and AMF on AMD's proprietary driver.
+    // Frames are uploaded to the GPU by a filter, so the encode needs a device
+    // and the filter chain ends in hwupload. Untested on real hardware so far:
+    // the software fallback in runJob covers a driver that refuses.
+    vendor: 'vaapi', label: 'VAAPI',
+    h264: 'h264_vaapi', hevc: 'hevc_vaapi', av1: 'av1_vaapi',
+    hwaccel: 'vaapi',
+    preset: null,                                  // VAAPI takes no preset
+    // With no bitrate the encoder picks constant quality (CQP, or ICQ where the
+    // driver has it), and global_quality is its QP - CRF's scale, near enough.
+    quality: (crf) => ['-global_quality', String(crf)],
+    // Render nodes in the order the probe tries them; the first that encodes
+    // is stored on the family as `device`. Integrated GPUs are normally 128.
+    devices: ['/dev/dri/renderD128', '/dev/dri/renderD129'],
+    upload: 'format=nv12,hwupload',
   },
   {
     vendor: 'apple', label: 'Apple VideoToolbox',
@@ -114,29 +139,77 @@ export const SW_VIDEO = { libx264: 'h264', libopenh264: 'h264', libx265: 'hevc',
  *  force a download and usually costs more than it saves. */
 const FILTER_FLAGS = new Set(['-vf', '-filter:v', '-filter_complex', '-lavfi']);
 
+/** The one resize the app emits (convert's maxHeight); group 1 is the height. */
+const SCALE_VF = /^scale=-2:2\*trunc\(min\(([0-9]{1,5})\\,ih\)\/2\)$/;
+
+/**
+ * A job with no encoder whose output is raw frames (scene detection, video.ts
+ * nativeSceneFrames) still decodes every frame of the video, which is most of
+ * its time. With no -hwaccel_output_format the GPU hands each decoded frame
+ * back to the CPU for the filters, so this is safe with any filter chain.
+ * Null leaves the job to the CPU.
+ */
+function decodeOnly(out, accel, opts) {
+  const fi = out.indexOf('-f');
+  if (fi === -1 || out[fi + 1] !== 'rawvideo' || out.indexOf('-hwaccel') !== -1 || out.indexOf('-i') === -1) return null;
+  const family = FAMILIES.find((f) => f.vendor === accel.vendor);
+  if (!family || !family.hwaccel || accel.decode === false || (opts && opts.decode === false)) return null;
+  out.splice(out.indexOf('-i'), 0, '-hwaccel', family.hwaccel);
+  if (family.upload) out.unshift('-vaapi_device', accel.device || family.devices[0]);
+  return { args: out, changed: true, note: family.label + ' decode', decoded: true };
+}
+
+/** Remove `-pix_fmt yuv420p`, for jobs whose frames stay on the GPU: the
+ *  encoder takes them as they are, and asking for a CPU pixel format would
+ *  make ffmpeg try (and fail) to convert a hardware frame. */
+function dropPixFmt(out) {
+  const i = out.indexOf('-pix_fmt');
+  if (i !== -1 && i + 1 < out.length) out.splice(i, 2);
+}
+
 /**
  * @param {string[]} args   the arguments the page sent (ffmpeg.wasm flavour)
- * @param {object|null} accel  the chosen family from the probe
- * @returns {{args: string[], changed: boolean, note: string}}
+ * @param {object|null} accel  the chosen family from the probe. `decode: false`
+ *   on it means the probe found hardware decoding broken; `device` is VAAPI's
+ *   render node.
+ * @param {{decode?: boolean}} [opts]  `decode: false` keeps decoding (and any
+ *   resize) on the CPU - runJob's second try, after a hardware-decode attempt
+ *   failed with an encoder that is known to work
+ * @returns {{args: string[], changed: boolean, note: string, decoded: boolean}}
+ *   `decoded` says the rewrite also moved decoding to the GPU, so a cheaper
+ *   retry without it exists
  */
-export function accelerate(args, accel) {
-  if (!accel) return { args, changed: false, note: '' };
+export function accelerate(args, accel, opts) {
+  const none = { args, changed: false, note: '', decoded: false };
+  if (!accel) return none;
 
   const out = args.slice();
   const idxC = out.findIndex((a) => a === '-c:v' || a === '-vcodec');
-  if (idxC === -1 || idxC + 1 >= out.length) return { args, changed: false, note: '' };
+  if (idxC === -1) return decodeOnly(out, accel, opts) || none;
+  if (idxC + 1 >= out.length) return none;
 
   const sw = out[idxC + 1];
   const codec = SW_VIDEO[sw];
-  if (!codec) return { args, changed: false, note: '' };   // 'copy', or already hardware
+  if (!codec) return none;                         // 'copy', or already hardware
 
   const target = codec === 'h264' ? accel.h264 : codec === 'hevc' ? accel.hevc : accel.av1;
-  if (!target) return { args, changed: false, note: '' };  // this family cannot do that codec
+  if (!target) return none;                        // this family cannot do that codec
 
   const family = FAMILIES.find((f) => f.vendor === accel.vendor);
-  if (!family) return { args, changed: false, note: '' };
+  if (!family) return none;
+
+  // A filter graph the rewrite cannot extend would leave VAAPI's frames on the
+  // CPU, which its encoder refuses outright. The app never sends one.
+  const graph = out.some((a) => FILTER_FLAGS.has(a) && a !== '-vf');
+  if (family.upload && graph) return none;
 
   out[idxC + 1] = target;
+
+  // -tune: x264's tunings (zerolatency, from the turbo convert) are not a
+  // hardware encoder's. NVENC has a -tune of its own and refuses the job over
+  // the unknown value, which used to drop every turbo convert to software.
+  const idxT = out.indexOf('-tune');
+  if (idxT !== -1 && idxT + 1 < out.length) out.splice(idxT, 2);
 
   // Preset: x264 names are meaningless to NVENC/QSV/AMF, so translate or drop.
   const idxP = out.findIndex((a) => a === '-preset');
@@ -156,17 +229,40 @@ export function accelerate(args, accel) {
     out.splice(idxC + 2, 0, ...family.quality(23));
   }
 
-  // Decode acceleration, only when no filter graph needs CPU frames. Placed
-  // before the first -i, which is where ffmpeg requires input options.
-  const hasFilter = out.some((a) => FILTER_FLAGS.has(a));
+  // Decode acceleration. With no filter, decoded frames go straight to the
+  // encoder. A filter needs CPU frames, so decoding stays on the CPU - except
+  // the app's one resize, which a family with a GPU scaler (NVENC's scale_cuda)
+  // runs on the GPU instead. Input options go before the first -i.
   let note = family.label + ' ' + target;
-  const idxI = out.indexOf('-i');
-  if (!hasFilter && family.hwaccel && idxI !== -1 && out.indexOf('-hwaccel') === -1) {
-    out.splice(idxI, 0, '-hwaccel', family.hwaccel);
-    note += ' (+' + family.hwaccel + ' decode)';
+  let decoded = false;
+  const wantDecode = !!family.hwaccel && accel.decode !== false && !(opts && opts.decode === false);
+  if (wantDecode && !graph && out.indexOf('-i') !== -1 && out.indexOf('-hwaccel') === -1) {
+    const idxVf = out.indexOf('-vf');
+    const scale = idxVf !== -1 ? SCALE_VF.exec(out[idxVf + 1] || '') : null;
+    if (idxVf === -1) {
+      out.splice(out.indexOf('-i'), 0, '-hwaccel', family.hwaccel);
+      decoded = true;
+      note += ' (+' + family.hwaccel + ' decode)';
+    } else if (scale && family.gpuScale) {
+      out[idxVf + 1] = family.gpuScale.filter(scale[1]);
+      dropPixFmt(out);                             // the scaler's format= converts
+      out.splice(out.indexOf('-i'), 0, '-hwaccel', family.hwaccel, '-hwaccel_output_format', family.gpuScale.outputFormat);
+      decoded = true;
+      note += ' (+' + family.hwaccel + ' decode and scale)';
+    }
   }
 
-  return { args: out, changed: true, note };
+  // VAAPI: name the device, and end the filter chain by uploading the frames
+  // to it. hwupload's output is a GPU frame, so -pix_fmt has to go.
+  if (family.upload) {
+    const idxVf = out.indexOf('-vf');
+    if (idxVf !== -1) out[idxVf + 1] += ',' + family.upload;
+    else out.splice(out.indexOf(target) + 1, 0, '-vf', family.upload);
+    dropPixFmt(out);
+    out.unshift('-vaapi_device', accel.device || family.devices[0]);
+  }
+
+  return { args: out, changed: true, note, decoded };
 }
 
 /** Options only libx264 understands. libopenh264 refuses a job that names them. */
@@ -317,6 +413,12 @@ export function valueProblem(s) {
 /** A plain number, as the app writes them (String(0.7291666666666666) too). */
 const NUM = '^[0-9]{1,10}(?:\\.[0-9]{1,20})?$';
 
+/** VAAPI's render node - the ONE absolute path the checks accept, and only as
+ *  the value of -vaapi_device, exactly in this shape (see checkArgs). A render
+ *  node is a GPU, not a file: it cannot hand ffmpeg anyone's data. */
+const VAAPI_DEVICE = '^/dev/dri/renderD1[2-9][0-9]$';
+const VAAPI_DEVICE_RE = new RegExp(VAAPI_DEVICE);
+
 /**
  * Every option the app emits, with the pattern its value must match, or null
  * for a flag that takes no value. Includes what accelerate() and
@@ -329,11 +431,13 @@ const OPTIONS = new Map([
   ['-y', null], ['-vn', null], ['-an', null],
   ['-fflags', '^\\+genpts$'],
   ['-skip_loop_filter', '^all$'],
-  ['-hwaccel', '^(?:cuda|qsv|d3d11va|videotoolbox)$'],
+  ['-hwaccel', '^(?:cuda|qsv|d3d11va|vaapi|videotoolbox)$'],
+  ['-hwaccel_output_format', '^cuda$'],
+  ['-vaapi_device', VAAPI_DEVICE],
   ['-safe', '^0$'],
   ['-c', '^copy$'],
-  ['-c:v', '^(?:copy|libx264|libopenh264|(?:h264|hevc|av1)_(?:nvenc|qsv|amf|videotoolbox|mediacodec))$'],
-  ['-vcodec', '^(?:copy|libx264|libopenh264|(?:h264|hevc|av1)_(?:nvenc|qsv|amf|videotoolbox|mediacodec))$'],
+  ['-c:v', '^(?:copy|libx264|libopenh264|(?:h264|hevc|av1)_(?:nvenc|qsv|amf|vaapi|videotoolbox|mediacodec))$'],
+  ['-vcodec', '^(?:copy|libx264|libopenh264|(?:h264|hevc|av1)_(?:nvenc|qsv|amf|vaapi|videotoolbox|mediacodec))$'],
   ['-c:a', '^(?:copy|aac|pcm_s16le)$'],
   ['-acodec', '^(?:copy|aac|pcm_s16le)$'],
   ['-r', NUM], ['-ar', NUM], ['-ac', NUM], ['-t', NUM],
@@ -341,9 +445,12 @@ const OPTIONS = new Map([
   ['-cq', NUM], ['-global_quality', NUM], ['-qp_i', NUM], ['-qp_p', NUM],
   ['-preset', '^(?:ultrafast|superfast|veryfast|faster|fast|medium|slow|slower|veryslow|p[1-7]|speed|balanced|quality)$'],
   ['-tune', '^zerolatency$'],
-  ['-pix_fmt', '^yuv420p$'],
+  ['-pix_fmt', '^(?:yuv420p|rgb24)$'],
   ['-movflags', '^\\+faststart$'],
-  ['-vf', '^(?:reverse|scale=-2:2\\*trunc\\(min\\([0-9]{1,5}\\\\,ih\\)/2\\))$'],
+  // The app's filters - reverse, convert's resize, scene detection's sampling -
+  // VAAPI's upload on the end of the first two or alone, and NVENC's GPU form
+  // of the resize.
+  ['-vf', '^(?:(?:reverse|scale=-2:2\\*trunc\\(min\\([0-9]{1,5}\\\\,ih\\)/2\\))(?:,format=nv12,hwupload)?|format=nv12,hwupload|scale_cuda=-2:2\\*trunc\\(min\\([0-9]{1,5}\\\\,ih\\)/2\\):format=yuv420p|fps=[0-9]{1,4}(?:\\.[0-9]{1,6})?,scale=[0-9]{1,4}:[0-9]{1,4})$'],
   ['-af', '^areverse$'],
   ['-force_key_frames', '^expr:gte\\(t,n_forced\\*[0-9]{1,10}(?:\\.[0-9]{1,20})?\\)$'],
   ['-map', '^0$'],
@@ -351,18 +458,18 @@ const OPTIONS = new Map([
   ['-reset_timestamps', '^1$'],
   ['-rc', '^(?:vbr|cqp)$'],
   ['-bitrate_mode', '^vbr$'],
-  ['-b:v', '^[0-9]{1,9}k$'],
+  ['-b:v', '^(?:0|[0-9]{1,9}k)$'],
 ]);
 const OPTION_RE = new Map([...OPTIONS].map(([k, v]) => [k, v === null ? null : new RegExp(v)]));
 
 /** -f before an -i, and -f before an output. */
 const INPUT_FORMATS = new Set(['h264', 'hevc', 'concat']);
-const OUTPUT_FORMATS = new Set(['wav', 'null', 'segment']);
+const OUTPUT_FORMATS = new Set(['wav', 'null', 'segment', 'rawvideo']);
 
 /** A file in the session folder: no path, no drive, no `..`, no `%` pattern. */
 const NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/;
 /** An output: one file, with an extension whose muxer writes only that file. */
-const OUTPUT_NAME = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}\.(?:mp4|wav|jpg)$/;
+const OUTPUT_NAME = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}\.(?:mp4|wav|jpg|rgb)$/;
 /** The only numbered output: the reverse's `rev_seg_%03d.mp4`. The `_` before
  *  the number keeps a name like `com%01d` from expanding into a device name. */
 const SEGMENT_NAME = /^[A-Za-z0-9_]{0,63}_%0[1-9]d\.mp4$/;
@@ -389,6 +496,10 @@ export function checkArgs(args) {
     if (a === '-f' && i + 1 < args.length && DEVICES.has(asciiLower(args[i + 1]))) {
       return '-f ' + args[i + 1] + ' is a capture or playback device';
     }
+    // The render node after -vaapi_device is the one absolute path allowed.
+    // The exception is exact: the next argument must be that option's value,
+    // and the allow-list below checks it again in place.
+    if (i > 0 && args[i - 1] === '-vaapi_device' && VAAPI_DEVICE_RE.test(a)) continue;
     const bad = valueProblem(a);
     if (bad) return JSON.stringify(a) + ' contains ' + bad;
   }

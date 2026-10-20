@@ -4,7 +4,7 @@
 import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, openOverlayBack, timeAnomalies, timeAnomalyCard } from '../core/util.js';
 import { renderPhoto, revealPhotoSection, pickOcrLanguage, ocrLangPath } from './photo.js';
 import { pagePreviewSkeleton } from './paged.js';
-import { SCAN_SMALL, PDF_RANGE_MIN, PDF_RANGE_HEAD } from '../core/limits.js';
+import { SCAN_SMALL, PDF_RANGE_MIN, PDF_RANGE_HEAD, OCR_WORKERS } from '../core/limits.js';
 
 // Resolved against this module's URL so the dynamic import() gets a valid
 // absolute specifier (a bare "assets/..." path is not a resolvable module id).
@@ -1281,33 +1281,50 @@ export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = 
     }
     const T = window.Tesseract;
 
-    ocrPageTexts = [];
+    // A small pool of workers (OCR_WORKERS, from limits.ts) each takes the next
+    // page until none are left. A worker is created once and kept for the run:
+    // starting one loads the engine and the language data, which used to be
+    // paid again for every page. One that fails a page is replaced, so a
+    // broken worker cannot spoil the pages after it.
     const total = pdf.numPages;
-    for (let i = 1; i <= total; i++) {
-      ocrLabelEl.textContent = 'Scanning page ' + i + ' / ' + total + '…';
-      setOcrBar((i - 1) / total);
-      try {
-        const page = await pdf.getPage(i);
-        const vp = page.getViewport({ scale: 1 });
-        const scale = Math.min(3, 2000 / Math.max(vp.width, vp.height));
-        const scaled = page.getViewport({ scale });
-        const cv = document.createElement('canvas');
-        cv.width = Math.floor(scaled.width);
-        cv.height = Math.floor(scaled.height);
-        await page.render({ canvasContext: cv.getContext('2d'), viewport: scaled }).promise;
-        const worker = await T.createWorker(ocrLang, undefined, {
-          workerPath: 'assets/vendor/tesseract/worker.min.js',
-          langPath: ocrLangPath(ocrLang),
-          corePath: 'assets/vendor/tesseract'
-        });
-        const result = await worker.recognize(cv);
-        await worker.terminate();
-        const text = (result.data.text || '').trim();
-        ocrPageTexts.push('--- Page ' + i + ' ---\n' + (text || '(no text detected)'));
-      } catch (_) {
-        ocrPageTexts.push('--- Page ' + i + ' ---\n(scan failed)');
+    const texts: string[] = new Array(total);
+    const makeWorker = () => T.createWorker(ocrLang, undefined, {
+      workerPath: 'assets/vendor/tesseract/worker.min.js',
+      langPath: ocrLangPath(ocrLang),
+      corePath: 'assets/vendor/tesseract'
+    });
+    let next = 1, done = 0;
+    ocrLabelEl.textContent = 'Scanning page 1 / ' + total + '…';
+    const lane = async () => {
+      let worker: any = null;
+      while (next <= total) {
+        const i = next++;
+        try {
+          const page = await pdf.getPage(i);
+          const vp = page.getViewport({ scale: 1 });
+          const scale = Math.min(3, 2000 / Math.max(vp.width, vp.height));
+          const scaled = page.getViewport({ scale });
+          const cv = document.createElement('canvas');
+          cv.width = Math.floor(scaled.width);
+          cv.height = Math.floor(scaled.height);
+          await page.render({ canvasContext: cv.getContext('2d'), viewport: scaled }).promise;
+          if (!worker) worker = await makeWorker();
+          const result = await worker.recognize(cv);
+          cv.width = cv.height = 0;
+          const text = (result.data.text || '').trim();
+          texts[i - 1] = '--- Page ' + i + ' ---\n' + (text || '(no text detected)');
+        } catch (_) {
+          texts[i - 1] = '--- Page ' + i + ' ---\n(scan failed)';
+          if (worker) { try { await worker.terminate(); } catch (_) {} worker = null; }
+        }
+        done++;
+        ocrLabelEl.textContent = 'Scanning page ' + Math.min(done + 1, total) + ' / ' + total + '…';
+        setOcrBar(done / total);
       }
-    }
+      if (worker) { try { await worker.terminate(); } catch (_) {} }
+    };
+    await Promise.all(Array.from({ length: Math.min(OCR_WORKERS, total) }, lane));
+    ocrPageTexts = texts;
 
     setOcrBar(1);
     ocrLabelEl.textContent = 'Done - ' + total + ' pages scanned';
