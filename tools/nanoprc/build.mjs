@@ -87,7 +87,7 @@ const args = [
   '-DPRC_LITTLE_ENDIAN', `-DPRC_VERSION_STRING="${version}"`,
   '-DPRC_DEBUG_MEMORY=0', '-DPRC_ENABLE_UNZIPPED_FUZZ=0', '-DPRC_ENABLE_DIAG_ENV=0',
   '-sMODULARIZE=1', '-sEXPORT_ES6=1', '-sEXPORT_NAME=createNanoPrc',
-  // node only so tools/nanoprc/test.mjs can run the very same build.
+  // node only so the harnesses in research/prc/tools/ can run the very same build.
   '-sENVIRONMENT=web,worker,node',
   '-sALLOW_MEMORY_GROWTH=1', '-sINITIAL_MEMORY=32MB', '-sMAXIMUM_MEMORY=2GB', '-sSTACK_SIZE=4MB',
   // A failed allocation returns NULL to nanoPRC (which checks) instead of aborting.

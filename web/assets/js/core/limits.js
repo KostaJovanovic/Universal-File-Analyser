@@ -257,9 +257,12 @@ export const PDF_LONG_BAND_PX = byTier({ high: 32e6, mid: 12e6, low: 6e6 });
 // model is current means reading the whole PDF (the annotation that names it
 // usually sits in a compressed object stream), so past PDF_3D_SCAN_MAX a PDF is
 // not searched for one. A PRC stream past PRC_STREAM_MAX is not decoded (nanoPRC
-// holds it and its parsed form in its WASM heap), and decoding stops at
+// holds it and its parsed form in its WASM heap), and a model stops at
 // PRC_TRI_MAX triangles - each costs ~81 bytes in the decoder's output and the
-// same again as the viewer's arrays.
+// same again as the viewer's arrays. The decoder also stops reading
+// tessellations once it holds PRC_TRI_MAX vertices (~116 bytes each in its
+// heap), so a model past the cap opens truncated instead of running out of WASM
+// memory. One single mesh bigger than that is still read whole.
 export const PDF_3D_SCAN_MAX = byTier({ high: 512 * MB, mid: 256 * MB, low: 96 * MB });
 export const PRC_STREAM_MAX = byTier({ high: 256 * MB, mid: 128 * MB, low: 48 * MB });
 export const PRC_TRI_MAX = byTier({ high: 6e6, mid: 3e6, low: 1e6 });

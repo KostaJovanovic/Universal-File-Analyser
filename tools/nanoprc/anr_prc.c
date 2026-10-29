@@ -13,7 +13,8 @@
    page reads back:
 
      "ANRM"  u32 version (1)  u32 flags (1 = some colour came from the file,
-                                         2 = stopped at the triangle cap)
+                                         2 = stopped at the triangle cap
+                                             or the vertex decode budget)
      u32 part count, then per part:
        u32 name length, name bytes (UTF-8, not terminated)
        u32 triangle count
@@ -105,6 +106,17 @@ static void transform_normal(const prc_api_transform *xform, const float in[3], 
     else { out[0] = in[0]; out[1] = in[1]; out[2] = in[2]; }
 }
 
+/* A mirroring placement (negative determinant) reverses the winding. Column-
+   major, as transform_normal reads it. */
+static int mirrored(const prc_api_transform *x)
+{
+    const double *m;
+    if (x == NULL || x->is_identity) return 0;
+    m = x->matrix;
+    return m[0] * (m[5] * m[10] - m[6] * m[9]) + m[1] * (m[6] * m[8] - m[4] * m[10])
+         + m[2] * (m[4] * m[9] - m[5] * m[8]) < 0.0;
+}
+
 static void add_triangle(prc_context *ctx, out_state *st, part_buf *p, const prc_api_transform *xform,
     const prc_api_vertex *a, const prc_api_vertex *b, const prc_api_vertex *c,
     const prc_api_material *face_mat, const prc_api_tess *tess)
@@ -115,6 +127,8 @@ static void add_triangle(prc_context *ctx, out_state *st, part_buf *p, const prc
     int i;
 
     if (st->total_tris >= st->max_tris) { st->flags |= 2; return; }
+    /* Swap two corners under a mirror so faces still point out. */
+    if (mirrored(xform)) { vs[1] = c; vs[2] = b; }
     for (i = 0; i < 3; i++) {
         if (xform != NULL && !xform->is_identity) {
             double in[3] = { vs[i]->position[0], vs[i]->position[1], vs[i]->position[2] }, o[3];
@@ -156,6 +170,7 @@ static void add_tessellation(prc_context *ctx, prc_api_data data, out_state *st,
 {
     size_t f, nf;
 
+    if (st->total_tris >= st->max_tris) { st->flags |= 2; return; }
     if (tess->type != PRC_API_TESS_3D && tess->type != PRC_API_TESS_3D_Compressed && tess->type != PRC_API_EXACT_GEOM) return;
     nf = (tess->type == PRC_API_EXACT_GEOM) ? prc_api_get_num_graphics_primitives(ctx, data, tess) : tess->num_faces;
 
@@ -165,6 +180,7 @@ static void add_tessellation(prc_context *ctx, prc_api_data data, out_state *st,
         prc_api_vertex *V = NULL;
         uint32_t nv = 0;
         size_t q, nprim;
+        if (st->total_tris >= st->max_tris) { st->flags |= 2; return; }
         if (prc_api_skip_face(ctx, tess, (uint32_t)f)) continue;
         if (prc_api_face_is_material(ctx, tess, (uint32_t)f) > 0) {
             prc_api_get_face_material(ctx, tess, &fm, (uint32_t)f);
@@ -274,6 +290,7 @@ int anr_prc_mesh(const char *in_path, const char *out_path, uint32_t max_tris)
     uint32_t nparts = 0, nproducts = 0, nmarkups = 0;
     uint32_t ntess = 0, nline = 0, nextra = 0, nexact = 0, i;
     out_state st;
+    uint64_t verts = 0;   /* decoded vertices, against the max_tris budget */
     int ret = 0;
     FILE *out = NULL;
 
@@ -293,10 +310,18 @@ int anr_prc_mesh(const char *in_path, const char *out_path, uint32_t max_tris)
         tesses = (prc_api_tess *)calloc(ntess, sizeof(prc_api_tess));
         if (!tesses) { ntess = 0; ret = -5; goto done; }
     }
+    /* Every tessellation is decoded before the walk, at ~116 bytes a vertex
+       (prc_api_vertex), so the triangle cap alone would come too late: stop
+       decoding once max_tris vertices are held. A skipped entry stays all
+       zero (type 0, nothing attached to the tree), which add_tessellation and
+       prc_api_release_data both pass over. One compressed tessellation is a
+       single call, so a mesh bigger than the budget is still read whole. */
     for (i = 0; i < ntess; i++) {
         prc_api_tess *t = &tesses[i];
         uint8_t has_lines = 0;
-        uint32_t j, nf = prc_api_get_number_faces(ctx, data, i);
+        uint32_t j, nf;
+        if (verts >= st.max_tris) { st.flags |= 2; break; }
+        nf = prc_api_get_number_faces(ctx, data, i);
         /* A compressed tessellation is handled as one face: its vertices come
            back whole for any face index (demos/viewer Scene::load does this). */
         if (prc_api_get_tessellation_type(ctx, data, i) == PRC_API_TESS_3D_Compressed) nf = 1;
@@ -305,8 +330,13 @@ int anr_prc_mesh(const char *in_path, const char *out_path, uint32_t max_tris)
         if (!t->tess_faces) { ret = -5; goto done; }
         if (prc_api_initialize_tessellation(ctx, data, tree, i, t, NULL, &has_lines) < 0) continue;
         if (t->type != PRC_API_TESS_3D && t->type != PRC_API_TESS_3D_Compressed) continue;
-        for (j = 0; j < t->num_faces; j++)
+        for (j = 0; j < t->num_faces; j++) {
+            prc_api_vertex *V;
+            uint32_t nv = 0;
+            if (verts >= st.max_tris) { st.flags |= 2; break; }
             if (prc_api_get_tessellation_vertices(ctx, data, i, j, t->tess_faces + j, t) < 0) break;
+            if (prc_api_get_face_vertices(ctx, t, j, &nv, &V) == 0) verts += nv;
+        }
     }
 
     /* Exact geometry (B-rep) with no stored triangles: nanoPRC tessellates it
