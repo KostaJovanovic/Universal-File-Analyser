@@ -67,16 +67,12 @@ function ipSalt(env) {
   return env.IP_SALT;
 }
 
-async function clientIpHash(request, env) {
-  const ip = request.headers.get('CF-Connecting-IP') || '0.0.0.0';
-  return hashIp(ip, ipSalt(env));
-}
-
-// Rate-limit key. IPv6 clients usually hold a whole /64 and can rotate through it
-// freely, so an IPv6 address is keyed on its first four hextets (the /64); IPv4
-// keeps the full address. `scope` gives each endpoint its own bucket, so a folder
-// of 15 analysed files doesn't use up the leaderboard submit.
-async function rateKey(request, env, scope) {
+// Who a client is, for every per-identity rule: IPv6 clients usually hold a whole
+// /64 and can rotate through it freely, so an IPv6 address counts as its first
+// four hextets (the /64); IPv4 keeps the full address. The visitor dedupe and the
+// leaderboard's names-per-identity cap use this too, or rotating inside one /64
+// would get a fresh allowance per address.
+function clientIdentity(request) {
   let ip = request.headers.get('CF-Connecting-IP') || '0.0.0.0';
   if (ip.includes(':')) {
     const [head, tail = ''] = ip.split('::');
@@ -85,7 +81,17 @@ async function rateKey(request, env, scope) {
     const full = ip.includes('::') ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill('0'), ...t] : h;
     ip = full.slice(0, 4).map((x) => (parseInt(x, 16) || 0).toString(16)).join(':') + '::/64';
   }
-  return scope + ':' + await hashIp(ip, ipSalt(env));
+  return ip;
+}
+
+async function clientIpHash(request, env) {
+  return hashIp(clientIdentity(request), ipSalt(env));
+}
+
+// Rate-limit key. `scope` gives each endpoint its own bucket, so a folder of 15
+// analysed files doesn't use up the leaderboard submit.
+async function rateKey(request, env, scope) {
+  return scope + ':' + await hashIp(clientIdentity(request), ipSalt(env));
 }
 
 // Returns true when the request may proceed. With no binding (wrangler dev
