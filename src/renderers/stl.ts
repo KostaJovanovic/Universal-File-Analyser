@@ -209,6 +209,8 @@ function mat4Perspective(fovy: number, aspect: number, near: number, far: number
 }
 function mat4RotX(a: number) { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1]); }
 function mat4RotY(a: number) { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]); }
+function mat4RotZ(a: number) { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]); }
+const mat3Apply = (m: FloatBuf, v: number[]) => [0, 1, 2].map((r) => m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2]);
 function mat4Ortho(l: number, r: number, b: number, t: number, n: number, f: number) {
   return new Float32Array([2 / (r - l), 0, 0, 0, 0, 2 / (t - b), 0, 0, 0, 0, -2 / (f - n), 0, -(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n), 1]);
 }
@@ -232,6 +234,20 @@ export interface StlViewer {
   onSpinChange: (cb: (spin: boolean) => void) => void;
   start: () => void;
   markDirty: () => void;
+  setView: (v: SavedView) => void;
+}
+
+/** A camera a file stores by name (a 3D PDF's /VA views), in the model's own
+ *  coordinates: where the camera looks, which way is up, and an optional
+ *  cutaway - the half-space on the camera's side of `clip.normal` through
+ *  `clip.point` is hidden, so the view looks into the model. */
+export interface SavedView {
+  name: string;
+  dir: number[];
+  up: number[];
+  eye: number[];
+  ortho: boolean;
+  clip: { point: number[]; normal: number[] } | null;
 }
 
 // ---------- WebGL viewer ----------
@@ -290,13 +306,16 @@ function buildViewer(geo: MeshGeometry, opts: any = {}): StlViewer {
   const vsrc = `attribute vec3 aPos; attribute vec3 aNormal; attribute vec3 aBary;
     attribute vec3 aColor; attribute vec2 aUV;
     uniform mat4 uProj, uView, uModel;
-    varying vec3 vN; varying vec3 vNe; varying vec3 vP; varying vec3 vBary; varying vec3 vCol; varying vec2 vUV;
+    varying vec3 vN; varying vec3 vNe; varying vec3 vP; varying vec3 vBary; varying vec3 vCol; varying vec2 vUV; varying vec3 vO;
     void main(){ vec4 w = uModel*vec4(aPos,1.0); vec4 vp = uView*w;
-      gl_Position = uProj*vp; vN = mat3(uModel)*aNormal; vNe = mat3(uView*uModel)*aNormal; vP = vp.xyz; vBary = aBary; vCol = aColor; vUV = aUV; }`;
+      gl_Position = uProj*vp; vN = mat3(uModel)*aNormal; vNe = mat3(uView*uModel)*aNormal; vP = vp.xyz; vBary = aBary; vCol = aColor; vUV = aUV; vO = aPos; }`;
   const fsrc = `${deriv ? '#extension GL_OES_standard_derivatives : enable\n' : ''}precision mediump float;
-    varying vec3 vN; varying vec3 vNe; varying vec3 vP; varying vec3 vBary; varying vec3 vCol; varying vec2 vUV;
+    varying vec3 vN; varying vec3 vNe; varying vec3 vP; varying vec3 vBary; varying vec3 vCol; varying vec2 vUV; varying vec3 vO;
     uniform vec3 uColor; uniform float uWire; uniform float uHasVCol; uniform float uHasTex; uniform sampler2D uTex; uniform float uReal;
+    uniform vec4 uClip;
     void main(){
+      // Cutaway (a saved view's cross-section): drop the side the plane faces.
+      if(dot(vO, uClip.xyz) > uClip.w) discard;
       // Base albedo: a texture sample (OBJ map_Kd) wins, then per-vertex colour
       // (OBJ material Kd baked per-vertex, or embedded vertex colours), else the
       // single uniform colour used by STL/STEP and the colour picker.
@@ -404,9 +423,12 @@ function buildViewer(geo: MeshGeometry, opts: any = {}): StlViewer {
   const uHasTex = gl.getUniformLocation(prog, 'uHasTex');
   const uTex = gl.getUniformLocation(prog, 'uTex');
   const uReal = gl.getUniformLocation(prog, 'uReal');
+  const uClip = gl.getUniformLocation(prog, 'uClip');
   gl.enable(gl.DEPTH_TEST);
 
-  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, color: [0.55, 0.62, 0.95], spin: true, ortho: false, wire: false, real: false, bg: [0, 0, 0], msaa, ssaa: true, upZ: zUp };
+  // roll: only a saved view sets it (one stored with the camera on its side);
+  // clip: [nx, ny, nz, d] in the centred, scaled coordinates aPos carries, or null.
+  const state = { yaw: 0.6, pitch: 0.5, roll: 0, dist: 2.6, panX: 0, panY: 0, color: [0.55, 0.62, 0.95], spin: true, ortho: false, wire: false, real: false, bg: [0, 0, 0], msaa, ssaa: true, upZ: zUp, clip: null as number[] | null };
   let dirty = true;
   let disposed = false;
   // Spin can be turned off two ways - the button, or simply interacting with the
@@ -441,9 +463,11 @@ function buildViewer(geo: MeshGeometry, opts: any = {}): StlViewer {
     else proj = mat4Perspective(45 * Math.PI / 180, aspect, 0.005, 1000);
     const view = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, state.panX, state.panY, -state.dist, 1]);
     let model = mat4Multiply(mat4RotX(state.pitch), mat4RotY(state.yaw));
+    if (state.roll) model = mat4Multiply(mat4RotZ(state.roll), model);
     // Up-axis fix as the innermost transform: rotate the model itself before the
     // orbit, so Z-up geometry reads upright and the view-cube/orbit stay correct.
     if (state.upZ) model = mat4Multiply(model, mat4RotX(-Math.PI / 2));
+    gl.uniform4fv(uClip, state.clip || [0, 0, 0, 1]);
     gl.uniformMatrix4fv(uProj, false, proj);
     gl.uniformMatrix4fv(uView, false, view);
     gl.uniformMatrix4fv(uModel, false, model);
@@ -585,19 +609,23 @@ function buildViewer(geo: MeshGeometry, opts: any = {}): StlViewer {
   // data URL. Used by the data export (the canvas exposes it as _anrSnapshot).
   // Saves and restores the live view state, so the interactive preview is
   // unaffected beyond a single redraw.
-  function snapshot() {
-    const saved = { yaw: state.yaw, pitch: state.pitch, dist: state.dist, spin: state.spin, ortho: state.ortho, panX: state.panX, panY: state.panY };
-    state.spin = false; state.ortho = false;
-    state.panX = 0; state.panY = 0;             // centre the framing
-    state.yaw = Math.PI / 4;                    // 45° azimuth
-    state.pitch = Math.atan(1 / Math.SQRT2);    // ~35.26° - the classic isometric tilt, from above
-    // Fit the bounding sphere to 96% of the narrower field of view (so both the
-    // width and height keep a 2% margin), then back the camera off to suit.
+  // Camera distance that fits the bounding sphere to 96% of the narrower field of
+  // view (so both the width and height keep a 2% margin). The orthographic
+  // half-height is dist x tan(22.5 deg), so the same distance frames it too.
+  function fitDist() {
     const aspect = (canvas.width / canvas.height) || 1;
     const halfFovV = (45 * Math.PI / 180) / 2;
     const halfFov = Math.min(halfFovV, Math.atan(Math.tan(halfFovV) * aspect));
     const theta = Math.atan(0.96 * Math.tan(halfFov));
-    state.dist = boundR / Math.sin(theta);
+    return boundR / Math.sin(theta);
+  }
+  function snapshot() {
+    const saved = { yaw: state.yaw, pitch: state.pitch, roll: state.roll, dist: state.dist, spin: state.spin, ortho: state.ortho, panX: state.panX, panY: state.panY, clip: state.clip };
+    state.spin = false; state.ortho = false; state.roll = 0; state.clip = null;
+    state.panX = 0; state.panY = 0;             // centre the framing
+    state.yaw = Math.PI / 4;                    // 45° azimuth
+    state.pitch = Math.atan(1 / Math.SQRT2);    // ~35.26° - the classic isometric tilt, from above
+    state.dist = fitDist();
     draw();
     let url = null;
     try { url = canvas.toDataURL('image/png'); } catch (_) { url = null; }
@@ -620,8 +648,35 @@ function buildViewer(geo: MeshGeometry, opts: any = {}): StlViewer {
     try { const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); } catch (_) { /* ignore */ }
   }
 
+  // Turn to a camera the file stores: framed whole, seen from the stored
+  // direction with the stored up, and cut away where the view has a section.
+  function setView(v: SavedView) {
+    setSpin(false);
+    // Into the frame the orbit turns - the same -90 deg X turn draw() gives Z-up models.
+    const U = (p: number[]) => state.upZ ? [p[0], p[2], -p[1]] : p;
+    const d = U(v.dir).map((x) => -x), u = U(v.up);   // d: from the model towards the camera
+    const l = Math.hypot(d[0], d[1], d[2]) || 1;
+    // As attachViewCube's target(): this brings d head-on. The roll then turns `up` upright.
+    state.yaw = Math.atan2(-d[0], d[2]);
+    state.pitch = Math.asin(Math.max(-1, Math.min(1, d[1] / l)));
+    const r = mat3Apply(mat4Multiply(mat4RotX(state.pitch), mat4RotY(state.yaw)), u);
+    const roll = Math.PI / 2 - Math.atan2(r[1], r[0]);
+    state.roll = Math.atan2(Math.sin(roll), Math.cos(roll));   // into (-pi, pi], so Reset takes the short way
+    state.ortho = v.ortho;
+    state.panX = 0; state.panY = 0; state.dist = fitDist();
+    state.clip = null;
+    if (v.clip) {
+      const { point: p, normal: n } = v.clip, c = [cx, cy, cz];
+      const dot = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+      // Hide the half the camera is in, whichever way the file's normal points.
+      const s = Math.sign(dot(n, [v.eye[0] - p[0], v.eye[1] - p[1], v.eye[2] - p[2]])) || 1;
+      state.clip = [n[0] * s, n[1] * s, n[2] * s, s * dot(n, [p[0] - c[0], p[1] - c[1], p[2] - c[2]]) / span];
+    }
+    dirty = true;
+  }
+
   const api: StlViewer = {
-    wrap, ok: true, state, resize, setSpin, snapshot, dispose,
+    wrap, ok: true, state, resize, setSpin, snapshot, dispose, setView,
     onSpinChange: (cb) => spinListeners.push(cb),
     start: () => { resize(); requestAnimationFrame(loop); },
     markDirty: () => { dirty = true; },
@@ -656,7 +711,7 @@ export function buildViewerCard(geo: MeshGeometry, title = '3D model', opts: any
     // `viewer` by binding, so they keep working after the swap.
     function applyMSAA(on: boolean) {
       const s = viewer.state;
-      const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, color: s.color, spin: s.spin, ortho: s.ortho, wire: s.wire, real: s.real, bg: s.bg, ssaa: s.ssaa, upZ: s.upZ };
+      const keep = { yaw: s.yaw, pitch: s.pitch, roll: s.roll, dist: s.dist, panX: s.panX, panY: s.panY, color: s.color, spin: s.spin, ortho: s.ortho, wire: s.wire, real: s.real, bg: s.bg, ssaa: s.ssaa, upZ: s.upZ, clip: s.clip };
       const next = buildViewer(geo, { antialias: on, zUp: opts.zUp });
       if (!next.ok) return;                        // keep the working viewer if rebuild fails
       const old = viewer; viewer = next;
@@ -697,8 +752,9 @@ export function buildViewerCard(geo: MeshGeometry, title = '3D model', opts: any
       const s = viewer.state;
       // Pause spin so the auto-rotation in loop() doesn't fight the tween's yaw.
       if (s.spin && viewer.setSpin) viewer.setSpin(false);
-      const from = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY };
-      const to = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0 };
+      const from = { yaw: s.yaw, pitch: s.pitch, roll: s.roll, dist: s.dist, panX: s.panX, panY: s.panY };
+      const to = { yaw: 0.6, pitch: 0.5, roll: 0, dist: 2.6, panX: 0, panY: 0 };
+      s.clip = null;   // a saved view's cutaway goes with the rest of it
       // Take the shortest way round on yaw (it accumulates freely while spinning).
       let dyaw = to.yaw - from.yaw;
       while (dyaw > Math.PI) dyaw -= 2 * Math.PI;
@@ -711,6 +767,7 @@ export function buildViewerCard(geo: MeshGeometry, title = '3D model', opts: any
         const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;   // ease-in-out, matching the view-cube
         s.yaw = from.yaw + dyaw * e;
         s.pitch = from.pitch + (to.pitch - from.pitch) * e;
+        s.roll = from.roll + (to.roll - from.roll) * e;
         s.dist = from.dist + (to.dist - from.dist) * e;
         s.panX = from.panX + (to.panX - from.panX) * e;
         s.panY = from.panY + (to.panY - from.panY) * e;
@@ -760,6 +817,22 @@ export function buildViewerCard(geo: MeshGeometry, title = '3D model', opts: any
     if (!(geo.colors || geo.textureImage)) controls.appendChild(colorInput);
     controls.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;margin-left:auto;' }, 'drag to orbit · scroll to zoom'));
     viewCard.appendChild(controls);
+    // Cameras the file stores by name (a 3D PDF's views, as Acrobat lists them).
+    const views: SavedView[] = opts.views || [];
+    if (views.length) {
+      const vRow = el('div', { class: 'anr-btn-row', style: 'margin-top:8px;align-items:center;flex-wrap:wrap;gap:6px;' },
+        el('span', { class: 'anr-hint', style: 'font-size:12px;' }, 'Views in the file:'));
+      for (const v of views) {
+        const b = el('button', { type: 'button', class: 'anr-btn' }, v.clip ? v.name + ' (section)' : v.name);
+        if (v.clip) b.title = 'A cross-section view: the half of the model facing the camera is cut away. Reset view puts it back.';
+        b.addEventListener('click', () => {
+          viewer.setView(v);
+          projBtn.textContent = viewer.state.ortho ? 'Orthographic' : 'Perspective';
+        });
+        vRow.appendChild(b);
+      }
+      viewCard.appendChild(vRow);
+    }
   }
   return { viewCard, viewer };
 }
@@ -1128,10 +1201,11 @@ export function geoSpan(geo: MeshGeometry) {
 // by the 3MF/AMF container renderers.
 // Only `parts` is required; each caller (3MF, AMF, STEP, ...) supplies whatever
 // labelling its format has and leaves the rest to the defaults below.
-export function renderPartsViewer(file: File, resultsEl: HTMLElement, { metaCard, parts, format, unitLabel, partsTitle, partsHint, zUp }: {
+export function renderPartsViewer(file: File, resultsEl: HTMLElement, { metaCard, parts, format, unitLabel, partsTitle, partsHint, zUp, views }: {
   parts: MeshPart[];
   metaCard?: any; format?: any; unitLabel?: any;
   partsTitle?: any; partsHint?: any; zUp?: any;
+  views?: SavedView[];
 }) {
   resultsEl.innerHTML = '';
   if (!parts.length) { resultsEl.appendChild(errorCard('No models found in this file.')); return; }
@@ -1155,7 +1229,7 @@ export function renderPartsViewer(file: File, resultsEl: HTMLElement, { metaCard
   const geoCache = new Map<string, MeshGeometry | null | undefined>();
 
   async function showPart(part: MeshPart, chip: Element | null) {
-    chipRow.querySelectorAll('.anr-part-chip').forEach((b) => b.classList.remove('is-active'));
+    partsCard.querySelectorAll('.anr-part-chip').forEach((b) => b.classList.remove('is-active'));
     if (chip) chip.classList.add('is-active');
     const loading = el('div', { class: 'anr-card' }, [el('div', { class: 'anr-info' }, 'Building mesh…')]);
     const blankStats = el('div');
@@ -1173,7 +1247,7 @@ export function renderPartsViewer(file: File, resultsEl: HTMLElement, { metaCard
       viewCardEl.replaceWith(errCard); viewCardEl = errCard;
       return;
     }
-    const { viewCard, viewer } = buildViewerCard(geo, part.name, { zUp });
+    const { viewCard, viewer } = buildViewerCard(geo, part.name, { zUp, views });
     viewCardEl.replaceWith(viewCard); viewCardEl = viewCard;
     startViewer(viewer);
     const stats = geoStatsCard(geo, file, format, unitLabel);
@@ -1182,11 +1256,27 @@ export function renderPartsViewer(file: File, resultsEl: HTMLElement, { metaCard
     integCardEl.replaceWith(integ); integCardEl = integ;
   }
 
-  parts.forEach((part) => {
+  // More than five parts: the first chip (the whole model) stands alone, and the
+  // rest wait in a row of their own behind "Show all parts".
+  const many = parts.length > 6;
+  const moreRow = many ? el('div', { class: 'anr-btn-row', style: 'flex-wrap:wrap;gap:6px;' }) : chipRow;
+  parts.forEach((part, i) => {
     const chip = el('button', { type: 'button', class: 'anr-btn anr-part-chip' }, part.name);
     chip.addEventListener('click', () => showPart(part, chip));
-    chipRow.appendChild(chip);
+    (i === 0 ? chipRow : moreRow).appendChild(chip);
   });
+  if (many) {
+    const label = `Show all parts (${parts.length - 1})`;
+    const toggle = el('button', { type: 'button', class: 'anr-btn', 'aria-expanded': 'false' }, label);
+    moreRow.hidden = true;
+    toggle.addEventListener('click', () => {
+      moreRow.hidden = !moreRow.hidden;
+      toggle.textContent = moreRow.hidden ? label : 'Hide parts';
+      toggle.setAttribute('aria-expanded', moreRow.hidden ? 'false' : 'true');
+    });
+    chipRow.appendChild(toggle);
+    partsCard.appendChild(moreRow);
+  }
 
   // Default view: the combined/whole model when several parts, else the only one.
   const first = chipRow.querySelector('.anr-part-chip');

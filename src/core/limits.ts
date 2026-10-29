@@ -275,6 +275,12 @@ export const PDF_LONG_BAND_PX = byTier({ high: 32e6, mid: 12e6, low: 6e6 });
 export const PDF_3D_SCAN_MAX = byTier({ high: 512 * MB, mid: 256 * MB, low: 96 * MB });
 export const PRC_STREAM_MAX = byTier({ high: 256 * MB, mid: 128 * MB, low: 48 * MB });
 export const PRC_TRI_MAX = byTier({ high: 6e6, mid: 3e6, low: 1e6 });
+// The same scan notes where every object is defined, so a model's named views
+// (/VA, read after the scan) can be looked up. Past this many objects the rest
+// go unrecorded and a view that lives there is simply not listed.
+export const PDF_3D_OBJ_INDEX_MAX = 200000;
+// Named views read per model (a PDF lists them in /VA; real ones hold a dozen).
+export const PDF_3D_VIEWS_MAX = 64;
 // The photo LSB bit-plane panel renders one full-size plane per channel. Past this
 // pixel count the planes are computed on a downscaled copy instead, since a
 // 100 MP photo would otherwise hold several 400 MB canvases and data URLs at once.

@@ -190,7 +190,10 @@ coordinate); **Y-up**/**Z-up** flips which axis is "up" (most CAD/printing
 formats author Z-up; design/glTF formats are typically Y-up - the viewer
 itself is Y-up, so Z-up geometry gets a view-only -90° rotation about X to
 stand it upright); **Part chips** (for a multi-part assembly) switch
-between viewing a single part or the whole assembly.
+between viewing a single part or the whole assembly. With more than five
+parts only the whole-model chip shows at first, and **Show all parts** opens
+a row with every part on its own. **Reset view** also clears a saved view's
+roll and cross-section (see 3D PDFs in the documents page).
 
 ```demo
 btn: Scroll zoom on

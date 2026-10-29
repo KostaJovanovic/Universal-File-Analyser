@@ -18,7 +18,7 @@
    when the PDF holds no 3D stream. */
 import { el, row, rowHelp, fmtBytes, errorCard, downloadBlob } from '../core/util.js';
 import { inflate } from '../core/binutil.js';
-import { SCAN_SMALL, PDF_3D_SCAN_MAX, PRC_STREAM_MAX } from '../core/limits.js';
+import { SCAN_SMALL, PDF_3D_SCAN_MAX, PRC_STREAM_MAX, PDF_3D_OBJ_INDEX_MAX, PDF_3D_VIEWS_MAX } from '../core/limits.js';
 import { makeResult, renderPartsViewer } from './stl.js';
 import { decodePrc } from '../lib/nanoprc-loader.js';
 const latin1 = new TextDecoder('latin1');
@@ -104,14 +104,25 @@ async function scanPdf(file) {
     const hits3d = [];
     const objStms = [];
     const refs = [];
+    // Where each object is defined, for obj(): a plain "N G obj" header, or the
+    // object stream that holds it. Later wins, as a reader applies updates.
+    const plainAt = new Map();
+    const inStm = new Map();
     let encrypted = false;
-    const re = /\/Subtype\s*\/(PRC|U3D)\b|\/Type\s*\/ObjStm\b|\/3DD\s*(\d+)\s+\d+\s+R|\/Encrypt\b/g;
+    const re = /\/Subtype\s*\/(PRC|U3D)\b|\/Type\s*\/ObjStm\b|\/3DD\s*(\d+)\s+\d+\s+R|\/Encrypt\b|(\d+)\s+\d+\s+obj\b/g;
     for (let off = 0; off < file.size; off += SCAN_SMALL) {
         const t = latin1.decode(new Uint8Array(await file.slice(off, off + SCAN_SMALL + OVERLAP).arrayBuffer()));
         re.lastIndex = 0;
         let m;
         while ((m = re.exec(t))) {
             const abs = off + m.index;
+            // Headers skip `seen`: setting the same position twice is harmless, and a
+            // PDF has far more objects than 3D hits.
+            if (m[3]) {
+                if (plainAt.size < PDF_3D_OBJ_INDEX_MAX || plainAt.has(+m[3]))
+                    plainAt.set(+m[3], abs);
+                continue;
+            }
             if (seen.has(abs))
                 continue; // found again in the overlap
             seen.add(abs);
@@ -129,7 +140,7 @@ async function scanPdf(file) {
         await tick();
     }
     if (!hits3d.length)
-        return { models: [], encrypted };
+        return { models: [], encrypted, obj: async () => null };
     // Annotations held in compressed object streams. The header is "objnum
     // offset" pairs, offsets counted from /First, so a hit maps to the object
     // whose offset is the largest one not past it.
@@ -143,12 +154,12 @@ async function scanPdf(file) {
             if (typeof bytes === 'string' || !first)
                 continue;
             const text = latin1.decode(bytes);
+            const index = stmIndex(text, first);
+            for (const [n] of index)
+                if (inStm.size < PDF_3D_OBJ_INDEX_MAX || inStm.has(n))
+                    inStm.set(n, pos);
             if (!text.includes('/3DD'))
                 continue;
-            const nums = text.slice(0, first).trim().split(/\s+/).map(Number);
-            const index = [];
-            for (let i = 0; i + 1 < nums.length; i += 2)
-                index.push([nums[i], nums[i + 1]]);
             for (const d of text.matchAll(/\/3DD\s*(\d+)\s+\d+\s+R/g)) {
                 const at = d.index - first;
                 let owner = -1;
@@ -183,7 +194,127 @@ async function scanPdf(file) {
         else if (anyUsed && !used.has(d.obj))
             d.status = 'orphaned';
     }
-    return { models: defs, encrypted };
+    const stmCache = new Map();
+    const openStm = (pos) => {
+        let p = stmCache.get(pos);
+        if (!p) {
+            p = (async () => {
+                const s = await streamAt(file, pos).catch(() => null);
+                const first = s ? +((/\/First\s+(\d+)/.exec(s.dict) || [])[1] || 0) : 0;
+                const bytes = s && first ? await streamBytes(file, s, SCAN_SMALL) : '';
+                if (typeof bytes === 'string')
+                    return null;
+                const text = latin1.decode(bytes);
+                return { text, first, index: stmIndex(text, first) };
+            })();
+            stmCache.set(pos, p);
+        }
+        return p;
+    };
+    async function obj(n) {
+        if (encrypted)
+            return null;
+        const plain = plainAt.get(n), stm = inStm.get(n);
+        if (stm != null && (plain == null || stm > plain)) {
+            const s = await openStm(stm);
+            const i = s ? s.index.findIndex(([k]) => k === n) : -1;
+            if (!s || i < 0)
+                return null;
+            const end = i + 1 < s.index.length ? s.first + s.index[i + 1][1] : s.text.length;
+            return s.text.slice(s.first + s.index[i][1], end);
+        }
+        if (plain == null)
+            return null;
+        const t = latin1.decode(new Uint8Array(await file.slice(plain, plain + 65536).arrayBuffer()));
+        const body = t.replace(/^\d+\s+\d+\s+obj\b/, '');
+        const end = body.search(/\bendobj\b|\bstream\r?\n/);
+        return end < 0 ? null : body.slice(0, end);
+    }
+    return { models: defs, encrypted, obj };
+}
+// An object stream's header: "objnum offset" pairs, offsets counted from /First.
+function stmIndex(text, first) {
+    const nums = text.slice(0, first).trim().split(/\s+/).map(Number);
+    const index = [];
+    for (let i = 0; i + 1 < nums.length; i += 2)
+        index.push([nums[i], nums[i + 1]]);
+    return index;
+}
+// ---------- named views (/VA) ----------
+// A PDF string's bytes as text: escapes undone, and UTF-16 when it carries the BOM.
+function pdfString(raw) {
+    const b = raw.replace(/\\([nrtbf()\\]|[0-7]{1,3}|\r?\n)/g, (_, e) => /^[0-7]/.test(e) ? String.fromCharCode(parseInt(e, 8) & 255)
+        : e[0] === '\n' || e[0] === '\r' ? ''
+            : { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' }[e] || e);
+    if (b.charCodeAt(0) === 0xFE && b.charCodeAt(1) === 0xFF) {
+        let s = '';
+        for (let i = 2; i + 1 < b.length; i += 2)
+            s += String.fromCharCode(b.charCodeAt(i) << 8 | b.charCodeAt(i + 1));
+        return s;
+    }
+    return b;
+}
+const nums = (s) => s.trim().split(/\s+/).map((x) => x === 'null' ? null : Number(x));
+const refsIn = (s) => [...s.matchAll(/(\d+)\s+\d+\s+R/g)].map((m) => +m[1]);
+// An entry that is either written in place or an indirect reference, as text.
+async function entry(dict, key, obj) {
+    const m = new RegExp('/' + key + '\\s*(?:(\\d+)\\s+\\d+\\s+R|(\\[[^\\]]*\\]|<<[\\s\\S]*?>>))').exec(dict);
+    if (!m)
+        return null;
+    return m[2] != null ? m[2] : obj(+m[1]);
+}
+// The cutting plane's normal from a 3DCrossSection's /O: three angles in degrees,
+// one of them null. The null one names the axis the plane is first perpendicular
+// to; the others then turn it about X, then Y, then Z.
+function sectionNormal(o) {
+    let n = [0, 0, 0];
+    const nul = o.indexOf(null);
+    n[nul < 0 ? 0 : nul] = 1;
+    const rad = (d) => (d || 0) * Math.PI / 180;
+    const [ax, ay, az] = [rad(o[0]), rad(o[1]), rad(o[2])];
+    n = [n[0], n[1] * Math.cos(ax) - n[2] * Math.sin(ax), n[1] * Math.sin(ax) + n[2] * Math.cos(ax)];
+    n = [n[0] * Math.cos(ay) + n[2] * Math.sin(ay), n[1], -n[0] * Math.sin(ay) + n[2] * Math.cos(ay)];
+    n = [n[0] * Math.cos(az) - n[1] * Math.sin(az), n[0] * Math.sin(az) + n[1] * Math.cos(az), n[2]];
+    return n;
+}
+// The model's named views, in the order the file lists them. Only views that
+// place the camera with a matrix (/MS /M) are read; the U3D-path kind and any
+// view without one are skipped.
+async function readViews(m, obj) {
+    const va = await entry(m.dict, 'VA', obj);
+    if (!va)
+        return [];
+    const out = [];
+    for (const n of refsIn(va).slice(0, PDF_3D_VIEWS_MAX)) {
+        const d = await obj(n);
+        if (!d || /\/MS\s*\/U3D/.test(d))
+            continue;
+        const c = /\/C2W\s*\[([^\]]*)\]/.exec(d);
+        const c2w = c ? nums(c[1]) : [];
+        if (c2w.length !== 12 || c2w.some((x) => !isFinite(x)))
+            continue;
+        const name = /\/XN\s*\(((?:\\[\s\S]|[^\\)])*)\)/.exec(d);
+        const proj = await entry(d, 'P', obj);
+        let clip = null;
+        const sa = await entry(d, 'SA', obj);
+        // Only the first cross-section is drawn; a view with several is rare.
+        const cs = sa ? (/<<[\s\S]*?>>/.exec(sa) || [null])[0] || (refsIn(sa)[0] != null ? await obj(refsIn(sa)[0]) : null) : null;
+        if (cs) {
+            const pt = /\/C\s*\[([^\]]*)\]/.exec(cs), or = /\/O\s*\[([^\]]*)\]/.exec(cs);
+            const point = pt ? nums(pt[1]) : [0, 0, 0];
+            const o = or ? nums(or[1]) : [null, 0, 0];
+            if (point.length === 3 && point.every(isFinite) && o.length === 3)
+                clip = { point, normal: sectionNormal(o) };
+        }
+        // C2W's columns are the camera's axes in the model: it looks along the third, up is the second.
+        out.push({
+            name: name ? pdfString(name[1]).trim() || 'View ' + (out.length + 1) : 'View ' + (out.length + 1),
+            dir: c2w.slice(6, 9), up: c2w.slice(3, 6), eye: c2w.slice(9, 12),
+            ortho: !!proj && /\/Subtype\s*\/O\b/.test(proj),
+            clip,
+        });
+    }
+    return out;
 }
 // ---------- geometry ----------
 function geoFrom(parts, hasColour) {
@@ -363,8 +494,13 @@ export async function renderPdf3d(file, slot, opts = {}) {
         btnRow.appendChild(el('button', { type: 'button', class: 'anr-btn', onclick: () => downloadBlob(objName(m) + '.stl', stlBlob(mesh)) }, 'Save as STL'));
         if (opts.viewer === false)
             return;
+        const views = await readViews(m, scan.obj).catch(() => []);
+        if (!viewSlot.isConnected || turn !== showing)
+            return;
+        if (views.length)
+            tbl.appendChild(rowHelp('Views', views.map((v) => v.name).join(', '), 'Camera positions the PDF stores by name, as Acrobat lists them under Views. Pick one under the 3D view to see the model from there; a view marked "section" also cuts the model open along a plane.'));
         renderPartsViewer(file, viewSlot, {
-            parts: meshParts(mesh), format: 'PRC (3D PDF)', zUp: true,
+            parts: meshParts(mesh), format: 'PRC (3D PDF)', zUp: true, views,
             partsTitle: '3D model parts',
             partsHint: 'Pick a part to view it on its own, or see the whole model together. Parts that share a name are grouped.',
         });

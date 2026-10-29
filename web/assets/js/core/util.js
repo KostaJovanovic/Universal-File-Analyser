@@ -676,7 +676,7 @@ export function attachViewCube(viewer) {
     // Tween the camera to a target orientation (shortest yaw path, ease-in-out).
     let anim = 0;
     function orientTo(ty, tp) {
-        const sy = state.yaw, sp = state.pitch;
+        const sy = state.yaw, sp = state.pitch, sr = state.roll || 0; // roll: only the STL viewer's saved views set it
         let dy = ty - sy;
         while (dy > Math.PI)
             dy -= 2 * Math.PI;
@@ -693,6 +693,8 @@ export function attachViewCube(viewer) {
             const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
             state.yaw = sy + dy * e;
             state.pitch = sp + dp * e;
+            if (sr)
+                state.roll = sr * (1 - e);
             viewer.markDirty();
             anim = k < 1 ? requestAnimationFrame(tick) : 0;
         };
@@ -799,7 +801,7 @@ export function attachViewCube(viewer) {
             return;
         }
         const yd = state.yaw * R2D, pd = state.pitch * R2D;
-        cube.style.transform = `rotateX(${-pd}deg) rotateY(${yd}deg)`;
+        cube.style.transform = `rotateZ(${-(state.roll || 0) * R2D}deg) rotateX(${-pd}deg) rotateY(${yd}deg)`;
         requestAnimationFrame(sync);
     };
     const startSync = () => { if (!syncing) {

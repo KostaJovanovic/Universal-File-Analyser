@@ -195,7 +195,14 @@ js/
                     appends a new model and repoints /3DD, leaving the old one
                     in the file. Replaced models stay listed and viewable. PRC
                     is decoded by lib/nanoprc-loader.js and drawn in stl.js's
-                    parts viewer; U3D is offered as a download only
+                    parts viewer; U3D is offered as a download only. The
+                    model's named views (/VA: camera matrix C2W, projection,
+                    first /SA cross-section) become SavedView buttons;
+                    stl.js's setView() maps them onto yaw/pitch plus a ROLL,
+                    and the cross-section onto a fragment-shader clip plane
+                    (uClip) hiding the half the camera is in. scanPdf also
+                    indexes every object (plain and in object streams) so
+                    obj(n) can resolve the views afterwards
     docx.js · xlsx.js · xlsb.js · pptx.js · odf.js · legacy-office.js · textdoc.js
       · iwork.js · epub.js · mobi.js · mdb.js · notebook.js · markdown.js
       — office/document/e-book/notebook viewers

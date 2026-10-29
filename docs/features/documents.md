@@ -130,6 +130,13 @@ page previews; nothing appears for an ordinary PDF. Built in
 
 - The card lists the format, size, parts, triangle count and whether the
   colours came from the file, then the model below it.
+- **Views in the file.** The camera positions the PDF stores by name - the
+  list Acrobat shows under Views, such as Front, Top, or a teacher's own
+  "meridional plane" - appear as buttons under the 3D view. A button turns
+  the model to that camera, with its projection, and frames it whole. A view
+  that carries a cross-section is marked **(section)**: the half of the model
+  facing the camera is cut away along the stored plane, so the view looks into
+  the model. **Reset view** puts the model back whole.
 - **Download model** saves the embedded model as it is (`.prc` or `.u3d`), to
   open in a CAD or 3D tool. **Save as STL** writes the decoded triangles as a
   binary STL (colours are not kept: STL has no place for them).
@@ -144,12 +151,18 @@ page previews; nothing appears for an ordinary PDF. Built in
 btn: Download model (.prc)
 btn: Save as STL
 btn: View
+btn: Front
+btn: meridijanska ravan (section)
 ```
 
 **Notes / limits.** PRC is drawn from the triangles stored in the file, which
 is how Acrobat's own 3D export writes it. A PRC model holding only exact
 (B-rep) surfaces with no stored triangles is reported but not drawn, and
-section curves and wireframe lines are not drawn. U3D models are found and
+section curves and wireframe lines are not drawn. A saved view keeps its
+direction, its up and its projection, but the model is framed whole rather
+than at the stored zoom; the view's background, lighting, render mode and
+part visibility are not applied, a cross-section's outline and plane are not
+drawn, and only the first cross-section of a view is used. U3D models are found and
 offered as a download, but not drawn yet. Encrypted PDFs are not read. PDFs
 past a size set per memory tier in `limits.js` are not searched for a model,
 and a very large model stops at a per-tier triangle limit (the card says so).
