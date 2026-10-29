@@ -10,7 +10,7 @@
 
    Layout reference: https://www.sqlite.org/fileformat2.html */
 
-import { SQLITE_PAGE_SCAN_MAX } from '../core/limits.js';
+import { SQLITE_PAGE_SCAN_MAX, SQLITE_PAGE_READS_MAX } from '../core/limits.js';
 
 type ReadPage = (n: number) => Promise<Uint8Array | null>;
 
@@ -28,13 +28,18 @@ function varint(b: Uint8Array, p: number): [number, number] {
   return [v * 256 + b[p + 8], p + 9];
 }
 
+// Reads are budgeted for the whole analysis: an honest database's interior pages
+// are about 1% of it, while a forged one can make every page interior, or list
+// thousands of tables over one tree, and walk for minutes. Past the budget a page
+// reads as missing, which every walker already treats as "stop here".
 function pager(file: File, ps: number): ReadPage {
   const cache = new Map<number, Uint8Array>();
+  let reads = 0;
   return async (n: number) => {
     const hit = cache.get(n);
     if (hit) return hit;
     const off = (n - 1) * ps;
-    if (n < 1 || off >= file.size) return null;
+    if (n < 1 || off >= file.size || ++reads > SQLITE_PAGE_READS_MAX) return null;
     const page = new Uint8Array(await file.slice(off, off + ps).arrayBuffer());
     if (page.length < ps) return null;
     if (cache.size > 4096) cache.clear();

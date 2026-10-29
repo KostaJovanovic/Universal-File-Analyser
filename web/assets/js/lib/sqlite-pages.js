@@ -9,7 +9,7 @@
    a multi-GB database open at all, read-only by construction.
 
    Layout reference: https://www.sqlite.org/fileformat2.html */
-import { SQLITE_PAGE_SCAN_MAX } from '../core/limits.js';
+import { SQLITE_PAGE_SCAN_MAX, SQLITE_PAGE_READS_MAX } from '../core/limits.js';
 const u32 = (b, p) => ((b[p] << 24) >>> 0) + (b[p + 1] << 16) + (b[p + 2] << 8) + b[p + 3];
 const i32 = (b, p) => u32(b, p) | 0;
 // SQLite varint: 1-9 bytes, big-endian, 7 bits a byte, the ninth byte whole.
@@ -23,14 +23,19 @@ function varint(b, p) {
     }
     return [v * 256 + b[p + 8], p + 9];
 }
+// Reads are budgeted for the whole analysis: an honest database's interior pages
+// are about 1% of it, while a forged one can make every page interior, or list
+// thousands of tables over one tree, and walk for minutes. Past the budget a page
+// reads as missing, which every walker already treats as "stop here".
 function pager(file, ps) {
     const cache = new Map();
+    let reads = 0;
     return async (n) => {
         const hit = cache.get(n);
         if (hit)
             return hit;
         const off = (n - 1) * ps;
-        if (n < 1 || off >= file.size)
+        if (n < 1 || off >= file.size || ++reads > SQLITE_PAGE_READS_MAX)
             return null;
         const page = new Uint8Array(await file.slice(off, off + ps).arrayBuffer());
         if (page.length < ps)

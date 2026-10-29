@@ -100,6 +100,10 @@ export const SQLITE_MOBILE_MAX = 300 * MB;
 // of leaf pages a table's count is estimated from an even sample of its leaves.
 export const SQLITE_ENGINE_MAX = byTier({ high: 512 * MB, mid: 256 * MB, low: 256 * MB });
 export const SQLITE_PAGE_SCAN_MAX = byTier({ high: 1 * GB, mid: 512 * MB, low: 256 * MB });
+// Single-page reads in one such analysis (schema, interior levels, sample rows;
+// the leaf counts above are read in merged slices and don't count). A real
+// database needs about one per hundred pages; a forged one could ask for millions.
+export const SQLITE_PAGE_READS_MAX = 100000;
 // ---- non-wall device switches (their own category - NOT walls) ----
 export const DECODE_FULL_MAX = 120 * MB; // psd: decode every layer vs fall back to the embedded thumbnail. Never raise.
 export const FFMPEG_MEMFS_MAX = 1.2 * GB; // video: WASM MEMFS fallback copy ceiling (silent skip, not a decline)
