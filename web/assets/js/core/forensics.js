@@ -160,19 +160,25 @@ async function endsWith(file, sig) {
 // IEND is always a zero-length chunk with a fixed CRC, so all 12 bytes are known.
 const PNG_IEND = [0, 0, 0, 0, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82];
 // PNG: walk length-prefixed chunks from byte 8 to IEND; end is past IEND's CRC.
+// No endsWith() shortcut here: a second PNG appended to a PNG ends in a valid
+// IEND too. Only the 8-byte chunk headers are read, through a 1 MB window, so
+// the walk costs a read per MB of small chunks, never the whole file.
 async function pngLogicalEnd(file) {
-    if (await endsWith(file, PNG_IEND))
-        return file.size;
-    const b = new Uint8Array(await file.arrayBuffer());
-    const dv = new DataView(b.buffer);
+    const WIN = 1 << 20;
+    let wStart = 0, win = new Uint8Array(0);
     let pos = 8;
-    while (pos + 12 <= b.length) {
-        const len = dv.getUint32(pos);
-        const type = String.fromCharCode(b[pos + 4], b[pos + 5], b[pos + 6], b[pos + 7]);
+    while (pos + 12 <= file.size) {
+        if (pos < wStart || pos + 8 > wStart + win.length) {
+            wStart = pos;
+            win = new Uint8Array(await file.slice(pos, pos + WIN).arrayBuffer());
+        }
+        const h = pos - wStart;
+        const len = ((win[h] << 24) | (win[h + 1] << 16) | (win[h + 2] << 8) | win[h + 3]) >>> 0;
+        const type = String.fromCharCode(win[h + 4], win[h + 5], win[h + 6], win[h + 7]);
         pos += 12 + len; // length(4) + type(4) + data + crc(4)
         if (type === 'IEND')
             return pos;
-        if (pos > b.length)
+        if (pos > file.size)
             return null; // malformed / truncated
     }
     return null;
