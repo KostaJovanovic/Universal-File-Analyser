@@ -12,8 +12,10 @@
 import { el, row, rowHelp, fileExt, errorCard } from '../core/util.js';
 import { paginateFlow, openDocLightbox } from './paged.js';
 
+// Quotes too: file text must never be able to close an attribute the inline
+// pass writes around it.
 function esc(s: string) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 function escAttr(s: string) {
   return esc(s).replace(/"/g, '&quot;');
@@ -84,7 +86,7 @@ function stashCodeSpans(s: string, stash: string[]) {
 // out first (so * and _ inside them are left alone), then images, links, then
 // emphasis, then autolinks and hard breaks.
 function inlineMd(escaped: string) {
-  let s = escaped;
+  let s = escaped.replace(/\x00/g, '');   // NUL marks the stash placeholders below; a file can't forge one
 
   // Code spans: a run of N backticks ... N backticks. Protect their contents
   // by stashing them behind a placeholder while the rest is processed.
@@ -92,18 +94,25 @@ function inlineMd(escaped: string) {
   s = stashCodeSpans(s, codeStash);
 
   // Images: ![alt](src "title"). A remote source is not loaded (see
-  // isRemoteImage); its alt text stands in, marked as a remote image.
+  // isRemoteImage); its alt text stands in, marked as a remote image. The markup
+  // is stashed like a code span, so the link pass below can wrap a whole image
+  // (a badge) but never match across the inside of one, and emphasis never
+  // rewrites an _underscored_ file name. alt and title are already escaped.
+  const imgStash: string[] = [];
   s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;([^)]*?)&quot;)?\)/g,
-    (m, alt, src, title) => isRemoteImage(src)
-      ? '<span class="anr-md-img-remote" title="Remote image, not loaded: ' + src.replace(/"/g, '&quot;') + '">[image' + (alt ? ': ' + alt : '') + ']</span>'
-      : '<img class="anr-md-img" src="' + safeUrl(src) + '" alt="' + escAttr(alt) + '"' +
-      (title ? ' title="' + escAttr(title) + '"' : '') + ' loading="lazy">');
+    (m, alt, src, title) => {
+      imgStash.push(isRemoteImage(src)
+        ? '<span class="anr-md-img-remote" title="Remote image, not loaded: ' + src + '">[image' + (alt ? ': ' + alt : '') + ']</span>'
+        : '<img class="anr-md-img" src="' + safeUrl(src) + '" alt="' + alt + '"' +
+        (title ? ' title="' + title + '"' : '') + ' loading="lazy">');
+      return '\x00I' + (imgStash.length - 1) + '\x00';
+    });
 
   // Links: [text](href "title")
   s = s.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+&quot;([^)]*?)&quot;)?\)/g,
     (m, text: string, href, title) =>
       '<a class="anr-md-link" href="' + safeUrl(href) + '" target="_blank" rel="noopener noreferrer"' +
-      (title ? ' title="' + escAttr(title) + '"' : '') + '>' + text + '</a>');
+      (title ? ' title="' + title + '"' : '') + '>' + text + '</a>');
 
   // Autolinks: <https://…> (angle brackets are escaped to &lt; / &gt;)
   s = s.replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g,
@@ -120,7 +129,8 @@ function inlineMd(escaped: string) {
   // Hard line break: two+ trailing spaces before a newline.
   s = s.replace(/ {2,}\n/g, '<br>\n');
 
-  // Restore code spans.
+  // Restore images, then code spans (an alt can hold a code span's placeholder).
+  s = s.replace(/\x00I(\d+)\x00/g, (m, i: string) => imgStash[+i]);
   s = s.replace(/\x00C(\d+)\x00/g, (m, i: string|number) => codeStash[+i]);
   return s;
 }
