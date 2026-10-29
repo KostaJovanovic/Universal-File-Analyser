@@ -28,7 +28,7 @@
 import { spawn, execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { appendFile, mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, open, readFile, rm, stat, statfs, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
@@ -282,7 +282,15 @@ function safeName(name) {
   return flat;
 }
 
+/** Open sessions at once, as on Android. /compare runs two; the rest is slack.
+ *  A page that opens sessions and never closes them would otherwise fill the
+ *  temp folder. A refused open is harmless: video.ts falls back to ffmpeg.wasm. */
+const MAX_SESSIONS = 16;
+/** A write must leave this much free on the temp drive, as AnrBytes does. */
+const SPACE_MARGIN = 256 * 1024 * 1024;
+
 export async function openSession(id, tmpRoot) {
+  if (sessions.size >= MAX_SESSIONS) throw new Error('too many ffmpeg sessions are open');
   const dir = join(tmpRoot, 'anr-ffmpeg-' + id);
   await mkdir(dir, { recursive: true });
   sessions.set(id, { dir, procs: new Set(), links: new Map() });
@@ -316,6 +324,9 @@ function sessionOf(id) {
 export async function put(id, name, data, append) {
   const s = sessionOf(id);
   const n = safeName(name);
+  // The page can stream any number of chunks; never let it fill the disk.
+  const { bavail, bsize } = await statfs(s.dir);
+  if (data.byteLength > bavail * bsize - SPACE_MARGIN) throw new Error('not enough free space');
   s.links.delete(n);                               // a written file replaces a link
   await (append ? appendFile : writeFile)(join(s.dir, n), Buffer.from(data));
   return true;
@@ -397,6 +408,10 @@ function withLinks(s, args) {
   });
 }
 
+/** The longest one try may run, whatever the page asks. Raise it if a real
+ *  job (a huge software transcode) ever needs longer. */
+const MAX_JOB_MS = 6 * 60 * 60 * 1000;
+
 /** ffmpeg writes progress to stderr as `time=00:00:12.34`. Turning that into a
  *  0..1 fraction needs the duration, which appears once as `Duration: ...`. */
 function parseClock(s) {
@@ -437,8 +452,11 @@ export async function runJob(id, rawArgs, opts) {
   // and without -y the next attempt would stop at "file exists".
   // Every try spawns through here, so every try is guarded. The guard goes on
   // after the checks, never before: checkArgs refuses -protocol_whitelist.
+  // No job runs unbounded: a page that never cancels must not hold a process
+  // for ever. A caller's own timeout only ever shortens it.
+  const limit = timeout > 0 ? Math.min(timeout, MAX_JOB_MS) : MAX_JOB_MS;
   let attempts = 0;
-  const attempt = (args, accelerated, note) => new Promise((resolve) => {
+  const attempt =(args, accelerated, note) => new Promise((resolve) => {
     let child;
     try {
       child = spawn(bin, ['-hide_banner', '-nostdin', ...(attempts++ ? ['-y'] : []), ...guardInputs(withLinks(s, args), formats)], { cwd: s.dir, windowsHide: true });
@@ -450,7 +468,7 @@ export async function runJob(id, rawArgs, opts) {
     let log = '';
     let duration = null;
     let killedByTimeout = false;
-    const timer = timeout > 0 ? setTimeout(() => { killedByTimeout = true; try { child.kill(); } catch (_) {} }, timeout) : null;
+    const timer = setTimeout(() => { killedByTimeout = true; try { child.kill(); } catch (_) {} }, limit);
 
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk) => {

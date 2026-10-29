@@ -322,6 +322,12 @@ The guard goes on after `checkArgs()`, never before: `checkArgs()` refuses
 `-protocol_whitelist` from the page. A new ffmpeg demuxer that follows
 references belongs in `FOLLOWERS`, in both ports.
 
+**Limits, as on Android.** At most 16 sessions are open at once
+(`openSession()` throws, and `video.ts` falls back to ffmpeg.wasm); `put()`
+refuses a write that would leave less than 256 MiB free on the temp drive; and
+no try runs longer than 6 hours (`MAX_JOB_MS`), whatever timeout the page
+passes, so a page that never cancels cannot hold a process for ever.
+
 The checks run in the main process, never the page. A refused job resolves with
 code 1 and a log line, which `video.ts` treats as a clean failure. Never return
 -1, which it reads as a dead instance.

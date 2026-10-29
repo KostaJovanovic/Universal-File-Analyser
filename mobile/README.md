@@ -282,8 +282,8 @@ plugin takes only what it needs:
 - The ffmpeg list check reads a list input whole or refuses it: a concat list
   or playlist over 1 MB, or one with a NUL byte, does not run. ffmpeg itself
   is held to a demuxer whitelist and `-safe 1` on every input. At most 16
-  ffmpeg sessions are open at once, and a name with a control character is
-  refused.
+  ffmpeg sessions are open at once, no job runs longer than 6 hours, and a
+  name with a control character is refused.
 - No backup and no device transfer (`allowBackup="false"` plus
   `res/xml/data_extraction_rules.xml`), so the "Recently analysed" list never
   leaves the phone.

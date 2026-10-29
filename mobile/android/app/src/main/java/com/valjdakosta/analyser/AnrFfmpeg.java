@@ -71,6 +71,8 @@ public class AnrFfmpeg extends Plugin {
     private static final int LOG_KEEP = 131072;
     /** Open sessions at once. /compare runs two; the rest is slack. */
     private static final int MAX_SESSIONS = 16;
+    /** The longest one job may run, whatever the page asks (as on the desktop). */
+    private static final long MAX_JOB_MS = 6L * 60 * 60 * 1000;
     private static final Pattern DURATION = Pattern.compile("Duration:\\s*(\\d+):(\\d\\d):(\\d\\d(?:\\.\\d+)?)");
     private static final Pattern TIME = Pattern.compile("time=\\s*(\\d+):(\\d\\d):(\\d\\d(?:\\.\\d+)?)");
     private static final Pattern ENCODER_LINE = Pattern.compile("^\\s*[VAS][A-Z.]{5}\\s+(\\S+)");
@@ -410,12 +412,11 @@ public class AnrFfmpeg extends Plugin {
         drain(p.getInputStream());
 
         final boolean[] timedOut = { false };
-        ScheduledFuture<?> timer = timeout > 0
-            ? TIMERS.schedule(() -> {
-                timedOut[0] = true;
-                p.destroy();
-            }, timeout, TimeUnit.MILLISECONDS)
-            : null;
+        // No job runs unbounded; the page's own timeout only ever shortens it.
+        ScheduledFuture<?> timer = TIMERS.schedule(() -> {
+            timedOut[0] = true;
+            p.destroy();
+        }, timeout > 0 ? Math.min(timeout, MAX_JOB_MS) : MAX_JOB_MS, TimeUnit.MILLISECONDS);
 
         StringBuilder log = new StringBuilder();
         double duration = -1;
