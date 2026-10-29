@@ -38,8 +38,10 @@ export async function sniffFileType(file: Blob) {
   if (a(0, 5) === '%PDF-') return { kind: 'pdf', ext: 'pdf', label: 'PDF document' };
   if (m([0x89, 0x50, 0x4E, 0x47])) return { kind: 'photo', ext: 'png', label: 'PNG image' };
   if (m([0xFF, 0xD8, 0xFF])) return { kind: 'photo', ext: 'jpg', label: 'JPEG image' };
-  if (a(0, 3) === 'GIF') return { kind: 'photo', ext: 'gif', label: 'GIF image' };
-  if (m([0x42, 0x4D]) && b.length > 14) return { kind: 'photo', ext: 'bmp', label: 'BMP image' };
+  // The full version tag and the DIB header size: "GIF..." and "BM..." alone are
+  // also how plenty of text files begin ("GIFT list", "BMW notes").
+  if (a(0, 6) === 'GIF87a' || a(0, 6) === 'GIF89a') return { kind: 'photo', ext: 'gif', label: 'GIF image' };
+  if (m([0x42, 0x4D]) && b.length > 18 && [12, 40, 52, 56, 64, 108, 124].includes(b[14] | b[15] << 8 | b[16] << 16 | b[17] << 24)) return { kind: 'photo', ext: 'bmp', label: 'BMP image' };
   if (m([0x49, 0x49, 0x2A, 0x00]) || m([0x4D, 0x4D, 0x00, 0x2A])) return { kind: 'photo', ext: 'tiff', label: 'TIFF image' };
   if (m([0x38, 0x42, 0x50, 0x53])) return { kind: 'proprietary', ext: 'psd', label: 'Photoshop PSD' };
   if (a(0, 4) === 'RIFF') {
@@ -82,7 +84,10 @@ export async function sniffFileType(file: Blob) {
   // archive sniffs so stronger magics win first.
   if (b.length >= 13 && b[0] === 0x5D) {
     const dict = b[1] + b[2] * 256 + b[3] * 65536 + b[4] * 16777216;
-    if (dict >= 0x1000 && dict <= 0x40000000) return { kind: 'proprietary', ext: 'lzma', label: 'LZMA archive' };
+    // Plus the 8-byte uncompressed size: all FF (unknown) or under 2^40, which
+    // text starting with "]" almost never is.
+    const sizeOk = b.subarray(5, 13).every((x) => x === 0xFF) || (b[10] | b[11] | b[12]) === 0;
+    if (sizeOk && dict >= 0x1000 && dict <= 0x40000000) return { kind: 'proprietary', ext: 'lzma', label: 'LZMA archive' };
   }
   const start = a(0, Math.min(b.length, 220)).trimStart();
   if (start.startsWith('<svg') || (start.includes('<svg') && start.includes('xmlns'))) return { kind: 'svg', ext: 'svg', label: 'SVG image' };
