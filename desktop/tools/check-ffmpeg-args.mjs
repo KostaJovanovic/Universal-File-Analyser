@@ -12,7 +12,7 @@
  * common encode, so a change to those shows up here too.
  */
 
-import { accelerate, checkArgs, checkInputBytes, checkInputText, FAMILIES, isSafeName, LIST_PEEK, softwareFallback } from '../ffmpeg-accel.mjs';
+import { accelerate, checkArgs, checkInputBytes, checkInputText, FAMILIES, formatWhitelist, guardInputs, isSafeName, LIST_PEEK, softwareFallback } from '../ffmpeg-accel.mjs';
 
 // Argument shapes copied from src/ (renderers/video.ts, audio.ts, gcode.ts).
 // video.ts gives every job's files a prefix of its own (ffJobPrefix, 'j<n>_').
@@ -156,9 +156,45 @@ const LISTS_BAD = [
 let failures = 0;
 const fail = (msg) => { failures++; console.log('FAIL  ' + msg); };
 
+// The guard ffmpeg enforces itself (formatWhitelist + guardInputs). A listing
+// in both column layouts, with followers and a device in it. Same fixture in
+// AnrFfmpegChecksTest.java.
+const LISTING = ' D   concat          Virtual concatenation script\n'
+  + ' D d dshow           DirectShow capture\n'
+  + ' D   hls             Apple HTTP Live Streaming\n'
+  + ' D   mov,mp4,m4a,3gp,3g2,mj2 QuickTime / MOV\n'
+  + ' D   avisynth        AviSynth script\n'
+  + ' D   h264            raw H.264 video\n'
+  + ' D  matroska,webm    Matroska / WebM\n';
+const F = formatWhitelist(LISTING);
+if (F !== 'mov,mp4,m4a,3gp,3g2,mj2,h264,matroska,webm') fail('formatWhitelist: ' + F);
+if (formatWhitelist('') !== '' || formatWhitelist(null) !== '') fail('an empty listing is not empty');
+
+/** Why the guarded form of `args` is wrong, or null. */
+const guarded = (args) => {
+  const g = guardInputs(args, F);
+  const nI = args.filter((x) => x === '-i').length;
+  if (g.filter((x) => x === '-format_whitelist').length !== nI) return 'an -i without a whitelist';
+  let fmt = null;
+  for (let k = 0; k < g.length; k++) {
+    if (g[k] === '-f') fmt = g[k + 1];
+    if (g[k] !== '-i') continue;
+    if (g[k - 4] !== '-format_whitelist' || g[k - 3] !== (fmt === 'concat' ? F + ',concat' : F)
+      || g[k - 2] !== '-protocol_whitelist' || g[k - 1] !== 'file') return 'bad guard before -i';
+    fmt = null;
+  }
+  if (g.join(' ').includes('-safe 0')) return '-safe 0 survived';
+  return null;
+};
+const checkGuard = (label, args) => {
+  const why = guarded(args);
+  if (why) fail(label + ' guard: ' + why + '\n      ' + JSON.stringify(guardInputs(args, F)));
+};
+
 for (const a of APP) {
   const why = checkArgs(a);
   if (why) fail('app args refused: ' + why + '\n      ' + JSON.stringify(a));
+  checkGuard('app', a);
 }
 for (const a of ATTACKS) {
   const why = checkArgs(a);
@@ -183,6 +219,10 @@ if (!checkInputBytes(bytes('#EXTM3U\n#EXTINF:10,\na.ts\n'), LIST_PEEK + 1, false
 if (!whole("file 'cafÃ", true)) fail('a cut UTF-8 sequence is allowed');
 if (!whole("ï»¿ffconcat version 1.0\noption safe 0\n", false)) fail('a BOM-led ffconcat list with an option is allowed');
 if (whole("ï»¿ffconcat version 1.0\nfile 'a.mp4'\n", false)) fail('a BOM-led clean ffconcat list is refused');
+// A NUL used to make any list read as binary, so it skipped the check.
+if (!whole('#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:3,\n../secret.mp4\n#EXT-X-ENDLIST\n\u0000', false)) fail('a playlist ending in a NUL is allowed');
+if (!whole('#EXTM3U\n#\u0000\n#EXTINF:3,\n../secret.mp4\n', false)) fail('a playlist with a NUL in its first 4 KB is allowed');
+if (whole('\u0000\u0001binary video bytes', false)) fail('a small binary input is refused');
 
 // Names the session folder may hold (safeName in both shells).
 for (const n of ['input', 'rev_seg_000.mp4', 'conv_in', 'anr_frame.jpg']) if (!isSafeName(n)) fail('safe name refused: ' + n);
@@ -203,6 +243,7 @@ for (const f of FAMILIES) {
       rewrites++;
       const why = checkArgs(r.args);
       if (why) fail(f.vendor + ' rewrite refused: ' + why + '\n      ' + JSON.stringify(r.args));
+      checkGuard(f.vendor + ' rewrite', r.args);
       if (r.args.includes('-tune')) fail(f.vendor + ' rewrite kept x264\'s -tune: ' + JSON.stringify(r.args));
       if (!decode && r.decoded) fail(f.vendor + ' rewrite decoded on the GPU when told not to: ' + JSON.stringify(r.args));
     }
@@ -234,6 +275,7 @@ for (const a of APP) {
   rewrites++;
   const why = checkArgs(fb);
   if (why) fail('openh264 fallback refused: ' + why + '\n      ' + JSON.stringify(fb));
+  checkGuard('openh264 fallback', fb);
 }
 
 for (const f of FAMILIES) {

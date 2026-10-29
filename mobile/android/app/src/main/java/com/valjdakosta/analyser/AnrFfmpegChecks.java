@@ -26,7 +26,8 @@ import java.util.regex.Pattern;
  * exactly the options, formats, values and file names the app emits (including
  * the MediaCodec rewrite and the openh264 fallback the bridge makes). Any other
  * option is refused. checkInputBytes() is the list-file half; AnrFfmpeg calls it
- * on the first LIST_PEEK bytes of every input.
+ * on the first LIST_PEEK bytes of every input. guardInputs() then has ffmpeg
+ * enforce the rule itself (demuxer whitelist, file protocol, -safe 1).
  *
  * Pure Java with no Android imports, so AnrFfmpegChecksTest runs it on the JVM
  * against the same vectors as desktop/tools/check-ffmpeg-args.mjs.
@@ -100,6 +101,57 @@ final class AnrFfmpegChecks {
             "xcbgrab", "xv"
         )
     );
+
+    /** Demuxers that open OTHER files, addresses or code (see FOLLOWERS in
+     *  ffmpeg-accel.mjs). Never in the whitelist; concat only for -f concat. */
+    private static final Set<String> FOLLOWERS = new HashSet<>(
+        Arrays.asList("hls", "dash", "imf", "sdp", "sap", "rtsp", "rtp", "concat", "avisynth", "vapoursynth", "lavfi")
+    );
+
+    /** ` D   name` (ffmpeg 5+, a third column `d` marks a device) and ` D  name`. */
+    private static final Pattern DEMUXER_LINE = Pattern.compile("^ D([ .A-Za-z]{1,2}) +([a-z0-9_,]+)");
+
+    /** The -format_whitelist value for this binary: every demuxer in its
+     *  `ffmpeg -demuxers` listing except devices and FOLLOWERS. "" when the
+     *  listing could not be read, which AnrFfmpeg treats as "refuse". */
+    static String formatWhitelist(String listing) {
+        StringBuilder out = new StringBuilder();
+        for (String line : (listing == null ? "" : listing).split("\\r?\\n")) {
+            Matcher m = DEMUXER_LINE.matcher(line);
+            if (!m.find() || m.group(1).indexOf('d') != -1) continue;
+            boolean follower = false;
+            for (String n : m.group(2).split(",")) if (FOLLOWERS.contains(n) || DEVICES.contains(n)) follower = true;
+            if (follower) continue;
+            if (out.length() > 0) out.append(',');
+            out.append(m.group(2));
+        }
+        return out.toString();
+    }
+
+    /** The arguments that spawn: each -i gets the whitelist (plus concat when
+     *  its -f is concat) and file-only protocols, and -safe is forced to 1, so
+     *  ffmpeg enforces the rule on what it actually opens. Runs AFTER
+     *  checkArgs, which refuses -protocol_whitelist from the page. */
+    static List<String> guardInputs(List<String> args, String formats) {
+        List<String> out = new ArrayList<>();
+        String fmt = null;
+        for (int i = 0; i < args.size(); i++) {
+            String a = args.get(i);
+            if (a.equals("-f") && i + 1 < args.size()) fmt = args.get(i + 1);
+            if (a.equals("-safe") && i + 1 < args.size()) {
+                out.add("-safe");
+                out.add("1");
+                i++;
+                continue;
+            }
+            if (a.equals("-i")) {
+                out.addAll(Arrays.asList("-format_whitelist", "concat".equals(fmt) ? formats + ",concat" : formats, "-protocol_whitelist", "file"));
+                fmt = null;
+            }
+            out.add(a);
+        }
+        return out;
+    }
 
     private static final Set<String> FILE_OPTIONS = new HashSet<>(Arrays.asList("-filter_script", "-filter_complex_script"));
 
@@ -350,11 +402,13 @@ final class AnrFfmpegChecks {
                 break;
             }
         }
-        if (!isConcat && nul != -1 && nul < 4096) return null;   // binary - not a list
+        String text = new String(head, 0, n, StandardCharsets.ISO_8859_1);
+        // Binary - not a list. Unless it starts like one: ffmpeg reads a
+        // playlist with a NUL in it, and checkInputText refuses the NUL.
+        if (!isConcat && nul != -1 && nul < 4096 && !LIST_HEAD.matcher(asciiLower(text)).find()) return null;
         boolean truncated = totalSize > n;
         if (isConcat && truncated) return "the concat list is larger than " + LIST_PEEK + " bytes";
         if (isConcat && nul != -1) return "the concat list holds a NUL byte";
-        String text = new String(head, 0, n, StandardCharsets.ISO_8859_1);
         if (!isConcat && truncated && LIST_HEAD.matcher(asciiLower(text)).find()) {
             return "a list input is larger than " + LIST_PEEK + " bytes";
         }

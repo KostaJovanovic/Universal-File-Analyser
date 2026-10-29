@@ -197,7 +197,10 @@ public class AnrFfmpeg extends Plugin {
     }
 
     /** Probed once, cached on disk. The key includes the OS build, because an
-     *  OS update replaces the codec drivers the probe measured. */
+     *  OS update replaces the codec drivers the probe measured. The leading
+     *  number is the probe's version: bump it when the probe learns something
+     *  new, so every cached record re-probes. 2: the demuxer whitelist (exec
+     *  refuses every job while a record has none). */
     private synchronized JSObject capabilities() {
         if (caps != null) return caps;
         File bin = binary();
@@ -205,7 +208,7 @@ public class AnrFfmpeg extends Plugin {
             caps = unavailable("not installed");
             return caps;
         }
-        String key = bin.length() + ":" + bin.lastModified() + ":" + Build.FINGERPRINT;
+        String key = "2:" + bin.length() + ":" + bin.lastModified() + ":" + Build.FINGERPRINT;
         File cache = new File(getContext().getFilesDir(), "ffmpeg-caps.json");
         try {
             JSONObject c = new JSONObject(readText(cache, 1 << 20));
@@ -247,6 +250,7 @@ public class AnrFfmpeg extends Plugin {
         String listing = capture(bin, Arrays.asList("-hide_banner", "-encoders"), 15000);
         if (listing == null) return unavailable("does not run on this phone");
         String version = capture(bin, Arrays.asList("-hide_banner", "-version"), 10000);
+        String demuxers = capture(bin, Arrays.asList("-hide_banner", "-demuxers"), 15000);
         List<String> encoders = new ArrayList<>();
         for (String line : listing.split("\\r?\\n")) {
             Matcher m = ENCODER_LINE.matcher(line);
@@ -280,6 +284,9 @@ public class AnrFfmpeg extends Plugin {
         // softwareFallback() in the bridge reads this: a build without libx264
         // retries with the encoder it does have.
         r.put("encoders", names);
+        // The -format_whitelist every job's inputs get (guardInputs). exec reads
+        // it from this record, never from anything the page sent.
+        r.put("formats", AnrFfmpegChecks.formatWhitelist(demuxers));
         return r;
     }
 
@@ -329,6 +336,10 @@ public class AnrFfmpeg extends Plugin {
                 for (Object o : rawArgs) args.add((String) o);
                 refused = checkInputs(s.dir, args);
             }
+            // The demuxer whitelist from the native probe. Without one, fail
+            // closed: the page falls back as for any refused job.
+            String formats = refused == null ? capabilities().optString("formats", "") : "";
+            if (refused == null && formats.isEmpty()) refused = "this ffmpeg did not list its demuxers";
             if (refused != null) {
                 String log = "[analyser] refused to run ffmpeg: " + refused + "\n";
                 emitLog(id, log);
@@ -342,7 +353,7 @@ public class AnrFfmpeg extends Plugin {
                 call.resolve(result(false, -1, "no ffmpeg binary"));
                 return;
             }
-            call.resolve(run(id, s, bin, args, timeout));
+            call.resolve(run(id, s, bin, AnrFfmpegChecks.guardInputs(args, formats), timeout));
         });
     }
 

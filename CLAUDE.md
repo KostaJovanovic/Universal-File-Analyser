@@ -370,6 +370,14 @@ The five things worth knowing before you touch anything:
   test suites), or it is refused at run time on the desktop and the phone.
   `node desktop/tools/check-ffmpeg-args.mjs` runs every argument list in `src/`
   plus the attacks: when you add an ffmpeg call, add its shape there first.
+  After the checks, `guardInputs()` puts `-format_whitelist <safe demuxers>
+  -protocol_whitelist file` before every `-i` and forces `-safe 1`, so ffmpeg
+  ITSELF refuses playlists, manifests, scripts and paths outside the folder,
+  even in a file rewritten after the check. The whitelist comes from the probe
+  (`ffmpeg -demuxers` minus `FOLLOWERS` and devices; an empty one refuses every
+  job, so a probe change needs a `PROBE_VERSION` / Android cache-key bump). A
+  new ffmpeg demuxer that follows references belongs in `FOLLOWERS` in both
+  ports.
 - **The dev/prod host difference is load-bearing.** `analyser://localhost/` in
   dev (so `sw.js` goes pass-through and the dev-only reset buttons show) and
   `analyser://app/` when packaged. Do not "tidy" them into one host.

@@ -1171,6 +1171,7 @@ ipcMain.handle('anr:ffmpeg-exec', async (e, { id, args, timeout }) => {
     return await ffnative.runJob(id, args, {
       bin: caps.path,
       accel: caps.accel,
+      formats: caps.formats,
       timeout: timeout || 0,
       onLog: (message) => post({ id, type: 'log', message }),
       onProgress: (progress) => post({ id, type: 'progress', progress }),

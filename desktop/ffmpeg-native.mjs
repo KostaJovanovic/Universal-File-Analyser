@@ -34,7 +34,7 @@ import { delimiter, join } from 'node:path';
 
 // The encoder families, the argument rewrite and the safety checks live in a
 // pure module, so the Android shell runs the same rules. See its header.
-import { FAMILIES, LIST_PEEK, accelerate, checkArgs, checkInputBytes, inputsOf, isSafeName } from './ffmpeg-accel.mjs';
+import { FAMILIES, LIST_PEEK, accelerate, checkArgs, checkInputBytes, formatWhitelist, guardInputs, inputsOf, isSafeName } from './ffmpeg-accel.mjs';
 export { accelerate };
 
 // ---------------------------------------------------------------------------
@@ -158,6 +158,7 @@ function decoderWorks(bin, f, device, clip) {
 export async function probe(bin) {
   const version = await runCapture(bin, ['-hide_banner', '-version'], 10000);
   const encoders = (await runCapture(bin, ['-hide_banner', '-encoders'], 15000)) || '';
+  const demuxers = (await runCapture(bin, ['-hide_banner', '-demuxers'], 15000)) || '';
 
   const families = [];
   for (const f of FAMILIES) {
@@ -194,6 +195,9 @@ export async function probe(bin) {
     accel: best,
     vendor: best ? best.vendor : null,
     label: best ? best.label : 'software only',
+    // The -format_whitelist every job's inputs get (guardInputs). runJob
+    // refuses every job while this is empty.
+    formats: formatWhitelist(demuxers),
   };
 }
 
@@ -202,8 +206,9 @@ export async function probe(bin) {
 // ---------------------------------------------------------------------------
 
 /** Bump when the probe learns something new, so every cached record re-probes.
- *  2: the separate decode test and the VAAPI family. */
-const PROBE_VERSION = 2;
+ *  2: the separate decode test and the VAAPI family. 3: the demuxer whitelist
+ *  (a record without one would have every job refused). */
+const PROBE_VERSION = 3;
 
 function binKey(bin) {
   try {
@@ -404,11 +409,12 @@ function parseClock(s) {
  *
  * @param {string} id        session id
  * @param {string[]} rawArgs arguments as the page sent them
- * @param {object} opts      { bin, accel, timeout, onLog, onProgress }
+ * @param {object} opts      { bin, accel, formats, timeout, onLog, onProgress };
+ *                           `formats` is the probe's demuxer whitelist
  * @returns {Promise<{ok: boolean, code: number, accelerated: boolean, note: string, log: string}>}
  */
 export async function runJob(id, rawArgs, opts) {
-  const { bin, accel, timeout = 0, onLog, onProgress } = opts;
+  const { bin, accel, formats, timeout = 0, onLog, onProgress } = opts;
   const s = sessionOf(id);
 
   // The page chose these arguments, and the page is not trusted - see CHECKS
@@ -423,15 +429,19 @@ export async function runJob(id, rawArgs, opts) {
   let refused;
   try { refused = checkArgs(rawArgs) || await checkInputs(s, rawArgs); }
   catch (err) { refused = String(err && err.message || err); }
+  // No whitelist, no guard (see guardInputs): fail closed.
+  if (!refused && !formats) refused = 'this ffmpeg did not list its demuxers';
   if (refused) return refuse(refused);
 
   // A retry adds -y: a failed attempt can leave a half-written output behind,
   // and without -y the next attempt would stop at "file exists".
+  // Every try spawns through here, so every try is guarded. The guard goes on
+  // after the checks, never before: checkArgs refuses -protocol_whitelist.
   let attempts = 0;
   const attempt = (args, accelerated, note) => new Promise((resolve) => {
     let child;
     try {
-      child = spawn(bin, ['-hide_banner', '-nostdin', ...(attempts++ ? ['-y'] : []), ...withLinks(s, args)], { cwd: s.dir, windowsHide: true });
+      child = spawn(bin, ['-hide_banner', '-nostdin', ...(attempts++ ? ['-y'] : []), ...guardInputs(withLinks(s, args), formats)], { cwd: s.dir, windowsHide: true });
     } catch (err) {
       return resolve({ ok: false, code: -1, accelerated, note, log: String(err && err.message || err) });
     }

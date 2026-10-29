@@ -67,6 +67,9 @@ is installed, so the app still works without one.
 
 The page still names a file only by a token the app hands it. The app looks the
 token up itself, and FFmpeg only ever reads such a file, never writes to it.
+FFmpeg is also told to open only plain media files in the job's own folder: a
+playlist, a network address or a path outside the folder is refused by FFmpeg
+itself, even if a file changes after the app checked it.
 
 ### Getting FFmpeg
 

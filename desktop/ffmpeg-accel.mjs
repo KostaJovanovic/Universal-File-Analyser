@@ -25,6 +25,10 @@
  *     native plugin on Android (AnrFfmpegChecks.java is the Java port, tested
  *     against the same vectors by AnrFfmpegChecksTest.java). A copy
  *     in the page would protect nothing. Keep the two ports in step.
+ *     guardInputs() is the third part: it hands ffmpeg its own limits (a
+ *     demuxer whitelist and file-only protocols before every -i, -safe 1), so
+ *     ffmpeg refuses playlists and outside paths in what it actually opens,
+ *     even in a file rewritten after the checks ran.
  *
  * None of today's call sites trips a check: desktop/tools/check-ffmpeg-args.mjs
  * runs every argument list in src/ through them, plus the attacks they exist
@@ -319,6 +323,10 @@ export function softwareFallback(args, encoders) {
 //     name with a path in it - is refused. ffmpeg has hundreds of options and
 //     a deny-list cannot model them all; this layer does not have to.
 //
+// Then guardInputs() rewrites what spawns so ffmpeg enforces the same rule on
+// the bytes it really opens: no playlist, manifest or script demuxer, file
+// protocol only, concat's -safe 1. The text checks above are the second layer.
+//
 // Every pattern is ASCII-only on purpose, and so is the Java port
 // (AnrFfmpegChecks.java): no \s, \S, \b, . or $ and no case-insensitive flag,
 // because JavaScript, OpenJDK and Android's ICU regex engine each give those
@@ -382,6 +390,51 @@ const DEVICES = new Set([
   'opengl', 'oss', 'pulse', 'sdl', 'sdl2', 'sndio', 'v4l2', 'video4linux2', 'vfwcap', 'x11grab',
   'xcbgrab', 'xv',
 ]);
+
+/** Demuxers that open OTHER files, addresses or code: playlists, manifests,
+ *  session descriptions, scripts. Never in the whitelist; concat only for an
+ *  input the app names `-f concat`. A new ffmpeg demuxer that follows
+ *  references belongs here, and in AnrFfmpegChecks.java. */
+const FOLLOWERS = new Set(['hls', 'dash', 'imf', 'sdp', 'sap', 'rtsp', 'rtp', 'concat', 'avisynth', 'vapoursynth', 'lavfi']);
+
+/** ` D   name` (ffmpeg 5+, a third column `d` marks a device) and ` D  name`
+ *  (older builds, two columns). */
+const DEMUXER_LINE = /^ D([ .A-Za-z]{1,2}) +([a-z0-9_,]+)/;
+
+/** The `-format_whitelist` value for this binary: every demuxer in its
+ *  `ffmpeg -demuxers` listing except devices and FOLLOWERS. '' when the
+ *  listing could not be read, which the shells treat as "refuse". */
+export function formatWhitelist(listing) {
+  const out = [];
+  for (const line of String(listing || '').split(/\r?\n/)) {
+    const m = DEMUXER_LINE.exec(line);
+    if (!m || m[1].indexOf('d') !== -1) continue;
+    if (m[2].split(',').some((n) => FOLLOWERS.has(n) || DEVICES.has(n))) continue;
+    out.push(m[2]);
+  }
+  return out.join(',');
+}
+
+/** The arguments that spawn: each -i gets the whitelist (plus concat when
+ *  its -f is concat) and file-only protocols, and -safe is forced to 1.
+ *  ffmpeg then enforces this on what it actually opens, so a file rewritten
+ *  after checkInputBytes ran cannot reach outside the folder. Runs AFTER
+ *  checkArgs - checkArgs refuses -protocol_whitelist from the page. */
+export function guardInputs(args, formats) {
+  const out = [];
+  let fmt = null;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '-f' && i + 1 < args.length) fmt = args[i + 1];
+    if (a === '-safe' && i + 1 < args.length) { out.push('-safe', '1'); i++; continue; }
+    if (a === '-i') {
+      out.push('-format_whitelist', fmt === 'concat' ? formats + ',concat' : formats, '-protocol_whitelist', 'file');
+      fmt = null;
+    }
+    out.push(a);
+  }
+  return out;
+}
 
 /** Options that read further arguments or filter text from a file, which this
  *  check would never see. `-/opt file` is FFmpeg 7's general form of it. */
@@ -635,8 +688,9 @@ export function checkInputText(text, isConcat) {
  * Bytes are read one per character (Latin-1), never decoded as UTF-8: decoders
  * disagree on a cut or broken sequence, and any byte above 0x7E is refused in
  * a list anyway. A concat input must fit the peek and hold no NUL. Any other
- * input with a NUL in its first 4 KB is binary - a video, not a list - and a
- * list larger than the peek is refused rather than half-checked.
+ * input with a NUL in its first 4 KB is binary - a video, not a list - unless
+ * it starts like a list, and a list larger than the peek is refused rather
+ * than half-checked.
  *
  * @param {Uint8Array} head      the first bytes of the input
  * @param {number} totalSize     the input's size on disk
@@ -647,12 +701,15 @@ export function checkInputBytes(head, totalSize, isConcat) {
   const n = head.length;
   let nul = -1;
   for (let i = 0; i < n; i++) if (head[i] === 0) { nul = i; break; }
-  if (!isConcat && nul !== -1 && nul < 4096) return null;
+  let text = '';
+  for (let i = 0; i < n; i += 8192) text += String.fromCharCode.apply(null, Array.from(head.subarray(i, Math.min(n, i + 8192))));
+  // A NUL early on means binary - unless the start is a list's, since ffmpeg
+  // reads a playlist with a NUL in it all the same. Such a list goes on to
+  // checkInputText, which refuses the control character.
+  if (!isConcat && nul !== -1 && nul < 4096 && !LIST_HEAD.test(asciiLower(text))) return null;
   const truncated = totalSize > n;
   if (isConcat && truncated) return 'the concat list is larger than ' + LIST_PEEK + ' bytes';
   if (isConcat && nul !== -1) return 'the concat list holds a NUL byte';
-  let text = '';
-  for (let i = 0; i < n; i += 8192) text += String.fromCharCode.apply(null, Array.from(head.subarray(i, Math.min(n, i + 8192))));
   if (!isConcat && truncated && LIST_HEAD.test(asciiLower(text))) {
     return 'a list input is larger than ' + LIST_PEEK + ' bytes';
   }

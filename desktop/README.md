@@ -287,8 +287,10 @@ They refuse:
   `file '<bare session file>'`, a comment or `ffconcat version 1.0`; a playlist
   or manifest line with a path or URL; any control, non-ASCII or lone `\r`
   character in a list; a list larger than the 1 MiB peek; a NUL in a concat
-  list. The reverse in `video.ts` feeds `-f concat -safe 0` a list it wrote
-  itself, and that stays allowed.
+  list, and a NUL in anything that starts like a list (a NUL early on
+  otherwise marks a file as binary media). The reverse in `video.ts` feeds
+  `-f concat -safe 0` a list it wrote itself; the check allows it, and the
+  guard below turns the `0` into `1`.
 
 On top of that deny-list sits an **allow-list**: only the options, `-f`
 formats, filter graphs, codecs and file names the app actually emits pass,
@@ -302,6 +304,23 @@ fallback. An unknown option is refused, and so are `-dump_attachment`,
 names (`.rgb` is scene detection's `-f rawvideo`), never a Windows device name.
 `runJob()` checks the rewritten list too, since that is what spawns, and
 `safeName()` refuses the same names for writeFile/readFile.
+
+**The guard: ffmpeg enforces it too.** A text check reads a file once, and
+ffmpeg reads it again later. A list rewritten in between, a playlist that
+names another playlist, or a NUL that hides a line would all slip past a
+check that only parses. So every try that spawns (hardware, encoder only,
+software) goes through `guardInputs()`: every `-i` gets `-format_whitelist`
+and `-protocol_whitelist file`, and `-safe` is forced to `1`. ffmpeg itself then
+refuses playlists, manifests, scripts and paths outside the folder, on the
+bytes it really opens. The whitelist is every demuxer in the binary's
+`ffmpeg -demuxers` listing except devices and `FOLLOWERS` (`hls`, `dash`,
+`imf`, `sdp`, `sap`, `rtsp`, `rtp`, `concat`, `avisynth`, `vapoursynth`,
+`lavfi`); an `-f concat` input gets `concat` added, and its children are held
+to the same list. The probe builds it once (`formats` in the record), and a
+record without one refuses every job, which is why `PROBE_VERSION` went to 3.
+The guard goes on after `checkArgs()`, never before: `checkArgs()` refuses
+`-protocol_whitelist` from the page. A new ffmpeg demuxer that follows
+references belongs in `FOLLOWERS`, in both ports.
 
 The checks run in the main process, never the page. A refused job resolves with
 code 1 and a log line, which `video.ts` treats as a clean failure. Never return

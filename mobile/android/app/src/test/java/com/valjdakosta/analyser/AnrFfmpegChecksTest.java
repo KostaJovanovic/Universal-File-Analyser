@@ -1,5 +1,6 @@
 package com.valjdakosta.analyser;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -204,6 +205,52 @@ public class AnrFfmpegChecksTest {
         assertNotNull(whole("file 'cafÃ", true));
         assertNotNull(whole("ï»¿ffconcat version 1.0\noption safe 0\n", false));
         assertNull(whole("ï»¿ffconcat version 1.0\nfile 'a.mp4'\n", false));
+        // A NUL used to make any list read as binary, so it skipped the check.
+        assertNotNull(whole("#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:3,\n../secret.mp4\n#EXT-X-ENDLIST\n\u0000", false));
+        assertNotNull(whole("#EXTM3U\n#\u0000\n#EXTINF:3,\n../secret.mp4\n", false));
+        assertNull(whole("\u0000\u0001binary video bytes", false));
+    }
+
+    /** A listing in both column layouts, with followers and a device in it.
+     *  Same fixture as check-ffmpeg-args.mjs. */
+    private static final String LISTING = " D   concat          Virtual concatenation script\n"
+        + " D d dshow           DirectShow capture\n"
+        + " D   hls             Apple HTTP Live Streaming\n"
+        + " D   mov,mp4,m4a,3gp,3g2,mj2 QuickTime / MOV\n"
+        + " D   avisynth        AviSynth script\n"
+        + " D   h264            raw H.264 video\n"
+        + " D  matroska,webm    Matroska / WebM\n";
+    private static final String F = "mov,mp4,m4a,3gp,3g2,mj2,h264,matroska,webm";
+
+    @Test
+    public void formatWhitelist() {
+        assertEquals(F, AnrFfmpegChecks.formatWhitelist(LISTING));
+        assertEquals("", AnrFfmpegChecks.formatWhitelist(""));
+        assertEquals("", AnrFfmpegChecks.formatWhitelist(null));
+    }
+
+    /** Every app shape, as it would spawn: a whitelist and file-only protocols
+     *  right before each -i (plus concat for -f concat), and no -safe 0. */
+    @Test
+    public void guardInputs() {
+        for (List<String> args : APP) {
+            List<String> g = AnrFfmpegChecks.guardInputs(args, F);
+            int inputs = 0, guards = 0;
+            for (String x : args) if (x.equals("-i")) inputs++;
+            for (String x : g) if (x.equals("-format_whitelist")) guards++;
+            assertEquals(args.toString(), inputs, guards);
+            String fmt = null;
+            for (int k = 0; k < g.size(); k++) {
+                if (g.get(k).equals("-f")) fmt = g.get(k + 1);
+                if (!g.get(k).equals("-i")) continue;
+                assertEquals(g.toString(), "-format_whitelist", g.get(k - 4));
+                assertEquals(g.toString(), "concat".equals(fmt) ? F + ",concat" : F, g.get(k - 3));
+                assertEquals(g.toString(), "-protocol_whitelist", g.get(k - 2));
+                assertEquals(g.toString(), "file", g.get(k - 1));
+                fmt = null;
+            }
+            assertFalse(g.toString(), String.join(" ", g).contains("-safe 0"));
+        }
     }
 
     @Test

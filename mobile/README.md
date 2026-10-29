@@ -234,7 +234,12 @@ checks are a Java port of `checkArgs()` / `checkInputText()` in
 `desktop/ffmpeg-accel.mjs`. `AnrFfmpegChecksTest` runs them against the same
 vectors as `desktop/tools/check-ffmpeg-args.mjs`. Change one, change all
 three. A refused job returns code 1, a clean failure, and the bridge does not
-retry it.
+retry it. A job that passes is spawned through `guardInputs()`, as on the
+desktop: every `-i` gets the probe's demuxer whitelist (`formats` in the caps
+record) and `-protocol_whitelist file`, and `-safe` is forced to `1`, so ffmpeg
+itself refuses playlists and paths outside the session folder. An empty
+whitelist refuses every job; the caps cache key starts with the probe's version
+(`2:`) so an older record re-probes.
 
 **Jobs survive the background** through `AnrJobService`, a foreground service.
 A job is a child process, so when Android kills the app in the background to
@@ -275,7 +280,8 @@ plugin takes only what it needs:
 - "Open with" refuses a `content://` URI from the app's own FileProvider, and
   that provider shares only the camera photo folder (`res/xml/file_paths.xml`).
 - The ffmpeg list check reads a list input whole or refuses it: a concat list
-  or playlist over 1 MB, or one with a NUL byte, does not run. At most 16
+  or playlist over 1 MB, or one with a NUL byte, does not run. ffmpeg itself
+  is held to a demuxer whitelist and `-safe 1` on every input. At most 16
   ffmpeg sessions are open at once, and a name with a control character is
   refused.
 - No backup and no device transfer (`allowBackup="false"` plus
