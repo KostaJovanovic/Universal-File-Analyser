@@ -49,41 +49,57 @@ function fileSource(file) {
 // they arrive, so memory is one decompressed chunk whatever the archive's size.
 function gzipSource(file) {
     const reader = file.stream().pipeThrough(new DecompressionStream('gzip')).getReader();
-    let buf = new Uint8Array(0), at = 0, p = 0, done = false;
+    // Unconsumed chunks from `ci`, `at` bytes into chunks[ci]; `have` bytes in all.
+    // A list, not one growing buffer: re-joining everything buffered on every
+    // chunk made a 1 GB read copy terabytes.
+    const EMPTY = new Uint8Array(0);
+    let chunks = [], ci = 0, at = 0, have = 0, p = 0, done = false;
     const pull = async () => {
         const r = await reader.read();
         if (r.done) {
             done = true;
             return false;
         }
-        const rest = buf.subarray(at);
-        const joined = new Uint8Array(rest.length + r.value.length);
-        joined.set(rest);
-        joined.set(r.value, rest.length);
-        buf = joined;
-        at = 0;
+        chunks.push(r.value);
+        have += r.value.length;
         return true;
+    };
+    // Consume k buffered bytes, copying them into `out` when given.
+    const take = (k, out) => {
+        for (let o = 0; k > 0;) {
+            const c = chunks[ci], m = Math.min(k, c.length - at);
+            if (out)
+                out.set(c.subarray(at, at + m), o);
+            o += m;
+            k -= m;
+            at += m;
+            have -= m;
+            if (at === c.length) {
+                chunks[ci++] = EMPTY;
+                at = 0; // let it go now, not when the list empties
+                if (ci === chunks.length) {
+                    chunks = [];
+                    ci = 0;
+                }
+            }
+        }
     };
     return {
         pos: () => p,
         async read(n) {
-            while (buf.length - at < n && !done)
+            while (have < n && !done)
                 await pull();
-            const b = buf.slice(at, at + n);
-            at += b.length;
+            const b = new Uint8Array(Math.min(n, have));
+            take(b.length, b);
             p += b.length;
             return b;
         },
         async skip(n) {
             while (n > 0) {
-                if (at >= buf.length) {
-                    buf = new Uint8Array(0);
-                    at = 0;
-                    if (done || !(await pull()))
-                        return;
-                }
-                const k = Math.min(n, buf.length - at);
-                at += k;
+                if (!have && (done || !(await pull())))
+                    return;
+                const k = Math.min(n, have);
+                take(k);
                 p += k;
                 n -= k;
             }
