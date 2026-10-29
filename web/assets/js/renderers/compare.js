@@ -501,7 +501,7 @@ function buildSection(num, title) {
     return { el: el('section', { class: 'anr-cmp-section' }, [head, body]), body };
 }
 export async function renderCompare(fileA, fileB, resultsEl, deps = {}) {
-    const classify = deps.classify || (() => 'unknown');
+    const classify = deps.classify || (() => ({ kind: 'unknown', sniffedExt: null }));
     const routes = deps.routes || {};
     // One AbortSignal per comparison, handed to the media renderers ({ signal }):
     // loading a new pair aborts the previous one, so its inline object URLs and
@@ -516,10 +516,13 @@ export async function renderCompare(fileA, fileB, resultsEl, deps = {}) {
     // Resolve each file's true kind ONCE (classify may be async - it sniffs the
     // bytes to route a PDF/ZIP/image the same way the normal analyser does). Reused
     // for the type strip, the renderer routing, and the section bucketing below.
-    const [kindA, kindB] = await Promise.all([
+    // `classify` gives { kind, sniffedExt }: the extension read from the bytes, for
+    // a file with none, which the proprietary/comic renderers need to name it.
+    const [resA, resB] = await Promise.all([
         Promise.resolve(classify(fileA)),
         Promise.resolve(classify(fileB)),
     ]);
+    const kindA = resA.kind, kindB = resB.kind;
     // Identity strip (finalised once the hashes resolve, independent of the renders).
     const strip = el('div', { class: 'anr-info anr-cmp-strip' }, stripText(fileA, fileB, kindA, kindB, 'pending'));
     resultsEl.appendChild(strip);
@@ -561,7 +564,7 @@ export async function renderCompare(fileA, fileB, resultsEl, deps = {}) {
     const stagingB = el('div', { class: 'anr-results anr-cmp-staging' });
     resultsEl.appendChild(stagingA);
     resultsEl.appendChild(stagingB);
-    async function renderInto(file, staging, kind) {
+    async function renderInto(file, staging, kind, sniffedExt) {
         const route = routes[kind] || routes.unknown;
         if (!route || typeof route.render !== 'function') {
             staging.appendChild(errorCard('No analyser is available for this file type.'));
@@ -587,6 +590,8 @@ export async function renderCompare(fileA, fileB, resultsEl, deps = {}) {
             opts = { inline: true, compare: true, signal: cmpAbort.signal };
         else if (kind === 'pdf')
             opts = { previewPages: 1 };
+        else if ((kind === 'proprietary' || kind === 'comic') && sniffedExt)
+            opts = sniffedExt; // as handleFile's extOverride
         try {
             await Promise.resolve(route.render(file, staging, opts));
         }
@@ -610,8 +615,8 @@ export async function renderCompare(fileA, fileB, resultsEl, deps = {}) {
     const prevSuppress = window._anrSuppressSuggest;
     window._anrSuppressSuggest = true;
     try {
-        await renderInto(fileA, stagingA, kindA);
-        await renderInto(fileB, stagingB, kindB);
+        await renderInto(fileA, stagingA, kindA, resA.sniffedExt);
+        await renderInto(fileB, stagingB, kindB, resB.sniffedExt);
     }
     finally {
         window._anrSuppressSuggest = prevSuppress;

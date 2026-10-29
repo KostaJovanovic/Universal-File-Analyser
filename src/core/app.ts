@@ -44,7 +44,7 @@
    `npm run build` recompiles.
    ============================================================================ */
 
-const COMMIT_COUNT = 353;
+const COMMIT_COUNT = 354;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -176,8 +176,10 @@ const SNIFF_FIRST = new Set(['bin', 'out']);
 // is what turns a PDF/ZIP/image with no recognised extension into its real kind.
 // classifyFile alone returns 'unknown' for a .pdf, so anything that routes without
 // this (e.g. the compare view) would fall to the hex-dump renderer. Async;
-// returns a kind key.
-async function resolveKind(file: File) {
+// returns the kind key, and the extension sniffed from the bytes when that is
+// what decided it (the proprietary/comic renderers need it, as in handleFile).
+async function resolveKind(file: File): Promise<{ kind: string; sniffedExt: string | null }> {
+  let sniffedExt: string | null = null;
   let kind = classifyFile(file);
   if (kind === 'photo' && fileExt(file.name) === 'raw') {
     try { if (await sniffSpiceRaw(file)) kind = 'spice'; } catch (_) {}
@@ -195,10 +197,10 @@ async function resolveKind(file: File) {
   if (kind === 'unknown' || kind === 'extensionless' || SNIFF_FIRST.has(fileExt(file.name)) || isAppleDoubleName(file.name)) {
     try {
       const r = await resolveByContent(file);
-      if (r.kind && r.kind !== 'unknown') kind = r.kind;
+      if (r.kind && r.kind !== 'unknown') { kind = r.kind; sniffedExt = r.sniffedExt || null; }
     } catch (_) {}
   }
-  return kind;
+  return { kind, sniffedExt };
 }
 
 // Map a sniffed container extension to its browse-as-archive descriptor
@@ -1466,7 +1468,7 @@ window._anrReadableText = isReadableText;
     for (const f of [_cmpA, _cmpB]) {
       if (_cmpCounted.has(f)) continue;
       _cmpCounted.add(f);
-      try { const k = await resolveKind(f); recordAnalysed(fileExt(f.name), k !== 'unknown'); }
+      try { const k = (await resolveKind(f)).kind; recordAnalysed(fileExt(f.name), k !== 'unknown'); }
       catch (_) { recordAnalysed(fileExt(f.name), false); }
     }
     // Drive the shared bottom loading popup while both files analyse and merge - the

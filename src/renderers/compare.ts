@@ -421,7 +421,7 @@ function buildSection(num: ElChild | ElChild[], title: ElChild | ElChild[]) {
 }
 
 export async function renderCompare(fileA: File, fileB: File, resultsEl: HTMLElement, deps: any = {}) {
-  const classify = deps.classify || (() => 'unknown');
+  const classify = deps.classify || (() => ({ kind: 'unknown', sniffedExt: null }));
   const routes = deps.routes || {};
 
   // One AbortSignal per comparison, handed to the media renderers ({ signal }):
@@ -438,10 +438,13 @@ export async function renderCompare(fileA: File, fileB: File, resultsEl: HTMLEle
   // Resolve each file's true kind ONCE (classify may be async - it sniffs the
   // bytes to route a PDF/ZIP/image the same way the normal analyser does). Reused
   // for the type strip, the renderer routing, and the section bucketing below.
-  const [kindA, kindB] = await Promise.all([
+  // `classify` gives { kind, sniffedExt }: the extension read from the bytes, for
+  // a file with none, which the proprietary/comic renderers need to name it.
+  const [resA, resB] = await Promise.all([
     Promise.resolve(classify(fileA)),
     Promise.resolve(classify(fileB)),
   ]);
+  const kindA: string = resA.kind, kindB: string = resB.kind;
 
   // Identity strip (finalised once the hashes resolve, independent of the renders).
   const strip = el('div', { class: 'anr-info anr-cmp-strip' }, stripText(fileA, fileB, kindA, kindB, 'pending'));
@@ -489,7 +492,7 @@ export async function renderCompare(fileA: File, fileB: File, resultsEl: HTMLEle
   resultsEl.appendChild(stagingA);
   resultsEl.appendChild(stagingB);
 
-  async function renderInto(file: File, staging: HTMLDivElement, kind: string) {
+  async function renderInto(file: File, staging: HTMLDivElement, kind: string, sniffedExt: string | null) {
     const route = routes[kind] || routes.unknown;
     if (!route || typeof route.render !== 'function') {
       staging.appendChild(errorCard('No analyser is available for this file type.'));
@@ -510,6 +513,7 @@ export async function renderCompare(fileA: File, fileB: File, resultsEl: HTMLEle
     let opts;
     if (MEDIA.has(kind)) opts = { inline: true, compare: true, signal: cmpAbort.signal };
     else if (kind === 'pdf') opts = { previewPages: 1 };
+    else if ((kind === 'proprietary' || kind === 'comic') && sniffedExt) opts = sniffedExt;   // as handleFile's extOverride
     try { await Promise.resolve(route.render(file, staging, opts)); }
     catch (e) { staging.appendChild(errorCard('Could not analyse ' + file.name + ': ' + (e && e.message ? e.message : e))); }
     // The same forensic + browse-as-archive extras the normal single-file pipeline
@@ -527,8 +531,8 @@ export async function renderCompare(fileA: File, fileB: File, resultsEl: HTMLEle
   const prevSuppress = window._anrSuppressSuggest;
   window._anrSuppressSuggest = true;
   try {
-    await renderInto(fileA, stagingA, kindA);
-    await renderInto(fileB, stagingB, kindB);
+    await renderInto(fileA, stagingA, kindA, resA.sniffedExt);
+    await renderInto(fileB, stagingB, kindB, resB.sniffedExt);
   } finally {
     window._anrSuppressSuggest = prevSuppress;
   }
