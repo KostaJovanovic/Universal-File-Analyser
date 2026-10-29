@@ -85,6 +85,9 @@ export function flushAnalyticsQueue() {
 }
 
 export function recordAnalysed(ext: string, supported: boolean) {
+  // The Worker files anything past 16 characters as "(other)"; 17 keeps that
+  // answer while a "x.<5000 chars>" name can't bloat the request or the queue.
+  ext = String(ext || '').slice(0, 17);
   try {
     // Offline: skip the doomed request and bank it straight away.
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
