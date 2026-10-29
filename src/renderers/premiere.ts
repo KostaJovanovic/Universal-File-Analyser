@@ -25,6 +25,7 @@
 
 import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, escHtml as esc, type ElChild } from '../core/util.js';
 import { TIMELINE_TICKS_MAX, PREMIERE_COMPRESSED_MAX, PREMIERE_XML_MAX } from '../core/limits.js';
+import { gunzip } from '../core/binutil.js';
 
 const TPS = 254016000000;                  // Premiere ticks per second (fixed timebase)
 const MAX_COMPRESSED = PREMIERE_COMPRESSED_MAX;   // don't buffer absurdly large projects whole
@@ -48,18 +49,9 @@ async function inflate(file: File) {
     const t = await file.slice(0, MAX_XML).text();
     return t.includes('<PremiereData') || t.includes('<Project') ? t : null;
   }
-  if (typeof DecompressionStream === 'undefined') return null;
-  const blob = file.slice(0, Math.min(file.size, MAX_COMPRESSED));
-  const reader = blob.stream().pipeThrough(new DecompressionStream('gzip')).getReader();
-  const dec = new TextDecoder();
-  let xml = '';
-  while (xml.length < MAX_XML) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    xml += dec.decode(value, { stream: true });
-  }
-  reader.cancel().catch(() => {});
-  return xml;
+  // partial: a project past MAX_XML (or cut short) still parses as far as it goes.
+  const bytes = await gunzip(file.slice(0, Math.min(file.size, MAX_COMPRESSED)), MAX_XML, { partial: true });
+  return bytes ? new TextDecoder().decode(bytes) : null;
 }
 
 // Walk the object graph into a flat model: sequences, each with tracks of clips.
