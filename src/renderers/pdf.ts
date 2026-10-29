@@ -260,29 +260,33 @@ async function writeLongPng(pdf: any, sizes: { w: number; h: number }[], s: numb
       const x0 = Math.floor((W - pw) / 2);
       let pg: any = null;
       try { pg = await pdf.getPage(i + 1); } catch (_) { /* unreadable page - left white */ }
-      for (let y = 0; y < ph; y += bandRows) {
-        if (isCancelled()) throw new Error('cancelled');
-        const rows = Math.min(bandRows, ph - y);
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, W, bandRows);
-        if (pg) {
-          const task = pg.render({ canvasContext: ctx, viewport: pg.getViewport({ scale: s, offsetX: x0, offsetY: -y }) });
-          onTask(task);
-          try { await task.promise; } finally { onTask(null); }
+      // finally: a cancel or an error mid-page still releases the page's resources.
+      try {
+        for (let y = 0; y < ph; y += bandRows) {
           if (isCancelled()) throw new Error('cancelled');
+          const rows = Math.min(bandRows, ph - y);
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, W, bandRows);
+          if (pg) {
+            const task = pg.render({ canvasContext: ctx, viewport: pg.getViewport({ scale: s, offsetX: x0, offsetY: -y }) });
+            onTask(task);
+            try { await task.promise; } finally { onTask(null); }
+            if (isCancelled()) throw new Error('cancelled');
+          }
+          const px = ctx.getImageData(0, 0, W, rows).data;
+          const out = new Uint8Array(rows * line);
+          for (let r = 0, o = 0, p = 0; r < rows; r++) {
+            out[o++] = 0;   // filter type None
+            for (let x = 0; x < W; x++, p += 4) { out[o++] = px[p]; out[o++] = px[p + 1]; out[o++] = px[p + 2]; }
+          }
+          await writer.write(out);
+          rowsDone += rows;
+          onProgress(rowsDone / H, i + 1);
         }
-        const px = ctx.getImageData(0, 0, W, rows).data;
-        const out = new Uint8Array(rows * line);
-        for (let r = 0, o = 0, p = 0; r < rows; r++) {
-          out[o++] = 0;   // filter type None
-          for (let x = 0; x < W; x++, p += 4) { out[o++] = px[p]; out[o++] = px[p + 1]; out[o++] = px[p + 2]; }
-        }
-        await writer.write(out);
-        rowsDone += rows;
-        onProgress(rowsDone / H, i + 1);
+      } finally {
+        if (pg) { try { pg.cleanup(); } catch (_) { /* ignore */ } }
       }
-      if (pg) { try { pg.cleanup(); } catch (_) { /* ignore */ } }
     }
     await writer.close();
     await reading;
