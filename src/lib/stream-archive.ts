@@ -18,7 +18,7 @@
    extractArchive() tries these first and only falls back to libarchive for
    everything else (RAR, 7z, CAB, xz/zstd/bzip2 tarballs, UDF-only discs). */
 
-import { DECOMP_OUTPUT_MAX, LIST_ENTRIES_MAX } from '../core/limits.js';
+import { DECOMP_OUTPUT_MAX, LIST_ENTRIES_MAX, ISO_DIR_BYTES_MAX } from '../core/limits.js';
 
 export interface StreamEntry {
   name: string;
@@ -258,11 +258,14 @@ export async function openIso(file: Blob): Promise<StreamHandle | null> {
     return name;
   };
 
+  let dirBytes = 0;
   const walk = async (extent: number, size: number, prefix: string, depth: number) => {
-    if (depth > 64 || seen.has(extent) || out.length >= LIST_ENTRIES_MAX) return;
+    // Folders count against the cap as well as files, and their reads against a
+    // byte budget, or a disc of empty folders could be walked for hours.
+    if (depth > 64 || seen.has(extent) || out.length + seen.size >= LIST_ENTRIES_MAX) return;
     seen.add(extent);
     const start = extent * SECTOR;
-    if (start + size > file.size || size > 64 * 1024 * 1024) return;
+    if (start + size > file.size || size > 64 * 1024 * 1024 || (dirBytes += size) > ISO_DIR_BYTES_MAX) return;
     const b = new Uint8Array(await file.slice(start, start + size).arrayBuffer());
     const v = dv(b);
     let p = 0;

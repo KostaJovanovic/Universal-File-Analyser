@@ -247,6 +247,10 @@ export const XCF_PIXEL_BUDGET = byTier({ high: 200e6, mid: 100e6, low: 50e6 });
 
 // ---- preview / enumeration / timeout caps ----
 export const ROW_PREVIEW = 500;            // rows shown in a table preview
+// ISO 9660 directory records read in one listing, all folders together
+// (lib/stream-archive.ts). A real disc's directories total a few MB; a forged one
+// can declare thousands of 64 MB folders over the same bytes.
+export const ISO_DIR_BYTES_MAX = 256 * MB;
 export const LIST_ENTRIES_MAX = 100000;    // max filesystem/archive entries enumerated
 export const PREVIEW_EDGE = 1024;          // decoded-preview longest edge (px)
 export const EMBEDDED_IMAGES_MAX = 24;     // pictures listed in an "embedded images" grid
