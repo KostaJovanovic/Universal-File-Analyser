@@ -43,7 +43,7 @@
    on every build, so an edit there is silently lost. src/ edits do nothing until
    `npm run build` recompiles.
    ============================================================================ */
-const COMMIT_COUNT = 354;
+const COMMIT_COUNT = 355;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -2099,6 +2099,10 @@ function boot() {
         }
         // ----- Clipboard paste (window listener, added once) -----
         window.addEventListener('paste', (e) => {
+            // A paste into the search box or any other field belongs to that field.
+            const t = e.target;
+            if (t && t.closest && t.closest('input, textarea, [contenteditable]'))
+                return;
             const items = e.clipboardData && e.clipboardData.items;
             if (!items)
                 return;

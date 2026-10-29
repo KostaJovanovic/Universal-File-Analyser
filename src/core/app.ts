@@ -44,7 +44,7 @@
    `npm run build` recompiles.
    ============================================================================ */
 
-const COMMIT_COUNT = 354;
+const COMMIT_COUNT = 355;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1954,6 +1954,9 @@ window._anrReadableText = isReadableText;
 
   // ----- Clipboard paste (window listener, added once) -----
     window.addEventListener('paste', (e) => {
+      // A paste into the search box or any other field belongs to that field.
+      const t = e.target as Element | null;
+      if (t && t.closest && t.closest('input, textarea, [contenteditable]')) return;
       const items = e.clipboardData && e.clipboardData.items;
       if (!items) return;
       // The FIRST pasted file only - one analysis per paste, as for a drop (a
