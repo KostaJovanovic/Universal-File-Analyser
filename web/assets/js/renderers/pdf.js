@@ -425,12 +425,12 @@ export async function renderPdf(file, resultsEl, opts = {}) {
     // without this the page previews arrive late and push the lot downwards.
     const thumbSkeleton = pagePreviewSkeleton({ count: initialPages, note: 'Rendering pages…' });
     resultsEl.appendChild(thumbSkeleton);
-    // A 3D PDF's model (PRC / U3D), under the page previews. pdf3d.js reads the
-    // raw file alongside everything below and leaves the slot empty when there is
-    // none; the compare view gets its readout but no viewer.
+    // A 3D PDF's model (PRC / U3D), under the page previews. pdf3d.js asks pdf.js
+    // for a 3D annotation first and reads the raw file only when there is one;
+    // otherwise the slot stays empty. The compare view gets the stored figures only.
     const slot3d = el('div');
     resultsEl.appendChild(slot3d);
-    import('./pdf3d.js').then((m) => m.renderPdf3d(file, slot3d, { viewer: !opts.previewPages })).catch(() => { });
+    import('./pdf3d.js').then((m) => m.renderPdf3d(file, slot3d, { viewer: !opts.previewPages, pdf })).catch(() => { });
     // --- Info card ---
     const infoCard = el('div', { class: 'anr-card' });
     infoCard.appendChild(el('h3', {}, 'PDF document'));

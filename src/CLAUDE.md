@@ -186,9 +186,12 @@ js/
       Android/Google CAMM, container GPS) into a map + IMU timeline
     pdf.js · paged.js · djvu.js — PDF (pdf.js), paginated docs, DjVu scans
     pdf3d.js      — the model inside a 3D PDF, lazy-imported by pdf.js into a
-                    slot under the page previews. Finds every /Subtype /PRC or
+                    slot under the page previews. Only when pdf.js reports a
+                    3D/RichMedia annotation on the first 20 pages (pdf.ts passes
+                    its open document), it finds every /Subtype /PRC or
                     /U3D stream by raw byte scan (pdf.js only draws the poster
-                    page), and decides which is CURRENT from the 3D annotations'
+                    page; the scan stops when the slot leaves the page, and at
+                    PDF_3D_HITS_MAX hits), and decides which is CURRENT from the 3D annotations'
                     /3DD references - inflating object streams to find them, and
                     taking the last definition of each object in file order,
                     because an incremental save (Acrobat adding a cross-section)

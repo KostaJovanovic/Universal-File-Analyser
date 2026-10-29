@@ -163,10 +163,13 @@ direction, its up and its projection, but the model is framed whole rather
 than at the stored zoom; the view's background, lighting, render mode and
 part visibility are not applied, a cross-section's outline and plane are not
 drawn, and only the first cross-section of a view is used. U3D models are found and
-offered as a download, but not drawn yet. Encrypted PDFs are not read. PDFs
-past a size set per memory tier in `limits.js` are not searched for a model,
-and a very large model stops at a per-tier triangle limit (the card says so).
-In `/compare` the 3D card shows its figures without the viewer.
+offered as a download, but not drawn yet. Encrypted PDFs are not read. The
+file is only searched for a model when one of its first 20 pages has a 3D
+annotation, so an ordinary PDF costs no extra read. PDFs past a size set per
+memory tier in `limits.js` are not searched for a model, and a very large
+model stops at a per-tier triangle limit (the card says so).
+In `/compare` the 3D card shows the model's format and size, without decoding
+or drawing it.
 
 ### Shared page-preview presentation (Word/ODF/spreadsheet/presentation text)
 

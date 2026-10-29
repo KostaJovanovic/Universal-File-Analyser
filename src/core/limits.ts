@@ -285,6 +285,11 @@ export const PRC_TRI_MAX = byTier({ high: 6e6, mid: 3e6, low: 1e6 });
 export const PDF_3D_OBJ_INDEX_MAX = 200000;
 // Named views read per model (a PDF lists them in /VA; real ones hold a dozen).
 export const PDF_3D_VIEWS_MAX = 64;
+// 3D model, ObjStm and /3DD hits a 3D PDF scan collects; past it the scan stops
+// with what it has. Real files have a handful of models and at most a few
+// thousand object streams; this only stops a crafted file growing the lists
+// (and the reads and inflates each hit costs) without bound.
+export const PDF_3D_HITS_MAX = 20000;
 // The photo LSB bit-plane panel renders one full-size plane per channel. Past this
 // pixel count the planes are computed on a downscaled copy instead, since a
 // 100 MP photo would otherwise hold several 400 MB canvases and data URLs at once.

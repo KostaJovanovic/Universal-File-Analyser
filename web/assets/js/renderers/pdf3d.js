@@ -17,12 +17,10 @@
    Lazy-imported by pdf.ts into a slot under the page previews. Draws nothing
    when the PDF holds no 3D stream. */
 import { el, row, rowHelp, fmtBytes, errorCard, downloadBlob } from '../core/util.js';
-import { inflate } from '../core/binutil.js';
-import { SCAN_SMALL, PDF_3D_SCAN_MAX, PRC_STREAM_MAX, PDF_3D_OBJ_INDEX_MAX, PDF_3D_VIEWS_MAX } from '../core/limits.js';
+import { inflate, latin1 } from '../core/binutil.js';
+import { SCAN_SMALL, PDF_3D_SCAN_MAX, PRC_STREAM_MAX, PDF_3D_OBJ_INDEX_MAX, PDF_3D_VIEWS_MAX, PDF_3D_HITS_MAX } from '../core/limits.js';
 import { makeResult, renderPartsViewer } from './stl.js';
 import { decodePrc } from '../lib/nanoprc-loader.js';
-const latin1 = new TextDecoder('latin1');
-const tick = () => new Promise((r) => setTimeout(r, 0));
 // The last "N G obj" header in `text` before `idx`, or -1.
 function objBefore(text, idx) {
     const re = /(\d+)\s+\d+\s+obj\b/g;
@@ -39,7 +37,7 @@ function objBefore(text, idx) {
 async function findEndstream(file, start, max) {
     const STEP = 1024 * 1024;
     for (let off = start; off < file.size && off - start <= max; off += STEP - 16) {
-        const t = latin1.decode(new Uint8Array(await file.slice(off, off + STEP).arrayBuffer()));
+        const t = latin1(new Uint8Array(await file.slice(off, off + STEP).arrayBuffer()));
         const i = t.indexOf('endstream');
         if (i !== -1) {
             let end = off + i;
@@ -54,7 +52,7 @@ async function findEndstream(file, start, max) {
 // Read the stream object whose dictionary contains the hit at `hit`.
 async function streamAt(file, hit) {
     const from = Math.max(0, hit - 8192);
-    const t = latin1.decode(new Uint8Array(await file.slice(from, hit + 16384).arrayBuffer()));
+    const t = latin1(new Uint8Array(await file.slice(from, hit + 16384).arrayBuffer()));
     const rel = hit - from;
     const head = objBefore(t, rel);
     if (head.obj < 0)
@@ -72,7 +70,7 @@ async function streamAt(file, hit) {
     const lm = /\/Length\s+(\d+)(\s+\d+\s+R)?/.exec(dict);
     if (lm && !lm[2]) {
         // Trust a direct /Length only if "endstream" follows it.
-        const after = latin1.decode(new Uint8Array(await file.slice(dataStart + +lm[1], dataStart + +lm[1] + 64).arrayBuffer()));
+        const after = latin1(new Uint8Array(await file.slice(dataStart + +lm[1], dataStart + +lm[1] + 64).arrayBuffer()));
         if (/^\s*endstream/.test(after))
             length = +lm[1];
     }
@@ -98,9 +96,12 @@ async function streamBytes(file, s, maxOut) {
         return 'it inflates past this device\'s ' + fmtBytes(maxOut) + ' limit';
     return out && out.length ? out : 'its compressed data could not be inflated';
 }
-async function scanPdf(file) {
+// `slot` is the card's place on the page: once it is gone (another file was
+// dropped) the scan stops with nothing.
+async function scanPdf(file, slot) {
     const OVERLAP = 4096;
-    const seen = new Set();
+    const none = { models: [], encrypted: false, obj: async () => null };
+    let hits = 0;
     const hits3d = [];
     const objStms = [];
     const refs = [];
@@ -110,22 +111,28 @@ async function scanPdf(file) {
     const inStm = new Map();
     let encrypted = false;
     const re = /\/Subtype\s*\/(PRC|U3D)\b|\/Type\s*\/ObjStm\b|\/3DD\s*(\d+)\s+\d+\s+R|\/Encrypt\b|(\d+)\s+\d+\s+obj\b/g;
-    for (let off = 0; off < file.size; off += SCAN_SMALL) {
-        const t = latin1.decode(new Uint8Array(await file.slice(off, off + SCAN_SMALL + OVERLAP).arrayBuffer()));
+    let prev = ''; // the byte before this window, to spot a header cut in two
+    scan: for (let off = 0; off < file.size; off += SCAN_SMALL) {
+        if (!slot.isConnected)
+            return none;
+        const t = latin1(new Uint8Array(await file.slice(off, off + SCAN_SMALL + OVERLAP).arrayBuffer()));
         re.lastIndex = 0;
         let m;
         while ((m = re.exec(t))) {
+            // The next window starts here and finds this hit again, whole.
+            if (m.index >= SCAN_SMALL)
+                break;
             const abs = off + m.index;
-            // Headers skip `seen`: setting the same position twice is harmless, and a
-            // PDF has far more objects than 3D hits.
             if (m[3]) {
+                // "12 0 obj" split at the window edge reads as object 2 here.
+                if (m.index === 0 && /\d/.test(prev))
+                    continue;
                 if (plainAt.size < PDF_3D_OBJ_INDEX_MAX || plainAt.has(+m[3]))
                     plainAt.set(+m[3], abs);
                 continue;
             }
-            if (seen.has(abs))
-                continue; // found again in the overlap
-            seen.add(abs);
+            if (++hits > PDF_3D_HITS_MAX)
+                break scan;
             if (m[1])
                 hits3d.push({ pos: abs, format: m[1] });
             else if (m[2]) {
@@ -137,15 +144,17 @@ async function scanPdf(file) {
             else
                 objStms.push(abs);
         }
-        await tick();
+        prev = t[SCAN_SMALL - 1] || '';
     }
     if (!hits3d.length)
-        return { models: [], encrypted, obj: async () => null };
+        return none;
     // Annotations held in compressed object streams. The header is "objnum
     // offset" pairs, offsets counted from /First, so a hit maps to the object
     // whose offset is the largest one not past it.
     if (!encrypted) {
         for (const pos of objStms) {
+            if (!slot.isConnected)
+                return none;
             const s = await streamAt(file, pos).catch(() => null);
             if (!s)
                 continue;
@@ -153,7 +162,7 @@ async function scanPdf(file) {
             const bytes = await streamBytes(file, s, SCAN_SMALL);
             if (typeof bytes === 'string' || !first)
                 continue;
-            const text = latin1.decode(bytes);
+            const text = latin1(bytes);
             const index = stmIndex(text, first);
             for (const [n] of index)
                 if (inStm.size < PDF_3D_OBJ_INDEX_MAX || inStm.has(n))
@@ -204,7 +213,7 @@ async function scanPdf(file) {
                 const bytes = s && first ? await streamBytes(file, s, SCAN_SMALL) : '';
                 if (typeof bytes === 'string')
                     return null;
-                const text = latin1.decode(bytes);
+                const text = latin1(bytes);
                 return { text, first, index: stmIndex(text, first) };
             })();
             stmCache.set(pos, p);
@@ -225,7 +234,7 @@ async function scanPdf(file) {
         }
         if (plain == null)
             return null;
-        const t = latin1.decode(new Uint8Array(await file.slice(plain, plain + 65536).arrayBuffer()));
+        const t = latin1(new Uint8Array(await file.slice(plain, plain + 65536).arrayBuffer()));
         const body = t.replace(/^\d+\s+\d+\s+obj\b/, '');
         const end = body.search(/\bendobj\b|\bstream\r?\n/);
         return end < 0 ? null : body.slice(0, end);
@@ -371,8 +380,6 @@ function stlBlob(mesh) {
 function meshParts(mesh) {
     const groups = new Map();
     for (const p of mesh.parts) {
-        if (!p.triangles)
-            continue;
         const k = p.name.trim() || 'Unnamed part';
         const g = groups.get(k);
         if (g)
@@ -399,12 +406,28 @@ const STATUS_LABEL = {
     replaced: 'replaced by a later save',
     orphaned: 'no longer shown (no 3D view points at it)',
 };
+// Whether pdf.js reports a 3D annotation (or PDF 2.0's RichMedia, which can
+// hold one), hidden ones included. Unsupported types still come back with
+// their /Subtype, and pdf.js has already loaded these pages for pdf.ts.
+// shortcut: looks at the first 20 pages only (3D views sit on page 1 in practice); widen if a file is found with it later.
+async function has3dAnnot(pdf) {
+    for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
+        const anns = await pdf.getPage(i).then((p) => p.getAnnotations({ intent: 'any' })).catch(() => null);
+        if (Array.isArray(anns) && anns.some((a) => a && (a.subtype === '3D' || a.subtype === 'RichMedia')))
+            return true;
+    }
+    return false;
+}
+/** `pdf` is pdf.ts's open document: without a 3D annotation in it, the file is
+    not scanned at all. */
 export async function renderPdf3d(file, slot, opts = {}) {
     if (file.size > PDF_3D_SCAN_MAX)
         return;
+    if (opts.pdf && !(await has3dAnnot(opts.pdf)))
+        return;
     let scan;
     try {
-        scan = await scanPdf(file);
+        scan = await scanPdf(file, slot);
     }
     catch (_) {
         return;
@@ -463,6 +486,8 @@ export async function renderPdf3d(file, slot, opts = {}) {
         if (multi)
             tbl.appendChild(row('Model', `object ${m.obj} - ${STATUS_LABEL[m.status]}`));
         tbl.appendChild(row(m.filters.length ? 'Stored size' : 'Size', fmtBytes(m.length) + (m.filters.length ? ' (' + m.filters.join(', ') + ')' : '')));
+        if (opts.viewer === false)
+            return; // /compare: the stored figures only; decoding is the expensive part
         viewSlot.appendChild(el('div', { class: 'anr-info' }, 'Decoding the 3D model…'));
         const r = await decode(m);
         if (!viewSlot.isConnected || turn !== showing)
@@ -492,8 +517,6 @@ export async function renderPdf3d(file, slot, opts = {}) {
             return;
         }
         btnRow.appendChild(el('button', { type: 'button', class: 'anr-btn', onclick: () => downloadBlob(objName(m) + '.stl', stlBlob(mesh)) }, 'Save as STL'));
-        if (opts.viewer === false)
-            return;
         const views = await readViews(m, scan.obj).catch(() => []);
         if (!viewSlot.isConnected || turn !== showing)
             return;
