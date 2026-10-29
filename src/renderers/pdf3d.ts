@@ -444,22 +444,21 @@ export async function renderPdf3d(file: File, slot: HTMLElement, opts: { viewer?
   const current = models.filter((m) => m.status === 'current');
   const multi = models.length > 1;
   const objName = (m: Model3d) => multi ? `${stem}_obj${m.obj}` : stem;
-  const decoded = new Map<Model3d, Promise<{ bytes: Uint8Array; mesh: PrcMesh | null; error?: string }>>();
+  type Decoded = { bytes: Uint8Array; mesh: PrcMesh | null; error?: string };
+  let last: { m: Model3d; p: Promise<Decoded> } | null = null;
 
+  // One model at a time: each holds up to PRC_STREAM_MAX of bytes plus its mesh.
+  // The promise never rejects, so the placeholder is always replaced.
   function decode(m: Model3d) {
-    let p = decoded.get(m);
-    if (!p) {
-      p = (async () => {
-        const bytes = await streamBytes(file, m, PRC_STREAM_MAX);
-        if (typeof bytes === 'string') return { bytes: new Uint8Array(0), mesh: null, error: 'The model could not be read: ' + bytes + '.' };
-        if (m.format !== 'PRC') return { bytes, mesh: null };
-        try { return { bytes, mesh: await decodePrc(bytes) }; } catch (e) {
-          return { bytes, mesh: null, error: 'The PRC model could not be decoded: ' + (e && e.message) + '.' };
-        }
-      })();
-      decoded.set(m, p);
-    }
-    return p;
+    if (last?.m !== m) last = { m, p: (async (): Promise<Decoded> => {
+      const bytes = await streamBytes(file, m, PRC_STREAM_MAX);
+      if (typeof bytes === 'string') return { bytes: new Uint8Array(0), mesh: null, error: 'The model could not be read: ' + bytes + '.' };
+      if (m.format !== 'PRC') return { bytes, mesh: null };
+      try { return { bytes, mesh: await decodePrc(bytes) }; } catch (e) {
+        return { bytes, mesh: null, error: 'The PRC model could not be decoded: ' + (e && e.message) + '.' };
+      }
+    })().catch((e) => ({ bytes: new Uint8Array(0), mesh: null, error: 'The model could not be read: ' + (e && e.message) + '.' })) };
+    return last.p;
   }
 
   let showing = 0;

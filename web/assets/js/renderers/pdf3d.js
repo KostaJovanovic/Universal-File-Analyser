@@ -455,26 +455,25 @@ export async function renderPdf3d(file, slot, opts = {}) {
     const current = models.filter((m) => m.status === 'current');
     const multi = models.length > 1;
     const objName = (m) => multi ? `${stem}_obj${m.obj}` : stem;
-    const decoded = new Map();
+    let last = null;
+    // One model at a time: each holds up to PRC_STREAM_MAX of bytes plus its mesh.
+    // The promise never rejects, so the placeholder is always replaced.
     function decode(m) {
-        let p = decoded.get(m);
-        if (!p) {
-            p = (async () => {
-                const bytes = await streamBytes(file, m, PRC_STREAM_MAX);
-                if (typeof bytes === 'string')
-                    return { bytes: new Uint8Array(0), mesh: null, error: 'The model could not be read: ' + bytes + '.' };
-                if (m.format !== 'PRC')
-                    return { bytes, mesh: null };
-                try {
-                    return { bytes, mesh: await decodePrc(bytes) };
-                }
-                catch (e) {
-                    return { bytes, mesh: null, error: 'The PRC model could not be decoded: ' + (e && e.message) + '.' };
-                }
-            })();
-            decoded.set(m, p);
-        }
-        return p;
+        if (last?.m !== m)
+            last = { m, p: (async () => {
+                    const bytes = await streamBytes(file, m, PRC_STREAM_MAX);
+                    if (typeof bytes === 'string')
+                        return { bytes: new Uint8Array(0), mesh: null, error: 'The model could not be read: ' + bytes + '.' };
+                    if (m.format !== 'PRC')
+                        return { bytes, mesh: null };
+                    try {
+                        return { bytes, mesh: await decodePrc(bytes) };
+                    }
+                    catch (e) {
+                        return { bytes, mesh: null, error: 'The PRC model could not be decoded: ' + (e && e.message) + '.' };
+                    }
+                })().catch((e) => ({ bytes: new Uint8Array(0), mesh: null, error: 'The model could not be read: ' + (e && e.message) + '.' })) };
+        return last.p;
     }
     let showing = 0;
     async function show(m) {
