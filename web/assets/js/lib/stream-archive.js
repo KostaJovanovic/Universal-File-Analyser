@@ -187,7 +187,7 @@ async function walkTar(src, limit) {
                         if (m[1] === 'path')
                             paxPath = m[2];
                         else if (m[1] === 'size')
-                            paxSize = Number(m[2]) || 0;
+                            paxSize = Math.max(0, Number(m[2]) || 0); // a negative size would step the reader backwards
                     }
                 }
             }

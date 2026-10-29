@@ -162,7 +162,7 @@ async function walkTar(src: SeqSource, limit: number) {
           const text = utf8.decode(meta);
           for (const m of text.matchAll(/\d+ ([^=\n]+)=([^\n]*)\n/g)) {
             if (m[1] === 'path') paxPath = m[2];
-            else if (m[1] === 'size') paxSize = Number(m[2]) || 0;
+            else if (m[1] === 'size') paxSize = Math.max(0, Number(m[2]) || 0);   // a negative size would step the reader backwards
           }
         }
       } else {
