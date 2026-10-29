@@ -10,7 +10,7 @@ import { EXT_VARIANTS, detectVariant } from '../core/formats.js';
 import { parseNrbf } from '../lib/nrbf.js';
 import { safe } from '../parsers/parser-util.js';
 import { buildEmbeddedImagesCard, rgbaToPngBlob } from './embedded-images.js';
-import { PREVIEW_CARVE_MAX, DECOMP_ENTRY_MAX, READABLE_TEXT_MAX, READABLE_DEPTH_MAX, SQLITE_ENGINE_MAX } from '../core/limits.js';
+import { PREVIEW_CARVE_MAX, DECOMP_ENTRY_MAX, READABLE_TEXT_MAX, READABLE_DEPTH_MAX, SQLITE_ENGINE_MAX, CAPCUT_DRAFT_MAX } from '../core/limits.js';
 // ---------- helpers ----------
 function extFromName(name) {
     const dot = name.lastIndexOf('.');
@@ -4009,7 +4009,7 @@ function buildCapcutFields(obj) {
 async function parseCapcut(file) {
     try {
         // CapCut drafts can be large; cap the read but they are usually a few MB.
-        if (file.size > 64 * 1024 * 1024)
+        if (file.size > CAPCUT_DRAFT_MAX)
             return null;
         const text = await file.text();
         // Fast pre-check before the (potentially big) JSON.parse: must mention the

@@ -5,7 +5,7 @@
 import { makePlayer, renderAudio } from './audio.js';
 import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
 import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob, inlineLoader, yieldToMain, setPlayerFill, desktopFileToken } from '../core/util.js';
-import { HASH_FILE_MAX, AVI_EXTRACT_MAX, FFMPEG_MEMFS_MAX, NATIVE_FFMPEG_CHUNK, FFMPEG_REMUX_MAX, TS_SEGMENT_BYTES, FFMPEG_FPS_PROBE_HEAD, PCM_COMPANION_MAX, VIDEO_AUDIO_DECODE_MAX, PCM_DECODE_SAMPLES_MAX, VIDEO_SHA_AUTO_MAX, VIDEO_SHA_BUTTON_MAX, MP4_MOOV_READ_MAX, MP4_AUDIO_READ_BATCH, MP4_AUDIO_READ_GAP, MP4_SAMPLE_TABLE_MAX, isLowMemoryDevice } from '../core/limits.js';
+import { HASH_FILE_MAX, AVI_EXTRACT_MAX, FFMPEG_MEMFS_MAX, SCENE_AUTO_MAX, NATIVE_FFMPEG_CHUNK, FFMPEG_REMUX_MAX, TS_SEGMENT_BYTES, FFMPEG_FPS_PROBE_HEAD, PCM_COMPANION_MAX, VIDEO_AUDIO_DECODE_MAX, PCM_DECODE_SAMPLES_MAX, VIDEO_SHA_AUTO_MAX, VIDEO_SHA_BUTTON_MAX, MP4_MOOV_READ_MAX, MP4_AUDIO_READ_BATCH, MP4_AUDIO_READ_GAP, MP4_SAMPLE_TABLE_MAX, isLowMemoryDevice } from '../core/limits.js';
 import { parseAviHeader, openAviData, encodeWav } from './video-avi.js';
 import { appendSonyGyroCard } from './sony-rtmd.js';
 import { registerSyncedVideo, registerExclusiveVideo, setAudioCompanion } from '../core/video-sync.js';
@@ -5190,7 +5190,7 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
         };
         // Large videos don't auto-run scene detection (it scrubs the player and can be
         // slow); offer a manual trigger instead.
-        const bigVideo = file.size > 150 * 1024 * 1024 || (isFinite(dur) && dur > 600);
+        const bigVideo = file.size > SCENE_AUTO_MAX || (isFinite(dur) && dur > 600);
         if (bigVideo) {
             sceneBadge.remove();
             sceneOut.innerHTML = '';

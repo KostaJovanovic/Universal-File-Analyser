@@ -596,4 +596,21 @@ export const ODF_SPACE_RUN_MAX = 1000;
 // stopped. PostScript is a programming language - `{} loop` never ends.
 export const GS_INPUT_MAX = 64 * MB;
 export const GS_TIMEOUT_MS = 30_000;
+// Thresholds that used to sit inline in their renderers, gathered here unchanged.
+// Audio samples handed to the DSP worker in one transfer (renderers/audio-dsp-client.js).
+export const DSP_TRANSFER_MAX = 256 * MB;
+// A compressed audio file with no usable duration estimate defers its full
+// decode past this size (renderers/audio.js).
+export const AUDIO_DEFER_RAW_MAX = 100 * MB;
+// CapCut draft JSON read whole to identify it (renderers/proprietary.js).
+export const CAPCUT_DRAFT_MAX = 64 * MB;
+// An MP4 moov box read whole for the GOP / structure cards (renderers/video-forensics.js).
+export const MOOV_BOX_MAX = 64 * MB;
+// Past this size (or 10 minutes) scene detection waits for a click (renderers/video.js).
+export const SCENE_AUTO_MAX = 150 * MB;
+// Premiere .prproj: gzip read whole, and the inflated XML held and parsed (renderers/premiere.js).
+export const PREMIERE_COMPRESSED_MAX = 64 * MB;
+export const PREMIERE_XML_MAX = 96 * MB;
+// Head of an unknown file read to try it as JSON / XML text (renderers/unknown.js).
+export const TEXT_SNIFF_READ = 500 * 1024;
 //# sourceMappingURL=limits.js.map

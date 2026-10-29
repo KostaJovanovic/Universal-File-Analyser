@@ -17,7 +17,7 @@ import { reverseAudioBufferToWav } from './media-reverse.js';
 // download prompt read tier sizes from here. The heavy client is still lazy.
 import { MDX_MODELS } from '../lib/mdx-model.js';
 import { DFN_MODEL } from '../lib/dfn-model.js';
-import { FFMPEG_MEMFS_MAX, PCM_DECODE_SAMPLES_MAX, SCAN_SMALL } from '../core/limits.js';
+import { FFMPEG_MEMFS_MAX, PCM_DECODE_SAMPLES_MAX, SCAN_SMALL, AUDIO_DEFER_RAW_MAX } from '../core/limits.js';
 // Re-exported so existing importers (e.g. video.js) can keep importing the
 // transport from this module.
 export { makePlayer };
@@ -4059,7 +4059,7 @@ function shouldDeferDecode(file, header) {
         return est > DECODE_DEFER_BYTES;
     // No reliable estimate - fall back to a raw-size guard so a very large unknown
     // compressed file still defers rather than trying to decode blind.
-    return file.size > 100 * MB;
+    return file.size > AUDIO_DEFER_RAW_MAX;
 }
 // Read a file into one ArrayBuffer in chunks, reporting progress and handing the
 // thread back between chunks - so a large read fuels a real progress bar and doesn't

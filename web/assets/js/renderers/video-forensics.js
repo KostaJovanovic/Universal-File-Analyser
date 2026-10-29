@@ -16,7 +16,7 @@
    - a GOP / keyframe / per-second bitrate map from the sample tables, plus a
      VFR-vs-CFR verdict and true average frame rate - all with zero decoding. */
 import { parseHevcSps, parseAvcSps, stripEpb, COLOUR_PRIMARIES, TRANSFER_CHARS, MATRIX_COEFFS } from './video-bitstream.js';
-import { MP4_SAMPLE_TABLE_MAX, MP4_SECONDS_MAX } from '../core/limits.js';
+import { MP4_SAMPLE_TABLE_MAX, MP4_SECONDS_MAX, MOOV_BOX_MAX } from '../core/limits.js';
 // ---------- low-level box reading ----------
 function fourcc(view, p) {
     return String.fromCharCode(view.getUint8(p), view.getUint8(p + 1), view.getUint8(p + 2), view.getUint8(p + 3));
@@ -544,7 +544,7 @@ export async function analyzeMp4Structure(file) {
             catch (_) { /* leave as a leaf */ }
         }
     }
-    if (!moovBox || moovBox.size > 64 * 1024 * 1024)
+    if (!moovBox || moovBox.size > MOOV_BOX_MAX)
         return result;
     // Full track + GOP parse from the moov buffer (buffer-local coordinates).
     let moovView;
@@ -917,7 +917,7 @@ export async function analyzeBitstream(file) {
         return null;
     }
     const moovBox = top.find((b) => b.type === 'moov');
-    if (!moovBox || moovBox.size > 64 * 1024 * 1024)
+    if (!moovBox || moovBox.size > MOOV_BOX_MAX)
         return null;
     let view;
     try {

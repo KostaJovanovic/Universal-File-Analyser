@@ -11,7 +11,7 @@ import { EXT_VARIANTS, detectVariant } from '../core/formats.js';
 import { parseNrbf } from '../lib/nrbf.js';
 import { safe } from '../parsers/parser-util.js';
 import { buildEmbeddedImagesCard, rgbaToPngBlob, type EmbeddedImageItem } from './embedded-images.js';
-import { PREVIEW_CARVE_MAX, DECOMP_ENTRY_MAX, READABLE_TEXT_MAX, READABLE_DEPTH_MAX, SQLITE_ENGINE_MAX } from '../core/limits.js';
+import { PREVIEW_CARVE_MAX, DECOMP_ENTRY_MAX, READABLE_TEXT_MAX, READABLE_DEPTH_MAX, SQLITE_ENGINE_MAX, CAPCUT_DRAFT_MAX } from '../core/limits.js';
 import type { PeSection } from '../lib/pe-packer.js';
 import type { sqliteAnalysis } from '../lib/sqlite.js';
 type SqliteAnalysisResult = NonNullable<Awaited<ReturnType<typeof sqliteAnalysis>>>;
@@ -3397,7 +3397,7 @@ function buildCapcutFields(obj: any) {
 async function parseCapcut(file: File) {
   try {
     // CapCut drafts can be large; cap the read but they are usually a few MB.
-    if (file.size > 64 * 1024 * 1024) return null;
+    if (file.size > CAPCUT_DRAFT_MAX) return null;
     const text = await file.text();
     // Fast pre-check before the (potentially big) JSON.parse: must mention the
     // distinctive keys. Avoids parsing every ordinary JSON file fully.

@@ -24,11 +24,11 @@
    Effects viewer, then show the project metadata and the clips it references. */
 
 import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, type ElChild } from '../core/util.js';
-import { TIMELINE_TICKS_MAX } from '../core/limits.js';
+import { TIMELINE_TICKS_MAX, PREMIERE_COMPRESSED_MAX, PREMIERE_XML_MAX } from '../core/limits.js';
 
 const TPS = 254016000000;                  // Premiere ticks per second (fixed timebase)
-const MAX_COMPRESSED = 64 * 1024 * 1024;   // don't buffer absurdly large projects whole
-const MAX_XML = 96 * 1024 * 1024;          // cap the inflated XML we hold / parse
+const MAX_COMPRESSED = PREMIERE_COMPRESSED_MAX;   // don't buffer absurdly large projects whole
+const MAX_XML = PREMIERE_XML_MAX;                 // cap the inflated XML we hold / parse
 const MAX_CLIP_S = 24 * 3600;              // ignore clips with runaway / sentinel out-points
 
 const esc = (s: string) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m] as string));

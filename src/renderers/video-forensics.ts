@@ -20,7 +20,7 @@ import {
   parseHevcSps, parseAvcSps, stripEpb,
   COLOUR_PRIMARIES, TRANSFER_CHARS, MATRIX_COEFFS
 } from './video-bitstream.js';
-import { MP4_SAMPLE_TABLE_MAX, MP4_SECONDS_MAX } from '../core/limits.js';
+import { MP4_SAMPLE_TABLE_MAX, MP4_SECONDS_MAX, MOOV_BOX_MAX } from '../core/limits.js';
 
 // ---------- low-level box reading ----------
 
@@ -562,7 +562,7 @@ export async function analyzeMp4Structure(file: File) {
     }
   }
 
-  if (!moovBox || moovBox.size > 64 * 1024 * 1024) return result;
+  if (!moovBox || moovBox.size > MOOV_BOX_MAX) return result;
 
   // Full track + GOP parse from the moov buffer (buffer-local coordinates).
   let moovView;
@@ -859,7 +859,7 @@ export async function analyzeBitstream(file: File) {
   let top;
   try { top = await topLevelBoxes(file); } catch (_) { return null; }
   const moovBox = top.find((b) => b.type === 'moov');
-  if (!moovBox || moovBox.size > 64 * 1024 * 1024) return null;
+  if (!moovBox || moovBox.size > MOOV_BOX_MAX) return null;
 
   let view;
   try { view = new DataView(await file.slice(moovBox.start, moovBox.start + moovBox.size).arrayBuffer()); } catch (_) { return null; }

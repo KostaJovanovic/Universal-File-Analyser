@@ -12,11 +12,13 @@
    module workers, a blocked worker script, or a file too large to copy all
    degrade to the old behaviour rather than losing the readout. */
 
+import { DSP_TRANSFER_MAX } from '../core/limits.js';
+
 // Ceiling on the PCM copy handed to the worker. 256 MB covers roughly twelve
 // minutes of 44.1 kHz stereo, so ordinary music and voice notes offload; a
 // feature-length recording stays on the inline path rather than putting a
 // second copy of a gigabyte-scale buffer in memory.
-const MAX_DSP_TRANSFER_BYTES = 256 * 1024 * 1024;
+const MAX_DSP_TRANSFER_BYTES = DSP_TRANSFER_MAX;
 
 let worker: Worker|null = null;
 function getWorker() {

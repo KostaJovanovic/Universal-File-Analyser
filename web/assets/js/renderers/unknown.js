@@ -7,7 +7,7 @@
    below it), and `binary` for a .bin - a recognised container that happens to
    name no format, so the byte-level readout it already produces IS the analysis
    rather than a fallback. */
-import { SCAN_MED, SCAN_LARGE, JSON_STATS_NODES_MAX } from '../core/limits.js';
+import { SCAN_MED, SCAN_LARGE, JSON_STATS_NODES_MAX, TEXT_SNIFF_READ } from '../core/limits.js';
 import { EXT_VARIANTS, detectVariant } from '../core/formats.js';
 import { el, row, rowHelp, h3help, fmtBytes, fileExt, errorCard } from '../core/util.js';
 import { entropyProfile, hexBytes } from '../core/binutil.js';
@@ -427,7 +427,7 @@ export async function renderUnknown(file, resultsEl, opts) {
     if (showJson) {
         // --- JSON pretty printer ---
         try {
-            const jsonText = await file.slice(0, 500 * 1024).text();
+            const jsonText = await file.slice(0, TEXT_SNIFF_READ).text();
             osintText = jsonText;
             let parsed;
             let parseError = null;
@@ -494,7 +494,7 @@ export async function renderUnknown(file, resultsEl, opts) {
     if (showXml || (guess === 'XML document' && !showJson)) {
         // --- XML pretty printer ---
         try {
-            const xmlText = await file.slice(0, 500 * 1024).text();
+            const xmlText = await file.slice(0, TEXT_SNIFF_READ).text();
             osintText = xmlText;
             card.appendChild(el('div', { class: 'anr-readout-section' }, 'Text preview (first 2 kB)'));
             const previewOut = el('pre', { class: 'anr-ocr-text' }, '');
