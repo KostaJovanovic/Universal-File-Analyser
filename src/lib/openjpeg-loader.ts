@@ -166,7 +166,10 @@ export async function decodeJ2K(bytes: Uint8Array) {
     }
 
     return { width, height, components, bitDepth, rgba };
-  } catch (_) {
+  } catch (e) {
+    // An abort inside the WASM (out of memory on a hostile file) leaves the
+    // runtime dead: drop it, so the next image gets a fresh instance.
+    if (e instanceof WebAssembly.RuntimeError || /abort/i.test(String(e && e.message || e))) _modulePromise = null;
     return null;
   } finally {
     // Free the Emscripten-side instance if the build exposes a destructor.
