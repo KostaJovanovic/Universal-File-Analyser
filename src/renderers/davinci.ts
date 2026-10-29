@@ -27,13 +27,12 @@
 
    There is no public spec; this was reverse-engineered from real .drp files. */
 
-import { el, row, rowHelp, h3help, fmtBytes, integrityCard, loadScript, type ElChild } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, loadScript, escHtml as esc, type ElChild } from '../core/util.js';
 import { TIMELINE_TICKS_MAX } from '../core/limits.js';
 
 const MAX_ENTRY = 64 * 1024 * 1024;        // cap any single inflated XML we hold
 const STD_FPS = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60];
 
-const esc = (s: string) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m] as string));
 const num = (s: string) => { const n = Number(s); return isFinite(n) ? n : 0; };
 const basename = (p: string) => (p ? p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1) : '');
 

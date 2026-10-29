@@ -9,14 +9,9 @@
    text (not executed), and link/image URLs with a javascript: (or other
    script-y) scheme are neutralised. */
 
-import { el, row, rowHelp, fileExt, errorCard } from '../core/util.js';
+import { el, row, rowHelp, fileExt, errorCard, escHtml as esc } from '../core/util.js';
 import { paginateFlow, openDocLightbox } from './paged.js';
 
-// Quotes too: file text must never be able to close an attribute the inline
-// pass writes around it.
-function esc(s: string) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 function escAttr(s: string) {
   return esc(s).replace(/"/g, '&quot;');
 }

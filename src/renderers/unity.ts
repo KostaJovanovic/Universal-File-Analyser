@@ -18,10 +18,9 @@
    on-device; nothing is uploaded. */
 
 import { SCAN_MED } from '../core/limits.js';
-import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, escHtml as esc } from '../core/util.js';
 
 const MAX_BYTES = SCAN_MED;
-const esc = (s: string) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m] as string));
 
 // Split a Unity-YAML text into its object documents.
 function splitDocs(text: string) {

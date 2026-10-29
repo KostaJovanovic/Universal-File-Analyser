@@ -22,13 +22,12 @@
    project files. We rebuild each sequence's timeline - one row per track, each
    clip drawn as a bar positioned by its in / out point - mirroring the After
    Effects viewer, then show the project metadata and the clips it references. */
-import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, escHtml as esc } from '../core/util.js';
 import { TIMELINE_TICKS_MAX, PREMIERE_COMPRESSED_MAX, PREMIERE_XML_MAX } from '../core/limits.js';
 const TPS = 254016000000; // Premiere ticks per second (fixed timebase)
 const MAX_COMPRESSED = PREMIERE_COMPRESSED_MAX; // don't buffer absurdly large projects whole
 const MAX_XML = PREMIERE_XML_MAX; // cap the inflated XML we hold / parse
 const MAX_CLIP_S = 24 * 3600; // ignore clips with runaway / sentinel out-points
-const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
 const num = (s) => { const n = Number(s); return isFinite(n) ? n : 0; };
 const basename = (p) => (p ? p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1) : '');
 // --- tiny DOM helpers (the model nests deeply; CSS selectors get unwieldy) ---

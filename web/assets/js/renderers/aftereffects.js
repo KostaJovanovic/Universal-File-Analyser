@@ -23,7 +23,7 @@
    (xmp:CreatorTool, the xmpMM history's softwareAgent entries, and the
    create/modify dates), which is where the "made in After Effects 20XX" comes
    from. We show the project metadata, then each composition's layer timeline. */
-import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, escHtml as esc } from '../core/util.js';
 import { TIMELINE_TICKS_MAX } from '../core/limits.js';
 const SCALE = 30720; // default ticks-per-second; the real value is per-comp (cdta u32@8)
 const MAX_READ = 256 * 1024 * 1024; // guard: don't buffer absurdly large projects whole
@@ -50,7 +50,6 @@ const TYPE_GLYPH = { text: 'T', shape: '◆', camera: '◉', light: '☼', audio
 const TYPE_NAME = { text: 'text', shape: 'shape', camera: 'camera', light: 'light',
     audio: 'audio', image: 'image', video: 'video', precomp: 'pre-comp', solid: 'solid', footage: 'footage' };
 const typeGlyph = (l) => TYPE_GLYPH[l.ltype] || '';
-const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
 // Walk the RIFX chunk tree, collecting compositions (with layers), an id->name
 // map for footage/precomp resolution, the set of composition item ids, and the
 // names of footage items.

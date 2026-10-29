@@ -8,13 +8,8 @@
    Safety: all text is HTML-escaped, raw inline HTML is rendered as literal
    text (not executed), and link/image URLs with a javascript: (or other
    script-y) scheme are neutralised. */
-import { el, row, rowHelp, fileExt, errorCard } from '../core/util.js';
+import { el, row, rowHelp, fileExt, errorCard, escHtml as esc } from '../core/util.js';
 import { paginateFlow, openDocLightbox } from './paged.js';
-// Quotes too: file text must never be able to close an attribute the inline
-// pass writes around it.
-function esc(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 function escAttr(s) {
     return esc(s).replace(/"/g, '&quot;');
 }

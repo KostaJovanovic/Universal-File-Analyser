@@ -14,10 +14,9 @@
    Both degrade to a clear message if the file can't be drawn (e.g. binary DXF
    or an empty model), and always show the raw counts.
    ============================================================================ */
-import { el, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, buildReadout, fmtBytes, integrityCard, errorCard, escHtml as esc } from '../core/util.js';
 import { HASH_FILE_MAX } from '../core/limits.js';
 import { inflate } from '../core/binutil.js';
-function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function parseXml(text) { const d = new DOMParser().parseFromString(text, 'application/xml'); return d.querySelector('parsererror') ? null : d; }
 // Wrap an SVG markup string in a scrollable, pannable preview stage.
 function svgCard(title, svgMarkup) {

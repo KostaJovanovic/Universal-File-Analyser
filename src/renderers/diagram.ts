@@ -15,11 +15,10 @@
    or an empty model), and always show the raw counts.
    ============================================================================ */
 
-import { el, buildReadout, fmtBytes, integrityCard, errorCard, type ElChild } from '../core/util.js';
+import { el, buildReadout, fmtBytes, integrityCard, errorCard, escHtml as esc, type ElChild } from '../core/util.js';
 import { HASH_FILE_MAX } from '../core/limits.js';
 import { inflate } from '../core/binutil.js';
 
-function esc(s: string) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function parseXml(text: string) { const d = new DOMParser().parseFromString(text, 'application/xml'); return d.querySelector('parsererror') ? null : d; }
 
 // Wrap an SVG markup string in a scrollable, pannable preview stage.

@@ -26,11 +26,10 @@
    metadata, the media pool bins and the source files the timelines reference.
 
    There is no public spec; this was reverse-engineered from real .drp files. */
-import { el, row, rowHelp, h3help, fmtBytes, integrityCard, loadScript } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, loadScript, escHtml as esc } from '../core/util.js';
 import { TIMELINE_TICKS_MAX } from '../core/limits.js';
 const MAX_ENTRY = 64 * 1024 * 1024; // cap any single inflated XML we hold
 const STD_FPS = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60];
-const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
 const num = (s) => { const n = Number(s); return isFinite(n) ? n : 0; };
 const basename = (p) => (p ? p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1) : '');
 // --- tiny DOM helpers (direct-child only - clips nest sibling clips/media refs) ---

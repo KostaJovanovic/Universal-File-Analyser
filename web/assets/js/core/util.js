@@ -314,6 +314,11 @@ export function emptyFileWarning(file) {
 }
 // Standard inline error notice (styled by .anr-error). The canonical way for a
 // renderer to report that a file couldn't be read or parsed.
+// Text into markup a renderer builds as a string (timeline SVGs, diagrams, the
+// Markdown preview): quotes too, so the text can't close an attribute around it.
+export function escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 export function errorCard(message) {
     return el('div', { class: 'anr-error' }, message);
 }
