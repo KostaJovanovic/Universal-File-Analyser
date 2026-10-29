@@ -52,14 +52,6 @@ async function zstdDecompress(bytes, maxOut = DECOMP_OUTPUT_MAX) {
     }
 }
 // ---------- small shared helpers ----------
-// Read up to `n` bytes from the file (for parses needing more than the 4KB head).
-async function readBytes(file, n) {
-    return await readSlice(file, 0, n);
-}
-// Read a byte range from the file.
-async function readRange(file, start, end) {
-    return new Uint8Array(await file.slice(start, Math.min(end, file.size)).arrayBuffer());
-}
 // Build a file-list section node from rows of {name, size, extra}.
 function fileListSection(title, items, open) {
     const lines = items.map((it) => {
@@ -100,7 +92,7 @@ function tarStr(bytes, off, len) {
 async function parseTar(file) {
     // Cap the scan so a giant tar doesn't pull the whole thing into memory.
     const cap = Math.min(file.size, 8 * 1024 * 1024);
-    const b = await readBytes(file, cap);
+    const b = await readSlice(file, 0, cap);
     // Validate: ustar magic, or a plausible octal size field at offset 124.
     const hasUstar = ascii(b, 257, 5) === 'ustar';
     if (!hasUstar) {
@@ -175,7 +167,7 @@ async function parseTar(file) {
 // ---------- GZIP (.gz, .tgz) ----------
 const GZIP_OS = ['FAT', 'Amiga', 'VMS', 'Unix', 'VM/CMS', 'Atari', 'HPFS', 'Macintosh', 'Z-System', 'CP/M', 'TOPS-20', 'NTFS', 'QDOS', 'Acorn'];
 async function parseGzip(file, ext) {
-    const b = await readBytes(file, 4096);
+    const b = await readSlice(file, 0, 4096);
     if (!(b[0] === 0x1f && b[1] === 0x8b && b[2] === 0x08))
         return null;
     const flags = b[3];
@@ -208,7 +200,7 @@ async function parseGzip(file, ext) {
     // ISIZE = uncompressed size mod 2^32 (last 4 bytes of the stream).
     let isize = null;
     try {
-        const tail = await readRange(file, file.size - 4, file.size);
+        const tail = await readSlice(file, file.size - 4, 4);
         isize = (tail[0] | (tail[1] << 8) | (tail[2] << 16) | (tail[3] << 24)) >>> 0;
     }
     catch (_) { }
@@ -286,7 +278,7 @@ async function parseXz(head, file, ext) {
             out['Note'] = 'inner stream not expanded (over ' + fmtBytes(MAX_IN) + ' compressed)';
             return out;
         }
-        const comp = await readBytes(file, file.size);
+        const comp = await readSlice(file, 0, file.size);
         const decoded = await xzDecompress(comp);
         if (!decoded || !decoded.length)
             return out;
@@ -331,7 +323,7 @@ async function parseZstd(head, file, ext) {
             out['Note'] = 'inner stream not expanded (over ' + fmtBytes(MAX_IN) + ' compressed)';
             return out;
         }
-        const comp = await readBytes(file, file.size);
+        const comp = await readSlice(file, 0, file.size);
         const decoded = await zstdDecompress(comp);
         if (!decoded || !decoded.length)
             return out;
@@ -497,7 +489,7 @@ function octalAscii(s) { const v = parseInt(s, 8); return isNaN(v) ? 0 : v; }
 function hexAscii(s) { const v = parseInt(s, 16); return isNaN(v) ? 0 : v; }
 async function parseCpio(file) {
     const cap = Math.min(file.size, 8 * 1024 * 1024);
-    const b = await readBytes(file, cap);
+    const b = await readSlice(file, 0, cap);
     let variant = null;
     if (b[0] === 0x30 && b[1] === 0x37 && b[2] === 0x30 && b[3] === 0x37 && b[4] === 0x30 && b[5] === 0x37)
         variant = 'odc'; // 070707
@@ -570,7 +562,7 @@ async function parseCpio(file) {
 // ---------- ar (.a) ----------
 // Also the backbone of .deb. Returns parsed members + buffer.
 async function parseArMembers(file, maxBytes = 16 * 1024 * 1024) {
-    const b = await readBytes(file, maxBytes);
+    const b = await readSlice(file, 0, maxBytes);
     // Magic "!<arch>\n" and the per-member terminator "`\n" both end in a control
     // byte, so they must be checked raw - the shared ascii() helper drops bytes < 32.
     const AR_MAGIC = [0x21, 0x3c, 0x61, 0x72, 0x63, 0x68, 0x3e, 0x0a]; // !<arch>\n
@@ -822,7 +814,7 @@ const RPM_TAGS = {
     1016: 'Group', 1020: 'URL', 1022: 'Arch', 1021: 'OS', 1006: 'BuildTime',
 };
 async function parseRpm(file) {
-    const b = await readBytes(file, 65536);
+    const b = await readSlice(file, 0, 65536);
     // Lead magic ED AB EE DB
     if (!(b[0] === 0xed && b[1] === 0xab && b[2] === 0xee && b[3] === 0xdb))
         return null;
@@ -901,7 +893,7 @@ async function parseRpm(file) {
 // ---------- gem (.gem) ----------
 async function parseGem(file) {
     const cap = Math.min(file.size, 4 * 1024 * 1024);
-    const b = await readBytes(file, cap);
+    const b = await readSlice(file, 0, cap);
     // A .gem is itself an (uncompressed) tar containing metadata.gz + data.tar.gz.
     if (ascii(b, 257, 5) !== 'ustar' && octal(b, 124, 12) <= 0)
         return null;
@@ -937,7 +929,7 @@ async function parseGem(file) {
 }
 // ---------- cab (.cab) ----------
 async function parseCab(file) {
-    const b = await readBytes(file, 65536);
+    const b = await readSlice(file, 0, 65536);
     if (ascii(b, 0, 4) !== 'MSCF')
         return null;
     const r = new Reader(b, true); // little-endian
@@ -1086,7 +1078,7 @@ async function parseNupkg(file) {
 }
 // .crx (Chrome extension) - Cr24 header then inner ZIP.
 async function parseCrx(file) {
-    const head = await readBytes(file, 16);
+    const head = await readSlice(file, 0, 16);
     if (ascii(head, 0, 4) !== 'Cr24')
         return null;
     const r = new Reader(head, true);
@@ -1223,7 +1215,7 @@ function walkAsarTree(node, prefix, out, sizeRef) {
     }
 }
 async function parseAsar(file) {
-    const head = await readBytes(file, 16);
+    const head = await readSlice(file, 0, 16);
     const r = new Reader(head, true);
     // Pickle: u32 headerSize wrapper. Layout: [u32=4][u32 jsonStrSize][u32 jsonDataSize][u32 actualLen][json...]
     const p1 = r.u32(); // should be 4
@@ -1236,7 +1228,7 @@ async function parseAsar(file) {
         return null;
     let json;
     try {
-        const jb = await readRange(file, 16, 16 + jsonLen);
+        const jb = await readSlice(file, 16, jsonLen);
         json = JSON.parse(utf8(jb));
     }
     catch (_) {
@@ -1260,7 +1252,7 @@ async function parseAsar(file) {
                 // File data starts after the header pickle, whose size the first pickle
                 // states (Pickle pads the JSON string to 4 bytes, i.e. 16 + align4(jsonLen)).
                 const baseOff = 8 + headerObjSize;
-                const pj = jsonTry(utf8(await readRange(file, baseOff + Number(info.offset), baseOff + Number(info.offset) + info.size)));
+                const pj = jsonTry(utf8(await readSlice(file, baseOff + Number(info.offset), info.size)));
                 if (pj) {
                     if (pj.name)
                         out['App name'] = pj.name;
@@ -1455,7 +1447,7 @@ async function parseConda(file) {
 // XML table of contents. Apple's flat .pkg / .mpkg installers are XAR archives.
 // The TOC lists every member (path, type, sizes, checksums, timestamps).
 async function parseXar(file, ext) {
-    const head = await readBytes(file, 28);
+    const head = await readSlice(file, 0, 28);
     // Magic: 'xar!' (0x78 0x61 0x72 0x21).
     if (ascii(head, 0, 4) !== 'xar!')
         return null;
@@ -1477,7 +1469,7 @@ async function parseXar(file, ext) {
     // The TOC is a zlib stream starting right after the header.
     try {
         if (tocComp > 0 && tocComp <= 32 * 1024 * 1024) {
-            const tocBytes = await readRange(file, headerSize, headerSize + tocComp);
+            const tocBytes = await readSlice(file, headerSize, tocComp);
             const xmlBytes = await inflate(tocBytes, 'deflate', SCAN_MED); // TOC XML is KBs-MBs; a bomb stops here
             if (xmlBytes && xmlBytes.length) {
                 const xml = utf8(xmlBytes);
@@ -1579,7 +1571,7 @@ async function parsePkg(file, ext, head) {
 // real header worth decoding (the LZO body itself is not decompressed natively).
 const LZOP_METHOD = { 1: 'LZO1X-1', 2: 'LZO1X-1(15)', 3: 'LZO1X-999' };
 async function parseLzo(file) {
-    const b = await readBytes(file, 4096);
+    const b = await readSlice(file, 0, 4096);
     // Magic: 89 4C 5A 4F 00 0D 0A 1A 0A
     if (!matchMagic(b, [0x89, 0x4c, 0x5a, 0x4f, 0x00, 0x0d, 0x0a, 0x1a, 0x0a]))
         return null;
@@ -1636,7 +1628,7 @@ async function parseLzo(file) {
 // metadata decode we don't do here, so this is a rich header read.
 const SQFS_COMP = { 1: 'gzip', 2: 'lzma', 3: 'lzo', 4: 'xz', 5: 'lz4', 6: 'zstd' };
 async function parseSnap(file, ext) {
-    const b = await readBytes(file, 96);
+    const b = await readSlice(file, 0, 96);
     let little;
     if (b[0] === 0x68 && b[1] === 0x73 && b[2] === 0x71 && b[3] === 0x73)
         little = true; // 'hsqs' LE
@@ -1693,7 +1685,7 @@ function parseSit(head) {
 // container (magic 'flatpak' appears in the metadata). No native decoder, so we
 // confirm the ref/metadata strings where visible and otherwise identify.
 async function parseFlatpak(file) {
-    const b = await readBytes(file, 65536);
+    const b = await readSlice(file, 0, 65536);
     // Bundles embed plain-text metadata; surface the app/runtime ref if present.
     const text = latin1(b);
     const out = { 'Format': 'Flatpak bundle (OSTree static delta)' };
@@ -1745,7 +1737,7 @@ function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
 // bundle (Unity, custom). Detect the container and, when it is a ZIP, show the
 // member tree; otherwise surface the leading signature.
 async function parseObb(file) {
-    const head = await readBytes(file, 16);
+    const head = await readSlice(file, 0, 16);
     const out = { 'Format': 'Android APK expansion file (OBB)', 'Size': fmtBytes(file.size) };
     if (head[0] === 0x50 && head[1] === 0x4B) {
         out['Container'] = 'ZIP';
