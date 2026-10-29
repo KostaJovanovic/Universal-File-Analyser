@@ -215,7 +215,14 @@ export function setupHeaderFx() {
   const mark = document.querySelector<HTMLElement>('.site-mark');
   const title = document.querySelector<HTMLElement>('.site-title');
   const byline = document.querySelector<HTMLElement>('.site-byline');
-  if (!mark || !title || !byline || mark._anrFx) return;
+  if (!mark || !title || !byline) {
+    // A page with no header: stop the last one's touch re-sweep, which would
+    // otherwise keep animating detached letters every 8 s.
+    const holder = setupHeaderFx as unknown as { _iv?: ReturnType<typeof setInterval> | 0 };
+    if (holder._iv) { clearInterval(holder._iv); holder._iv = 0; }
+    return;
+  }
+  if (mark._anrFx) return;
   const letters = splitFrozen([{ el: title, weight: 600 }, { el: byline, weight: 700 }]);
   bindSweepFx(mark, letters, { ivHolder: setupHeaderFx });
 }

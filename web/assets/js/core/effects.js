@@ -222,7 +222,17 @@ export function setupHeaderFx() {
     const mark = document.querySelector('.site-mark');
     const title = document.querySelector('.site-title');
     const byline = document.querySelector('.site-byline');
-    if (!mark || !title || !byline || mark._anrFx)
+    if (!mark || !title || !byline) {
+        // A page with no header: stop the last one's touch re-sweep, which would
+        // otherwise keep animating detached letters every 8 s.
+        const holder = setupHeaderFx;
+        if (holder._iv) {
+            clearInterval(holder._iv);
+            holder._iv = 0;
+        }
+        return;
+    }
+    if (mark._anrFx)
         return;
     const letters = splitFrozen([{ el: title, weight: 600 }, { el: byline, weight: 700 }]);
     bindSweepFx(mark, letters, { ivHolder: setupHeaderFx });
