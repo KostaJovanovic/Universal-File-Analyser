@@ -13,8 +13,8 @@
 
    The .raw extension is shared with camera RAW photos, so app.js content-sniffs
    the header (sniffSpiceRaw) before routing a file here. */
-import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard } from '../core/util.js';
-import { SPICE_VARS_MAX } from '../core/limits.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, tooLargeCard } from '../core/util.js';
+import { SPICE_VARS_MAX, WALL_PARSE } from '../core/limits.js';
 // --- header signature: "Title:" then "Plotname:" / "Flags:", in ASCII or UTF-16LE.
 export async function sniffSpiceRaw(file) {
     try {
@@ -424,6 +424,10 @@ function niceTicks(lo, hi, target) {
 export async function renderSpiceRaw(file, resultsEl) {
     resultsEl.hidden = false;
     resultsEl.innerHTML = '';
+    if (file.size > WALL_PARSE) {
+        resultsEl.appendChild(tooLargeCard(WALL_PARSE));
+        return;
+    }
     resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));
     let parsed = null;
     try {

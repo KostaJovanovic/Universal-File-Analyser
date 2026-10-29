@@ -317,6 +317,11 @@ export function emptyFileWarning(file) {
 export function errorCard(message) {
     return el('div', { class: 'anr-error' }, message);
 }
+// For a renderer that must hold the whole file in memory, past its wall
+// (usually WALL_PARSE from limits.js).
+export function tooLargeCard(limit) {
+    return errorCard('This file is larger than ' + fmtBytes(limit) + ' and was not opened - it has to be read into memory whole, which is more than this device can spare.');
+}
 // Monospace ASCII progress bar - the [////////        ] look used everywhere a
 // loading bar appears. Two modes share the same glyphs so every loader reads the
 // same way:

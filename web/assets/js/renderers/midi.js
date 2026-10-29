@@ -2,7 +2,8 @@
    Hand-written SMF parser: header, tempo map, time/key signature, track names,
    General MIDI instruments (program changes), note counts, and duration.
    No playback - MIDI is a score, not sampled audio (browsers can't decode it). */
-import { el, row, rowHelp, h3help, errorCard, fmtBytes } from '../core/util.js';
+import { el, row, rowHelp, h3help, errorCard, fmtBytes, tooLargeCard } from '../core/util.js';
+import { WALL_PARSE } from '../core/limits.js';
 const GM = [
     'Acoustic Grand Piano', 'Bright Acoustic Piano', 'Electric Grand Piano', 'Honky-tonk Piano', 'Electric Piano 1', 'Electric Piano 2', 'Harpsichord', 'Clavi',
     'Celesta', 'Glockenspiel', 'Music Box', 'Vibraphone', 'Marimba', 'Xylophone', 'Tubular Bells', 'Dulcimer',
@@ -30,6 +31,10 @@ function fmtDur(sec) {
 export async function renderMidi(file, resultsEl) {
     resultsEl.hidden = false;
     resultsEl.innerHTML = '';
+    if (file.size > WALL_PARSE) {
+        resultsEl.appendChild(tooLargeCard(WALL_PARSE));
+        return;
+    }
     let buf;
     try {
         buf = new Uint8Array(await file.arrayBuffer());

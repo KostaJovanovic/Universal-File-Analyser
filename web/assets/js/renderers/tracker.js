@@ -12,7 +12,8 @@
    card for what a WAV has no equivalent of: the tracker that wrote it, the
    channel and pattern counts, and the sample and instrument name lists, which
    are traditionally where authors left greetings and credits. */
-import { el, row, fmtBytes, h3help, inlineLoader, preBlock } from '../core/util.js';
+import { el, row, fmtBytes, h3help, inlineLoader, preBlock, tooLargeCard } from '../core/util.js';
+import { WALL_PARSE } from '../core/limits.js';
 import { renderTracker } from '../lib/openmpt-loader.js';
 import { renderAudio } from './audio.js';
 import { encodeWav } from './video-avi.js';
@@ -40,6 +41,10 @@ function nameList(title, list, total) {
 /** Render a tracker module: the tracker card, then the full audio analysis of
     the rendered song. */
 export async function renderTrackerModule(file, resultsEl) {
+    if (file.size > WALL_PARSE) {
+        resultsEl.appendChild(tooLargeCard(WALL_PARSE));
+        return;
+    }
     const loader = inlineLoader('Rendering module…');
     resultsEl.appendChild(loader);
     let result = null;

@@ -13,7 +13,8 @@
      both the live specimen and the glyph outlines work per font, with a picker to
      switch between them. */
 
-import { el, row, rowHelp, h3help, fmtBytes, errorCard, loadScript } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, errorCard, tooLargeCard, loadScript } from '../core/util.js';
+import { WALL_PARSE } from '../core/limits.js';
 
 const OPENTYPE_URL = 'assets/vendor/opentype/opentype.min.js';
 let _faceSeq = 0;
@@ -321,6 +322,7 @@ export async function renderFont(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   clearAddedFaces();   // drop the previous font's live FontFaces before loading this one
+  if (file.size > WALL_PARSE) { resultsEl.appendChild(tooLargeCard(WALL_PARSE)); return; }
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading font "${file.name}"…`));
 
   let buf;

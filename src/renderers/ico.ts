@@ -7,6 +7,7 @@
    card. Pure parsing + DOM; no WASM, instant and offline. */
 
 import { buildEmbeddedImagesCard } from './embedded-images.js';
+import { WALL_PARSE } from '../core/limits.js';
 
 // Parse the icon directory into per-image entries. Returns
 // { type /* 1 icon, 2 cursor */, entries:[{ w, h, bitCount, colorCount, planes,
@@ -66,6 +67,7 @@ export function parseIcoEntries(buf: ArrayBuffer | null | undefined) {
 
 // Build the "Embedded images" card for an ICO/CUR, or null if not one.
 export async function buildIcoImagesCard(file: File, signal: AbortSignal | null | undefined, resultsEl: HTMLElement) {
+  if (file.size > WALL_PARSE) return null;   // an icon is kilobytes; this would read it whole
   let parsed = null;
   try { parsed = parseIcoEntries(await file.arrayBuffer()); } catch (_) { parsed = null; }
   if (!parsed) return null;

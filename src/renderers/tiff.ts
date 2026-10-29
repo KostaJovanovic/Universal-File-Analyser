@@ -6,6 +6,7 @@
    to render them all to PNG for the shared embedded-images card. */
 
 import { buildEmbeddedImagesCard } from './embedded-images.js';
+import { WALL_PARSE } from '../core/limits.js';
 import { readImagesAsPngs } from './photo-convert.js';
 
 // Walk the TIFF IFD chain. Returns [{ w, h }, ...] (one per page) or null if the
@@ -50,6 +51,7 @@ export function tiffPages(buf: ArrayBuffer | null | undefined) {
 // Build the "Embedded images" card for a multi-page TIFF, or null if it's a single
 // page (or not a walkable TIFF). Decodes via ImageMagick only when worthwhile.
 export async function buildTiffPagesCard(file: File, signal: AbortSignal | null | undefined, container: HTMLElement) {
+  if (file.size > WALL_PARSE) return null;   // the page walk reads the whole file
   let pages = null;
   try { pages = tiffPages(await file.arrayBuffer()); } catch (_) { pages = null; }
   if (!pages || pages.length < 2) return null;   // single-page TIFF: nothing extra to show

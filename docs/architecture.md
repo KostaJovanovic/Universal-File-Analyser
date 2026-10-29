@@ -83,7 +83,11 @@ The caps are grouped by kind:
   used to: ZIP, TAR, ISO and FAT disk images are read in slices and never hit
   `WALL_INDEX` (it now guards only what libarchive must load whole - RAR, 7z,
   CAB and the like), and STL / PLY past `WALL_PARSE` stream through
-  `mesh-stream.js` instead of being declined.
+  `mesh-stream.js` instead of being declined. Every renderer that has to read
+  the whole file at once (MIDI, XCF, Aseprite, DWG, fonts, Access, XLSB, SPICE
+  `.raw`, Terraria worlds, tracker modules) declines past `WALL_PARSE` with
+  `tooLargeCard()` from `util.js`; the TIFF-pages and ICO cards and metadata
+  stripping are simply skipped there.
 - **Mobile OOM guards** (`MOBILE_WALL`) - applied only when
   `isLowMemoryDevice()`; unified down to the tightest former value so a phone is
   never asked to decode more than before.

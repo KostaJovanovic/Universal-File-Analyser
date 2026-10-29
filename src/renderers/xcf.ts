@@ -28,9 +28,9 @@
    Pointers are 32-bit up to version 10 and 64-bit from version 11, which is the
    single easiest thing to get wrong when reading one of these. */
 
-import { el, row, fmtBytes, h3help, downloadBlob, inlineLoader } from '../core/util.js';
+import { el, row, fmtBytes, h3help, downloadBlob, inlineLoader, tooLargeCard } from '../core/util.js';
 import { Reader, inflate } from '../core/binutil.js';
-import { PREVIEW_EDGE, CANVAS_EDGE_MAX, XCF_EDGE_MAX, XCF_LAYERS_MAX, XCF_PIXEL_BUDGET } from '../core/limits.js';
+import { PREVIEW_EDGE, CANVAS_EDGE_MAX, XCF_EDGE_MAX, XCF_LAYERS_MAX, XCF_PIXEL_BUDGET, WALL_PARSE } from '../core/limits.js';
 
 const TILE = 64;
 // GIMP's XCF_TILE_MAX_DATA_LENGTH_FACTOR: its reader rejects any stored tile longer
@@ -459,6 +459,7 @@ export function compositeXcf(doc: XcfDoc) {
 
 /** Render a GIMP XCF document: the composited image plus the layer stack. */
 export async function renderXcf(file: File, resultsEl: HTMLElement) {
+  if (file.size > WALL_PARSE) { resultsEl.appendChild(tooLargeCard(WALL_PARSE)); return; }
   const loader = inlineLoader('Compositing layers…');
   resultsEl.appendChild(loader);
   let doc: XcfDoc | null = null;

@@ -5,6 +5,7 @@
    each page's size; only when there really are 2+ pages do we spin up ImageMagick
    to render them all to PNG for the shared embedded-images card. */
 import { buildEmbeddedImagesCard } from './embedded-images.js';
+import { WALL_PARSE } from '../core/limits.js';
 import { readImagesAsPngs } from './photo-convert.js';
 // Walk the TIFF IFD chain. Returns [{ w, h }, ...] (one per page) or null if the
 // bytes aren't a classic TIFF. Dimensions are best-effort (0 if not inline).
@@ -58,6 +59,8 @@ export function tiffPages(buf) {
 // Build the "Embedded images" card for a multi-page TIFF, or null if it's a single
 // page (or not a walkable TIFF). Decodes via ImageMagick only when worthwhile.
 export async function buildTiffPagesCard(file, signal, container) {
+    if (file.size > WALL_PARSE)
+        return null; // the page walk reads the whole file
     let pages = null;
     try {
         pages = tiffPages(await file.arrayBuffer());

@@ -5,9 +5,9 @@
    into an entity database and render it to an SVG, shown as a 2D preview - the
    same idea as the DXF viewer, but for the binary format. Nothing is uploaded. */
 
-import { el, row, rowHelp, h3help, fmtBytes, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, errorCard, tooLargeCard } from '../core/util.js';
 import { findBytes, dibToBmp } from '../core/binutil.js';
-import { PREVIEW_CARVE_MAX } from '../core/limits.js';
+import { PREVIEW_CARVE_MAX, WALL_PARSE } from '../core/limits.js';
 import { buildEmbeddedImagesCard, type EmbeddedImageItem } from './embedded-images.js';
 import { sanitizeSvgMarkup } from './svg.js';
 
@@ -132,6 +132,7 @@ function previewCard(file: File, found: { items: EmbeddedImageItem[]; skipped: n
 export async function renderDwg(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
+  if (file.size > WALL_PARSE) { resultsEl.appendChild(tooLargeCard(WALL_PARSE)); return; }
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading AutoCAD drawing "${file.name}"… the CAD engine is about 6 MB on first use.`));
 
   let inst, FT;

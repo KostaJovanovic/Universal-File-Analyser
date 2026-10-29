@@ -16,9 +16,9 @@
    an unrelated palette format. detectVariant() in core/formats.ts tells them
    apart by magic before routing here, so this module can assume Aseprite. */
 
-import { el, row, fmtBytes, h3help, downloadBlob, inlineLoader } from '../core/util.js';
+import { el, row, fmtBytes, h3help, downloadBlob, inlineLoader, tooLargeCard } from '../core/util.js';
 import { Reader, inflate } from '../core/binutil.js';
-import { PREVIEW_EDGE, ANIM_PIXEL_BUDGET, ASE_CEL_PIXEL_BUDGET, CANVAS_EDGE_MAX } from '../core/limits.js';
+import { PREVIEW_EDGE, ANIM_PIXEL_BUDGET, ASE_CEL_PIXEL_BUDGET, CANVAS_EDGE_MAX, WALL_PARSE } from '../core/limits.js';
 
 const MAGIC = 0xA5E0;
 const FRAME_MAGIC = 0xF1FA;
@@ -456,6 +456,7 @@ function mountPlayer(sprite: AseDoc, file: File, resultsEl: HTMLElement) {
 /** Render an Aseprite sprite: composited frame view with a transport that
     honours each frame's own duration, the layer tree, and the animation tags. */
 export async function renderAseprite(file: File, resultsEl: HTMLElement) {
+  if (file.size > WALL_PARSE) { resultsEl.appendChild(tooLargeCard(WALL_PARSE)); return; }
   const loader = inlineLoader('Decoding sprite…');
   resultsEl.appendChild(loader);
   let doc: AseDoc | null = null;

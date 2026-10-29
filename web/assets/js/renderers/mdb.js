@@ -4,7 +4,8 @@
    a Jet/ACE database fully in the browser: lists the user tables with their
    columns and row counts, and shows a sample of rows from each - the same
    table UI as the spreadsheet viewers. Nothing is uploaded. */
-import { el, row, fmtBytes, integrityCard, errorCard, loadScript } from '../core/util.js';
+import { el, row, fmtBytes, integrityCard, errorCard, tooLargeCard, loadScript } from '../core/util.js';
+import { WALL_PARSE } from '../core/limits.js';
 const MDB_URL = 'assets/vendor/mdb/mdb.js';
 async function loadMdb() {
     if (!window.MDBReader) {
@@ -30,6 +31,10 @@ function cellText(v) {
 export async function renderMdb(file, resultsEl) {
     resultsEl.hidden = false;
     resultsEl.innerHTML = '';
+    if (file.size > WALL_PARSE) {
+        resultsEl.appendChild(tooLargeCard(WALL_PARSE));
+        return;
+    }
     resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading Access database "${file.name}"…`));
     const MDBReader = await loadMdb();
     if (!MDBReader) {

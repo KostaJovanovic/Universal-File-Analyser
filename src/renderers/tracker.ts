@@ -13,7 +13,8 @@
    channel and pattern counts, and the sample and instrument name lists, which
    are traditionally where authors left greetings and credits. */
 
-import { el, row, fmtBytes, h3help, inlineLoader, preBlock } from '../core/util.js';
+import { el, row, fmtBytes, h3help, inlineLoader, preBlock, tooLargeCard } from '../core/util.js';
+import { WALL_PARSE } from '../core/limits.js';
 import { renderTracker, type TrackerInfo } from '../lib/openmpt-loader.js';
 import { renderAudio } from './audio.js';
 import { encodeWav } from './video-avi.js';
@@ -43,6 +44,7 @@ function nameList(title: string, list: string[], total: number) {
 /** Render a tracker module: the tracker card, then the full audio analysis of
     the rendered song. */
 export async function renderTrackerModule(file: File, resultsEl: HTMLElement) {
+  if (file.size > WALL_PARSE) { resultsEl.appendChild(tooLargeCard(WALL_PARSE)); return; }
   const loader = inlineLoader('Rendering module…');
   resultsEl.appendChild(loader);
 

@@ -26,9 +26,9 @@
    category. It reads as a recognisable world map, not a pixel-perfect copy of
    the in-game one. */
 
-import { el, row, fmtBytes, h3help, downloadBlob, inlineLoader } from '../core/util.js';
+import { el, row, fmtBytes, h3help, downloadBlob, inlineLoader, tooLargeCard } from '../core/util.js';
 import { Reader } from '../core/binutil.js';
-import { TERRARIA_MAP_MAX_PX } from '../core/limits.js';
+import { TERRARIA_MAP_MAX_PX, WALL_PARSE } from '../core/limits.js';
 
 // ---- tile colours ------------------------------------------------------------
 // Chosen to read like the in-game map at a glance: earth browns, stone greys,
@@ -244,6 +244,7 @@ const GAME_MODE = ['Classic', 'Expert', 'Master', 'Journey'];
 
 /** Render a Terraria world: the header readout plus a drawn map. */
 export async function renderTerraria(file: File, resultsEl: HTMLElement) {
+  if (file.size > WALL_PARSE) { resultsEl.appendChild(tooLargeCard(WALL_PARSE)); return; }
   const loader = inlineLoader('Reading world…');
   resultsEl.appendChild(loader);
 

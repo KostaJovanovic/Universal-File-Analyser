@@ -5,9 +5,9 @@
    the vendored SheetJS community build (pure JS, runs in the browser) purely to
    decode .xlsb into sheets, which we render with the same table UI as .xlsx. */
 
-import { el, row, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, fmtBytes, integrityCard, errorCard, tooLargeCard } from '../core/util.js';
 import { loadScript } from '../core/util.js';
-import { EXCEL_ROWS_MAX, EXCEL_COLS_MAX, SHEET_CELLS_MAX, SHEET_COLS_MAX } from '../core/limits.js';
+import { EXCEL_ROWS_MAX, EXCEL_COLS_MAX, SHEET_CELLS_MAX, SHEET_COLS_MAX, WALL_PARSE } from '../core/limits.js';
 
 const SHEETJS_URL = 'assets/vendor/sheetjs/xlsx.full.min.js';
 
@@ -26,6 +26,7 @@ function colName(n: number): string {
 export async function renderXlsb(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
+  if (file.size > WALL_PARSE) { resultsEl.appendChild(tooLargeCard(WALL_PARSE)); return; }
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading Excel workbook "${file.name}"…`));
 
   const XLSX = await loadSheetJs();

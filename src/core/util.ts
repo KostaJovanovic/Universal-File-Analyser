@@ -346,6 +346,11 @@ export function emptyFileWarning(file: File) {
 export function errorCard(message: ElChild | ElChild[]) {
   return el('div', { class: 'anr-error' }, message);
 }
+// For a renderer that must hold the whole file in memory, past its wall
+// (usually WALL_PARSE from limits.js).
+export function tooLargeCard(limit: number) {
+  return errorCard('This file is larger than ' + fmtBytes(limit) + ' and was not opened - it has to be read into memory whole, which is more than this device can spare.');
+}
 
 /** The ASCII progress-bar element, with its controls attached. Built by
  *  asciiBar() and passed around as a plain node, so the methods travel with

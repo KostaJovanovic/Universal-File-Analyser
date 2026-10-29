@@ -15,6 +15,7 @@
    the bytes don't parse as that format) where `removed` is a list of
    { label, bytes } describing what was cut. */
 import { el, fileExt, fmtBytes, wireInfoToggle } from '../core/util.js';
+import { WALL_PARSE } from '../core/limits.js';
 // ---------- JPEG ----------
 // A JPEG is SOI (FF D8) then a run of marker segments, each FF <marker> <2-byte
 // big-endian length> <payload>. SOS (FF DA) is followed by entropy-coded scan
@@ -302,6 +303,8 @@ export function scrubSupportsImage(file) {
 // Strip metadata from an image File; returns { out:Uint8Array, removed, format }
 // or null if the bytes don't parse as a supported image.
 export async function stripImage(file) {
+    if (file.size > WALL_PARSE)
+        throw new Error('too large to strip in memory');
     const b = new Uint8Array(await file.arrayBuffer());
     const format = detectFormat(b);
     if (!format)

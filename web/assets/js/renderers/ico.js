@@ -6,6 +6,7 @@
    alike, transparency included - then hands them to the shared embedded-images
    card. Pure parsing + DOM; no WASM, instant and offline. */
 import { buildEmbeddedImagesCard } from './embedded-images.js';
+import { WALL_PARSE } from '../core/limits.js';
 // Parse the icon directory into per-image entries. Returns
 // { type /* 1 icon, 2 cursor */, entries:[{ w, h, bitCount, colorCount, planes,
 // bytesInRes, imageOffset, isPng, blob /* 1-entry .ico */, png /* Blob|null */ }] }
@@ -65,6 +66,8 @@ export function parseIcoEntries(buf) {
 }
 // Build the "Embedded images" card for an ICO/CUR, or null if not one.
 export async function buildIcoImagesCard(file, signal, resultsEl) {
+    if (file.size > WALL_PARSE)
+        return null; // an icon is kilobytes; this would read it whole
     let parsed = null;
     try {
         parsed = parseIcoEntries(await file.arrayBuffer());
