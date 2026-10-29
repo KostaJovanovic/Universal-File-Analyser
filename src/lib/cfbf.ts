@@ -84,7 +84,6 @@ export async function openCfbf(input: ArrayBuffer|Uint8Array|Blob|ArrayBufferVie
     const numDirSectors = u32(0x28);          // 0 for the 512-byte sector version
     const numFatSectors = u32(0x2C);
     const dirStart      = u32(0x30);
-    const miniCutoff    = u32(0x38);          // mini-stream cutoff (always 4096)
     const miniFatStart  = u32(0x3C);
     const numMiniFat    = u32(0x40);
     const difatStart    = u32(0x44);
@@ -96,7 +95,9 @@ export async function openCfbf(input: ArrayBuffer|Uint8Array|Blob|ArrayBufferVie
 
     const sectorSize = 1 << sectorShift;        // 512 or 4096
     const miniSize   = 1 << miniSectorShift;    // 64
-    const cutoff     = miniCutoff || MINI_CUTOFF;
+    // The spec fixes the cutoff at 4096; a header claiming more would route every
+    // stream through the mini-stream reader.
+    const cutoff     = MINI_CUTOFF;
     const numSectors = Math.floor((bytes.length - 512) / sectorSize);
 
     // Byte offset of regular sector `id` (sectors are numbered from after the
@@ -132,6 +133,10 @@ export async function openCfbf(input: ArrayBuffer|Uint8Array|Blob|ArrayBufferVie
         sect = u32(base + perSector * 4);
       }
     }
+
+    // A FAT sector is a real sector, so there can't be more of them than the file
+    // has: a DIFAT chain listing millions would size the array below in gigabytes.
+    if (fatSectorIds.length > numSectors) fatSectorIds.length = numSectors;
 
     // ---- FAT: concatenate all FAT sectors into one big next-sector array ----
     const entriesPerFat = sectorSize >> 2;
@@ -271,7 +276,8 @@ export async function openCfbf(input: ArrayBuffer|Uint8Array|Blob|ArrayBufferVie
     const readMiniStream = (start: number, size: number) => {
       if (size <= 0) return new Uint8Array(0);
       const miniStream = getMiniStream();
-      const out = new Uint8Array(size);
+      const out = new Uint8Array(Math.min(size, miniStream.length));   // the size is the file's claim
+      size = out.length;
       let written = 0;
       let s = start >>> 0;
       const seen = new Set();
