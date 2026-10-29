@@ -1456,7 +1456,7 @@ export function setPlayerFill(fillEl: HTMLElement, frac: number) {
 // so arming it is the user's call, not the page's. Once chosen it holds for the
 // rest of the visit - kept in sessionStorage, so a new file, another part, a
 // viewer rebuild, an SPA navigation or a reload all keep it, and closing the
-// tab forgets it. Every toggle on screen repaints on 'anr:wheelzoom'.
+// tab forgets it. setWheelZoomOn repaints every toggle on the page.
 const WHEEL_ZOOM_KEY = 'anr-scroll-zoom';
 let wheelZoomState: boolean | null = null;
 export function wheelZoomOn(): boolean {
@@ -1468,36 +1468,31 @@ export function wheelZoomOn(): boolean {
 export function setWheelZoomOn(on: boolean) {
   wheelZoomState = on;
   try { sessionStorage.setItem(WHEEL_ZOOM_KEY, on ? '1' : '0'); } catch (_) { /* private mode: this page only */ }
-  document.dispatchEvent(new CustomEvent('anr:wheelzoom'));
+  document.querySelectorAll('.anr-wheelzoom, .anr-cam-zoombtn').forEach(paintWheelZoom);
 }
-// Call `paint` whenever the setting changes anywhere, for as long as `btn` is
-// on the page (the listener drops itself once the viewer has been removed).
-export function onWheelZoomChange(btn: HTMLElement, paint: () => void) {
-  const handler = () => {
-    if (!btn.isConnected) { document.removeEventListener('anr:wheelzoom', handler); return; }
-    paint();
-  };
-  document.addEventListener('anr:wheelzoom', handler);
+// Paint one scroll-zoom button to the current setting. Every one on the page is
+// repainted on a change (by class), so no viewer keeps a listener on document -
+// one would pin the whole viewer until the next toggle. Two conventions:
+// .anr-wheelzoom is marked is-off when off, .anr-cam-zoombtn is-active when on.
+export function paintWheelZoom(b: Element) {
+  const on = wheelZoomOn();
+  b.textContent = on ? 'Scroll zoom on' : 'Scroll zoom off';
+  (b as HTMLElement).title = on ? 'Scrolling over the viewer zooms it. Click to let the wheel scroll the page instead.'
+                                : 'Scrolling over the viewer moves the page. Click to zoom with the scroll wheel again.';
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  if (b.classList.contains('anr-wheelzoom')) b.classList.toggle('is-off', !on);
+  else b.classList.toggle('is-active', on);
 }
 
 export function wheelZoomToggle(extraClass?: string|undefined) {
   const btn = el('button', { type: 'button', class: 'anr-wheelzoom' + (extraClass ? ' ' + extraClass : '') });
-  const paint = () => {
-    const on = wheelZoomOn();
-    btn.textContent = on ? 'Scroll zoom on' : 'Scroll zoom off';
-    btn.title = on ? 'Scrolling over the viewer zooms it. Click to let the wheel scroll the page instead.'
-                   : 'Scrolling over the viewer moves the page. Click to zoom with the scroll wheel again.';
-    btn.classList.toggle('is-off', !on);
-    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-  };
   btn.addEventListener('click', (e) => { e.stopPropagation(); setWheelZoomOn(!wheelZoomOn()); });
-  onWheelZoomChange(btn, paint);
   // The stages under this pill own drag / double-click gestures - keep a press
   // on the button from also starting an orbit or triggering a view reset.
   btn.addEventListener('pointerdown', (e) => e.stopPropagation());
   btn.addEventListener('mousedown', (e) => e.stopPropagation());
   btn.addEventListener('dblclick', (e) => e.stopPropagation());
-  paint();
+  paintWheelZoom(btn);
   return { el: btn, enabled: wheelZoomOn };
 }
 

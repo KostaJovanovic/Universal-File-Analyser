@@ -21,7 +21,7 @@
    (tessellated), and ;WIDTH:/;HEIGHT: hints. Orbit / pan / zoom / spin, colour by
    height or feedrate, and a build-height scrubber. No external 3D library. */
 
-import { el, row, rowHelp, fmtBytes, errorCard, attachViewCube, downloadBlob, wheelZoomOn, setWheelZoomOn, onWheelZoomChange, type ElChild } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, errorCard, attachViewCube, downloadBlob, wheelZoomOn, setWheelZoomOn, paintWheelZoom, type ElChild } from '../core/util.js';
 import { byTier, WALL_PARSE } from '../core/limits.js';
 
 // Rendered-segment caps, scaled to the device's RAM so arc-heavy / multi-day prints
@@ -1700,17 +1700,8 @@ function buildViewer(data: any, opts: any = {}): GcodeViewer {
   // BEFORE preventDefault, so a disabled viewer lets the wheel scroll the page
   // through it.
   const wheelZoomBtn = el('button', { type: 'button', class: 'anr-btn anr-cam-zoombtn', 'aria-pressed': 'false' });
-  const paintWheel = () => {
-    const wheelOn = wheelZoomOn();
-    wheelZoomBtn.textContent = wheelOn ? 'Scroll zoom on' : 'Scroll zoom off';
-    wheelZoomBtn.title = wheelOn ? 'Scrolling over the viewer zooms it. Click to let the wheel scroll the page instead.'
-                                 : 'Scrolling over the viewer moves the page. Click to zoom with the scroll wheel again.';
-    wheelZoomBtn.setAttribute('aria-pressed', wheelOn ? 'true' : 'false');
-    wheelZoomBtn.classList.toggle('is-active', wheelOn);   // red while on, like every toggle
-  };
   wheelZoomBtn.addEventListener('click', (e) => { e.stopPropagation(); setWheelZoomOn(!wheelZoomOn()); });
-  onWheelZoomChange(wheelZoomBtn, paintWheel);
-  paintWheel();
+  paintWheelZoom(wheelZoomBtn);   // red (is-active) while on, like every toggle
   canvas.addEventListener('wheel', (e) => { if (!wheelZoomOn()) return; e.preventDefault(); zoomBy(1 + Math.sign(e.deltaY) * 0.1); }, { passive: false });
 
   // Camera distance that frames the model's bounding sphere. `fill` < 1 leaves
