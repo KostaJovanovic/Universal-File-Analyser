@@ -124,6 +124,7 @@ function videoStage(playerEl: HTMLVideoElement, transport: HTMLElement) {
     fsBtn.innerHTML = on ? FS_EXIT : FS_ENTER;
     fsBtn.title = on ? 'Exit fullscreen (Esc)' : 'Fullscreen';
     fsBtn.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Fullscreen');
+    stage.classList.toggle('is-fs', on);   // the CSS keys on this, so prefixed fullscreen (older Safari) is styled too
   };
   stage.addEventListener('fullscreenchange', sync);
   stage.addEventListener('webkitfullscreenchange', sync);
