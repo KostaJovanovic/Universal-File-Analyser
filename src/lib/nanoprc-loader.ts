@@ -17,9 +17,11 @@
    space to a flat file in the module's in-memory FS; the layout is described
    at the top of anr_prc.c and read back by parseMesh() below.
 
-   No top-level side effects: the module is fetched and instantiated on the
-   first decodePrc() and then reused. A call that throws (an abort inside the
-   WASM) drops the instance so the next call starts a fresh one. */
+   No top-level side effects: every decodePrc() instantiates the module afresh
+   (the script and wasm come from the cache after the first), because WASM
+   memory never shrinks - a reused instance would hold its largest heap, up to
+   2 GB, for the rest of the visit. The instance is garbage once the call
+   returns or throws. */
 
 import { PRC_TRI_MAX } from '../core/limits.js';
 
@@ -56,22 +58,6 @@ const STEP_ERRORS: Record<number, string> = {
   [-6]: 'the decoded mesh could not be written out',
 };
 
-let _modulePromise: Promise<any> | null = null;
-
-function loadModule() {
-  if (!_modulePromise) {
-    _modulePromise = import(NANOPRC_URL)
-      .then((m) => (m.default || m)({
-        // nanoPRC prints progress and diagnostics with printf; none of it is
-        // for the page's console.
-        print() {},
-        printErr() {},
-      }))
-      .catch((e) => { _modulePromise = null; throw e; });
-  }
-  return _modulePromise;
-}
-
 function parseMesh(buf: Uint8Array): PrcMesh {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   if (buf.length < 16 || String.fromCharCode(buf[0], buf[1], buf[2], buf[3]) !== 'ANRM') throw new Error('unexpected decoder output');
@@ -100,21 +86,12 @@ function parseMesh(buf: Uint8Array): PrcMesh {
 
 /** Decode one PRC stream (the bytes after any PDF filter, starting "PRC"). */
 export async function decodePrc(bytes: Uint8Array): Promise<PrcMesh> {
-  const mod = await loadModule();
-  const inPath = '/anr-in.prc', outPath = '/anr-out.bin';
-  let rc: number;
-  try {
-    mod.FS.writeFile(inPath, bytes);
-    rc = mod.ccall('anr_prc_mesh', 'number', ['string', 'string', 'number'], [inPath, outPath, PRC_TRI_MAX]);
-  } catch (e) {
-    _modulePromise = null;   // an abort leaves the instance unusable
-    throw e;
-  } finally {
-    try { mod.FS.unlink(inPath); } catch (_) { /* not written */ }
-  }
+  // shortcut: runs on the main thread and cannot be cancelled; move to a worker if big models freeze the page.
+  const m = await import(NANOPRC_URL);
+  // nanoPRC prints progress and diagnostics with printf; none of it is for the page's console.
+  const mod = await (m.default || m)({ print() {}, printErr() {} });
+  mod.FS.writeFile('/anr-in.prc', bytes);
+  const rc: number = mod.ccall('anr_prc_mesh', 'number', ['string', 'string', 'number'], ['/anr-in.prc', '/anr-out.bin', PRC_TRI_MAX]);
   if (rc < 0) throw new Error(STEP_ERRORS[rc] || 'the decoder failed (' + rc + ')');
-  let out: Uint8Array;
-  try { out = mod.FS.readFile(outPath); }
-  finally { try { mod.FS.unlink(outPath); } catch (_) { /* not written */ } }
-  return parseMesh(out);
+  return parseMesh(mod.FS.readFile('/anr-out.bin'));
 }

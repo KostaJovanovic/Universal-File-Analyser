@@ -384,7 +384,9 @@ js/
                     same" where SHA-256 only answers "are they identical";
                     /compare is the only consumer) ·
                     nanoprc-loader (nanoPRC, AGPL-3.0, compiled to WASM -
-                    ~600 KB, Everything tier - for 3D PDFs' PRC models. NOT a
+                    ~600 KB, Everything tier - for 3D PDFs' PRC models. A
+                    fresh instance per decode, so the heap is given back
+                    (WASM memory never shrinks). NOT a
                     stock build: tools/nanoprc/ holds the C glue (anr_prc.c,
                     which walks the model tree and writes world-space triangles
                     per part), the build script and patches.mjs, fixes to
