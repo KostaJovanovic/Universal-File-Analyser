@@ -146,6 +146,9 @@ export function decodeGifFrames(buffer: ArrayBuffer, budget = 120e6) {
   const width = dv.getUint16(6, true);
   const height = dv.getUint16(8, true);
   if (!width || !height) return null;
+  // The header is 16-bit per side, so a 200-byte GIF can claim 65535 x 65535 -
+  // and every frame buffer below is that size. Past the budget, no frame viewer.
+  if (width * height > budget) return null;
 
   const packed = bytes[10];
   const gctSize = (packed & 0x80) ? (2 << (packed & 0x07)) : 0;
