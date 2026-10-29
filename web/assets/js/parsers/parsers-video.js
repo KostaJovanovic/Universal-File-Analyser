@@ -1140,6 +1140,8 @@ async function parseH264(file) {
         br.se();
         br.se();
         const n = br.ue();
+        if (n > 256)
+            return null; // the spec allows 255; a forged ~2^31 would spin here for minutes (video-bitstream.ts has the same guard)
         for (let i = 0; i < n; i++)
             br.se();
     }
