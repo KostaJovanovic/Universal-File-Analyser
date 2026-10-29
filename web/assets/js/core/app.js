@@ -43,7 +43,7 @@
    on every build, so an edit there is silently lost. src/ edits do nothing until
    `npm run build` recompiles.
    ============================================================================ */
-const COMMIT_COUNT = 332;
+const COMMIT_COUNT = 333;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -416,6 +416,10 @@ function hasFiles(e) {
 let _handleFile = null;
 // The latest boot's supersedeLoad(), for the once-wired window listeners (drop).
 let _supersedeLoad = null;
+// Same for the folder drop: the FIRST boot's copies hold that page's elements,
+// which are gone (or were never there) after an SPA move.
+let _resetNav = null;
+let _enterLoadedUI = null;
 let _scrollHandler = null;
 let _alignSoundNav = null;
 /* ----- the docked bar -----
@@ -1435,6 +1439,8 @@ function boot() {
     }
     _handleFile = handleFile;
     _supersedeLoad = supersedeLoad;
+    _resetNav = resetNav;
+    _enterLoadedUI = enterLoadedUI;
     setReanalyse(handleFile); // forensics.js "Analyse appended data" button
     window._anrHandleFile = handleFile;
     // Expose the (extension/MIME-based) classifier so the folder "can it open?" scan
@@ -1892,9 +1898,11 @@ function boot() {
                 if (ur) {
                     if (_supersedeLoad)
                         _supersedeLoad();
-                    resetNav();
+                    if (_resetNav)
+                        _resetNav();
                     renderFolder(folderFiles, ur);
-                    enterLoadedUI();
+                    if (_enterLoadedUI)
+                        _enterLoadedUI();
                     recordFolderHistory(folderFiles);
                     // Match the file-drop behaviour: bring the overview up under the nav bar.
                     requestAnimationFrame(() => ur.scrollIntoView({ behavior: 'smooth', block: 'start' }));
