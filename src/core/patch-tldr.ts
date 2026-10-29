@@ -337,6 +337,11 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+  { range: '9.23 - 9.57', notes: [
+    '**3D PDFs** open on the **views their author saved** - front, side or a cut through the middle - and a model with many parts shows whole first, with **Show all parts** beside it.',
+    'A second **safety sweep**: crafted Markdown, GIF, WebP, video, Office, TGA, ISO, TAR and SQLite files can no longer inject markup, freeze or crash the page, and very large files of ten more formats say they are too large instead of running out of memory.',
+    'Ordinary PDFs open sooner, a large file comes out of a **.tar.gz** about a hundred times faster, file types are told apart more carefully, and closed viewers give their memory back.',
+  ] },
   { range: '9.19 - 9.22', notes: [
     '**Big files open whole**: databases, CSVs, mailboxes, ZIPs past 4 GB, TAR and ISO discs, Photoshop files, STL models past 1 GB, PDFs past 64 MB and multi-GB camera clips are read a piece at a time instead of turned away, and hashes have no size ceiling.',
     '**3D PDFs show their model** in the 3D viewer, with its colours and parts, and save it as the original model or an STL, while any PDF can be viewed and saved as **one long page** at up to 600 dpi.',

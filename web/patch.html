@@ -214,6 +214,27 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">9.23 - 9.57</p>
+          <p class="patch-name">Point of View</p>
+          <p class="patch-date">29 October 2026</p>
+          <ul class="patch-list">
+            <li><strong>3D PDFs open on the views their author saved, cross-sections included - and a second safety sweep closes the gaps a crafted file could still slip through.</strong></li>
+            <li><span class="patch-tag">New</span><strong>The views saved in a 3D PDF</strong> - a front view, a side view, a cut through the middle - appear as buttons under the model. One press turns the model to that view and, where the author cut it open, shows the same cross-section. <code>Reset view</code> brings back the whole model.</li>
+            <li><span class="patch-tag">New</span><strong>A model with many parts</strong> shows the whole model first, and <code>Show all parts</code> beside it lists every part to view on its own.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Ordinary PDFs open sooner:</strong> only a PDF that really holds a 3D model is searched for one. A model that cannot be read now says so instead of waiting forever, a very large one opens cut short instead of running out of memory, and each model gives its memory back when you move on.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A file made to cause harm no longer can.</strong> A crafted Markdown file can no longer put live markup in the preview. Animated GIF and WebP files claiming a huge picture, forged video headers, old Office files, TGA images, ISO discs, TAR archives and SQLite databases built to freeze or crash the page are all stopped now.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Very large MIDI, XCF, Aseprite, DWG, font, Access, XLSB, SPICE, Terraria and tracker files</strong> say they are too large to read here, instead of the tab running out of memory.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Taking a large file out of a .tar.gz archive</strong> is about a hundred times faster.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>File types are told apart more carefully.</strong> A text file that happens to start with the letters of a picture format is no longer taken for a picture, a second PNG hidden after a PNG is now found, and on <a href="/compare">/compare</a> a file with no extension is recognised from its content as it is on the main page.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Video conversion in the desktop app</strong> refuses playlists and scripts that point outside its folder, even when a file changes after it was checked, and limits how many jobs a page can keep open at once.</li>
+            <li><span class="patch-tag is-fix">Fix</span>One JPEG 2000 image that crashes the decoder no longer breaks every one after it, pasting into the search box no longer starts an analysis, a folder dropped after moving between pages shows its overview, fullscreen video keeps its layout and controls, and a cut-short Premiere project opens as far as it can be read.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Less memory held for nothing:</strong> closed 3D viewers, cancelled long-page PNGs, the fallback audio player and the HTML preview let go of what they used, and on phones the header&rsquo;s letter animation stops on pages without the header.</li>
+            <li><strong>The anonymous tally</strong> counts one visitor per home network on IPv6, as it does on IPv4, and never sends a file name&rsquo;s whole made-up extension.</li>
+            <li><strong>Maintenance:</strong> three updates only tidied the code of the project itself.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">9.19 - 9.22</p>
           <p class="patch-name">No Ceiling</p>
           <p class="patch-date">29 October 2026</p>
@@ -253,6 +274,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">9.09 - 9.14</p>
           <p class="patch-name">Front Door</p>
@@ -277,9 +301,6 @@
             <li><strong>Maintenance:</strong> a format page that moves when its format gains full analysis now redirects from its old address, and map tiles no longer fill the offline storage.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">9.01 - 9.08</p>
