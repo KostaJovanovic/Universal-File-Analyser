@@ -112,6 +112,9 @@ async function parseTga(file: File) {
 
 function decodeTga(b: Uint8Array, h: any) {
   const { width, height, pixelDepth } = h;
+  // The only depths TGA defines. Any other byte (up to 255) would size the RLE
+  // buffer below at up to 32 bytes a pixel - gigabytes for a large header.
+  if (![8, 15, 16, 24, 32].includes(pixelDepth)) return null;
   const bpp = (pixelDepth + 7) >> 3;    // bytes per stored pixel/index (15-bit is 2 bytes)
   let off = 18 + h.idLen;
   // colour map
