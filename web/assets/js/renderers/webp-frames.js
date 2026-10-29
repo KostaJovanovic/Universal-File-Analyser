@@ -69,6 +69,9 @@ export async function decodeWebpFrames(file, budget = 120e6) {
     const info = parseWebpAnim(new Uint8Array(buf));
     if (!info || !info.animated || !info.width || !info.height)
         return null;
+    // A canvas the header can size up to 16383 x 16383: past the budget, no frame viewer.
+    if (info.width * info.height > budget)
+        return null;
     let dec;
     try {
         dec = new window.ImageDecoder({ data: buf, type: 'image/webp' });
@@ -103,7 +106,7 @@ export async function decodeWebpFrames(file, budget = 120e6) {
         loop = track.repetitionCount;
     const width = info.width, height = info.height;
     const px = width * height;
-    const L = Math.max(8, Math.floor(budget / px));
+    const L = Math.max(1, Math.floor(budget / px)); // a floor above 1 would overrun the budget on big frames
     const cv = document.createElement('canvas');
     cv.width = width;
     cv.height = height;
