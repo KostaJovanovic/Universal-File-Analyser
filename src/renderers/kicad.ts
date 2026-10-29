@@ -1084,8 +1084,9 @@ function buildBoard3D(pcb: any, opts: any = {}) {
   });
   qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
   bar.appendChild(flip); bar.appendChild(spinBtn); bar.appendChild(reset); bar.appendChild(qWrap);
-  // The wheel only zooms once the scroll-zoom pill is armed (it starts off so the
-  // board doesn't trap the page scroll), so the hint points at the pill rather than
+  // The wheel only zooms once the scroll-zoom pill is armed (off until the user
+  // switches it on, so the board doesn't trap the page scroll; then kept for the
+  // visit - see wheelZoomOn in util.js), so the hint points at the pill rather than
   // promising a wheel zoom that does nothing yet.
   bar.appendChild(el('span', { class: 'anr-hint anr-pcb3d-hint' }, 'Drag to rotate - pinch to zoom, or switch scroll zoom on for the wheel - two-finger or right-drag to pan - double-tap to reset.'));
 

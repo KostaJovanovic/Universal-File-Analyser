@@ -2,7 +2,7 @@
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v326';
+const VERSION = 'analyser-v327';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -96,6 +96,7 @@ const SHELL = [
   './assets/js/renderers/spectrogram.js',
   './assets/js/renderers/sonify.js',
   './assets/js/renderers/pdf.js',
+  './assets/js/renderers/pdf3d.js',
   './assets/js/renderers/archive.js',
   './assets/js/renderers/diskimage.js',
   './assets/js/renderers/diskimage-fat.js',
@@ -129,6 +130,7 @@ const SHELL = [
   './assets/js/lib/legacy-decompress.js',
   './assets/js/lib/nrbf.js',
   './assets/js/lib/ghostscript-loader.js',
+  './assets/js/lib/nanoprc-loader.js',
   './assets/js/lib/mdx-model.js',
   './assets/js/lib/mdx-stft.js',
   './assets/js/lib/mdx-separate.js',

@@ -1449,27 +1449,55 @@ export function setPlayerFill(fillEl: HTMLElement, frac: number) {
   fillEl.style.transform = 'scaleX(' + f + ')';
 }
 
-// Off by default, matching the STL/model and G-code viewers' own copy of this
-// control: a viewer that eats the wheel the moment the pointer crosses it traps
-// the page scroll, so arming it is the user's call, not the page's.
+// The scroll-zoom setting, ONE for every viewer (this toggle and the STL/model
+// and G-code viewers' own copies). Off until the user switches it on: a viewer
+// that eats the wheel the moment the pointer crosses it traps the page scroll,
+// so arming it is the user's call, not the page's. Once chosen it holds for the
+// rest of the visit - kept in sessionStorage, so a new file, another part, a
+// viewer rebuild, an SPA navigation or a reload all keep it, and closing the
+// tab forgets it. Every toggle on screen repaints on 'anr:wheelzoom'.
+const WHEEL_ZOOM_KEY = 'anr-scroll-zoom';
+let wheelZoomState: boolean | null = null;
+export function wheelZoomOn(): boolean {
+  if (wheelZoomState === null) {
+    try { wheelZoomState = sessionStorage.getItem(WHEEL_ZOOM_KEY) === '1'; } catch (_) { wheelZoomState = false; }
+  }
+  return wheelZoomState;
+}
+export function setWheelZoomOn(on: boolean) {
+  wheelZoomState = on;
+  try { sessionStorage.setItem(WHEEL_ZOOM_KEY, on ? '1' : '0'); } catch (_) { /* private mode: this page only */ }
+  document.dispatchEvent(new CustomEvent('anr:wheelzoom'));
+}
+// Call `paint` whenever the setting changes anywhere, for as long as `btn` is
+// on the page (the listener drops itself once the viewer has been removed).
+export function onWheelZoomChange(btn: HTMLElement, paint: () => void) {
+  const handler = () => {
+    if (!btn.isConnected) { document.removeEventListener('anr:wheelzoom', handler); return; }
+    paint();
+  };
+  document.addEventListener('anr:wheelzoom', handler);
+}
+
 export function wheelZoomToggle(extraClass?: string|undefined) {
-  let on = false;
   const btn = el('button', { type: 'button', class: 'anr-wheelzoom' + (extraClass ? ' ' + extraClass : '') });
   const paint = () => {
+    const on = wheelZoomOn();
     btn.textContent = on ? 'Scroll zoom on' : 'Scroll zoom off';
     btn.title = on ? 'Scrolling over the viewer zooms it. Click to let the wheel scroll the page instead.'
                    : 'Scrolling over the viewer moves the page. Click to zoom with the scroll wheel again.';
     btn.classList.toggle('is-off', !on);
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
   };
-  btn.addEventListener('click', (e) => { e.stopPropagation(); on = !on; paint(); });
+  btn.addEventListener('click', (e) => { e.stopPropagation(); setWheelZoomOn(!wheelZoomOn()); });
+  onWheelZoomChange(btn, paint);
   // The stages under this pill own drag / double-click gestures - keep a press
   // on the button from also starting an orbit or triggering a view reset.
   btn.addEventListener('pointerdown', (e) => e.stopPropagation());
   btn.addEventListener('mousedown', (e) => e.stopPropagation());
   btn.addEventListener('dblclick', (e) => e.stopPropagation());
   paint();
-  return { el: btn, enabled: () => on };
+  return { el: btn, enabled: wheelZoomOn };
 }
 
 // ===========================================================================

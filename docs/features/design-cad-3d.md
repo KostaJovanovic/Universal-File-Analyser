@@ -180,7 +180,8 @@ the shared engine reused by `model3d.js` for every other supported 3D mesh
 format.
 
 **How to use it.** **Scroll zoom on/off** toggles whether the mouse wheel
-zooms; **Fullscreen** expands the viewer; **Zoom in**/**Zoom out** (hold) for
+zooms (off at first, so the wheel scrolls the page; once switched, every
+viewer on the site keeps the choice until the tab is closed); **Fullscreen** expands the viewer; **Zoom in**/**Zoom out** (hold) for
 camera zoom; **Pause spin**/**Resume spin** toggles auto-rotate; **Quality**
 opens an anti-aliasing/render-quality popup; **Reset view** returns to the
 default camera; **Orthographic**/**Perspective** toggles projection;

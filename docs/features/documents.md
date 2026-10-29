@@ -49,6 +49,18 @@ trailing-data checks scan the file in pieces too.
   visible on touch): **Analyse** (renders the page to an image and sends it
   through the full photo pipeline), **OCR** (Tesseract on that one page,
   shown in a popup overlay), **PNG** (downloads the page as an image).
+- **One long page**: **View as one long page** (under the thumbnails) opens
+  every page stacked in a single scrolling column, with the current page
+  shown at the bottom. Pages are drawn as they scroll into view and dropped
+  again once well past, so a long document stays light. **Save as PNG**
+  writes the whole column as ONE tall image at **150**, **300** (default) or
+  **600 dpi**; narrower pages are centred on white, and the PNG records its
+  dpi so it opens at its real printed size. The image is streamed band by
+  band rather than drawn on one canvas, so its length is not bound by
+  browser canvas limits; a resolution whose image would be too big for the
+  device (by total pixels, set per memory tier in `limits.js`) is greyed
+  out, with the would-be size in its tooltip. While it saves, the button
+  reads **Cancel**. Needs `CompressionStream` (current Chrome, Firefox and Safari).
 - **Embedded images**: click **Extract embedded images** to pull the
   original raster images (logos, photos, scans) out of the PDF's content
   streams - distinct from the rendered page previews. Each found image gets
@@ -74,6 +86,15 @@ btn: Zoom
 btn: High-res
 ```
 
+The one-long-page view's toolbar:
+
+```demo
+btn: 150 dpi
+btn: 300 dpi
+btn: 600 dpi
+btn: Save as PNG
+```
+
 Per-thumbnail hover actions, plus the embedded-image and OCR entry points:
 
 ```demo
@@ -90,6 +111,49 @@ btn: Scan all pages
 **Notes / limits.** pdf.js is lazy-loaded. OCR and per-page rendering are
 CPU-heavy for large documents; the UI stages results in batches so nothing
 blocks on a full-document scan by default.
+
+### 3D PDFs
+
+**What it does.** A "3D PDF" carries a 3D model alongside its pages, which
+Adobe Acrobat shows as an interactive view; any other viewer, pdf.js included,
+shows only a flat poster picture in its place. Analyser finds the model and
+draws it in the same 3D viewer as STL and STEP files: orbit, zoom, the view
+cube, colours from the file, and a picker for the assembly's parts (parts that
+share a name, such as a set of bolts, are grouped as one chip).
+
+**How to reach it.** Drop a 3D PDF. A **3D model** card appears under the
+page previews; nothing appears for an ordinary PDF. Built in
+`web/assets/js/renderers/pdf3d.js`, with PRC decoding by **nanoPRC**
+(AGPL-3.0), compiled to WebAssembly and lazy-loaded (about 600 KB).
+
+**How to use it.**
+
+- The card lists the format, size, parts, triangle count and whether the
+  colours came from the file, then the model below it.
+- **Download model** saves the embedded model as it is (`.prc` or `.u3d`), to
+  open in a CAD or 3D tool. **Save as STL** writes the decoded triangles as a
+  binary STL (colours are not kept: STL has no place for them).
+- **Earlier versions.** When a 3D PDF is saved again (Acrobat adding a
+  cross-section, for example), the new model is added to the end of the file
+  and the old one stays inside. The card shows the one the PDF actually
+  displays, and **All 3D models in this file** lists every one with its
+  status - shown, replaced by a later save, or no longer shown - and a
+  **View** button for each.
+
+```demo
+btn: Download model (.prc)
+btn: Save as STL
+btn: View
+```
+
+**Notes / limits.** PRC is drawn from the triangles stored in the file, which
+is how Acrobat's own 3D export writes it. A PRC model holding only exact
+(B-rep) surfaces with no stored triangles is reported but not drawn, and
+section curves and wireframe lines are not drawn. U3D models are found and
+offered as a download, but not drawn yet. Encrypted PDFs are not read. PDFs
+past a size set per memory tier in `limits.js` are not searched for a model,
+and a very large model stops at a per-tier triangle limit (the card says so).
+In `/compare` the 3D card shows its figures without the viewer.
 
 ### Shared page-preview presentation (Word/ODF/spreadsheet/presentation text)
 

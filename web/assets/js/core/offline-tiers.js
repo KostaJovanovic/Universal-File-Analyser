@@ -78,7 +78,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
             './assets/js/core/stats-page.js', './assets/js/core/history.js', './assets/js/core/file-sniff.js', './assets/js/core/forensics.js', './assets/js/core/overlays.js', './assets/js/core/patch-tldr.js', './assets/js/core/offline-tiers.js', './assets/js/core/format-overlay.js', './assets/js/core/classify.js',
             './assets/js/renderers/photo.js', './assets/js/renderers/scrub.js', './assets/js/renderers/c2pa.js', './assets/js/renderers/ai-signals.js', './assets/js/renderers/timeline-forensic.js', './assets/js/renderers/audio.js', './assets/js/renderers/audio-analysis.js',
             './assets/js/renderers/audio-codec.js', './assets/js/renderers/video.js', './assets/js/renderers/spectrogram.js',
-            './assets/js/renderers/pdf.js', './assets/js/renderers/archive.js', './assets/js/renderers/svg.js',
+            './assets/js/renderers/pdf.js', './assets/js/renderers/pdf3d.js', './assets/js/renderers/archive.js', './assets/js/renderers/svg.js',
             './assets/js/renderers/csv.js', './assets/js/renderers/unknown.js', './assets/js/renderers/proprietary.js',
             './assets/js/renderers/folder.js', './assets/js/renderers/folder-archive-shared.js',
             './assets/js/renderers/treemap.js', './assets/js/core/navigate.js',
@@ -94,7 +94,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
             './assets/js/renderers/pptx.js', './assets/js/renderers/stl.js', './assets/js/renderers/mesh-stream.js', './assets/js/renderers/zip.js',
             './assets/js/renderers/lrc.js', './assets/js/renderers/midi.js', './assets/js/renderers/subtitles.js',
             './assets/js/renderers/geo.js', './assets/js/renderers/markdown.js', './assets/js/renderers/comic.js',
-            './assets/js/core/binutil.js', './assets/js/lib/plist.js', './assets/js/lib/cfbf.js', './assets/js/lib/sqlite.js', './assets/js/lib/sqlite-pages.js', './assets/js/lib/libarchive-loader.js', './assets/js/lib/openjpeg-loader.js', './assets/js/lib/xz-loader.js', './assets/js/lib/ghostscript-loader.js', './assets/js/parsers/parsers-dev.js',
+            './assets/js/core/binutil.js', './assets/js/lib/plist.js', './assets/js/lib/cfbf.js', './assets/js/lib/sqlite.js', './assets/js/lib/sqlite-pages.js', './assets/js/lib/libarchive-loader.js', './assets/js/lib/openjpeg-loader.js', './assets/js/lib/xz-loader.js', './assets/js/lib/ghostscript-loader.js', './assets/js/lib/nanoprc-loader.js', './assets/js/parsers/parsers-dev.js',
             './assets/js/parsers/parsers-archive.js', './assets/js/parsers/parsers-email.js',
             './assets/js/parsers/parsers-security.js', './assets/js/parsers/parsers-gaming.js',
             './assets/js/parsers/parsers-disk.js', './assets/js/parsers/parsers-sci.js', './assets/js/parsers/parsers-osmisc.js',
@@ -216,6 +216,9 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
             './assets/vendor/ghostscript/browser.js',
             './assets/vendor/ghostscript/gs.js',
             './assets/vendor/ghostscript/gs.wasm',
+            // nanoPRC (WebAssembly) for the models in 3D PDFs - ~600 KB.
+            './assets/vendor/nanoprc/nanoprc.mjs',
+            './assets/vendor/nanoprc/nanoprc.wasm',
             // LibreDWG (WebAssembly) for AutoCAD DWG/DWT drawings - ~6 MB.
             './assets/vendor/libredwg/dist/libredwg-web.js',
             './assets/vendor/libredwg/wasm/libredwg-web.js',

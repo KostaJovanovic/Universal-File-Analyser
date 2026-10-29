@@ -1,9 +1,9 @@
 /* Analyser - PDF module
    Lazy-loads pdf.js from CDN, extracts metadata, text, and page thumbnails. */
-import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, openOverlayBack, timeAnomalies, timeAnomalyCard } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, openOverlayBack, timeAnomalies, timeAnomalyCard, downloadBlob, crc32Hex } from '../core/util.js';
 import { renderPhoto, revealPhotoSection, pickOcrLanguage, ocrLangPath } from './photo.js';
 import { pagePreviewSkeleton } from './paged.js';
-import { SCAN_SMALL, PDF_RANGE_MIN, PDF_RANGE_HEAD, OCR_WORKERS } from '../core/limits.js';
+import { SCAN_SMALL, PDF_RANGE_MIN, PDF_RANGE_HEAD, OCR_WORKERS, CANVAS_EDGE_MAX, PDF_LONG_MAX_PX, PDF_LONG_BAND_PX } from '../core/limits.js';
 // Resolved against this module's URL so the dynamic import() gets a valid
 // absolute specifier (a bare "assets/..." path is not a resolvable module id).
 const PDFJS_URL = new URL('../../vendor/pdfjs/pdf.min.mjs', import.meta.url).href;
@@ -210,6 +210,160 @@ function fileRangeTransport(lib, file, head) {
     }
     return new FileRange(file.size, head);
 }
+// ---------- one long page as a PNG ----------
+// One PNG chunk: length, type, data, then the CRC-32 of type + data.
+function pngChunk(type, data) {
+    const out = new Uint8Array(12 + data.length);
+    const dv = new DataView(out.buffer);
+    dv.setUint32(0, data.length);
+    for (let i = 0; i < 4; i++)
+        out[4 + i] = type.charCodeAt(i);
+    out.set(data, 8);
+    dv.setUint32(8 + data.length, parseInt(crc32Hex(out.subarray(4, 8 + data.length)), 16));
+    return out;
+}
+// Every page of `pdf` stacked top to bottom in ONE PNG, `s` pixels per PDF
+// point. A strip like that is far past what any browser will allocate as a
+// canvas (a 40-page letter document at 300 dpi is 2550 x 132000), so it is
+// never drawn whole: each page is rendered a band of rows at a time onto one
+// reused canvas (pdf.js's viewport offset moves the page up under it), the
+// band's pixels are written out as RGB scanlines, and CompressionStream deflates
+// them straight into IDAT chunks. Memory stays at one band plus the compressed
+// output, which is folded into Blobs as it grows so the browser can page it out.
+// Pages narrower than the widest are centred on white. `sizes` are the pages'
+// unscaled viewports (rotation applied); W and H must be the rounded totals the
+// same sizes produce, since the header is written before the first row.
+async function writeLongPng(pdf, sizes, s, W, H, dpi, onProgress, isCancelled, onTask) {
+    const bandRows = Math.max(16, Math.min(CANVAS_EDGE_MAX, Math.floor(PDF_LONG_BAND_PX / W)));
+    const cv = document.createElement('canvas');
+    cv.width = W;
+    cv.height = bandRows;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    const ihdr = new Uint8Array(13);
+    const hv = new DataView(ihdr.buffer);
+    hv.setUint32(0, W);
+    hv.setUint32(4, H);
+    ihdr[8] = 8;
+    ihdr[9] = 2; // 8-bit RGB, no alpha; deflate, no filter method, no interlace
+    // pHYs carries the resolution, so the image opens at its real printed size.
+    const ppm = Math.round(dpi / 0.0254);
+    const phys = new Uint8Array(9);
+    const pv = new DataView(phys.buffer);
+    pv.setUint32(0, ppm);
+    pv.setUint32(4, ppm);
+    phys[8] = 1;
+    const blobs = [];
+    let parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), pngChunk('IHDR', ihdr), pngChunk('pHYs', phys)];
+    let held = 0;
+    // 'deflate' is the zlib-wrapped stream, which is exactly what IDAT holds.
+    const cs = new CompressionStream('deflate');
+    const writer = cs.writable.getWriter();
+    // Read concurrently with the writes below, or the stream's backpressure stalls them.
+    const reading = (async () => {
+        const r = cs.readable.getReader();
+        let pend = [], pendLen = 0;
+        const flush = () => {
+            if (!pendLen)
+                return;
+            const d = new Uint8Array(pendLen);
+            let o = 0;
+            for (const p of pend) {
+                d.set(p, o);
+                o += p.length;
+            }
+            pend = [];
+            pendLen = 0;
+            parts.push(pngChunk('IDAT', d));
+            held += d.length;
+            if (held >= 64 * 1024 * 1024) {
+                blobs.push(new Blob(parts));
+                parts = [];
+                held = 0;
+            }
+        };
+        for (;;) {
+            const { done, value } = await r.read();
+            if (done)
+                break;
+            pend.push(value);
+            pendLen += value.length;
+            if (pendLen >= 1024 * 1024)
+                flush();
+        }
+        flush();
+    })();
+    try {
+        let rowsDone = 0;
+        const line = 1 + W * 3;
+        for (let i = 0; i < sizes.length; i++) {
+            const pw = Math.round(sizes[i].w * s), ph = Math.round(sizes[i].h * s);
+            const x0 = Math.floor((W - pw) / 2);
+            let pg = null;
+            try {
+                pg = await pdf.getPage(i + 1);
+            }
+            catch (_) { /* unreadable page - left white */ }
+            for (let y = 0; y < ph; y += bandRows) {
+                if (isCancelled())
+                    throw new Error('cancelled');
+                const rows = Math.min(bandRows, ph - y);
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, W, bandRows);
+                if (pg) {
+                    const task = pg.render({ canvasContext: ctx, viewport: pg.getViewport({ scale: s, offsetX: x0, offsetY: -y }) });
+                    onTask(task);
+                    try {
+                        await task.promise;
+                    }
+                    finally {
+                        onTask(null);
+                    }
+                    if (isCancelled())
+                        throw new Error('cancelled');
+                }
+                const px = ctx.getImageData(0, 0, W, rows).data;
+                const out = new Uint8Array(rows * line);
+                for (let r = 0, o = 0, p = 0; r < rows; r++) {
+                    out[o++] = 0; // filter type None
+                    for (let x = 0; x < W; x++, p += 4) {
+                        out[o++] = px[p];
+                        out[o++] = px[p + 1];
+                        out[o++] = px[p + 2];
+                    }
+                }
+                await writer.write(out);
+                rowsDone += rows;
+                onProgress(rowsDone / H, i + 1);
+            }
+            if (pg) {
+                try {
+                    pg.cleanup();
+                }
+                catch (_) { /* ignore */ }
+            }
+        }
+        await writer.close();
+        await reading;
+    }
+    catch (e) {
+        try {
+            await writer.abort(e);
+        }
+        catch (_) { /* ignore */ }
+        try {
+            await reading;
+        }
+        catch (_) { /* ignore */ }
+        throw e;
+    }
+    finally {
+        cv.width = 0;
+        cv.height = 0;
+    }
+    parts.push(pngChunk('IEND', new Uint8Array(0)));
+    return new Blob([...blobs, ...parts], { type: 'image/png' });
+}
 // ---------- main render ----------
 export async function renderPdf(file, resultsEl, opts = {}) {
     resultsEl.hidden = false;
@@ -271,6 +425,12 @@ export async function renderPdf(file, resultsEl, opts = {}) {
     // without this the page previews arrive late and push the lot downwards.
     const thumbSkeleton = pagePreviewSkeleton({ count: initialPages, note: 'Rendering pages…' });
     resultsEl.appendChild(thumbSkeleton);
+    // A 3D PDF's model (PRC / U3D), under the page previews. pdf3d.js reads the
+    // raw file alongside everything below and leaves the slot empty when there is
+    // none; the compare view gets its readout but no viewer.
+    const slot3d = el('div');
+    resultsEl.appendChild(slot3d);
+    import('./pdf3d.js').then((m) => m.renderPdf3d(file, slot3d, { viewer: !opts.previewPages })).catch(() => { });
     // --- Info card ---
     const infoCard = el('div', { class: 'anr-card' });
     infoCard.appendChild(el('h3', {}, 'PDF document'));
@@ -1058,6 +1218,281 @@ export async function renderPdf(file, resultsEl, opts = {}) {
             overlay._backClose = openOverlayBack(overlay._hide);
         showPage(startPage);
     }
+    // "One long page": every page stacked in a single scrolling column, with a
+    // Save as PNG that writes the same column as ONE tall image at the chosen
+    // resolution (writeLongPng). Pages draw only while near the view and are
+    // dropped again once scrolled well past, so a 500-page document holds a
+    // handful of canvases, not 500. Placeholders start at page 1's size; a
+    // background pass then measures every page (the export needs the exact
+    // total height before it writes the header), resizing any that differ.
+    const LONG_DPI = [150, 300, 600];
+    async function openLongView() {
+        const n = pdf.numPages;
+        const p1vp = (await pdf.getPage(1)).getViewport({ scale: 1 });
+        const p1 = { w: p1vp.width, h: p1vp.height };
+        const sizes = new Array(n).fill(null);
+        const cssScale = Math.min(Math.min(window.innerWidth * 0.9, 1000) / p1.w, 2);
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        let closed = false;
+        let exporting = null;
+        const overlay = el('div', { class: 'lightbox anr-doc-lightbox anr-pdf-long' });
+        const closeBtn = el('button', { type: 'button', class: 'lightbox-close' }, 'Close');
+        const center = el('div', { class: 'lightbox-center' });
+        const stage = el('div', { class: 'anr-doc-stage anr-pdf-long-stage' });
+        const column = el('div', { class: 'anr-pdf-long-col' });
+        const toolbar = el('div', { class: 'lightbox-toolbar' });
+        const meta = el('p', { class: 'lightbox-meta' });
+        stage.appendChild(column);
+        center.appendChild(stage);
+        center.appendChild(toolbar);
+        center.appendChild(meta);
+        overlay.appendChild(closeBtn);
+        overlay.appendChild(center);
+        const slots = [];
+        for (let i = 0; i < n; i++) {
+            const box = el('div', { class: 'anr-pdf-long-page', 'data-page': String(i + 1) });
+            box.style.width = Math.floor(p1.w * cssScale) + 'px';
+            box.style.height = Math.floor(p1.h * cssScale) + 'px';
+            column.appendChild(box);
+            slots.push({ box, canvas: null, task: null, visible: false });
+        }
+        // Record a page's real size. A page above the view that changes height moves
+        // everything below it, so the scroll position is shifted by the same amount.
+        function sizeSlot(i, w, h) {
+            sizes[i] = { w, h };
+            const box = slots[i].box;
+            const cw = Math.floor(w * cssScale), ch = Math.floor(h * cssScale);
+            if (box.style.width === cw + 'px' && box.style.height === ch + 'px')
+                return;
+            const oldH = box.offsetHeight;
+            const above = box.offsetTop + oldH <= stage.scrollTop;
+            box.style.width = cw + 'px';
+            box.style.height = ch + 'px';
+            if (above)
+                stage.scrollTop += ch - oldH;
+        }
+        async function drawSlot(i) {
+            const sl = slots[i];
+            if (sl.canvas || sl.task)
+                return;
+            let pg;
+            try {
+                pg = await pdf.getPage(i + 1);
+            }
+            catch (_) {
+                return;
+            }
+            if (closed || !sl.visible || sl.canvas || sl.task)
+                return;
+            const vp1 = pg.getViewport({ scale: 1 });
+            sizeSlot(i, vp1.width, vp1.height);
+            const vp = pg.getViewport({ scale: cssScale * dpr });
+            const cv = el('canvas', {});
+            cv.width = Math.floor(vp.width);
+            cv.height = Math.floor(vp.height);
+            const task = pg.render({ canvasContext: cv.getContext('2d'), viewport: vp });
+            sl.task = task;
+            // Only clear the slot's task if it is still THIS one: a drop-and-redraw while
+            // this render was in flight has already handed the slot a newer task.
+            try {
+                await task.promise;
+            }
+            catch (_) {
+                if (sl.task === task)
+                    sl.task = null;
+                cv.width = 0;
+                return;
+            } // cancelled by dropSlot, or a bad page
+            if (sl.task === task)
+                sl.task = null;
+            if (closed || !sl.visible || sl.canvas) {
+                cv.width = 0;
+                return;
+            }
+            sl.box.appendChild(cv);
+            sl.canvas = cv;
+        }
+        function dropSlot(i) {
+            const sl = slots[i];
+            if (sl.task) {
+                try {
+                    sl.task.cancel();
+                }
+                catch (_) { /* ignore */ }
+                sl.task = null;
+            }
+            if (sl.canvas) {
+                sl.canvas.remove();
+                sl.canvas.width = 0;
+                sl.canvas = null;
+            }
+        }
+        const io = new IntersectionObserver((entries) => {
+            for (const e of entries) {
+                const i = Number(e.target.dataset.page) - 1;
+                slots[i].visible = e.isIntersecting;
+                if (e.isIntersecting)
+                    drawSlot(i);
+                else
+                    dropSlot(i);
+            }
+        }, { root: stage, rootMargin: '100% 0px' });
+        for (const sl of slots)
+            io.observe(sl.box);
+        // Page indicator: the page under the middle of the view.
+        function currentPage() {
+            const mid = stage.scrollTop + stage.clientHeight / 2;
+            let lo = 0, hi = n - 1;
+            while (lo < hi) {
+                const m = (lo + hi + 1) >> 1;
+                if (slots[m].box.offsetTop <= mid)
+                    lo = m;
+                else
+                    hi = m - 1;
+            }
+            return lo + 1;
+        }
+        let metaQueued = false;
+        function showPageMeta() {
+            if (exporting || closed)
+                return;
+            meta.textContent = 'Page ' + currentPage() + ' / ' + n + '  -  one long page';
+        }
+        stage.addEventListener('scroll', () => {
+            if (metaQueued)
+                return;
+            metaQueued = true;
+            requestAnimationFrame(() => { metaQueued = false; showPageMeta(); });
+        }, { passive: true });
+        // Size of the saved image at a given dpi, from the measured pages (page 1's
+        // size stands in for any not measured yet).
+        function geometry(dpi) {
+            const s = dpi / 72;
+            let W = 0, H = 0;
+            for (const z of sizes) {
+                const sz = z || p1;
+                W = Math.max(W, Math.round(sz.w * s));
+                H += Math.round(sz.h * s);
+            }
+            return { s, W, H, ok: W <= CANVAS_EDGE_MAX && W * H <= PDF_LONG_MAX_PX };
+        }
+        let dpi = 300;
+        const chips = LONG_DPI.map((d) => {
+            const b = el('button', { type: 'button', class: 'lightbox-tool-btn' }, d + ' dpi');
+            b.addEventListener('click', (e) => { e.stopPropagation(); if (exporting)
+                return; dpi = d; syncChips(); });
+            return b;
+        });
+        const saveBtn = el('button', { type: 'button', class: 'lightbox-tool-btn' }, 'Save as PNG');
+        // Grey out a resolution whose image would be too big for this device, and step
+        // the selection down to the largest one that fits.
+        function syncChips() {
+            const fits = LONG_DPI.map((d) => geometry(d));
+            if (!fits[LONG_DPI.indexOf(dpi)].ok) {
+                for (let k = LONG_DPI.length - 1; k >= 0; k--)
+                    if (fits[k].ok) {
+                        dpi = LONG_DPI[k];
+                        break;
+                    }
+            }
+            chips.forEach((b, k) => {
+                const g = fits[k];
+                b.disabled = !g.ok;
+                b.classList.toggle('is-active', LONG_DPI[k] === dpi && g.ok);
+                b.title = (g.ok ? '' : 'Too large to save on this device - ') + g.W.toLocaleString() + ' x ' + g.H.toLocaleString() + ' px';
+            });
+            saveBtn.disabled = !fits.some((g) => g.ok);
+            saveBtn.title = saveBtn.disabled ? 'This document is too long to save as one image on this device' : 'Save every page as one tall PNG';
+        }
+        async function savePng() {
+            if (exporting) {
+                exporting.cancel();
+                return;
+            }
+            if (typeof CompressionStream === 'undefined') {
+                meta.textContent = 'This browser cannot write the PNG - try a current Chrome, Firefox or Safari';
+                return;
+            }
+            let cancelled = false;
+            let task = null;
+            exporting = { cancel: () => { cancelled = true; if (task) {
+                    try {
+                        task.cancel();
+                    }
+                    catch (_) { /* ignore */ }
+                } } };
+            saveBtn.textContent = 'Cancel';
+            saveBtn.classList.add('is-active');
+            const at = dpi;
+            try {
+                meta.textContent = 'Measuring pages…';
+                await measured;
+                if (cancelled || closed)
+                    throw new Error('cancelled');
+                const g = geometry(at);
+                if (!g.ok)
+                    throw new Error('the image would be ' + g.W.toLocaleString() + ' x ' + g.H.toLocaleString() + ' px, too large for this device');
+                const blob = await writeLongPng(pdf, sizes, g.s, g.W, g.H, at, (frac, page) => { meta.textContent = 'Saving ' + at + ' dpi PNG - page ' + page + ' / ' + n + '  (' + Math.round(frac * 100) + '%)'; }, () => cancelled || closed, (t) => { task = t; });
+                if (cancelled || closed)
+                    throw new Error('cancelled');
+                downloadBlob(file.name.replace(/\.pdf$/i, '') + '-long-' + at + 'dpi.png', blob);
+                meta.textContent = 'Saved ' + g.W.toLocaleString() + ' x ' + g.H.toLocaleString() + ' px PNG  (' + fmtBytes(blob.size) + ')';
+            }
+            catch (e) {
+                if (!closed)
+                    meta.textContent = cancelled ? 'Save cancelled' : 'Could not save the image - ' + ((e && e.message) || 'unknown error');
+            }
+            finally {
+                exporting = null;
+                saveBtn.textContent = 'Save as PNG';
+                saveBtn.classList.remove('is-active');
+            }
+        }
+        saveBtn.addEventListener('click', (e) => { e.stopPropagation(); savePng(); });
+        for (const b of chips)
+            toolbar.appendChild(b);
+        toolbar.appendChild(saveBtn);
+        const measured = (async () => {
+            sizes[0] = p1;
+            for (let i = 1; i < n && !closed; i++) {
+                if (sizes[i])
+                    continue;
+                try {
+                    const vp = (await pdf.getPage(i + 1)).getViewport({ scale: 1 });
+                    if (!closed)
+                        sizeSlot(i, vp.width, vp.height);
+                }
+                catch (_) {
+                    sizes[i] = p1;
+                } // unreadable: kept at page 1's size, drawn white
+            }
+            if (!closed)
+                syncChips();
+        })();
+        function onKey(e) { if (e.key === 'Escape')
+            backClose(); }
+        function hide() {
+            closed = true;
+            if (exporting)
+                exporting.cancel();
+            io.disconnect();
+            for (let i = 0; i < n; i++)
+                dropSlot(i);
+            overlay.remove();
+            document.body.style.overflow = '';
+            document.removeEventListener('keydown', onKey);
+        }
+        const backClose = openOverlayBack(hide); // device Back closes it
+        closeBtn.addEventListener('click', backClose);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay)
+            backClose(); });
+        document.addEventListener('keydown', onKey);
+        syncChips();
+        document.body.appendChild(overlay);
+        overlay.hidden = false;
+        document.body.style.overflow = 'hidden';
+        showPageMeta();
+    }
     // Render a page to a high-resolution canvas (for photo analysis / OCR).
     async function renderPageHiRes(pageNum) {
         const pg = await pdf.getPage(pageNum);
@@ -1218,13 +1653,23 @@ export async function renderPdf(file, resultsEl, opts = {}) {
     const thumbBtnRow = el('div', { class: 'anr-btn-row' });
     const thumbMoreBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show next 3 pages');
     const thumbAllBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show all');
+    // Stays in the row after the paging buttons go, so the row itself never hides.
+    const longBtn = el('button', { type: 'button', class: 'anr-btn', title: 'Every page in one scrolling column, savable as a single tall PNG' }, 'View as one long page');
+    longBtn.addEventListener('click', async () => {
+        longBtn.disabled = true;
+        try {
+            await openLongView();
+        }
+        catch (_) { /* document gone (a newer render released it) */ }
+        longBtn.disabled = false;
+    });
     function updateThumbBtns() {
         const remaining = pdf.numPages - thumbsRendered;
         if (remaining <= 0) {
-            thumbBtnRow.hidden = true;
+            thumbMoreBtn.hidden = true;
+            thumbAllBtn.hidden = true;
         }
         else {
-            thumbBtnRow.hidden = false;
             // With fewer than 3 pages left, "Show next 3 pages" would just do what
             // "Show all" does - hide it and leave the single "Show all" button.
             thumbMoreBtn.hidden = remaining < 3;
@@ -1248,6 +1693,7 @@ export async function renderPdf(file, resultsEl, opts = {}) {
     });
     thumbBtnRow.appendChild(thumbMoreBtn);
     thumbBtnRow.appendChild(thumbAllBtn);
+    thumbBtnRow.appendChild(longBtn);
     updateThumbBtns();
     thumbCard.appendChild(thumbContainer);
     thumbCard.appendChild(thumbBtnRow);

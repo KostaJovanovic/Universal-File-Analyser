@@ -214,6 +214,28 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">9.19 - 9.22</p>
+          <p class="patch-name">No Ceiling</p>
+          <p class="patch-date">29 October 2026</p>
+          <ul class="patch-list">
+            <li><strong>Big files open whole: databases, spreadsheets, archives, Photoshop files, 3D models, PDFs and camera video of many gigabytes are read a piece at a time instead of turned away - and 3D PDFs finally show their model.</strong></li>
+            <li><span class="patch-tag">New</span><strong>3D PDFs show their model.</strong> A PDF made with Acrobat&rsquo;s 3D tools carries a model that other viewers show only as a flat picture. It now opens in the 3D viewer under the page previews, with its own colours and a picker for its parts, and saves as the original model or as an STL. A model that a later save replaced, but left inside the file, is listed and can be viewed too.</li>
+            <li><span class="patch-tag">New</span><strong>A PDF as one long page.</strong> <code>View as one long page</code> stacks every page in a single scrolling column, and <code>Save as PNG</code> writes the whole column as one tall image at 150, 300 or 600 dpi.</li>
+            <li><span class="patch-tag">New</span><strong>Videos go fullscreen</strong> from a button on the player or a double-click, keeping their own controls. <strong>Compress video</strong> makes a smaller MP4 copy of any video that plays, says how long it took and how much smaller it is, and <code>Analyse compressed</code> opens the copy.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>No more size walls for the biggest files.</strong> A database too large for memory still shows its tables, columns, row counts and sample rows. A CSV of hundreds of MB counts every row. A mailbox of any size opens, and ZIPs past 4 GB, TAR files and ISO discs list in full without being loaded. Hashes have no ceiling, with a progress bar.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Huge models, pictures and documents open too.</strong> An STL or PLY past 1 GB gets its full measurements and a simplified view, a Photoshop file the viewer could not draw (CMYK, 16-bit, PSB) still shows its layers and flattened image, a PDF past 64 MB reads only the pages you look at, and a disk image is browsed without being held in memory.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Long camera clips analyse their sound</strong> by reading only the audio, however large the MP4 or MOV, and AVCHD and MPEG-TS files over 1.4 GB play in parts instead of failing.</li>
+            <li><span class="patch-tag">New</span><strong>The files a Mac leaves behind are explained.</strong> A <code>._</code> file shows its tags and which app downloaded the original, and from which address. Property lists open under any name, <a href="/about#ext-dmg">DMG</a> disk images report their size, format and signature, and macOS crash reports are read.</li>
+            <li><span class="patch-tag">New</span><strong>Safari <a href="/about#ext-webarchive">web archives</a></strong> open with every frame of the saved page - so Word Online and webmail pages show their text - and the images saved inside. Apple <a href="/about#ext-caf">CAF</a> audio, iMessage voice messages included, plays outside Safari.</li>
+            <li><span class="patch-tag">New</span><strong>Audio editing works by touch:</strong> slide a finger to select, drag the grips to adjust, and tap to place the playhead.</li>
+            <li><strong>Scroll zoom remembers your choice.</strong> Switch it on or off once and every 3D, G-code, circuit board and colour cube viewer keeps it until you close the tab.</li>
+            <li><span class="patch-tag is-faster">Faster</span>Spectrograms draw faster, turning a picture into sound runs on the graphics card where it can, reading a long PDF&rsquo;s text with OCR finishes sooner, and the bit-plane view of a large photo and the 3D mesh check use far less memory.</li>
+            <li><span class="patch-tag">New</span><strong>The desktop app gets FFmpeg for you.</strong> When none is found, the first video job offers to download it, and <code>Help</code> &rarr; <code>FFmpeg (hardware video)</code> shows which one is used and on which graphics hardware. The graphics card now decodes as well as encodes, Linux graphics are supported, opened videos are read where they are, and large files are hashed straight from disk.</li>
+            <li><span class="patch-tag is-fix">Fix</span>A video whose sound the browser plays by itself no longer gets that sound twice.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">9.15 - 9.18</p>
           <p class="patch-name">Cut &amp; Convert</p>
           <p class="patch-date">4 October 2026</p>
@@ -256,6 +278,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">9.01 - 9.08</p>
           <p class="patch-name">All Aboard</p>
@@ -273,9 +298,6 @@
             <li><strong>Maintenance:</strong> three of these updates only tidied the files of the project itself.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry patch-milestone">
           <p class="patch-version" data-badge="No browser required.">9.0</p>
@@ -2153,6 +2175,7 @@
       <div><dt>PostScript</dt><dd><a href="https://www.ghostscript.com/" target="_blank" rel="noopener">Ghostscript</a> <a class="dep-lic" href="https://github.com/ArtifexSoftware/ghostpdl/blob/master/LICENSE" target="_blank" rel="noopener">licence</a> compiled to WASM. Renders EPS / PostScript graphics. ~16 MB, in the Everything download.</dd></div>
       <div><dt>UI font</dt><dd><a href="https://github.com/vercel/geist-font" target="_blank" rel="noopener">Geist and Geist Mono</a> <a class="dep-lic" href="https://github.com/vercel/geist-font/blob/main/LICENSE.txt" target="_blank" rel="noopener">licence</a> by Vercel are the interface and monospace typefaces, used under the SIL Open Font License.</dd></div>
       <div><dt>PDF</dt><dd><a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a> <a class="dep-lic" href="https://github.com/mozilla/pdf.js/blob/master/LICENSE" target="_blank" rel="noopener">licence</a> by Mozilla. Renders PDF pages, extracts text, and supports OCR scanning of image-only pages via Tesseract. Loaded only for PDF files.</dd></div>
+      <div><dt>3D PDF</dt><dd><a href="https://github.com/mvrhel/nanoPRC" target="_blank" rel="noopener">nanoPRC</a> <a class="dep-lic" href="https://github.com/mvrhel/nanoPRC/blob/main/LICENSE" target="_blank" rel="noopener">licence</a> by CascadiaVoxel, compiled to WASM with small changes of ours (source in the repository's <code>tools/nanoprc</code>). Decodes the PRC models inside 3D PDFs. ~600 KB, in the Everything download.</dd></div>
       <div><dt>DWG</dt><dd><a href="https://github.com/LibreDWG/libredwg" target="_blank" rel="noopener">LibreDWG</a> <a class="dep-lic" href="https://github.com/LibreDWG/libredwg/blob/master/COPYING" target="_blank" rel="noopener">licence</a> compiled to WASM. Parses AutoCAD <code>.dwg</code> / <code>.dwt</code> drawings and renders them to SVG. ~7 MB, in the Everything download.</dd></div>
       <div><dt>File ID</dt><dd>Built-in identification for 1440+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Tracker music</dt><dd><a href="https://lib.openmpt.org/libopenmpt/" target="_blank" rel="noopener">libopenmpt</a> <a class="dep-lic" href="https://github.com/OpenMPT/openmpt/blob/master/LICENSE" target="_blank" rel="noopener">licence</a> by the OpenMPT project, compiled to WASM (packaged by <a href="https://github.com/DrSnuggles/chiptune" target="_blank" rel="noopener">chiptune3</a> <a class="dep-lic" href="/assets/vendor/libopenmpt-LICENSE.txt" target="_blank" rel="noopener">licence</a>). Renders MOD, XM, IT, S3M and around sixty other tracker modules to audio on your device, so they get the full Sound section. ~1.5 MB, in the Everything download.</dd></div>

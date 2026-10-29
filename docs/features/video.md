@@ -20,9 +20,16 @@ figure.
 
 **How to reach it.** Drop any recognised video file. Built in
 `web/assets/js/renderers/video.js`, on the parsers in
-`video-bitstream.js`.
+`video-bitstream.js`. The corner-bracket button at the end of the
+transport (or a double-click on the picture) opens the player in
+fullscreen, with the same transport pinned underneath; Esc or the
+button again leaves it.
 
-**Notes / limits.** The codec detail comes from the `avcC` / `hvcC`
+**Notes / limits.** Fullscreen is offered on the full-size players
+(the main player, the segmented raw-stream player, the fallback player
+and the reversed clip), not the small preview players. iPhone Safari
+cannot make a page element fullscreen, so there the native video
+controls, which carry their own fullscreen button, stand in for it. The codec detail comes from the `avcC` / `hvcC`
 codec-configuration record, and from the H.264 / H.265 **SPS** embedded
 inside it - so colour and frame rate are read even when the container
 writes no `colr` box. Frame rate is taken from the container (MP4 sample

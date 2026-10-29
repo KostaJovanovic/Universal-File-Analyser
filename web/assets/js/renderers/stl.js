@@ -2,7 +2,7 @@
    Parses binary and ASCII STL, renders an interactive WebGL model (orbit / zoom /
    spin), and reports geometry statistics (triangles, bounding box, surface area,
    volume). Self-contained - no external 3D library. */
-import { el, row, rowHelp, fmtBytes, errorCard, attachViewCube } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, errorCard, attachViewCube, wheelZoomOn, setWheelZoomOn, onWheelZoomChange } from '../core/util.js';
 import { WALL_PARSE } from '../core/limits.js';
 // ---------- STL parsing ----------
 // Returns { format, positions:Float32Array, normals:Float32Array, count,
@@ -518,22 +518,24 @@ function buildViewer(geo, opts = {}) {
     // manual zoom pad on top, the scroll-zoom toggle, then the fullscreen button at
     // the bottom-right corner (the view cube owns bottom-left). Built into the viewer
     // so it survives the MSAA rebuild (which swaps the canvas) and shows in fullscreen.
-    // Scroll-zoom toggle - OFF by default so the wheel scrolls the page until the
-    // user opts in. Gate the wheel handler on wheelOn BEFORE preventDefault, so a
-    // disabled viewer lets the wheel scroll the page through it.
-    let wheelOn = false;
+    // Scroll-zoom toggle - the site-wide setting (wheelZoomOn in util.js): off
+    // until the user opts in, then kept for the visit. Gate the wheel handler on
+    // it BEFORE preventDefault, so a disabled viewer lets the wheel scroll the
+    // page through it.
     const wheelZoomBtn = el('button', { type: 'button', class: 'anr-btn anr-cam-zoombtn', 'aria-pressed': 'false' });
     const paintWheel = () => {
+        const wheelOn = wheelZoomOn();
         wheelZoomBtn.textContent = wheelOn ? 'Scroll zoom on' : 'Scroll zoom off';
         wheelZoomBtn.title = wheelOn ? 'Scrolling over the viewer zooms it. Click to let the wheel scroll the page instead.'
             : 'Scrolling over the viewer moves the page. Click to zoom with the scroll wheel again.';
         wheelZoomBtn.setAttribute('aria-pressed', wheelOn ? 'true' : 'false');
         wheelZoomBtn.classList.toggle('is-active', wheelOn); // red while on, like every toggle
     };
-    wheelZoomBtn.addEventListener('click', (e) => { e.stopPropagation(); wheelOn = !wheelOn; paintWheel(); });
+    wheelZoomBtn.addEventListener('click', (e) => { e.stopPropagation(); setWheelZoomOn(!wheelZoomOn()); });
     wheelZoomBtn.addEventListener('pointerdown', (e) => e.stopPropagation()); // a press must not also start an orbit
+    onWheelZoomChange(wheelZoomBtn, paintWheel);
     paintWheel();
-    canvas.addEventListener('wheel', (e) => { if (!wheelOn)
+    canvas.addEventListener('wheel', (e) => { if (!wheelZoomOn())
         return; e.preventDefault(); zoomBy(1 + Math.sign(e.deltaY) * 0.1); }, { passive: false });
     // Manual zoom pad (+ over -): a press-and-hold repeats the zoom step on a timer,
     // so you can ride the camera in or out without spamming clicks. Pointer capture

@@ -89,6 +89,48 @@ function applyVideoControls(playerEl: HTMLVideoElement, opts: any = {}) {
   else curVctx().sync(playerEl);
 }
 
+// Corner-bracket glyphs for the transport's fullscreen button: outward to enter,
+// inward to leave. Stroked in currentColor so they invert on hover like play/mute.
+const FS_ENTER = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M1 5V1h4M9 1h4v4M13 9v4H9M5 13H1V9"/></svg>';
+const FS_EXIT = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 1v4H1M13 5H9V1M9 13V9h4M1 9h4v4"/></svg>';
+
+// Wrap a player <video> and its makePlayer transport in one stage, and give the
+// transport a fullscreen button. The STAGE goes fullscreen, not the <video>, so
+// the site's own transport (scrubber, volume) stays usable there instead of the
+// browser's native controls. Double-click on the picture toggles it too. Where
+// element fullscreen doesn't exist (iPhone Safari) no button is added - iOS shows
+// the native controls, which carry their own.
+function videoStage(playerEl: HTMLVideoElement, transport: HTMLElement) {
+  const stage = el('div', { class: 'anr-video-stage' }, [playerEl, transport]);
+  const req = stage.requestFullscreen || (stage as any).webkitRequestFullscreen;
+  if (!req) return stage;
+  const fsEl = () => document.fullscreenElement || (document as any).webkitFullscreenElement;
+  const toggle = () => {
+    if (fsEl() === stage) {
+      const r: any = (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      if (r && r.catch) r.catch(() => {});
+    } else {
+      const r: any = req.call(stage);
+      if (r && r.catch) r.catch(() => {});
+    }
+  };
+  const fsBtn = el('button', { type: 'button', class: 'anr-player-fs', title: 'Fullscreen', 'aria-label': 'Fullscreen', html: FS_ENTER });
+  fsBtn.addEventListener('click', toggle);
+  playerEl.addEventListener('dblclick', toggle);
+  // fullscreenchange fires on the element entering or leaving, so listening on the
+  // stage itself needs no document listener to clean up.
+  const sync = () => {
+    const on = fsEl() === stage;
+    fsBtn.innerHTML = on ? FS_EXIT : FS_ENTER;
+    fsBtn.title = on ? 'Exit fullscreen (Esc)' : 'Fullscreen';
+    fsBtn.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Fullscreen');
+  };
+  stage.addEventListener('fullscreenchange', sync);
+  stage.addEventListener('webkitfullscreenchange', sync);
+  transport.appendChild(fsBtn);
+  return stage;
+}
+
 // A generated contact-sheet image. Click opens it full-size in the shared
 // lightbox (no photo tools - it's a thumbnail grid, not a single photo).
 function sheetImg(dataUrl: string) {
@@ -1085,8 +1127,7 @@ function buildReverseVideoCard(file: File, signal: AbortSignal) {
     v.setAttribute('webkit-playsinline', '');
     v.style.cssText = 'width:100%; max-height:480px; background:#0a0a0a; display:block; border:1px solid var(--hairline);';
     applyVideoControls(v);
-    out.appendChild(v);
-    out.appendChild(makePlayer(v));
+    out.appendChild(videoStage(v, makePlayer(v)));
     const base = (file.name || 'video').replace(/\.[^.]+$/, '');
     const revName = base + '_reversed.mp4';
     const analyseBtn = el('button', { type: 'button', class: 'anr-btn',
@@ -1738,8 +1779,7 @@ async function renderSegmentedPlayer(file: File, header: any, resultsEl: HTMLEle
   playerEl.setAttribute('webkit-playsinline', '');
   playerEl.style.cssText = 'width:100%; max-height:480px; background:#0a0a0a; display:block; border:1px solid var(--hairline);';
   applyVideoControls(playerEl);
-  playerCard.appendChild(playerEl);
-  playerCard.appendChild(makePlayer(playerEl));
+  playerCard.appendChild(videoStage(playerEl, makePlayer(playerEl)));
 
   // Frame-by-frame nav, editable timecode, capture-to-photo and frame-grab - the
   // same tools the normal player gets. Step at the rate the SPS states, falling
@@ -4178,8 +4218,7 @@ async function renderVisibleVideoFallback(file: File, url: string, header: any, 
   playerEl.setAttribute('webkit-playsinline', '');
   playerEl.style.cssText = 'width:100%; max-height:480px; background:#0a0a0a; display:block; border:1px solid var(--hairline);';
   applyVideoControls(playerEl);
-  playerCard.appendChild(playerEl);
-  playerCard.appendChild(makePlayer(playerEl));
+  playerCard.appendChild(videoStage(playerEl, makePlayer(playerEl)));
   // PCM-audio clips (Sony etc.) play mute natively - extract + sync the sound.
   attachPcmAudioCompanion(file, playerCard, signal);
   // This path has no off-screen probe (it's the iOS / decode-failed fallback), so
@@ -5605,8 +5644,7 @@ export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any 
   playerEl.setAttribute('webkit-playsinline', '');
   playerEl.style.cssText = 'width:100%; max-height:480px; background:#0a0a0a; display:block; border:1px solid var(--hairline);';
   applyVideoControls(playerEl);
-  playerCard.appendChild(playerEl);
-  playerCard.appendChild(makePlayer(playerEl));
+  playerCard.appendChild(videoStage(playerEl, makePlayer(playerEl)));
   // Sony (and other) clips carry PCM audio browsers can't decode, so the video
   // plays mute - extract that audio and play it in sync underneath. Background.
   attachPcmAudioCompanion(file, playerCard, renderSignal);

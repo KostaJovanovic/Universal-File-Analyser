@@ -1,0 +1,10 @@
+nanoPRC, compiled to WebAssembly for Analyser's 3D PDF viewer.
+
+Licence: GNU Affero General Public License v3.0 (LICENSE in this folder).
+Copyright (C) 2023-2026 CascadiaVoxel LLC.
+
+Corresponding source:
+  nanoPRC  https://github.com/mvrhel/nanoPRC
+           commit 3e67e37ac37f334f7a5c1345db4148371f97ffb5 (3e67e37), with its zlib submodule
+  glue     tools/nanoprc/anr_prc.c in this repository
+  build    tools/nanoprc/build.mjs in this repository

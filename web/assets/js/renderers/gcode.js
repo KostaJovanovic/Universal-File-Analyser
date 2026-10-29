@@ -20,7 +20,7 @@
    (M82/M83), inch/millimetre units (G20/G21), G92 origin resets, G2/G3 arcs
    (tessellated), and ;WIDTH:/;HEIGHT: hints. Orbit / pan / zoom / spin, colour by
    height or feedrate, and a build-height scrubber. No external 3D library. */
-import { el, row, rowHelp, fmtBytes, errorCard, attachViewCube, downloadBlob } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, errorCard, attachViewCube, downloadBlob, wheelZoomOn, setWheelZoomOn, onWheelZoomChange } from '../core/util.js';
 import { byTier, WALL_PARSE } from '../core/limits.js';
 // Rendered-segment caps, scaled to the device's RAM so arc-heavy / multi-day prints
 // (millions of tessellated segments) fill in on a capable desktop without OOM-crashing
@@ -2314,21 +2314,23 @@ function buildViewer(data, opts = {}) {
     // camera distance; factor < 1 moves in, > 1 moves out (clamped to the orbit range).
     function zoomBy(factor) { state.dist = Math.max(0.04, Math.min(150, state.dist * factor)); dirty = true; }
     // Scroll-zoom toggle: styled and placed like the fullscreen button (they share the
-    // bottom-right stack below), OFF by default so the wheel scrolls the page until the
-    // user opts in. Gate the wheel handler on wheelOn BEFORE preventDefault, so a
-    // disabled viewer lets the wheel scroll the page through it.
-    let wheelOn = false;
+    // bottom-right stack below). The site-wide setting (wheelZoomOn in util.js): off
+    // until the user opts in, then kept for the visit. Gate the wheel handler on it
+    // BEFORE preventDefault, so a disabled viewer lets the wheel scroll the page
+    // through it.
     const wheelZoomBtn = el('button', { type: 'button', class: 'anr-btn anr-cam-zoombtn', 'aria-pressed': 'false' });
     const paintWheel = () => {
+        const wheelOn = wheelZoomOn();
         wheelZoomBtn.textContent = wheelOn ? 'Scroll zoom on' : 'Scroll zoom off';
         wheelZoomBtn.title = wheelOn ? 'Scrolling over the viewer zooms it. Click to let the wheel scroll the page instead.'
             : 'Scrolling over the viewer moves the page. Click to zoom with the scroll wheel again.';
         wheelZoomBtn.setAttribute('aria-pressed', wheelOn ? 'true' : 'false');
         wheelZoomBtn.classList.toggle('is-active', wheelOn); // red while on, like every toggle
     };
-    wheelZoomBtn.addEventListener('click', (e) => { e.stopPropagation(); wheelOn = !wheelOn; paintWheel(); });
+    wheelZoomBtn.addEventListener('click', (e) => { e.stopPropagation(); setWheelZoomOn(!wheelZoomOn()); });
+    onWheelZoomChange(wheelZoomBtn, paintWheel);
     paintWheel();
-    canvas.addEventListener('wheel', (e) => { if (!wheelOn)
+    canvas.addEventListener('wheel', (e) => { if (!wheelZoomOn())
         return; e.preventDefault(); zoomBy(1 + Math.sign(e.deltaY) * 0.1); }, { passive: false });
     // Camera distance that frames the model's bounding sphere. `fill` < 1 leaves
     // padding (e.g. 0.9 -> the sphere spans ~90% of the frame); accounts for the

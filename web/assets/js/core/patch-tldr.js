@@ -334,6 +334,12 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+    { range: '9.19 - 9.22', notes: [
+            '**Big files open whole**: databases, CSVs, mailboxes, ZIPs past 4 GB, TAR and ISO discs, Photoshop files, STL models past 1 GB, PDFs past 64 MB and multi-GB camera clips are read a piece at a time instead of turned away, and hashes have no size ceiling.',
+            '**3D PDFs show their model** in the 3D viewer, with its colours and parts, and save it as the original model or an STL, while any PDF can be viewed and saved as **one long page** at up to 600 dpi.',
+            'Videos go **fullscreen** and gain **Compress video**, Safari **web archives**, Apple **CAF** audio and the files a Mac leaves behind open properly, and **scroll zoom** keeps your choice until the tab is closed.',
+            'The **desktop app** offers to download FFmpeg when it has none and now decodes video on the graphics card too, while spectrograms, OCR and turning a picture into sound all run faster.',
+        ] },
     { range: '9.15 - 9.18', notes: [
             'Sound can be **edited on the waveform**: Crop keeps a selection, Cut out removes it, and Cut removes it so Paste can put it back, on every channel, with Undo and Revert, and the result downloads as WAV or MP3.',
             'A **Convert** card saves any audio file the analyser can play - WMA, AC3, AMR and tracker modules included - as an **MP3** at 128 to 320 kbps or a **WAV** that keeps every channel, all on your device.',

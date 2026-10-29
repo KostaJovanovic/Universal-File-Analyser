@@ -1,0 +1,390 @@
+/* Analyser - 3D PDF models (PRC / U3D)
+
+   A "3D PDF" carries a model as a stream object (/Type /3D, /Subtype /PRC or
+   /U3D) that a 3D annotation on a page points at through its /3DD entry. pdf.js
+   draws only the page, which for these files is a flat poster image, so this
+   module finds the streams itself and hands PRC to nanoPRC (lib/nanoprc-loader)
+   for triangles, then to stl.ts's parts viewer.
+
+   Which stream is current is decided by the annotations, not by the streams: an
+   incremental save (Acrobat adding a cross-section, say) appends a NEW model
+   object and repoints /3DD at it, leaving the old one in the file. The
+   annotation usually sits in a compressed object stream, so those are inflated
+   and searched too. The last definition of each object in file order wins, the
+   way a reader applies incremental updates. Replaced and orphaned models stay
+   listed, and can be viewed - they are what the file looked like before.
+
+   Lazy-imported by pdf.ts into a slot under the page previews. Draws nothing
+   when the PDF holds no 3D stream. */
+import { el, row, rowHelp, fmtBytes, errorCard, downloadBlob } from '../core/util.js';
+import { inflate } from '../core/binutil.js';
+import { SCAN_SMALL, PDF_3D_SCAN_MAX, PRC_STREAM_MAX } from '../core/limits.js';
+import { makeResult, renderPartsViewer } from './stl.js';
+import { decodePrc } from '../lib/nanoprc-loader.js';
+const latin1 = new TextDecoder('latin1');
+const tick = () => new Promise((r) => setTimeout(r, 0));
+// The last "N G obj" header in `text` before `idx`, or -1.
+function objBefore(text, idx) {
+    const re = /(\d+)\s+\d+\s+obj\b/g;
+    const part = text.slice(Math.max(0, idx - 8192), idx);
+    let m, obj = -1, at = -1;
+    while ((m = re.exec(part))) {
+        obj = +m[1];
+        at = m.index + Math.max(0, idx - 8192);
+    }
+    return { obj, at };
+}
+// Where the stream's data really ends: "endstream", searched for from `start`.
+// Used when /Length is an indirect reference or does not land on the keyword.
+async function findEndstream(file, start, max) {
+    const STEP = 1024 * 1024;
+    for (let off = start; off < file.size && off - start <= max; off += STEP - 16) {
+        const t = latin1.decode(new Uint8Array(await file.slice(off, off + STEP).arrayBuffer()));
+        const i = t.indexOf('endstream');
+        if (i !== -1) {
+            let end = off + i;
+            // The EOL before the keyword belongs to the syntax, not the data.
+            const tail = t.slice(Math.max(0, i - 2), i);
+            end -= tail.endsWith('\r\n') ? 2 : (tail.endsWith('\n') || tail.endsWith('\r')) ? 1 : 0;
+            return end - start;
+        }
+    }
+    return -1;
+}
+// Read the stream object whose dictionary contains the hit at `hit`.
+async function streamAt(file, hit) {
+    const from = Math.max(0, hit - 8192);
+    const t = latin1.decode(new Uint8Array(await file.slice(from, hit + 16384).arrayBuffer()));
+    const rel = hit - from;
+    const head = objBefore(t, rel);
+    if (head.obj < 0)
+        return null;
+    const sre = /stream(\r\n|\n)/g;
+    sre.lastIndex = rel;
+    const s = sre.exec(t);
+    if (!s || t.slice(rel, s.index).includes('endobj'))
+        return null;
+    const dict = t.slice(head.at, s.index);
+    const dataStart = from + s.index + s[0].length;
+    const fm = /\/Filter\s*(?:\[([^\]]*)\]|\/(\w+))/.exec(dict);
+    const filters = fm ? (fm[2] ? [fm[2]] : [...fm[1].matchAll(/\/(\w+)/g)].map((x) => x[1])) : [];
+    let length = -1;
+    const lm = /\/Length\s+(\d+)(\s+\d+\s+R)?/.exec(dict);
+    if (lm && !lm[2]) {
+        // Trust a direct /Length only if "endstream" follows it.
+        const after = latin1.decode(new Uint8Array(await file.slice(dataStart + +lm[1], dataStart + +lm[1] + 64).arrayBuffer()));
+        if (/^\s*endstream/.test(after))
+            length = +lm[1];
+    }
+    if (length < 0)
+        length = await findEndstream(file, dataStart, PRC_STREAM_MAX);
+    if (length < 0)
+        return null;
+    return { obj: head.obj, pos: hit, dict, dataStart, length, filters };
+}
+// The stream's bytes with its filter undone, or a reason it can't be.
+async function streamBytes(file, s, maxOut) {
+    if (s.length > maxOut)
+        return 'it is ' + fmtBytes(s.length) + ', past this device\'s ' + fmtBytes(maxOut) + ' limit';
+    const raw = file.slice(s.dataStart, s.dataStart + s.length);
+    if (!s.filters.length)
+        return new Uint8Array(await raw.arrayBuffer());
+    if (s.filters.length !== 1 || s.filters[0] !== 'FlateDecode')
+        return 'it uses the ' + s.filters.join(' + ') + ' filter, which is not supported here';
+    // partial: a /Length one byte long leaves junk after the zlib trailer, which
+    // DecompressionStream rejects even though everything before it decoded.
+    const out = await inflate(raw, 'deflate', maxOut, { partial: true });
+    if (out && out.length >= maxOut)
+        return 'it inflates past this device\'s ' + fmtBytes(maxOut) + ' limit';
+    return out && out.length ? out : 'its compressed data could not be inflated';
+}
+async function scanPdf(file) {
+    const OVERLAP = 4096;
+    const seen = new Set();
+    const hits3d = [];
+    const objStms = [];
+    const refs = [];
+    let encrypted = false;
+    const re = /\/Subtype\s*\/(PRC|U3D)\b|\/Type\s*\/ObjStm\b|\/3DD\s*(\d+)\s+\d+\s+R|\/Encrypt\b/g;
+    for (let off = 0; off < file.size; off += SCAN_SMALL) {
+        const t = latin1.decode(new Uint8Array(await file.slice(off, off + SCAN_SMALL + OVERLAP).arrayBuffer()));
+        re.lastIndex = 0;
+        let m;
+        while ((m = re.exec(t))) {
+            const abs = off + m.index;
+            if (seen.has(abs))
+                continue; // found again in the overlap
+            seen.add(abs);
+            if (m[1])
+                hits3d.push({ pos: abs, format: m[1] });
+            else if (m[2]) {
+                const o = objBefore(t, m.index).obj;
+                refs.push({ annot: o >= 0 ? 'o' + o : 'p' + abs, target: +m[2], order: abs });
+            }
+            else if (m[0].startsWith('/Encrypt'))
+                encrypted = true;
+            else
+                objStms.push(abs);
+        }
+        await tick();
+    }
+    if (!hits3d.length)
+        return { models: [], encrypted };
+    // Annotations held in compressed object streams. The header is "objnum
+    // offset" pairs, offsets counted from /First, so a hit maps to the object
+    // whose offset is the largest one not past it.
+    if (!encrypted) {
+        for (const pos of objStms) {
+            const s = await streamAt(file, pos).catch(() => null);
+            if (!s)
+                continue;
+            const first = +((/\/First\s+(\d+)/.exec(s.dict) || [])[1] || 0);
+            const bytes = await streamBytes(file, s, SCAN_SMALL);
+            if (typeof bytes === 'string' || !first)
+                continue;
+            const text = latin1.decode(bytes);
+            if (!text.includes('/3DD'))
+                continue;
+            const nums = text.slice(0, first).trim().split(/\s+/).map(Number);
+            const index = [];
+            for (let i = 0; i + 1 < nums.length; i += 2)
+                index.push([nums[i], nums[i + 1]]);
+            for (const d of text.matchAll(/\/3DD\s*(\d+)\s+\d+\s+R/g)) {
+                const at = d.index - first;
+                let owner = -1;
+                for (const [n, o] of index)
+                    if (o <= at)
+                        owner = n;
+                refs.push({ annot: owner >= 0 ? 'o' + owner : 'p' + pos, target: +d[1], order: pos });
+            }
+        }
+    }
+    const defs = [];
+    for (const h of hits3d) {
+        const s = await streamAt(file, h.pos).catch(() => null);
+        if (s)
+            defs.push({ ...s, format: h.format, status: 'current' });
+    }
+    // Latest definition of each object, then of each annotation's /3DD.
+    defs.sort((a, b) => a.pos - b.pos);
+    const latest = new Map();
+    for (const d of defs)
+        latest.set(d.obj, d);
+    const annots = new Map();
+    for (const r of refs.sort((a, b) => a.order - b.order))
+        annots.set(r.annot, r);
+    const used = new Set([...annots.values()].map((r) => r.target));
+    const anyUsed = [...latest.keys()].some((o) => used.has(o));
+    for (const d of defs) {
+        if (latest.get(d.obj) !== d)
+            d.status = 'replaced';
+        // No annotation found pointing at any of them (an unusual writer, or the
+        // annotation is somewhere this scan cannot read): show them all.
+        else if (anyUsed && !used.has(d.obj))
+            d.status = 'orphaned';
+    }
+    return { models: defs, encrypted };
+}
+// ---------- geometry ----------
+function geoFrom(parts, hasColour) {
+    let n = 0;
+    for (const p of parts)
+        n += p.positions.length;
+    const pos = new Float32Array(n), nrm = new Float32Array(n);
+    const col = hasColour ? new Float32Array(n) : null;
+    let o = 0;
+    for (const p of parts) {
+        pos.set(p.positions, o);
+        nrm.set(p.normals, o);
+        if (col)
+            for (let i = 0; i < p.colors.length; i++)
+                col[o + i] = p.colors[i] / 255;
+        o += p.positions.length;
+    }
+    const geo = makeResult('PRC (3D PDF)', pos, nrm);
+    if (col)
+        geo.colors = col;
+    return geo;
+}
+// Binary STL of every part: 80-byte header, count, then 50 bytes a triangle.
+function stlBlob(mesh) {
+    const buf = new ArrayBuffer(84 + 50 * mesh.triangles);
+    const dv = new DataView(buf);
+    const head = 'Analyser - exported from a 3D PDF (PRC)';
+    for (let i = 0; i < head.length; i++)
+        dv.setUint8(i, head.charCodeAt(i));
+    dv.setUint32(80, mesh.triangles, true);
+    let o = 84;
+    for (const p of mesh.parts) {
+        const v = p.positions;
+        for (let t = 0; t < p.triangles; t++) {
+            const i = t * 9;
+            const ux = v[i + 3] - v[i], uy = v[i + 4] - v[i + 1], uz = v[i + 5] - v[i + 2];
+            const wx = v[i + 6] - v[i], wy = v[i + 7] - v[i + 1], wz = v[i + 8] - v[i + 2];
+            let nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+            const len = Math.hypot(nx, ny, nz) || 1;
+            nx /= len;
+            ny /= len;
+            nz /= len;
+            dv.setFloat32(o, nx, true);
+            dv.setFloat32(o + 4, ny, true);
+            dv.setFloat32(o + 8, nz, true);
+            for (let k = 0; k < 9; k++)
+                dv.setFloat32(o + 12 + k * 4, v[i + k], true);
+            o += 50; // the attribute word stays 0
+        }
+    }
+    return new Blob([buf], { type: 'model/stl' });
+}
+// Parts with the same name (bolts, blades) become one chip, "name ×N".
+function meshParts(mesh) {
+    const groups = new Map();
+    for (const p of mesh.parts) {
+        if (!p.triangles)
+            continue;
+        const k = p.name.trim() || 'Unnamed part';
+        const g = groups.get(k);
+        if (g)
+            g.push(p);
+        else
+            groups.set(k, [p]);
+    }
+    const out = [{
+            key: 'all',
+            name: groups.size > 1 ? `Whole model (${mesh.parts.length} parts)` : 'Whole model',
+            build: () => geoFrom(mesh.parts, mesh.hasColour),
+        }];
+    if (groups.size > 1) {
+        let i = 0;
+        for (const [name, list] of groups) {
+            out.push({ key: 'g' + i++, name: list.length > 1 ? `${name} ×${list.length}` : name, build: () => geoFrom(list, mesh.hasColour) });
+        }
+    }
+    return out;
+}
+// ---------- card ----------
+const STATUS_LABEL = {
+    current: 'shown by the PDF',
+    replaced: 'replaced by a later save',
+    orphaned: 'no longer shown (no 3D view points at it)',
+};
+export async function renderPdf3d(file, slot, opts = {}) {
+    if (file.size > PDF_3D_SCAN_MAX)
+        return;
+    let scan;
+    try {
+        scan = await scanPdf(file);
+    }
+    catch (_) {
+        return;
+    }
+    const { models } = scan;
+    if (!models.length || !slot.isConnected)
+        return;
+    const stem = (file.name || 'model').replace(/\.[^.]+$/, '');
+    const card = el('div', { class: 'anr-card' });
+    card.appendChild(el('h3', {}, '3D model'));
+    card.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:10px;' }, 'This is a 3D PDF: besides its pages it carries a 3D model that Adobe Acrobat shows as an interactive view. Analyser reads the model on this device and draws it below.'));
+    const tbl = el('table', { class: 'anr-readout' });
+    card.appendChild(tbl);
+    const btnRow = el('div', { class: 'anr-btn-row', style: 'flex-wrap:wrap;gap:6px;margin-top:10px;' });
+    card.appendChild(btnRow);
+    const viewSlot = el('div');
+    slot.innerHTML = '';
+    slot.appendChild(card);
+    slot.appendChild(viewSlot);
+    if (scan.encrypted) {
+        tbl.appendChild(row('Models', String(models.length)));
+        card.appendChild(errorCard('This PDF is encrypted, so its 3D model cannot be read here.'));
+        return;
+    }
+    const current = models.filter((m) => m.status === 'current');
+    const multi = models.length > 1;
+    const objName = (m) => multi ? `${stem}_obj${m.obj}` : stem;
+    const decoded = new Map();
+    function decode(m) {
+        let p = decoded.get(m);
+        if (!p) {
+            p = (async () => {
+                const bytes = await streamBytes(file, m, PRC_STREAM_MAX);
+                if (typeof bytes === 'string')
+                    return { bytes: new Uint8Array(0), mesh: null, error: 'The model could not be read: ' + bytes + '.' };
+                if (m.format !== 'PRC')
+                    return { bytes, mesh: null };
+                try {
+                    return { bytes, mesh: await decodePrc(bytes) };
+                }
+                catch (e) {
+                    return { bytes, mesh: null, error: 'The PRC model could not be decoded: ' + (e && e.message) + '.' };
+                }
+            })();
+            decoded.set(m, p);
+        }
+        return p;
+    }
+    let showing = 0;
+    async function show(m) {
+        const turn = ++showing;
+        tbl.innerHTML = '';
+        btnRow.innerHTML = '';
+        viewSlot.innerHTML = '';
+        tbl.appendChild(rowHelp('Format', m.format === 'PRC' ? 'PRC (Product Representation Compact)' : 'U3D (Universal 3D)', 'The 3D format inside the PDF. PRC is Adobe\'s CAD-oriented format and keeps a model\'s parts and their placement; U3D is an older, mesh-only format.'));
+        if (multi)
+            tbl.appendChild(row('Model', `object ${m.obj} - ${STATUS_LABEL[m.status]}`));
+        tbl.appendChild(row(m.filters.length ? 'Stored size' : 'Size', fmtBytes(m.length) + (m.filters.length ? ' (' + m.filters.join(', ') + ')' : '')));
+        viewSlot.appendChild(el('div', { class: 'anr-info' }, 'Decoding the 3D model…'));
+        const r = await decode(m);
+        if (!viewSlot.isConnected || turn !== showing)
+            return; // another file, or another model picked
+        viewSlot.innerHTML = '';
+        if (r.bytes.length) {
+            // PRC compresses itself, so most writers store it unfiltered and the two match.
+            if (r.bytes.length !== m.length)
+                tbl.appendChild(row('Model size', fmtBytes(r.bytes.length)));
+            const ext = m.format === 'PRC' ? '.prc' : '.u3d';
+            btnRow.appendChild(el('button', { type: 'button', class: 'anr-btn', onclick: () => downloadBlob(objName(m) + ext, new Blob([r.bytes])) }, 'Download model (' + ext + ')'));
+        }
+        if (r.error) {
+            viewSlot.appendChild(errorCard(r.error));
+            return;
+        }
+        if (!r.mesh) {
+            viewSlot.appendChild(el('div', { class: 'anr-info' }, 'U3D models are not drawn here yet. Download the model to open it in a U3D viewer.'));
+            return;
+        }
+        const mesh = r.mesh;
+        tbl.appendChild(rowHelp('Parts', mesh.parts.length.toLocaleString(), 'The pieces of the assembly that carry geometry, each placed where the model puts it.'));
+        tbl.appendChild(rowHelp('Triangles', mesh.triangles.toLocaleString() + (mesh.truncated ? ' (stopped at this device\'s limit - the model is larger)' : ''), 'PRC usually stores its surfaces already split into triangles, in a compressed form. This is how many were decoded.'));
+        tbl.appendChild(row('Colours', mesh.hasColour ? 'from the file' : 'none stored'));
+        if (!mesh.triangles) {
+            viewSlot.appendChild(errorCard('The model holds no drawable triangles (it may store only exact surfaces or curves).'));
+            return;
+        }
+        btnRow.appendChild(el('button', { type: 'button', class: 'anr-btn', onclick: () => downloadBlob(objName(m) + '.stl', stlBlob(mesh)) }, 'Save as STL'));
+        if (opts.viewer === false)
+            return;
+        renderPartsViewer(file, viewSlot, {
+            parts: meshParts(mesh), format: 'PRC (3D PDF)', zUp: true,
+            partsTitle: '3D model parts',
+            partsHint: 'Pick a part to view it on its own, or see the whole model together. Parts that share a name are grouped.',
+        });
+    }
+    // Every model in the file, when there is more than one: the earlier versions
+    // a later save left behind are evidence of how the model changed.
+    if (multi) {
+        const list = el('table', { class: 'anr-readout', style: 'margin-top:10px;' });
+        for (const m of models) {
+            list.appendChild(el('tr', {}, [
+                el('th', {}, `Object ${m.obj}`),
+                el('td', {}, `${m.format}, ${fmtBytes(m.length)}, ${STATUS_LABEL[m.status]}`),
+                el('td', {}, el('button', { type: 'button', class: 'anr-btn', onclick: () => { show(m); } }, 'View')),
+            ]));
+        }
+        const det = el('details', { style: 'margin-top:10px;' });
+        det.appendChild(el('summary', {}, `All 3D models in this file (${models.length})`));
+        det.appendChild(list);
+        card.appendChild(det);
+    }
+    await show(current.length ? current[current.length - 1] : models[models.length - 1]);
+}
+//# sourceMappingURL=pdf3d.js.map

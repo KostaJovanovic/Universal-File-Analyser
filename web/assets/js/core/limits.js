@@ -241,6 +241,24 @@ export const OCR_CANVAS_MAX_PX = byTier({ high: 40e6, mid: 24e6, low: 12e6 });
 // Longest canvas side any browser reliably allocates (Chrome/Firefox 32767,
 // Safari 16384 on iOS) - the lowest of them.
 export const CANVAS_EDGE_MAX = 16384;
+// PDF "one long page" PNG (pdf.ts writeLongPng). The image is STREAMED: each
+// page is drawn a band of PDF_LONG_BAND_PX pixels at a time onto one reused
+// canvas and deflated straight into the PNG, so no canvas ever holds the whole
+// strip and memory stays at one band plus the compressed output. What is capped
+// is the finished picture - anything opening it needs W x H x 4 bytes - and its
+// width, which is the band canvas's width (CANVAS_EDGE_MAX).
+export const PDF_LONG_MAX_PX = byTier({ high: 1e9, mid: 500e6, low: 200e6 });
+export const PDF_LONG_BAND_PX = byTier({ high: 32e6, mid: 12e6, low: 6e6 });
+// 3D PDFs (renderers/pdf3d.ts + lib/nanoprc-loader.ts). Finding which embedded
+// model is current means reading the whole PDF (the annotation that names it
+// usually sits in a compressed object stream), so past PDF_3D_SCAN_MAX a PDF is
+// not searched for one. A PRC stream past PRC_STREAM_MAX is not decoded (nanoPRC
+// holds it and its parsed form in its WASM heap), and decoding stops at
+// PRC_TRI_MAX triangles - each costs ~81 bytes in the decoder's output and the
+// same again as the viewer's arrays.
+export const PDF_3D_SCAN_MAX = byTier({ high: 512 * MB, mid: 256 * MB, low: 96 * MB });
+export const PRC_STREAM_MAX = byTier({ high: 256 * MB, mid: 128 * MB, low: 48 * MB });
+export const PRC_TRI_MAX = byTier({ high: 6e6, mid: 3e6, low: 1e6 });
 // The photo LSB bit-plane panel renders one full-size plane per channel. Past this
 // pixel count the planes are computed on a downscaled copy instead, since a
 // 100 MP photo would otherwise hold several 400 MB canvases and data URLs at once.

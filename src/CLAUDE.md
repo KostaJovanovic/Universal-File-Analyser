@@ -185,6 +185,17 @@ js/
       player); video-telemetry.js reads timed-metadata tracks (GoPro GPMF,
       Android/Google CAMM, container GPS) into a map + IMU timeline
     pdf.js · paged.js · djvu.js — PDF (pdf.js), paginated docs, DjVu scans
+    pdf3d.js      — the model inside a 3D PDF, lazy-imported by pdf.js into a
+                    slot under the page previews. Finds every /Subtype /PRC or
+                    /U3D stream by raw byte scan (pdf.js only draws the poster
+                    page), and decides which is CURRENT from the 3D annotations'
+                    /3DD references - inflating object streams to find them, and
+                    taking the last definition of each object in file order,
+                    because an incremental save (Acrobat adding a cross-section)
+                    appends a new model and repoints /3DD, leaving the old one
+                    in the file. Replaced models stay listed and viewable. PRC
+                    is decoded by lib/nanoprc-loader.js and drawn in stl.js's
+                    parts viewer; U3D is offered as a download only
     docx.js · xlsx.js · xlsb.js · pptx.js · odf.js · legacy-office.js · textdoc.js
       · iwork.js · epub.js · mobi.js · mdb.js · notebook.js · markdown.js
       — office/document/e-book/notebook viewers
@@ -362,6 +373,19 @@ js/
                     with real ssdeep. Answers "how much of these two files is the
                     same" where SHA-256 only answers "are they identical";
                     /compare is the only consumer) ·
+                    nanoprc-loader (nanoPRC, AGPL-3.0, compiled to WASM -
+                    ~600 KB, Everything tier - for 3D PDFs' PRC models. NOT a
+                    stock build: tools/nanoprc/ holds the C glue (anr_prc.c,
+                    which walks the model tree and writes world-space triangles
+                    per part), the build script and patches.mjs, fixes to
+                    upstream applied at build time - the model tree starts from
+                    the roots the ModelFile lists (else a 3D PDF Acrobat has
+                    added a cross-section to decodes as the section alone), and
+                    an occurrence's location overrides its prototype's instead
+                    of compounding with it (else parts inside CATIA
+                    sub-assemblies float at double their offset). Rebuild with
+                    `node tools/nanoprc/build.mjs`
+                    and commit web/assets/vendor/nanoprc/ with it) ·
                     openmpt-loader (libopenmpt WASM, ~1.5 MB, Everything
                     tier - the vendored file is chiptune3's
                     libopenmpt.worklet.js, which despite the name registers no
