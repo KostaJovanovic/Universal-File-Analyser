@@ -4682,6 +4682,13 @@ async function renderUndecodableAudio(file, header, resultsEl, playable, extras 
         const src = playable || file;
         const playUrl = URL.createObjectURL(src);
         const audioEl = el('audio', { src: playUrl, class: 'is-hidden', preload: 'metadata' });
+        // Released when the next file comes in (the URL pins `playable`, a whole copy).
+        (window._anrMediaStoppers = window._anrMediaStoppers || new Set())
+            .add(() => { try {
+            audioEl.pause();
+            URL.revokeObjectURL(playUrl);
+        }
+        catch (_) { } });
         const playCard = el('div', { class: 'anr-card', style: 'display:none;' });
         const [playH, playHelp] = h3help('Playback', 'Your browser can play this file even though it could not analyse it.');
         playCard.appendChild(playH);

@@ -4653,7 +4653,10 @@ export async function renderProprietary(file: File, container: HTMLElement, extO
         const blob = new Blob([lockDownPreview(forceDeviceViewport(fullText))], { type: 'text/html;charset=utf-8' });
         const stage = el('div', { style: 'position:relative;overflow:auto;width:100%;height:420px;border:1px solid var(--rule);background:#fff;margin-top:8px' });
         const scaler = el('div', { style: 'position:relative;margin:0 auto;overflow:hidden' });
-        const iframe = el('iframe', { src: URL.createObjectURL(blob), sandbox: 'allow-same-origin', scrolling: 'no', style: 'border:0;background:#fff;transform-origin:0 0;display:block' });
+        const pageUrl = URL.createObjectURL(blob);
+        const iframe = el('iframe', { src: pageUrl, sandbox: 'allow-same-origin', scrolling: 'no', style: 'border:0;background:#fff;transform-origin:0 0;display:block' });
+        // Loaded once and never reloaded, so the URL can go as soon as it has.
+        iframe.addEventListener('load', () => URL.revokeObjectURL(pageUrl), { once: true });
         scaler.appendChild(iframe);
         stage.appendChild(scaler);
 
