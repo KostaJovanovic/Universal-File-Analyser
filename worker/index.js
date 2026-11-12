@@ -540,9 +540,8 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // Legacy-host redirect. 307 (temporary, method-preserving) rather than 301/308
-    // on purpose: browsers cache a permanent redirect indefinitely, so it can't be
-    // undone if the old host ever has to serve something again.
+    // Legacy-host redirect: 301, permanent, so search engines move to the
+    // canonical host (browsers cache it, so the old host can't serve pages again).
     //
     // /api/* is deliberately NOT redirected. Visitors who installed the PWA from
     // the old host still run a service worker on that origin and post their counts
@@ -559,7 +558,7 @@ export default {
         });
       }
       url.hostname = CANONICAL_HOST;
-      return Response.redirect(url.toString(), 307);
+      return Response.redirect(url.toString(), 301);
     }
 
     // Everything that isn't an API call is a page/asset (or an SPA deep link) -

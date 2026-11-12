@@ -37,7 +37,7 @@ engineers touching `/stats`, `/atari`, or the visitor/analysed-file counters.
 `run_worker_first` routes every request except `/assets/*` through the
 Worker, which hands everything outside `/api/*` back to
 `env.ASSETS.fetch(request)`, i.e. the static site. Two things happen on the
-way: the legacy `lab.valjdakosta.com` host gets a 307 to the canonical host
+way: the legacy `lab.valjdakosta.com` host gets a 301 to the canonical host
 (except `/api/*`, and `/sw.js`, which is answered with a small kill-switch
 service worker - a browser rejects a redirected service-worker script, so a
 PWA installed from the old host could otherwise never update; this one

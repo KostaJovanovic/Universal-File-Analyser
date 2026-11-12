@@ -24,7 +24,7 @@
   // site's canonical host became analyser.valjdakosta.com. Both custom domains -
   // analyser.valjdakosta.com (canonical: every canonical tag, sitemap, share URL
   // and absolute link points there) and the legacy lab.valjdakosta.com, which
-  // now 307-redirects to the canonical host (see worker/index.js) - are attached
+  // now 301-redirects to the canonical host (see worker/index.js) - are attached
   // to THIS service. Changing this name again means re-attaching both domains,
   // re-adding the IP_SALT secret and re-connecting the GitHub build, so don't.
   "name": "analyser",
