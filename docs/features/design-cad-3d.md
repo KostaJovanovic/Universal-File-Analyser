@@ -23,7 +23,8 @@ btn: Analyse as image
 **Notes / limits.** Before rendering, `sanitizeSvg()` strips active/unsafe
 content: `<script>`, `<foreignObject>` (embedded HTML), `<style>` (inline
 CSS is unscoped when injected and can pull remote resources/inject
-document-wide styling), SMIL animation elements (can rewrite an `href` to
+document-wide styling - its rules are first copied onto the shapes they
+match as inline styles, so class-based colours still show), SMIL animation elements (can rewrite an `href` to
 `javascript:` at runtime), every `on*` event-handler attribute,
 `javascript:` links, and external/remote references (`http(s)://`,
 `data:text/html`, remote CSS `url()`/`@import`). Findings are reported.

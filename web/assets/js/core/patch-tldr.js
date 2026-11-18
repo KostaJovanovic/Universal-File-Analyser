@@ -334,6 +334,9 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+    { range: '9.58 - 9.59', notes: [
+            'The **HTML preview** now says when a page draws itself with code it cannot run, **SVG pictures** keep the colours their stylesheet sets, and the start-up screen shows once per tab.',
+        ] },
     { range: '9.23 - 9.57', notes: [
             '**3D PDFs** open on the **views their author saved** - front, side or a cut through the middle - and a model with many parts shows whole first, with **Show all parts** beside it.',
             'A second **safety sweep**: crafted Markdown, GIF, WebP, video, Office, TGA, ISO, TAR and SQLite files can no longer inject markup, freeze or crash the page, and very large files of ten more formats say they are too large instead of running out of memory.',

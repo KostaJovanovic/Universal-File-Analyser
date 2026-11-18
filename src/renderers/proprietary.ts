@@ -4691,6 +4691,10 @@ export async function renderProprietary(file: File, container: HTMLElement, extO
         btnRow.appendChild(mkBtn('Desktop', 'desktop'));
         btnRow.appendChild(mkBtn('Mobile', 'mobile'));
         previewDet.appendChild(btnRow);
+        if (/<script\b/i.test(fullText)) {
+          previewDet.appendChild(el('p', { class: 'anr-hint', style: 'margin:8px 0 0' },
+            'This page uses JavaScript. The preview runs no scripts and loads nothing from the internet, so anything the page draws with code (3D scenes, games, charts, app layouts) is missing or broken here. Open the file in a browser to see it as intended.'));
+        }
         previewDet.appendChild(stage);
         card.insertBefore(previewDet, tbl);   // rendered preview leads, above the metadata table
 

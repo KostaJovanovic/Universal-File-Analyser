@@ -259,8 +259,10 @@ body::before {
   transition: opacity 0.5s ease;
 }
 .splash.is-done { opacity: 0; pointer-events: none; }
-/* Skip the splash on Firefox (grid/scan animation snaps there); flag set in <head>. */
-:root[data-ff="1"] .splash { display: none; }
+/* Skip the splash on Firefox (grid/scan animation snaps there) and after its first
+   showing in this tab session; both flags set in <head>. */
+:root[data-ff="1"] .splash,
+:root[data-nosplash] .splash { display: none; }
 /* Same faint drifting grid as body::before (which the splash covers), so the boot
    screen shares the page's backdrop. Dark variant + reduced-motion handled below. */
 .splash::before {

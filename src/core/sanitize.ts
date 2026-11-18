@@ -322,6 +322,34 @@ export function sanitizeDoc(doc: Document, opts: any = {}) {
   return wrapper;
 }
 
+/* Copy an SVG's own <style> rules onto the elements they match, as inline
+   style="", before cleanTree drops <style> - otherwise every class-coloured
+   shape (Illustrator's default "Internal CSS" export) renders black. The copied
+   styles then pass through cleanStyle like any authored style="", so url(),
+   position:fixed and the rest are still refused. The browser parses the sheet
+   (replaceSync never runs @import); an existing style="" stays last and wins.
+   shortcut: rules apply in source order, ignoring specificity and @media; fine
+   for exporter CSS, upgrade if hand-written stylesheets render wrong. */
+function inlineSvgStyles(root: Element) {
+  const styles = root.getElementsByTagNameNS('*', 'style');
+  if (!styles.length || typeof CSSStyleSheet === 'undefined') return;
+  const acc = new Map<Element, string>();
+  for (const s of Array.from(styles)) {
+    let rules: CSSRuleList;
+    try { const sheet = new CSSStyleSheet(); sheet.replaceSync(s.textContent || ''); rules = sheet.cssRules; } catch (_) { continue; }
+    for (const r of Array.from(rules)) {
+      if (!(r instanceof CSSStyleRule) || !r.style.cssText) continue;
+      let hits: Element[];
+      try {
+        hits = Array.from(root.querySelectorAll(r.selectorText));
+        if (root.matches(r.selectorText)) hits.push(root);
+      } catch (_) { continue; }
+      for (const h of hits) acc.set(h, (acc.get(h) || '') + r.style.cssText + ' ');
+    }
+  }
+  acc.forEach((css, elt) => elt.setAttribute('style', css + (elt.getAttribute('style') || '')));
+}
+
 /* Sanitise the <svg> of a parsed SVG document and return a clean COPY of it,
    imported into this page's document and ready to insert as a node - or null
    when there is no SVG root. The parsed document itself is left untouched, so
@@ -337,6 +365,7 @@ export function sanitizeSvgDoc(doc: Document, report?: SanitizeReport): SVGSVGEl
   if (!src) return null;
   // Clone inside the (inert) parsed document, clean the clone, THEN import it.
   const work = src.cloneNode(true) as Element;
+  inlineSvgStyles(work);
   cleanTree(work, true, { allowRemote: false, svg: true }, report || emptySanitizeReport());
   return document.importNode(work, true) as unknown as SVGSVGElement;
 }
