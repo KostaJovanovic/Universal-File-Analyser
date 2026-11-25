@@ -124,8 +124,8 @@ export const FORMATS = {
   catpart:    { app: 'CATIA Part' },
   catproduct: { app: 'CATIA Product' },
   cgr:        { app: 'CATIA Graphics' },
-  prt:        { app: 'Creo / Pro-E / NX Part' },
-  asm:        { app: 'Creo / Pro-E Assembly' },
+  prt:        { app: 'Creo / Pro-E / NX Part', chunk: 'threed' },
+  asm:        { app: 'Creo / Pro-E Assembly', chunk: 'threed' },
 
   // EDA / PCB
   brd:     { app: 'Eagle / Altium PCB' },

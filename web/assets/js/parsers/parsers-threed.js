@@ -1083,6 +1083,46 @@ async function parseJt(file) {
     out['Note'] = 'Siemens NX / Teamcenter tessellated 3D';
     return out;
 }
+// ---------- PTC Creo / Pro/ENGINEER (.prt / .asm) ----------
+// A plain-text "#UGC:2 PART ..." header of "#- KEY value \" records, a
+// "#<product> TM <release> (c) ... M020" banner (release + build datecode),
+// then a "#UGC_TOC" table of "name offset length ..." lines padded with '#'.
+// The sections themselves are PTC's undocumented binary serialisation.
+// Siemens NX also uses .prt but is not "#UGC" - return null and let the
+// generic OLE/magic handling take it.
+async function parseCreo(file) {
+    const text = await headText(file, 16384);
+    const m = text.match(/^#UGC:\d+\s+(\w+)/);
+    if (!m)
+        return null;
+    const out = { 'Format': 'PTC Creo / Pro/ENGINEER model', 'Model type': m[1][0] + m[1].slice(1).toLowerCase() };
+    const banner = text.match(/^#(.+?)\s+\(c\)[^\n]*?\b(M\d{3})?\s*$/m);
+    if (banner) {
+        out['Written by'] = banner[1].replace(/\s+TM\s+/, ' ').replace(/\s+/g, ' ').trim();
+        if (banner[2])
+            out['Build datecode'] = banner[2];
+    }
+    // Creo names cannot contain spaces; an empty record is just padding + '\'.
+    const name = ((text.match(/^#- CMNM (\d{3}[^\s\\]+)/m) || [])[1] || '').slice(3); // length-prefixed, e.g. "011part.prt"
+    if (name)
+        out['Model name'] = name;
+    const mach = ((text.match(/^#- MACH ([^\s\\]+)/m) || [])[1] || '').replace(/^_/, '');
+    if (mach)
+        out['Saved on'] = mach;
+    const toc = [...text.matchAll(/^([A-Za-z][\w:#]*) ([0-9a-f]+) ([0-9a-f]+) [0-9a-f]+ \d+ /gm)];
+    if (toc.length) {
+        out['Sections'] = toc.length;
+        const w = Math.max(...toc.map(t => t[1].length));
+        out._sections = [{ title: 'Sections (' + toc.length + ')', node: preBlock(toc.map(t => t[1].padEnd(w + 2) + fmtBytes(parseInt(t[3], 16))).join('\n')) }];
+    }
+    // The unit system is spelled out as text inside the binary sections.
+    const body = latin1(await head(file, SCAN_SMALL));
+    const units = body.match(/\b([A-Za-z]+ [A-Za-z]+ Second) \((\w+)\)/);
+    if (units)
+        out['Units'] = units[1] + ' (' + units[2] + ')';
+    out['Note'] = 'Header and section table only - the geometry is stored in PTC\'s undocumented binary format. Export STEP from Creo to view the model.';
+    return out;
+}
 // ---------- Gaussian splats: .splat / .spz ----------
 async function parseSplat(file) {
     // Antimatter15 .splat: packed 32-byte records (pos f32x3, scale f32x3, rgba u8x4, rot u8x4)
@@ -1656,6 +1696,8 @@ export const PARSERS = {
     mdl: (c) => parseQuakeModel(c.file, c.ext),
     vrm: (c) => parseVrm(c.file),
     jt: (c) => parseJt(c.file),
+    prt: (c) => parseCreo(c.file),
+    asm: (c) => parseCreo(c.file),
     // point clouds
     las: (c) => parseLas(c.file, c.ext),
     laz: (c) => parseLas(c.file, c.ext),
